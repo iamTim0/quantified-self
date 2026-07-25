@@ -1,0 +1,21 @@
+[project]
+name = "qs-analysis-service"
+version = "0.1.0"
+description = "Analysis Service for Quantified Self"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn>=0.29.0",
+    "grpcio>=1.62.0",
+    "grpcio-tools>=1.62.0",
+    "numpy>=1.26.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0"
+]
+requires-python = ">=3.12"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/analysis"]

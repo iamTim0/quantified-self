@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package quantified_self.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+message IngestEvent {
+  string tenant_id = 1;
+  string source_id = 2;
+  string metric_type = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  double value = 5;
+  google.protobuf.Struct metadata = 6;
+  string idempotency_key = 7;
+  string source_type = 8;
+}

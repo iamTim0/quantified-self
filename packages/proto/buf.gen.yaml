@@ -1,0 +1,12 @@
+version: v2
+plugins:
+  - plugin: buf.build/protocolbuffers/python
+    out: gen/python
+  - plugin: buf.build/stephenh/ts-proto
+    out: gen/ts
+    opt:
+      - outputServices=grpc-js
+      - env=node
+      - useOptionals=messages
+      - exportCommonSymbols=false
+      - esModuleInterop=true

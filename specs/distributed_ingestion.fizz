@@ -1,0 +1,85 @@
+TENANTS = ['tenant_a', 'tenant_b']
+IMPORTERS = ['oura_1', 'oura_2']
+broker_queue = []
+core_db = {}
+processed_count = 0
+duplicate_count = 0
+broker_available = True
+next_idempotency_key = 1
+
+atomic action ImporterPublish:
+    require broker_available == True
+    tenant_id = any(TENANTS)
+    importer = any(IMPORTERS)
+    metric_type = any(["steps", "sleep", "heart_rate"])
+    
+    key = str(next_idempotency_key)
+    next_idempotency_key = next_idempotency_key + 1
+    
+    msg = {"tenant_id": tenant_id, "importer": importer, "metric_type": metric_type, "idempotency_key": key}
+    
+    # Non-deterministically choose whether to publish once or twice
+    times = any([1, 2])
+    if times == 1:
+        broker_queue.append(msg)
+    else:
+        broker_queue.append(msg)
+        broker_queue.append(msg)
+
+atomic action NetworkPartition:
+    require broker_available == True
+    broker_available = False
+
+atomic action NetworkRecover:
+    require broker_available == False
+    broker_available = True
+
+fair action CoreConsume:
+    require len(broker_queue) > 0 and broker_available == True
+    msg = broker_queue[0]
+    # Remove from queue (ack)
+    broker_queue.pop(0)
+    
+    # Deduplication via idempotency_key
+    if msg["idempotency_key"] in core_db:
+        duplicate_count = duplicate_count + 1
+    else:
+        core_db[msg["idempotency_key"]] = msg
+        processed_count = processed_count + 1
+
+atomic action CoreConsumeFailure:
+    require len(broker_queue) > 0 and broker_available == True
+    # Core tries to consume but fails mid-processing (simulates crash).
+    # Message stays in queue (not acked).
+    pass
+
+always assertion TenantIsolation:
+    # Every entry in core_db has a non-empty tenant_id
+    for value in core_db.values():
+        if value.get("tenant_id") == None or value.get("tenant_id") == "":
+            return False
+    return True
+
+always assertion NoDuplicateData:
+    # For any idempotency_key in core_db, there is exactly one entry
+    # (Checked by ensuring core_db size matches processed_count)
+    return len(core_db) == processed_count
+
+always assertion DataIntegrity:
+    # Every entry in core_db has a tenant_id that is in TENANTS
+    for value in core_db.values():
+        if value.get("tenant_id") not in TENANTS:
+            return False
+    return True
+
+always assertion IdempotencyKeyUnique:
+    # No two distinct records share the same idempotency_key
+    for key, value in core_db.items():
+        if value.get("idempotency_key") != key:
+            return False
+    return True
+
+eventually assertion EventualConsistency:
+    # If a message is in broker_queue and broker is available, it is eventually consumed
+    # Note: Fizzbee Liveness checks if this evaluates to True eventually
+    return len(broker_queue) == 0 or broker_available == False

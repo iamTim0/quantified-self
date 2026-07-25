@@ -1,0 +1,40 @@
+syntax = "proto3";
+
+package quantified_self.v1;
+
+import "quantified_self/v1/common.proto";
+import "quantified_self/v1/data_point.proto";
+import "google/protobuf/timestamp.proto";
+
+message QueryDataPointsRequest {
+  string tenant_id = 1;
+  optional string metric_type = 2;
+  optional string source_id = 3;
+  google.protobuf.Timestamp start_time = 4;
+  google.protobuf.Timestamp end_time = 5;
+  PaginationRequest pagination = 6;
+}
+
+message QueryDataPointsResponse {
+  repeated DataPoint data_points = 1;
+  PaginationResponse pagination = 2;
+}
+
+message GetDataPointRequest {
+  string tenant_id = 1;
+  string data_point_id = 2;
+}
+
+message ListMetricTypesRequest {
+  string tenant_id = 1;
+}
+
+message ListMetricTypesResponse {
+  repeated string metric_types = 1;
+}
+
+service CoreDataService {
+  rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
+  rpc GetDataPoint(GetDataPointRequest) returns (DataPoint);
+  rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
+}

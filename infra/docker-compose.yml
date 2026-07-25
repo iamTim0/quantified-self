@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_USER: qs_dev
+      POSTGRES_PASSWORD: qs_dev_password
+      POSTGRES_DB: quantified_self
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - qs-network
+
+  nats:
+    image: nats:2.10-alpine
+    ports:
+      - "4222:4222" # Client port
+      - "8222:8222" # Monitoring port
+    command: --jetstream --store_dir /data
+    volumes:
+      - natsdata:/data
+    networks:
+      - qs-network
+
+  api-gateway:
+    build:
+      # Adjusted context to ../services assuming infra/docker-compose.yml 
+      # is one level down from the root 'services' directory.
+      context: ../services/api-gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      - POSTGRES_URL=postgresql://qs_dev:qs_dev_password@postgres:5432/quantified_self
+      - NATS_URL=nats://nats:4222
+    networks:
+      - qs-network
+
+  core:
+    build:
+      context: ../services/core
+    ports:
+      - "8001:8001"
+    depends_on:
+      - postgres
+      - nats
+    environment:
+      - POSTGRES_URL=postgresql://qs_dev:qs_dev_password@postgres:5432/quantified_self
+      - NATS_URL=nats://nats:4222
+    networks:
+      - qs-network
+
+  analysis:
+    build:
+      context: ../services/analysis
+    ports:
+      - "8002:8002"
+    depends_on:
+      - core
+    environment:
+      - POSTGRES_URL=postgresql://qs_dev:qs_dev_password@postgres:5432/quantified_self
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  oura-importer:
+    build:
+      context: ../services/importers/oura
+    depends_on:
+      - nats
+      - core
+    environment:
+      - POSTGRES_URL=postgresql://qs_dev:qs_dev_password@postgres:5432/quantified_self
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+volumes:
+  pgdata:
+  natsdata:
+
+networks:
+  qs-network:
+    driver: bridge

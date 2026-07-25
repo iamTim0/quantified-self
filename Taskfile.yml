@@ -1,0 +1,65 @@
+version: '3'
+
+tasks:
+  dev:up:
+    desc: "Start all services in the background using docker compose"
+    cmds:
+      - docker compose -f infra/docker-compose.yml up -d
+
+  dev:down:
+    desc: "Stop and remove all running services"
+    cmds:
+      - docker compose -f infra/docker-compose.yml down
+
+  dev:logs:
+    desc: "Follow logs for all services"
+    cmds:
+      - docker compose -f infra/docker-compose.yml logs -f
+
+  dev:db-reset:
+    desc: "Reset the database and restart postgres"
+    cmds:
+      - docker compose -f infra/docker-compose.yml down -v
+      - docker compose -f infra/docker-compose.yml up -d postgres
+
+  db:migrate:
+    desc: "Run pending Alembic database migrations"
+    cmds:
+      - uv run --directory services/core alembic upgrade head
+
+  db:rollback:
+    desc: "Roll back the last database migration step (downgrade -1)"
+    cmds:
+      - uv run --directory services/core alembic downgrade -1
+
+  proto:generate:
+    desc: "Generate protobuf code"
+    cmds:
+      - uv run --with grpcio-tools python packages/proto/generate.py
+
+  test:all:
+    desc: "Run tests across all services and specs"
+    cmds:
+      - uv run pytest specs/tests services/core/tests
+
+  test:service:
+    desc: "Run tests for a specific service"
+    cmds:
+      - echo "Running tests for {{.SERVICE}}"
+    requires:
+      vars: [SERVICE]
+
+  fizz:check:
+    desc: "Run fizzbee model checker on specs/"
+    cmds:
+      - fizzbee check specs/
+
+  lint:all:
+    desc: "Run linting across the monorepo"
+    cmds:
+      - echo "Running linters..."
+
+  new:importer:
+    desc: "Scaffold a new importer (placeholder)"
+    cmds:
+      - echo "Scaffolding new importer..."

@@ -1,0 +1,19 @@
+syntax = "proto3";
+
+package quantified_self.v1;
+
+import "quantified_self/v1/common.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+message DataPoint {
+  string id = 1;
+  string tenant_id = 2;
+  string source_id = 3;
+  string metric_type = 4;
+  google.protobuf.Timestamp timestamp = 5;
+  double value = 6;
+  google.protobuf.Struct metadata = 7;
+  string idempotency_key = 8;
+  google.protobuf.Timestamp created_at = 9;
+}

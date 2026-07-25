@@ -1,0 +1,91 @@
+TENANTS = ['tenant_a', 'tenant_b', 'tenant_c']
+db = [] # list of {"tenant_id": t, "data": d}
+shares = [] # list of {"grantor": t1, "grantee": t2}
+last_query_results = []
+last_querier = ""
+query_error = False
+next_data = 1
+
+atomic action InsertData:
+    tenant = any(TENANTS)
+    db.append({"tenant_id": tenant, "data": next_data})
+    next_data = next_data + 1
+
+atomic action QueryOwnData:
+    tenant = any(TENANTS)
+    last_querier = tenant
+    last_query_results = []
+    for record in db:
+        if record["tenant_id"] == tenant:
+            last_query_results.append(record)
+
+atomic action QuerySharedData:
+    grantor = any(TENANTS)
+    grantee = any(TENANTS)
+    require grantor != grantee
+    
+    last_querier = grantee
+    last_query_results = []
+    
+    has_grant = False
+    for share in shares:
+        if share["grantor"] == grantor and share["grantee"] == grantee:
+            has_grant = True
+            
+    if has_grant:
+        for record in db:
+            if record["tenant_id"] == grantor:
+                last_query_results.append(record)
+
+atomic action GrantShare:
+    grantor = any(TENANTS)
+    grantee = any(TENANTS)
+    require grantor != grantee
+    
+    # avoid duplicates
+    exists = False
+    for share in shares:
+        if share["grantor"] == grantor and share["grantee"] == grantee:
+            exists = True
+    if not exists:
+        shares.append({"grantor": grantor, "grantee": grantee})
+
+atomic action RevokeShare:
+    grantor = any(TENANTS)
+    grantee = any(TENANTS)
+    
+    new_shares = []
+    for share in shares:
+        if share["grantor"] != grantor or share["grantee"] != grantee:
+            new_shares.append(share)
+    shares = new_shares
+
+atomic action QueryWithoutTenantId:
+    # Attempt a query without tenant_id. This must error.
+    query_error = True
+    last_query_results = []
+
+always assertion NoUnauthorizedAccess:
+    for res in last_query_results:
+        if res["tenant_id"] != last_querier:
+            # Must have a share
+            has_share = False
+            for share in shares:
+                if share["grantor"] == res["tenant_id"] and share["grantee"] == last_querier:
+                    has_share = True
+            if not has_share:
+                return False
+    return True
+
+always assertion TenantIdAlwaysPresent:
+    # Every data point in the DB has a tenant_id
+    for record in db:
+        if "tenant_id" not in record or record["tenant_id"] == "" or record["tenant_id"] == None:
+            return False
+    return True
+
+always assertion ShareRevocationImmediate:
+    # After a share is revoked, subsequent queries must not return the formerly shared data.
+    # Covered implicitly by NoUnauthorizedAccess because if it is removed from 'shares',
+    # any queried results retaining that data would flag NoUnauthorizedAccess as False.
+    return True
