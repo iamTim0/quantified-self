@@ -13,5 +13,15 @@
         ]
       }
     ]
+  },
+  "doc-validator": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "python .agents/scripts/validate_docs.py",
+        "timeout": 15
+      }
+    ]
   }
 }

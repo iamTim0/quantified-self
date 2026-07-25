@@ -190,4 +190,4 @@ We use **Fizzbee** to mathematically model and verify our distributed architectu
 - **Fizzbee Mapping**: Tests must explicitly reference the Fizzbee invariants they are validating in their docstrings.
 
 ## License
-[PolyForm Noncommercial License 1.0.0](file:///C:/Users/thoff/Documents/GitHub/quantified-self/LICENSE). Free for personal use, self-hosting, modification, and non-commercial sharing. Commercial use, monetization, or selling as a paid service is strictly prohibited.
+[PolyForm Noncommercial License 1.0.0](LICENSE). Free for personal use, self-hosting, modification, and non-commercial sharing. Commercial use, monetization, or selling as a paid service is strictly prohibited.
