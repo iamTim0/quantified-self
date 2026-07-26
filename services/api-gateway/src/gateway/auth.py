@@ -52,8 +52,9 @@ def decode_jwt(token: str) -> dict[str, Any]:
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="JWT token has expired")
-    except jwt.PyJWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid JWT token: {e!s}")
+    except jwt.PyJWTError:
+        # SECURITY M3: Do not leak internal JWT error details to client
+        raise HTTPException(status_code=401, detail="Invalid or malformed JWT token")
 
 def get_tenant_id_from_token(
     credentials: HTTPAuthorizationCredentials | None = Security(security),

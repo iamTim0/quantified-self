@@ -27,7 +27,9 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId }: C
 
     setLoading(true);
     try {
-      const res = await fetch("http://127.0.0.1:8001/api/v1/data/sources/configure", {
+      // SECURITY C5: Route through Gateway, not directly to Core
+      const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+      const res = await fetch(`${apiBase}/api/v1/data/sources/configure`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

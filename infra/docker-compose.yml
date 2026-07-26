@@ -19,7 +19,7 @@ services:
     image: nats:2.10-alpine
     ports:
       - "4222:4222" # Client port
-      - "8222:8222" # Monitoring port
+      - "127.0.0.1:8222:8222" # Monitoring port — bound to localhost only (SECURITY H5)
     command: --jetstream --store_dir /data
     volumes:
       - natsdata:/data

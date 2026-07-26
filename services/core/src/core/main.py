@@ -10,8 +10,10 @@ Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,11 +25,16 @@ from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
 from core.security.crypto import encrypt_secret, mask_secret
 
+# SECURITY H3: Constrain source_type to known connectors
+ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit"]
+ValidStatus = Literal["active", "inactive"]
+
 
 class ConfigureConnectorRequest(BaseModel):
-    source_type: str = Field(..., description="e.g. oura, whoop, apple_health, fitbit")
-    access_token: str = Field(..., description="Raw API access token / credential")
-    status: str = Field("active", description="active / inactive")
+    source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit")
+    # SECURITY H6: Limit access_token length to prevent memory/DB abuse
+    access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
+    status: ValidStatus = Field("active", description="active / inactive")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -42,6 +49,16 @@ async def lifespan(app: FastAPI):
         yield
 
 app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
+
+# SECURITY C4: Core should only be accessed by Gateway, not browsers directly.
+# Restrict CORS to reject browser-originated cross-origin requests.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[],  # No browser origins allowed — Gateway proxies server-side
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["X-Tenant-ID", "Content-Type"],
+)
 app.add_middleware(TenantMiddleware)
 
 @app.get("/health")

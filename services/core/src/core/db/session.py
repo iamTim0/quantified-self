@@ -5,9 +5,11 @@ from sqlalchemy.pool import NullPool
 
 from core.config import settings
 
-# Use NullPool for asyncpg engine to ensure every request/test gets its own isolated connection
+# SECURITY M1: SSL is configurable — defaults to False for local dev but should
+# be True in production. Set DATABASE_SSL=true env var for encrypted DB traffic.
+_db_ssl = getattr(settings, "DATABASE_SSL", False)
 connect_args = {
-    "ssl": False,
+    "ssl": _db_ssl,
 }
 
 engine = create_async_engine(

@@ -7,6 +7,10 @@ import TrendChart from "./components/TrendChart";
 import ConnectorModal from "./components/ConnectorModal";
 import { Activity, RefreshCw } from "lucide-react";
 
+// SECURITY C5: All API calls go through the Gateway (port 8000), never directly to Core.
+// The Gateway validates JWT tokens and injects X-Tenant-ID headers.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
 interface ConnectorItem {
   id: string;
   source_type: string;
@@ -31,16 +35,16 @@ export default function DashboardPage() {
     async function loadDashboardData() {
       try {
         const [sumRes, sleepRes, readinessRes, connRes] = await Promise.all([
-          fetch("http://127.0.0.1:8001/api/v1/data/metrics/summary", {
+          fetch(`${API_BASE}/api/v1/data/metrics/summary`, {
             headers: { "X-Tenant-ID": tenantId },
           }),
-          fetch("http://127.0.0.1:8001/api/v1/data/metrics?metric_type=sleep_score&limit=30", {
+          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=sleep_score&limit=30`, {
             headers: { "X-Tenant-ID": tenantId },
           }),
-          fetch("http://127.0.0.1:8001/api/v1/data/metrics?metric_type=readiness_score&limit=30", {
+          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=readiness_score&limit=30`, {
             headers: { "X-Tenant-ID": tenantId },
           }),
-          fetch("http://127.0.0.1:8001/api/v1/data/sources", {
+          fetch(`${API_BASE}/api/v1/data/sources`, {
             headers: { "X-Tenant-ID": tenantId },
           }),
         ]);
