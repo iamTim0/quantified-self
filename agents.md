@@ -22,6 +22,9 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 8. **Stateless Importers & Connector Credentials**: Importers MUST NOT store access tokens in `.env` files or hardcoded configuration. Importers query Core Data Service dynamically (`GET /api/v1/internal/data/sources/{source_type}/token`) for encrypted credentials configured by users in the Dashboard UI. If no credentials exist, importers MUST remain idle without generating fake data.
 9. **NEVER Auto-Seed Data**: Microservices and importers MUST NEVER automatically generate mock seed data on startup or missing configuration. Seed data generation must be executed explicitly via dedicated CLI commands (`python -m importer.seed` or `task seed:oura`).
 10. **Stateless & Independent Tests (No Assumed Data)**: Tests MUST NEVER assume pre-existing database state, pre-seeded rows, or dirty environment data. Tests must be completely self-contained, creating their required fixtures during setup and cleaning up afterwards.
+11. **Tenant & User Separation**: Tenants represent workspace/organization containers (`tenants` table). Users represent individual accounts (`users` table with `email`, `password_hash`, `tenant_id`, `role`). JWT claims MUST contain `user_id`, `tenant_id`, and `role`.
+12. **Zero Plaintext Secrets in Broker or Logs**: Access tokens/secrets MUST NEVER be sent in plaintext over NATS Message Broker events, logged to stdout/stderr, or stored unencrypted. All secrets are encrypted at rest with Fernet AES-256 using a shared secret `ENCRYPTION_KEY` (with a deterministic `DEFAULT_DEV_KEY` fallback for local dev).
+13. **End-to-End Correlation ID (`X-Request-ID`)**: Every HTTP request originating at Gateway or client MUST be tagged with a unique `X-Request-ID`. All downstream microservices (Core, Importers, Analysis) MUST propagate `X-Request-ID` in HTTP headers, NATS events, and log outputs (`[req_id=...]`).
 
 ---
 
@@ -42,6 +45,7 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 - **Query**: External Client -> Gateway (JWT auth, header injection) -> Core (via gRPC from Analysis, or REST from Gateway) -> Client Response.
 - **Sharing**: Access control via the `tenant_shares` table. Explicit grant/revoke required.
 - **Connector Config**: Dashboard UI -> Gateway -> Core Service (`POST /api/v1/data/sources/configure` -> Fernet AES-256 Encrypted DB) -> Importer dynamic fetch.
+- **Tracing**: Request -> Gateway (injects `X-Request-ID`) -> Core (`X-Request-ID` in headers & logs `[req_id=...]`) -> Importers/NATS (`X-Request-ID`).
 
 ---
 
@@ -78,6 +82,8 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ Missing `tenant_id` filters in `SELECT`, `UPDATE`, or `DELETE` statements.
 - ❌ Synchronous HTTP calls from Importers to Core for data ingestion (MUST use NATS).
 - ❌ Hardcoded tenant IDs or API secrets in `.env` or source code.
+- ❌ Plaintext API tokens in NATS events or log outputs.
+- ❌ Un-correlated requests missing `X-Request-ID` headers or log prefixes.
 - ❌ Automatic generation of fake/seed data on service startup or fallback.
 - ❌ Tests that depend on pre-existing database state or pre-run seed commands.
 - ❌ Skipping Fizzbee specifications for new, complex distributed coordination.
