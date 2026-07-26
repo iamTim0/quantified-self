@@ -95,14 +95,15 @@ tasks:
     env:
       PYTHONUTF8: "1"
     cmds:
-      - npx --yes concurrently
-          --names "core,gateway,oura,dash"
-          --prefix-colors "blue,green,yellow,magenta"
-          --handle-input
-          "uv run --directory services/core python -m core.main"
-          "uv run --directory services/api-gateway python -m gateway.main"
-          "uv run --directory services/importers/oura python -m oura_importer.main"
-          "npx pnpm --prefix apps/dashboard dev"
+      - >-
+        npx --yes concurrently
+        --names "core,gateway,oura,dash"
+        --prefix-colors "blue,green,yellow,magenta"
+        --handle-input
+        "uv run --directory services/core python -m core.main"
+        "uv run --directory services/api-gateway python -m gateway.main"
+        "uv run --directory services/importers/oura python -m oura_importer.main"
+        "npx pnpm --prefix apps/dashboard dev"
 
   seed:oura:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"
