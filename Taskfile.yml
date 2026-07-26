@@ -107,3 +107,8 @@ tasks:
     desc: "Scaffold a new importer (placeholder)"
     cmds:
       - echo "Scaffolding new importer..."
+
+  logs:
+    desc: "High-speed log query tool. Usage: task logs -- --req-id req_abc123 --level ERROR"
+    cmds:
+      - uv run python -m tools.log_query {{.CLI_ARGS}}
