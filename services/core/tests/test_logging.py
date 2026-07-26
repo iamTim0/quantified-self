@@ -10,8 +10,8 @@ def test_setup_tracing_logger_registers_three_handlers():
     root = logging.getLogger()
     original_handlers = root.handlers[:]
 
-    with patch('os.makedirs') as mock_makedirs:
-        with patch('core.tracing.RotatingFileHandler') as mock_rfh:
+    with patch('core.tracing.RotatingFileHandler') as mock_rfh:
+        with patch('pathlib.Path.mkdir') as mock_mkdir:
             # Give the mock handler a real integer .level so logging callHandlers doesn't break
             mock_handler = MagicMock()
             mock_handler.level = logging.NOTSET
@@ -20,9 +20,9 @@ def test_setup_tracing_logger_registers_three_handlers():
 
             setup_tracing_logger('test-svc')
 
-            mock_makedirs.assert_called_once_with('logs', exist_ok=True)
-            assert mock_rfh.call_count == 2  # service log + platform log
-            assert len(root.handlers) == 3   # stdout + service file + platform file
+            mock_mkdir.assert_called_once_with(exist_ok=True)
+            assert mock_rfh.call_count == 2   # service log + platform log
+            assert len(root.handlers) == 3    # stdout + service file + platform file
 
             # Restore handlers INSIDE the patch context before mocks are torn down
             root.handlers = original_handlers

@@ -14,6 +14,7 @@ import logging
 import os
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 import httpx
 import nats
@@ -38,18 +39,23 @@ def _setup_importer_logging():
     - stdout StreamHandler for live console output
     - RotatingFileHandler for service-specific log file (logs/qs-importer-oura.log)
     - RotatingFileHandler for aggregated platform log (logs/qs-platform.log)
+
+    Logs are always written to the project root logs/ directory.
     """
-    os.makedirs('logs', exist_ok=True)
+    # Resolve project root: services/importers/oura/src/oura_importer/main.py -> 5 levels up
+    _log_dir = Path(__file__).resolve().parents[5] / "logs"
+    _log_dir.mkdir(exist_ok=True)
+
     log_format = '%(asctime)s [qs-importer-oura] [%(levelname)s] %(message)s'
     formatter = logging.Formatter(log_format, datefmt='%Y-%m-%d %H:%M:%S')
 
     stdout_handler = logging.StreamHandler()
     stdout_handler.setFormatter(formatter)
 
-    service_handler = RotatingFileHandler('logs/qs-importer-oura.log', maxBytes=10*1024*1024, backupCount=5)
+    service_handler = RotatingFileHandler(_log_dir / 'qs-importer-oura.log', maxBytes=10*1024*1024, backupCount=5)
     service_handler.setFormatter(formatter)
 
-    platform_handler = RotatingFileHandler('logs/qs-platform.log', maxBytes=10*1024*1024, backupCount=5)
+    platform_handler = RotatingFileHandler(_log_dir / 'qs-platform.log', maxBytes=10*1024*1024, backupCount=5)
     platform_handler.setFormatter(formatter)
 
     root = logging.getLogger()

@@ -10,6 +10,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
@@ -88,8 +89,11 @@ def setup_tracing_logger(service_name: str):
     - RotatingFileHandler for aggregated platform log (logs/qs-platform.log)
 
     All handlers inject the correlation request_id via CorrelationLogFilter.
+    Logs are always written to the project root logs/ directory.
     """
-    os.makedirs('logs', exist_ok=True)
+    # Resolve project root: services/core/src/core/tracing.py -> 4 levels up
+    _log_dir = Path(__file__).resolve().parents[4] / "logs"
+    _log_dir.mkdir(exist_ok=True)
 
     log_format = f"%(asctime)s [{service_name}] [%(levelname)s] [req_id=%(request_id)s] %(message)s"
     formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
@@ -99,13 +103,13 @@ def setup_tracing_logger(service_name: str):
     stdout_handler.setFormatter(formatter)
 
     service_handler = RotatingFileHandler(
-        f'logs/{service_name}.log', maxBytes=10 * 1024 * 1024, backupCount=5
+        _log_dir / f'{service_name}.log', maxBytes=10 * 1024 * 1024, backupCount=5
     )
     service_handler.addFilter(CorrelationLogFilter())
     service_handler.setFormatter(formatter)
 
     platform_handler = RotatingFileHandler(
-        'logs/qs-platform.log', maxBytes=10 * 1024 * 1024, backupCount=5
+        _log_dir / 'qs-platform.log', maxBytes=10 * 1024 * 1024, backupCount=5
     )
     platform_handler.addFilter(CorrelationLogFilter())
     platform_handler.setFormatter(formatter)
