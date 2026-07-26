@@ -1,3 +1,0 @@
-2026-07-26 22:15:27 [qs-importer-oura] [INFO] Starting Oura Ring Importer Service (tenant=00000000-0000-0000-0000-000000000001)...
-2026-07-26 22:15:27 [qs-importer-oura] [INFO] Connected to NATS at nats://127.0.0.1:4222
-2026-07-26 22:15:27 [qs-importer-oura] [INFO] Subscribed to NATS subject 'qs.task.sync.oura' (queue group: 'oura_importer_task_group')
