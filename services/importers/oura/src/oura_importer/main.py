@@ -11,7 +11,9 @@ never hardcoded in .env files. Zero auto-seed fallback.
 import asyncio
 import json
 import logging
+import os
 from datetime import datetime, timedelta, timezone
+from logging.handlers import RotatingFileHandler
 
 import httpx
 import nats
@@ -29,7 +31,33 @@ from oura_importer.transformer import (
     transform_sleep_data,
 )
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+def _setup_importer_logging():
+    """Configure rotating file log handlers for the Oura importer service.
+
+    Registers three handlers on the root logger:
+    - stdout StreamHandler for live console output
+    - RotatingFileHandler for service-specific log file (logs/qs-importer-oura.log)
+    - RotatingFileHandler for aggregated platform log (logs/qs-platform.log)
+    """
+    os.makedirs('logs', exist_ok=True)
+    log_format = '%(asctime)s [qs-importer-oura] [%(levelname)s] %(message)s'
+    formatter = logging.Formatter(log_format, datefmt='%Y-%m-%d %H:%M:%S')
+
+    stdout_handler = logging.StreamHandler()
+    stdout_handler.setFormatter(formatter)
+
+    service_handler = RotatingFileHandler('logs/qs-importer-oura.log', maxBytes=10*1024*1024, backupCount=5)
+    service_handler.setFormatter(formatter)
+
+    platform_handler = RotatingFileHandler('logs/qs-platform.log', maxBytes=10*1024*1024, backupCount=5)
+    platform_handler.setFormatter(formatter)
+
+    root = logging.getLogger()
+    root.handlers = [stdout_handler, service_handler, platform_handler]
+    root.setLevel(logging.INFO)
+
+
+_setup_importer_logging()
 logger = logging.getLogger(__name__)
 
 active_syncs: set[str] = set()
