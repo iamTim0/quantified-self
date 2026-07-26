@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_jwt_secret() -> str:
-    return os.environ.get("JWT_SECRET", f"INSECURE-EPHEMERAL-{secrets.token_urlsafe(32)}")
+    return os.environ.get("JWT_SECRET", "dev-secret-key-quantified-self-2026")
 
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-core-service"

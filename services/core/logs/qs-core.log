@@ -1,0 +1,53 @@
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://testserver/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/sources "HTTP/1.1 200 OK"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/oura/sync "HTTP/1.1 202 Accepted"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:20 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://test/api/v1/internal/data/sources/oura/token "HTTP/1.1 200 OK"
+2026-07-26 22:13:21 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=d41457fe-cd71-4d3e-80af-540361ddf986 key=test-idemp-74c49837
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://testserver/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/sources "HTTP/1.1 200 OK"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/oura/sync "HTTP/1.1 202 Accepted"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:34 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://test/api/v1/internal/data/sources/oura/token "HTTP/1.1 200 OK"
+2026-07-26 22:13:35 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=303514f6-c81f-442d-80f3-f2d178cad9be key=test-idemp-32125d86
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://testserver/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/sources "HTTP/1.1 200 OK"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/oura/sync "HTTP/1.1 202 Accepted"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:13:42 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://test/api/v1/internal/data/sources/oura/token "HTTP/1.1 200 OK"
+2026-07-26 22:13:43 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=10b60230-d8b3-4f7d-87a6-8dd5a8785b74 key=test-idemp-82d44513
+2026-07-26 22:13:43 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/health "HTTP/1.1 200 OK"
+2026-07-26 22:13:43 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics?metric_type=sleep_score "HTTP/1.1 200 OK"
+2026-07-26 22:13:43 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics/types "HTTP/1.1 200 OK"
+2026-07-26 22:13:43 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics/summary "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://testserver/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/sources "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/oura/sync "HTTP/1.1 202 Accepted"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: POST http://test/api/v1/data/sources/configure "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://test/api/v1/internal/data/sources/oura/token "HTTP/1.1 200 OK"
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=0a9e5a51-4980-49e2-a1a9-7f7fe06754b6 key=test-idemp-e253a452
+2026-07-26 22:14:02 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/health "HTTP/1.1 200 OK"
+2026-07-26 22:14:03 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics?metric_type=sleep_score "HTTP/1.1 200 OK"
+2026-07-26 22:14:03 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics/types "HTTP/1.1 200 OK"
+2026-07-26 22:14:03 [qs-core] [INFO] [req_id=req_sys_init] HTTP Request: GET http://testserver/api/v1/data/metrics/summary "HTTP/1.1 200 OK"
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Started consuming from qs.ingest.>
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=9fe37395-d356-403a-b2bb-4b3ad33cb99a key=test-idemp-9bd17692
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=9fe37395-d356-403a-b2bb-4b3ad33cb99a key=test-idemp-9bd17692
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=72be3748-c638-4663-9cf9-73692a9c4a29 key=test-idemp-0e1602c5
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=72be3748-c638-4663-9cf9-73692a9c4a29 key=test-idemp-0e1602c5
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=d41457fe-cd71-4d3e-80af-540361ddf986 key=test-idemp-74c49837
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=d41457fe-cd71-4d3e-80af-540361ddf986 key=test-idemp-74c49837
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=303514f6-c81f-442d-80f3-f2d178cad9be key=test-idemp-32125d86
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=303514f6-c81f-442d-80f3-f2d178cad9be key=test-idemp-32125d86
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=10b60230-d8b3-4f7d-87a6-8dd5a8785b74 key=test-idemp-82d44513
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=10b60230-d8b3-4f7d-87a6-8dd5a8785b74 key=test-idemp-82d44513
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=0a9e5a51-4980-49e2-a1a9-7f7fe06754b6 key=test-idemp-e253a452
+2026-07-26 22:15:28 [qs-core] [INFO] [req_id=req_sys_init] Duplicate event skipped: tenant=0a9e5a51-4980-49e2-a1a9-7f7fe06754b6 key=test-idemp-e253a452

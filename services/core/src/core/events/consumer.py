@@ -1,6 +1,7 @@
 import json
 import logging
 from datetime import datetime
+import uuid
 
 import nats
 from sqlalchemy.dialects.postgresql import insert
@@ -30,7 +31,7 @@ async def process_message(msg):
 
         async with async_session_maker() as session:
             stmt = insert(DataPoint).values(
-                id=data.get("id"),
+                id=str(uuid.uuid4()),
                 tenant_id=tenant_id,
                 source_id=data.get("source_id"),
                 metric_type=data.get("metric_type"),

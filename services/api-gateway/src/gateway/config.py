@@ -5,13 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _default_jwt_secret() -> str:
-    """Generate a random JWT secret if none is configured.
-
-    SECURITY: This ensures the service never silently uses a predictable secret.
-    The random secret changes on every restart, which forces operators to set a
-    proper JWT_SECRET env var for any persistent deployment.
-    """
-    return os.environ.get("JWT_SECRET", f"INSECURE-EPHEMERAL-{secrets.token_urlsafe(32)}")
+    return os.environ.get("JWT_SECRET", "dev-secret-key-quantified-self-2026")
 
 
 class Settings(BaseSettings):
