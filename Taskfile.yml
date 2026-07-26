@@ -40,7 +40,9 @@ tasks:
   test:all:
     desc: "Run tests across all services and specs"
     cmds:
-      - uv run pytest specs/tests services/core/tests
+      - uv run --with pytest --with cryptography pytest specs/tests
+      - uv run --directory services/core --with pytest --with pytest-asyncio --with httpx --with cryptography --with passlib --with argon2-cffi --with pyjwt python -m pytest tests
+      - uv run --directory services/api-gateway --with pytest --with pytest-asyncio --with httpx --with pyjwt python -m pytest tests
 
   test:service:
     desc: "Run tests for a specific service"
@@ -55,9 +57,21 @@ tasks:
       - fizzbee check specs/
 
   lint:all:
-    desc: "Run linting across the monorepo"
+    desc: "Run linters across Python & Next.js dashboard"
     cmds:
-      - echo "Running linters..."
+      - uv run --with ruff ruff check services/ specs/
+      - pnpm --prefix apps/dashboard lint
+      - pnpm --prefix apps/dashboard exec tsc --noEmit
+
+  run:core:
+    desc: "Run Core Data Service on port 8001"
+    cmds:
+      - uv run --directory services/core python -m core.main
+
+  run:gateway:
+    desc: "Run API Gateway Service on port 8000"
+    cmds:
+      - uv run --directory services/api-gateway python -m gateway.main
 
   run:importer:oura:
     desc: "Run the Oura Ring importer microservice"
@@ -65,9 +79,24 @@ tasks:
       - uv run --directory services/importers/oura python -m oura_importer.main
 
   dashboard:
-    desc: "Run the Next.js Web User Dashboard dev server on port 3000"
+    desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
     cmds:
-      - npm --prefix apps/dashboard run dev
+      - pnpm --prefix apps/dashboard dev
+
+  dev:local:
+    desc: "Start Postgres + NATS containers, run DB migrations, and launch all 4 local microservices concurrently"
+    cmds:
+      - docker compose -f infra/docker-compose.yml up -d postgres nats
+      - uv run --directory services/core alembic upgrade head
+      - task: start:local:services
+
+  start:local:services:
+    desc: "Concurrently launch Core, Gateway, Oura Importer, and Next.js Dashboard"
+    deps:
+      - run:core
+      - run:gateway
+      - run:importer:oura
+      - dashboard
 
   seed:oura:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"

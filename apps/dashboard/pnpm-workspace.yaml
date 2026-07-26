@@ -1,6 +1,6 @@
 allowBuilds:
-  sharp: set this to true or false
-  unrs-resolver: set this to true or false
+  sharp: true
+  unrs-resolver: true
 minimumReleaseAgeExclude:
   - '@next/env@16.2.12'
   - '@next/eslint-plugin-next@16.2.12'
