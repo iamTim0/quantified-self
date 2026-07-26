@@ -24,28 +24,31 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
-  const fetchShares = async () => {
-    try {
-      const res = await fetch(`${apiBase}/api/v1/data/shares`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setShares(data.granted_by_me || []);
-      }
-    } catch (err) {
-      console.error("Failed to fetch shares", err);
-    }
+  const handleClose = () => {
+    setError("");
+    setSuccess("");
+    setEmail("");
+    onClose();
   };
 
   useEffect(() => {
+    let isMounted = true;
     if (isOpen) {
-      fetchShares();
-      setError("");
-      setSuccess("");
-      setEmail("");
+      fetch(`${apiBase}/api/v1/data/shares`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (isMounted && data) {
+            setShares(data.granted_by_me || []);
+          }
+        })
+        .catch((err) => console.error("Failed to fetch shares", err));
     }
-  }, [isOpen]);
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, apiBase, token]);
 
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,9 +73,17 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
       
       setSuccess(`Data successfully shared with ${email}`);
       setEmail("");
-      fetchShares();
-    } catch (err: any) {
-      setError(err.message);
+      
+      const refreshRes = await fetch(`${apiBase}/api/v1/data/shares`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (refreshRes.ok) {
+        const refreshData = await refreshRes.json();
+        setShares(refreshData.granted_by_me || []);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -85,7 +96,7 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
         headers: { Authorization: `Bearer ${token}` }
       });
       if (res.ok) {
-        fetchShares();
+        setShares((prev) => prev.filter((s) => s.id !== shareId));
       }
     } catch (err) {
       console.error("Failed to revoke share", err);
@@ -105,7 +116,7 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
             <h2 className="text-xl font-semibold text-white">Share Data</h2>
           </div>
           <button 
-            onClick={onClose}
+            onClick={handleClose}
             className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
           >
             <X className="w-5 h-5" />

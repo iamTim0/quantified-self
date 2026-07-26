@@ -21,9 +21,9 @@ interface ConnectorItem {
 }
 
 export default function DashboardPage() {
-  const [tenantId, setTenantId] = useState("");
-  const [token, setToken] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [token, setToken] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_token") || "" : ""));
+  const [tenantId, setTenantId] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_tenant_id") || "" : ""));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => typeof window !== "undefined" && Boolean(localStorage.getItem("qs_token") && localStorage.getItem("qs_tenant_id")));
   
   const [summary, setSummary] = useState<SummaryMetrics>({});
   const [chartLabels, setChartLabels] = useState<string[]>([]);
@@ -34,17 +34,6 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-
-  // Restore session from localStorage on mount
-  useEffect(() => {
-    const savedToken = localStorage.getItem("qs_token");
-    const savedTenantId = localStorage.getItem("qs_tenant_id");
-    if (savedToken && savedTenantId) {
-      setToken(savedToken);
-      setTenantId(savedTenantId);
-      setIsAuthenticated(true);
-    }
-  }, []);
 
   const handleLogin = (jwtToken: string, tId: string) => {
     localStorage.setItem("qs_token", jwtToken);
@@ -98,6 +87,12 @@ export default function DashboardPage() {
         if (isMounted && connRes.ok) {
           const connData = await connRes.json();
           setConnectors(connData.connectors || []);
+        }
+      } catch (err) {
+        console.warn("Backend query fallback:", err);
+      }
+    }
+
     if (isAuthenticated) {
       loadDashboardData();
     }

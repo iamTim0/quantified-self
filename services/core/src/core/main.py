@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import distinct, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -214,9 +215,9 @@ async def create_share(req: CreateShareRequest, session: AsyncSession = Depends(
     session.add(new_share)
     try:
         await session.commit()
-    except Exception:
+    except IntegrityError:
         await session.rollback()
-        raise HTTPException(status_code=400, detail="Share already exists")
+        raise HTTPException(status_code=400, detail="Share already exists") from None
         
     return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee.id}
 

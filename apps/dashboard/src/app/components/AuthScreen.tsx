@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, Mail, User, ArrowRight } from "lucide-react";
+import { Lock, Mail, User, ArrowRight, Activity } from "lucide-react";
 
 interface AuthScreenProps {
   onLogin: (token: string, tenantId: string) => void;
@@ -51,8 +51,9 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
         if (!loginRes.ok) throw new Error(loginData.detail);
         onLogin(loginData.access_token, loginData.tenant_id);
       }
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
     } finally {
       setLoading(false);
     }
