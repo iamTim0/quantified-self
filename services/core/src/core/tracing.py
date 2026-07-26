@@ -6,7 +6,6 @@ NATS JetStream events, and Importer background workers.
 
 import logging
 import os
-import sys
 import time
 import uuid
 from contextvars import ContextVar
@@ -58,7 +57,7 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
         if not is_health:
             tenant_id = request.headers.get("X-Tenant-ID", "-")
             logging.getLogger("request_tracing").info(
-                f"📥 -> {request.method} {path} (tenant={tenant_id})"
+                f"-> {request.method} {path} (tenant={tenant_id})"
             )
 
         try:
@@ -68,13 +67,13 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
             if not is_health:
                 duration_ms = (time.perf_counter() - start_time) * 1000
                 logging.getLogger("request_tracing").info(
-                    f"📤 <- {request.method} {path} - {response.status_code} ({duration_ms:.2f}ms)"
+                    f"<- {request.method} {path} - {response.status_code} ({duration_ms:.2f}ms)"
                 )
             return response
         except Exception as e:
             duration_ms = (time.perf_counter() - start_time) * 1000
             logging.getLogger("request_tracing").error(
-                f"❌ <- {request.method} {path} - Failed: {e} ({duration_ms:.2f}ms)"
+                f"ERROR <- {request.method} {path} - {e} ({duration_ms:.2f}ms)"
             )
             raise
         finally:
@@ -100,8 +99,7 @@ def setup_tracing_logger(service_name: str):
     formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
     # Wrap stdout with UTF-8 encoding so emoji/unicode don't crash on Windows cp1252 consoles
-    _utf8_stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', errors='replace', closefd=False, buffering=1)
-    stdout_handler = logging.StreamHandler(stream=_utf8_stdout)
+    stdout_handler = logging.StreamHandler()
     stdout_handler.addFilter(CorrelationLogFilter())
     stdout_handler.setFormatter(formatter)
 

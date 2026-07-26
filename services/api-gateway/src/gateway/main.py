@@ -45,14 +45,14 @@ app.add_middleware(
 # SECURITY C3: Log warning if running in dev mode
 if settings.ENVIRONMENT.lower() == "dev":
     logger.warning(
-        "⚠️  Gateway running in DEVELOPMENT mode — auth is relaxed. "
+        "[WARN] Gateway running in DEVELOPMENT mode -- auth is relaxed. "
         "Set ENVIRONMENT=production for strict JWT enforcement."
     )
 
 # SECURITY: Warn if JWT secret looks ephemeral
 if settings.JWT_SECRET.startswith("INSECURE-EPHEMERAL-"):
     logger.warning(
-        "⚠️  JWT_SECRET is auto-generated and ephemeral. "
+        "[WARN] JWT_SECRET is auto-generated and ephemeral. "
         "Tokens will NOT survive restarts. Set JWT_SECRET env var."
     )
 

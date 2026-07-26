@@ -34,7 +34,7 @@ def _get_fernet_instance() -> Fernet:
     key_str = getattr(settings, "ENCRYPTION_KEY", None) or os.environ.get("ENCRYPTION_KEY")
     if not key_str:
         logger.warning(
-            "⚠️  ENCRYPTION_KEY not set in .env — using deterministic dev default key. "
+            "[WARN] ENCRYPTION_KEY not set in .env -- using deterministic dev default key. "
             "Set ENCRYPTION_KEY env var in production for persistent custom encryption."
         )
         key_str = DEFAULT_DEV_KEY
