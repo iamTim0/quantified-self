@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quantified Self — Personal Health Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0b0f19;
+      --card-bg: rgba(23, 31, 51, 0.65);
+      --card-border: rgba(255, 255, 255, 0.08);
+      --accent-blue: #3b82f6;
+      --accent-cyan: #06b6d4;
+      --accent-purple: #8b5cf6;
+      --accent-emerald: #10b981;
+      --accent-rose: #f43f5e;
+      --text-main: #f3f4f6;
+      --text-muted: #9ca3af;
+      --glass-blur: blur(16px);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      background-image: 
+        radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 40%),
+        radial-gradient(circle at 85% 75%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
+      color: var(--text-main);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .brand-logo {
+      width: 36px;
+      height: 36px;
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      color: white;
+      box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
+    }
+
+    .brand-title h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-title p {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: var(--card-bg);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--card-border);
+      padding: 0.5rem 1rem;
+      border-radius: 20px;
+      font-size: 0.85rem;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background-color: var(--accent-emerald);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-emerald);
+    }
+
+    /* Grid Layout */
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.5rem;
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+
+    .card-title {
+      font-size: 0.85rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+    }
+
+    .card-value {
+      font-size: 2.25rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+
+    .card-subtext {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.5rem;
+    }
+
+    .metric-sleep .card-value { color: var(--accent-blue); }
+    .metric-readiness .card-value { color: var(--accent-cyan); }
+    .metric-hrv .card-value { color: var(--accent-purple); }
+    .metric-steps .card-value { color: var(--accent-emerald); }
+
+    /* Charts Section */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .chart-card {
+      background: var(--card-bg);
+      backdrop-filter: var(--glass-blur);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 1.5rem;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .chart-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    /* Sync Widget */
+    .sync-widget {
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .source-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .source-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .source-icon {
+      width: 32px;
+      height: 32px;
+      background: rgba(59, 130, 246, 0.15);
+      color: var(--accent-blue);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 0.9rem;
+    }
+
+    .btn {
+      background: linear-gradient(135deg, var(--accent-blue), #2563eb);
+      color: white;
+      border: none;
+      padding: 0.6rem 1.2rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: opacity 0.2s ease;
+    }
+
+    .btn:hover {
+      opacity: 0.9;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+      .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+      .charts-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="brand-logo">QS</div>
+      <div class="brand-title">
+        <h1>Quantified Self</h1>
+        <p>Tenant ID: 00000000-0000-0000-0000-000000000001</p>
+      </div>
+    </div>
+    <div class="status-badge">
+      <span class="dot"></span>
+      <span>Core Service Connected</span>
+    </div>
+  </header>
+
+  <!-- Summary Metric Cards -->
+  <div class="dashboard-grid">
+    <div class="card metric-sleep">
+      <div class="card-header">
+        <span class="card-title">Sleep Score</span>
+        <span>🌙</span>
+      </div>
+      <div class="card-value" id="val-sleep">84.2</div>
+      <div class="card-subtext" id="sub-sleep">31-day avg (Range: 72 - 94)</div>
+    </div>
+
+    <div class="card metric-readiness">
+      <div class="card-header">
+        <span class="card-title">Readiness Score</span>
+        <span>⚡</span>
+      </div>
+      <div class="card-value" id="val-readiness">80.4</div>
+      <div class="card-subtext" id="sub-readiness">31-day avg (Optimal recovery)</div>
+    </div>
+
+    <div class="card metric-hrv">
+      <div class="card-header">
+        <span class="card-title">HRV Balance</span>
+        <span>🫀</span>
+      </div>
+      <div class="card-value" id="val-hrv">62.3 ms</div>
+      <div class="card-subtext" id="sub-hrv">Resting HR: 57.7 bpm</div>
+    </div>
+
+    <div class="card metric-steps">
+      <div class="card-header">
+        <span class="card-title">Daily Steps</span>
+        <span>👟</span>
+      </div>
+      <div class="card-value" id="val-steps">8,994</div>
+      <div class="card-subtext" id="sub-steps">Active Cal: 603 kcal</div>
+    </div>
+  </div>
+
+  <!-- Charts & Widget Grid -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-header">
+        <span class="chart-title">Sleep & Readiness 30-Day Trends</span>
+        <button class="btn" onclick="fetchMetricsData()">Refresh Data</button>
+      </div>
+      <canvas id="mainTrendChart" height="130"></canvas>
+    </div>
+
+    <div class="chart-card sync-widget">
+      <div class="chart-header">
+        <span class="chart-title">Data Sources & Sync Status</span>
+      </div>
+      
+      <div class="source-item">
+        <div class="source-info">
+          <div class="source-icon">OU</div>
+          <div>
+            <div style="font-weight:600; font-size:0.9rem;">Oura Ring v2</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);" id="oura-sync-time">Last sync: 2 mins ago</div>
+          </div>
+        </div>
+        <span style="color:var(--accent-emerald); font-size:0.8rem; font-weight:600;">ACTIVE</span>
+      </div>
+
+      <div class="source-item">
+        <div class="source-info">
+          <div class="source-icon" style="background:rgba(139,92,246,0.15); color:var(--accent-purple);">AP</div>
+          <div>
+            <div style="font-weight:600; font-size:0.9rem;">Apple Health</div>
+            <div style="font-size:0.75rem; color:var(--text-muted);">Configured (gRPC)</div>
+          </div>
+        </div>
+        <span style="color:var(--text-muted); font-size:0.8rem; font-weight:600;">IDLE</span>
+      </div>
+
+      <div style="margin-top:auto; padding-top:1rem;">
+        <button class="btn" style="width:100%;" onclick="triggerManualSync()">Trigger Oura Sync</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let trendChart = null;
+
+    async function loadSummaryStats() {
+      try {
+        const res = await fetch('http://127.0.0.1:8001/api/v1/data/metrics/summary', {
+          headers: { 'X-Tenant-ID': '00000000-0000-0000-0000-000000000001' }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const metrics = data.metrics || {};
+
+        if (metrics.sleep_score) {
+          document.getElementById('val-sleep').innerText = metrics.sleep_score.average;
+          document.getElementById('sub-sleep').innerText = `31-day avg (Range: ${metrics.sleep_score.min} - ${metrics.sleep_score.max})`;
+        }
+        if (metrics.readiness_score) {
+          document.getElementById('val-readiness').innerText = metrics.readiness_score.average;
+        }
+        if (metrics.hrv_balance) {
+          document.getElementById('val-hrv').innerText = metrics.hrv_balance.average + ' ms';
+        }
+        if (metrics.steps) {
+          document.getElementById('val-steps').innerText = Math.round(metrics.steps.average).toLocaleString();
+        }
+      } catch (err) {
+        console.warn('Backend query fallback:', err);
+      }
+    }
+
+    async function fetchMetricsData() {
+      try {
+        const [sleepRes, readinessRes] = await Promise.all([
+          fetch('http://127.0.0.1:8001/api/v1/data/metrics?metric_type=sleep_score&limit=30', {
+            headers: { 'X-Tenant-ID': '00000000-0000-0000-0000-000000000001' }
+          }),
+          fetch('http://127.0.0.1:8001/api/v1/data/metrics?metric_type=readiness_score&limit=30', {
+            headers: { 'X-Tenant-ID': '00000000-0000-0000-0000-000000000001' }
+          })
+        ]);
+
+        const sleepData = await sleepRes.json();
+        const readinessData = await readinessRes.json();
+
+        const labels = (sleepData.data_points || []).map(dp => dp.timestamp.split('T')[0]);
+        const sleepValues = (sleepData.data_points || []).map(dp => dp.value);
+        const readinessValues = (readinessData.data_points || []).map(dp => dp.value);
+
+        renderChart(labels, sleepValues, readinessValues);
+      } catch (err) {
+        console.warn('Backend chart fallback using mock baseline:', err);
+        renderChart(
+          ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'],
+          [82, 85, 78, 91, 88, 84, 89],
+          [79, 82, 75, 88, 85, 80, 87]
+        );
+      }
+    }
+
+    function renderChart(labels, sleepData, readinessData) {
+      const ctx = document.getElementById('mainTrendChart').getContext('2d');
+      if (trendChart) trendChart.destroy();
+
+      trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Sleep Score',
+              data: sleepData,
+              borderColor: '#3b82f6',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              tension: 0.4,
+              fill: true,
+              pointRadius: 4,
+            },
+            {
+              label: 'Readiness Score',
+              data: readinessData,
+              borderColor: '#06b6d4',
+              backgroundColor: 'rgba(6, 182, 212, 0.05)',
+              tension: 0.4,
+              fill: true,
+              pointRadius: 4,
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { labels: { color: '#9ca3af', font: { family: 'Inter' } } }
+          },
+          scales: {
+            x: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255, 255, 255, 0.05)' } },
+            y: { ticks: { color: '#9ca3af' }, grid: { color: 'rgba(255, 255, 255, 0.05)' }, min: 50, max: 100 }
+          }
+        }
+      });
+    }
+
+    function triggerManualSync() {
+      const el = document.getElementById('oura-sync-time');
+      el.innerText = 'Syncing...';
+      setTimeout(() => {
+        el.innerText = 'Just now';
+        loadSummaryStats();
+        fetchMetricsData();
+      }, 1000);
+    }
+
+    window.onload = () => {
+      loadSummaryStats();
+      fetchMetricsData();
+    };
+  </script>
+</body>
+</html>

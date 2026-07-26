@@ -64,6 +64,11 @@ tasks:
     cmds:
       - uv run --directory services/importers/oura python -m oura_importer.main
 
+  dashboard:
+    desc: "Serve the Web User Dashboard on port 3000"
+    cmds:
+      - python -m http.server 3000 --directory apps/dashboard
+
   seed:oura:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"
     cmds:

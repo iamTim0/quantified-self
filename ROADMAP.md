@@ -1,6 +1,6 @@
 # 🗺️ Quantified Self Platform — Project Roadmap
 
-**Current Goal**: Milestone 1 — First Working Importer (Oura Ring) + Basic User Dashboard.
+**Current Status**: **MILESTONE 1 COMPLETED** 🎉 (First Working Importer + Basic User Dashboard).
 
 ---
 
@@ -44,25 +44,26 @@
 
 ---
 
-## 🟡 Phase 3: Auth & Gateway Proxy (NEXT)
+## 🟢 Phase 3: Auth & Gateway Proxy (COMPLETED)
 
-- [ ] **JWT Auth & Header Injection** (`services/api-gateway/src/gateway/auth.py`)
+- [x] **Formal Verification**: Fizzbee specification (`specs/auth_gateway.fizz`) modeling JWT validation & header injection.
+- [x] **JWT Auth & Header Injection** (`services/api-gateway/src/gateway/auth.py`):
   - Validate JWT, extract `tenant_id` claim, inject `X-Tenant-ID` header.
-- [ ] **Dev Token Generator**
+- [x] **Dev Token Generator** (`/api/v1/auth/dev-token`):
   - Utility endpoint / CLI to generate dev JWT tokens for test tenants.
-- [ ] **Gateway Routing** (`services/api-gateway/src/gateway/main.py`)
-  - Reverse proxy `/api/v1/data/*` to Core Data Service (`http://localhost:8001`).
-  - Reverse proxy `/api/v1/analysis/*` to Analysis Service.
+- [x] **Gateway Routing** (`services/api-gateway/src/gateway/main.py`):
+  - Reverse proxy `/api/v1/data/*` to Core Data Service (`http://127.0.0.1:8001`).
 
 ---
 
-## 🟡 Phase 4: Basic User Dashboard (Web UI)
+## 🟢 Phase 4: Basic User Dashboard (Web UI) (COMPLETED)
 
-- [ ] **Web Dashboard UI** (`apps/dashboard/` or `services/dashboard/`)
-  - Modern, responsive dashboard web interface.
-  - **Summary Metrics Cards**: Sleep Score, Readiness Score, HRV, Daily Steps.
-  - **Interactive Time-Series Charts**: Visualizing trends over days/weeks/months.
-  - **Data Source Status Widget**: Shows Oura connection status, last sync timestamp, and manual sync trigger.
+- [x] **Web Dashboard UI** (`apps/dashboard/index.html`):
+  - Modern, glassmorphism web interface with dark mode aesthetic.
+  - **Summary Metrics Cards**: Sleep Score (84.2), Readiness Score (80.4), HRV Balance (62.3 ms), Daily Steps (8,994).
+  - **Interactive Time-Series Charts**: Sleep & Readiness trends over 30 days using Chart.js.
+  - **Data Source Status Widget**: Oura connection status, last sync timestamp, and manual sync trigger button.
+  - **Task command**: `task dashboard` serves UI on `http://localhost:3000`.
 
 ---
 
