@@ -183,3 +183,8 @@ async def proxy_core_service(
                 status_code=503,
                 detail=f"Core Data Service unavailable: {e!s}",
             )
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
