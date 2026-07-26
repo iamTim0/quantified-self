@@ -46,5 +46,6 @@ async def test_configure_and_list_connectors():
     assert "connectors" in list_data
     assert len(list_data["connectors"]) >= 1
 
-    oura_conn = next(c for c in list_data["connectors"] if c["source_type"] == "oura")
+    source_id = config_data["source_id"]
+    oura_conn = next(c for c in list_data["connectors"] if c["id"] == source_id)
     assert oura_conn["masked_token"] == "••••••••9999"

@@ -22,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.db.models import DataPoint, DataSource, Tenant, TenantShare
+from core.db.models import DataPoint, DataSource, Tenant, TenantShare, User
 from core.db.session import get_session
 from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
@@ -97,31 +97,40 @@ async def health_check():
 
 # ─── Auth Endpoints ──────────────────────────────────────────
 
+# ─── Auth Endpoints ──────────────────────────────────────────
+
 @app.post("/api/v1/auth/signup")
 async def signup(
     req: UserSignupRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Tenant).where(Tenant.email == req.email)
+    stmt = select(User).where(User.email == req.email)
     res = await session.execute(stmt)
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
     tenant_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
     hashed_pwd = pwd_context.hash(req.password)
 
-    tenant = Tenant(
-        id=tenant_id,
-        name=req.name,
+    tenant = Tenant(id=tenant_id, name=f"{req.name}'s Workspace")
+    user = User(
+        id=user_id,
+        tenant_id=tenant_id,
         email=req.email,
         password_hash=hashed_pwd,
+        name=req.name,
+        role="owner",
     )
     session.add(tenant)
+    session.add(user)
     await session.commit()
 
     token_payload = {
-        "sub": req.email,
+        "sub": user_id,
         "tenant_id": tenant_id,
+        "email": req.email,
+        "role": "owner",
         "exp": datetime.now(timezone.utc) + timedelta(days=30),
         "iat": datetime.now(timezone.utc),
     }
@@ -131,9 +140,11 @@ async def signup(
     return {
         "status": "success",
         "access_token": token,
+        "user_id": user_id,
         "tenant_id": tenant_id,
         "email": req.email,
         "name": req.name,
+        "role": "owner",
     }
 
 
@@ -142,19 +153,18 @@ async def login(
     req: UserLoginRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    stmt = select(Tenant).where(Tenant.email == req.email)
+    stmt = select(User).where(User.email == req.email)
     res = await session.execute(stmt)
-    tenant = res.scalar_one_or_none()
+    user = res.scalar_one_or_none()
 
-    if not tenant or not tenant.password_hash:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    if not pwd_context.verify(req.password, tenant.password_hash):
+    if not user or not pwd_context.verify(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token_payload = {
-        "sub": tenant.email,
-        "tenant_id": tenant.id,
+        "sub": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "role": user.role,
         "exp": datetime.now(timezone.utc) + timedelta(days=30),
         "iat": datetime.now(timezone.utc),
     }
@@ -164,9 +174,11 @@ async def login(
     return {
         "status": "success",
         "access_token": token,
-        "tenant_id": tenant.id,
-        "email": tenant.email,
-        "name": tenant.name,
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
     }
 
 
@@ -179,21 +191,21 @@ async def create_share(
 ):
     tenant_id = get_current_tenant_id()
 
-    stmt = select(Tenant).where(Tenant.email == req.grantee_email)
+    stmt = select(User).where(User.email == req.grantee_email)
     res = await session.execute(stmt)
-    grantee = res.scalar_one_or_none()
+    grantee_user = res.scalar_one_or_none()
 
-    if not grantee:
+    if not grantee_user:
         raise HTTPException(status_code=404, detail="Target user not found")
 
-    if grantee.id == tenant_id:
-        raise HTTPException(status_code=400, detail="Cannot share with yourself")
+    if grantee_user.tenant_id == tenant_id:
+        raise HTTPException(status_code=400, detail="Cannot share with yourself or users in your own tenant")
 
     share_id = str(uuid.uuid4())
     new_share = TenantShare(
         id=share_id,
         grantor_tenant_id=tenant_id,
-        grantee_tenant_id=grantee.id,
+        grantee_tenant_id=grantee_user.tenant_id,
         scope=req.scope,
     )
     session.add(new_share)
@@ -203,7 +215,7 @@ async def create_share(
         await session.rollback()
         raise HTTPException(status_code=400, detail="Share already exists") from None
 
-    return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee.id}
+    return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee_user.tenant_id}
 
 
 @app.get("/api/v1/data/shares")
@@ -387,7 +399,7 @@ async def configure_connector(
         DataSource.source_type == req.source_type,
     )
     res = await session.execute(stmt)
-    existing = res.scalar_one_or_none()
+    existing = res.scalars().first()
 
     if existing:
         existing.config = {
@@ -466,7 +478,7 @@ async def get_connector_token(
         DataSource.source_type == source_type,
     )
     res = await session.execute(stmt)
-    source = res.scalar_one_or_none()
+    source = res.scalars().first()
 
     if not source or not source.config:
         raise HTTPException(status_code=404, detail=f"No connector configured for {source_type}")

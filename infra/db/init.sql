@@ -3,14 +3,31 @@ CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- Create tenants table
+-- Create tenants table (Workspace / Organization level)
 CREATE TABLE tenants (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
-    email TEXT UNIQUE,
-    password_hash TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Seed default dev tenant
+INSERT INTO tenants (id, name)
+VALUES ('00000000-0000-0000-0000-000000000001', 'Default Dev Tenant')
+ON CONFLICT (id) DO NOTHING;
+
+-- Create users table (User identity level)
+CREATE TABLE users (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'owner',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_tenant_id ON users (tenant_id);
+CREATE INDEX idx_users_email ON users (email);
 
 -- Create data_sources table
 CREATE TABLE data_sources (

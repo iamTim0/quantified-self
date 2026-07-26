@@ -1,6 +1,7 @@
 """SQLAlchemy 2.0 ORM models for Core Data Service.
 
 All models correspond to the PostgreSQL schema defined in infra/db/init.sql.
+Includes Tenant & User separation for multi-tenant enterprise support.
 """
 
 import uuid
@@ -10,7 +11,7 @@ from typing import Any
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -18,17 +19,41 @@ class Base(DeclarativeBase):
 
 
 class Tenant(Base):
+    """Tenant / Organization workspace model."""
     __tablename__ = "tenants"
 
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
-    email: Mapped[str | None] = mapped_column(String, unique=True, nullable=True)
-    password_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+    # Relationships
+    users: Mapped[list["User"]] = relationship("User", back_populates="tenant", cascade="all, delete-orphan")
+
+
+class User(Base):
+    """User identity model belonging to a Tenant workspace."""
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(String, unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(String, nullable=False, default="owner")  # 'owner', 'admin', 'member'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    # Relationships
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="users")
 
 
 class DataSource(Base):

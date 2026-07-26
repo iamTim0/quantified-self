@@ -28,6 +28,11 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ DEFAULT NOW()
         );
     """)
+    op.execute("""
+        INSERT INTO tenants (id, name)
+        VALUES ('00000000-0000-0000-0000-000000000001', 'Default Dev Tenant')
+        ON CONFLICT (id) DO NOTHING;
+    """)
 
     # 3. Data Sources table
     op.execute("""
