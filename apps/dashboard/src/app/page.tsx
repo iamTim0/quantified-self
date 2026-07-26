@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Header, { TabType } from "./components/Header";
 import OverviewTab from "./components/OverviewTab";
 import ExplorerTab from "./components/ExplorerTab";
+import ConnectorsPage from "./components/ConnectorsPage";
 import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
@@ -167,6 +168,15 @@ export default function DashboardPage() {
 
         {activeTab === "explorer" && (
           <ExplorerTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+        )}
+
+        {activeTab === "connectors" && (
+          <ConnectorsPage
+            apiBase={API_BASE}
+            token={token}
+            tenantId={tenantId}
+            onOpenConfigureModal={() => setIsModalOpen(true)}
+          />
         )}
 
         <ConnectorModal

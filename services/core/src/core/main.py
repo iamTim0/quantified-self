@@ -45,12 +45,12 @@ from core.security.crypto import (
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # SECURITY H3: Constrain source_type to known connectors
-ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit"]
+ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit", "yazio"]
 ValidStatus = Literal["active", "inactive"]
 
 
 class ConfigureConnectorRequest(BaseModel):
-    source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit")
+    source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit, yazio")
     # SECURITY H6: Limit access_token length to prevent memory/DB abuse
     access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
