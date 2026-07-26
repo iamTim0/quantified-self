@@ -79,6 +79,12 @@
       color: var(--text-muted);
     }
 
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
     .status-badge {
       display: flex;
       align-items: center;
@@ -181,7 +187,7 @@
       font-weight: 600;
     }
 
-    /* Sync Widget */
+    /* Sync Widget & Connectors */
     .sync-widget {
       display: flex;
       flex-direction: column;
@@ -229,8 +235,85 @@
       transition: opacity 0.2s ease;
     }
 
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text-main);
+    }
+
     .btn:hover {
       opacity: 0.9;
+    }
+
+    /* Modal Styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(8px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.active {
+      display: flex;
+    }
+
+    .modal {
+      background: #111827;
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      width: 100%;
+      max-width: 520px;
+      padding: 2rem;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
+    }
+
+    .modal-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-group {
+      margin-bottom: 1.25rem;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 0.5rem;
+    }
+
+    .form-input, .form-select {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      color: var(--text-main);
+      font-size: 0.9rem;
+      outline: none;
+    }
+
+    .form-input:focus, .form-select:focus {
+      border-color: var(--accent-blue);
+    }
+
+    .encrypted-note {
+      font-size: 0.75rem;
+      color: var(--accent-emerald);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      margin-top: 0.5rem;
     }
 
     /* Responsive */
@@ -250,9 +333,12 @@
         <p>Tenant ID: 00000000-0000-0000-0000-000000000001</p>
       </div>
     </div>
-    <div class="status-badge">
-      <span class="dot"></span>
-      <span>Core Service Connected</span>
+    <div class="header-actions">
+      <button class="btn btn-secondary" onclick="openConnectorModal()">⚙️ Configure Connectors</button>
+      <div class="status-badge">
+        <span class="dot"></span>
+        <span>Core Service Connected</span>
+      </div>
     </div>
   </header>
 
@@ -295,7 +381,7 @@
     </div>
   </div>
 
-  <!-- Charts & Widget Grid -->
+  <!-- Charts & Connector Widget Grid -->
   <div class="charts-grid">
     <div class="chart-card">
       <div class="chart-header">
@@ -307,29 +393,22 @@
 
     <div class="chart-card sync-widget">
       <div class="chart-header">
-        <span class="chart-title">Data Sources & Sync Status</span>
+        <span class="chart-title">Configured Connectors</span>
+        <button class="btn btn-secondary" style="font-size:0.75rem; padding:0.4rem 0.8rem;" onclick="openConnectorModal()">+ Add</button>
       </div>
       
-      <div class="source-item">
-        <div class="source-info">
-          <div class="source-icon">OU</div>
-          <div>
-            <div style="font-weight:600; font-size:0.9rem;">Oura Ring v2</div>
-            <div style="font-size:0.75rem; color:var(--text-muted);" id="oura-sync-time">Last sync: 2 mins ago</div>
+      <div id="connector-list-container">
+        <!-- Dynamically rendered connectors -->
+        <div class="source-item">
+          <div class="source-info">
+            <div class="source-icon">OU</div>
+            <div>
+              <div style="font-weight:600; font-size:0.9rem;">Oura Ring v2</div>
+              <div style="font-size:0.75rem; color:var(--text-muted);" id="oura-token-mask">Token: ••••••••a1b2</div>
+            </div>
           </div>
+          <span style="color:var(--accent-emerald); font-size:0.8rem; font-weight:600;">ACTIVE</span>
         </div>
-        <span style="color:var(--accent-emerald); font-size:0.8rem; font-weight:600;">ACTIVE</span>
-      </div>
-
-      <div class="source-item">
-        <div class="source-info">
-          <div class="source-icon" style="background:rgba(139,92,246,0.15); color:var(--accent-purple);">AP</div>
-          <div>
-            <div style="font-weight:600; font-size:0.9rem;">Apple Health</div>
-            <div style="font-size:0.75rem; color:var(--text-muted);">Configured (gRPC)</div>
-          </div>
-        </div>
-        <span style="color:var(--text-muted); font-size:0.8rem; font-weight:600;">IDLE</span>
       </div>
 
       <div style="margin-top:auto; padding-top:1rem;">
@@ -338,8 +417,127 @@
     </div>
   </div>
 
+  <!-- Connector Configuration Modal -->
+  <div class="modal-backdrop" id="connectorModal">
+    <div class="modal">
+      <div class="modal-title">
+        <span>Configure Health Connector</span>
+        <span style="cursor:pointer;" onclick="closeConnectorModal()">✕</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Connector Provider</label>
+        <select class="form-select" id="modal-source-type">
+          <option value="oura">Oura Ring v2 API</option>
+          <option value="whoop">Whoop 4.0 API</option>
+          <option value="apple_health">Apple Health (gRPC Bridge)</option>
+          <option value="fitbit">Fitbit Web API</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Personal Access Token / API Secret</label>
+        <input type="password" class="form-input" id="modal-access-token" placeholder="Paste your API access token here...">
+        <div class="encrypted-note">
+          🔒 Secrets are encrypted using AES-256 (Fernet) at rest before database storage.
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Sync Status</label>
+        <select class="form-select" id="modal-status">
+          <option value="active">Active (Periodic Sync)</option>
+          <option value="inactive">Inactive (Paused)</option>
+        </select>
+      </div>
+
+      <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:1.5rem;">
+        <button class="btn btn-secondary" onclick="closeConnectorModal()">Cancel</button>
+        <button class="btn" onclick="saveConnectorConfig()">Save Connector Encrypted</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     let trendChart = null;
+
+    function openConnectorModal() {
+      document.getElementById('connectorModal').classList.add('active');
+    }
+
+    function closeConnectorModal() {
+      document.getElementById('connectorModal').classList.remove('active');
+    }
+
+    async function saveConnectorConfig() {
+      const sourceType = document.getElementById('modal-source-type').value;
+      const accessToken = document.getElementById('modal-access-token').value;
+      const status = document.getElementById('modal-status').value;
+
+      if (!accessToken) {
+        alert('Please enter a valid API access token.');
+        return;
+      }
+
+      try {
+        const res = await fetch('http://127.0.0.1:8001/api/v1/data/sources/configure', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Tenant-ID': '00000000-0000-0000-0000-000000000001'
+          },
+          body: JSON.stringify({
+            source_type: sourceType,
+            access_token: accessToken,
+            status: status
+          })
+        });
+
+        if (res.ok) {
+          alert(`Connector '${sourceType}' saved & encrypted successfully!`);
+          closeConnectorModal();
+          loadConfiguredConnectors();
+        } else {
+          alert('Failed to save connector configuration.');
+        }
+      } catch (err) {
+        alert('Error communicating with Core Service: ' + err.message);
+      }
+    }
+
+    async function loadConfiguredConnectors() {
+      try {
+        const res = await fetch('http://127.0.0.1:8001/api/v1/data/sources', {
+          headers: { 'X-Tenant-ID': '00000000-0000-0000-0000-000000000001' }
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const connectors = data.connectors || [];
+
+        const container = document.getElementById('connector-list-container');
+        if (connectors.length === 0) {
+          container.innerHTML = `<div style="color:var(--text-muted); font-size:0.85rem; padding:1rem 0;">No connectors configured yet.</div>`;
+          return;
+        }
+
+        container.innerHTML = connectors.map(c => `
+          <div class="source-item" style="margin-bottom:0.75rem;">
+            <div class="source-info">
+              <div class="source-icon">${c.source_type.substring(0,2).toUpperCase()}</div>
+              <div>
+                <div style="font-weight:600; font-size:0.9rem;">${c.source_type.toUpperCase()}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">Token: ${c.masked_token}</div>
+              </div>
+            </div>
+            <span style="color:${c.status === 'active' ? 'var(--accent-emerald)' : 'var(--text-muted)'}; font-size:0.8rem; font-weight:600;">
+              ${c.status.toUpperCase()}
+            </span>
+          </div>
+        `).join('');
+      } catch (err) {
+        console.warn('Connector fetch fallback:', err);
+      }
+    }
 
     async function loadSummaryStats() {
       try {
@@ -440,18 +638,19 @@
     }
 
     function triggerManualSync() {
-      const el = document.getElementById('oura-sync-time');
-      el.innerText = 'Syncing...';
+      const el = document.getElementById('oura-token-mask');
+      if (el) el.innerText = 'Syncing...';
       setTimeout(() => {
-        el.innerText = 'Just now';
         loadSummaryStats();
         fetchMetricsData();
+        loadConfiguredConnectors();
       }, 1000);
     }
 
     window.onload = () => {
       loadSummaryStats();
       fetchMetricsData();
+      loadConfiguredConnectors();
     };
   </script>
 </body>

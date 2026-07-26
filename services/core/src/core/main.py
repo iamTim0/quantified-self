@@ -1,25 +1,35 @@
 """Core Data Service FastAPI Entry Point.
 
-Serves REST endpoints for time-series metric data queries, metric type listing, and summary statistics.
+Serves REST endpoints for time-series metric data queries, metric type listing, summary statistics,
+and secure encrypted connector configuration management.
+
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
+import uuid
+
 from fastapi import FastAPI, Depends, Query, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func, distinct
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.db.models import DataPoint
+from core.db.models import DataPoint, DataSource
 from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id, TenantMiddleware
 from core.events.consumer import start_consumer
+from core.security.crypto import encrypt_secret, mask_secret
+
+class ConfigureConnectorRequest(BaseModel):
+    source_type: str = Field(..., description="e.g. oura, whoop, apple_health, fitbit")
+    access_token: str = Field(..., description="Raw API access token / credential")
+    status: str = Field("active", description="active / inactive")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Lifespan hook for NATS consumer
     if getattr(app.state, "testing", False):
         yield
         return
@@ -141,6 +151,92 @@ async def get_metrics_summary(
     return {
         "tenant_id": tenant_id,
         "metrics": summary,
+    }
+
+@app.post("/api/v1/data/sources/configure")
+async def configure_connector(
+    req: ConfigureConnectorRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    """Safely configure a connector for the tenant.
+
+    Encrypts raw access tokens with Fernet symmetric AES before database persistence.
+    """
+    tenant_id = get_current_tenant_id()
+
+    # Encrypt secret at rest
+    encrypted_token = encrypt_secret(req.access_token)
+    masked_token = mask_secret(req.access_token)
+
+    # Check existing data source
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == req.source_type
+    )
+    res = await session.execute(stmt)
+    existing = res.scalar_one_or_none()
+
+    if existing:
+        existing.config = {
+            "encrypted_token": encrypted_token,
+            "masked_token": masked_token,
+            "status": req.status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        source_id = existing.id
+    else:
+        source_id = str(uuid.uuid4())
+        new_source = DataSource(
+            id=source_id,
+            tenant_id=tenant_id,
+            source_type=req.source_type,
+            config={
+                "encrypted_token": encrypted_token,
+                "masked_token": masked_token,
+                "status": req.status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        session.add(new_source)
+
+    await session.commit()
+
+    return {
+        "status": "success",
+        "message": f"Connector {req.source_type} configured safely.",
+        "source_id": source_id,
+        "tenant_id": tenant_id,
+        "source_type": req.source_type,
+        "masked_token": masked_token,
+    }
+
+@app.get("/api/v1/data/sources")
+async def list_connectors(
+    session: AsyncSession = Depends(get_session)
+):
+    """List configured connectors for the tenant with masked secrets."""
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(DataSource).where(DataSource.tenant_id == tenant_id)
+    res = await session.execute(stmt)
+    sources = res.scalars().all()
+
+    connectors = []
+    for s in sources:
+        config = s.config or {}
+        connectors.append({
+            "id": s.id,
+            "tenant_id": s.tenant_id,
+            "source_type": s.source_type,
+            "status": config.get("status", "active"),
+            "masked_token": config.get("masked_token", "••••••••"),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": config.get("updated_at"),
+        })
+
+    return {
+        "tenant_id": tenant_id,
+        "connectors": connectors,
     }
 
 if __name__ == "__main__":

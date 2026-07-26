@@ -37,6 +37,8 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `UniqueKeyMapping` | `test_oura_transformer_schema_mapping` | Oura Importer |
 | `UnauthenticatedRequestsBlocked` | `test_unauthenticated_requests_blocked` | API Gateway |
 | `TenantHeaderAlwaysInjected` | `test_tenant_header_always_injected` | API Gateway |
+| `SecretsAlwaysEncryptedAtRest` | `test_secrets_always_encrypted_at_rest` | Core Data Service |
+| `SecretMaskedInReadResponse` | `test_secret_masked_in_read_response` | Core Data Service |
 
 ## Adding New Specs
 
