@@ -96,7 +96,14 @@ async def fetch_and_publish(
                 raw_data=items_data, day=day_str, tenant_id=tenant_id
             )
             data_points.extend(dps)
-        except (YazioUnauthorizedError, YazioRateLimitError, YazioApiError) as e:
+        except YazioUnauthorizedError:
+            logger.error(
+                f"Yazio API 401 Unauthorized for tenant {tenant_id}. "
+                "The stored access token is invalid or expired. "
+                "Please re-enter credentials or Bearer Token in Dashboard UI."
+            )
+            break
+        except (YazioRateLimitError, YazioApiError) as e:
             logger.error(f"Failed to fetch Yazio consumed items for {day_str}: {e}")
 
     published_count = 0
