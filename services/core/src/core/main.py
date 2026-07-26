@@ -493,10 +493,12 @@ async def configure_connector(
     if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config:
         email = req.config["yazio_email"]
         password = req.config["yazio_password"]
+        base_url = os.getenv("YAZIO_API_BASE_URL", "https://yzapi.yazio.com").rstrip("/")
+        oauth_url = f"{base_url}/v15/oauth/token"
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 resp = await client.post(
-                    "https://yzapi.yazio.com/v15/oauth/token",
+                    oauth_url,
                     data={
                         "client_id": "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c",
                         "client_secret": "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o",
