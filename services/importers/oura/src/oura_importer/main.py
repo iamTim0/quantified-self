@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -49,7 +50,9 @@ def _setup_importer_logging():
     log_format = '%(asctime)s [qs-importer-oura] [%(levelname)s] %(message)s'
     formatter = logging.Formatter(log_format, datefmt='%Y-%m-%d %H:%M:%S')
 
-    stdout_handler = logging.StreamHandler()
+    # Wrap stdout with UTF-8 encoding so emoji/unicode don't crash on Windows cp1252 consoles
+    _utf8_stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', errors='replace', closefd=False, buffering=1)
+    stdout_handler = logging.StreamHandler(stream=_utf8_stdout)
     stdout_handler.setFormatter(formatter)
 
     service_handler = RotatingFileHandler(_log_dir / 'qs-importer-oura.log', maxBytes=10*1024*1024, backupCount=5)

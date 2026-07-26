@@ -5,6 +5,7 @@ Injects and propagates X-Request-ID across all downstream proxies.
 
 import logging
 import os
+import sys
 import time
 import uuid
 from contextvars import ContextVar
@@ -89,7 +90,9 @@ def setup_tracing_logger(service_name: str):
     log_format = f"%(asctime)s [{service_name}] [%(levelname)s] [req_id=%(request_id)s] %(message)s"
     formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
-    stdout_handler = logging.StreamHandler()
+    # Wrap stdout with UTF-8 encoding so emoji/unicode don't crash on Windows cp1252 consoles
+    _utf8_stdout = open(sys.stdout.fileno(), mode='w', encoding='utf-8', errors='replace', closefd=False, buffering=1)
+    stdout_handler = logging.StreamHandler(stream=_utf8_stdout)
     stdout_handler.addFilter(CorrelationLogFilter())
     stdout_handler.setFormatter(formatter)
 
