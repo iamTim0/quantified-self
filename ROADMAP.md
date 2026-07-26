@@ -18,39 +18,40 @@
 
 ---
 
-## 🟡 Phase 1: Real Oura Importer (ETL Pipeline)
+## 🟢 Phase 1: Real Oura Importer (ETL Pipeline) (COMPLETED)
 
-- [ ] **Oura Client Integration** (`services/importers/oura/src/oura_importer/client.py`)
-  - Implement Oura API v2 client for `/v2/usercollection/daily_sleep`, `/v2/usercollection/daily_activity`, and `/v2/usercollection/daily_readiness`.
-  - Rate-limit handling & exponential backoff retry.
-- [ ] **Token & Credentials Management**
-  - Store Oura Access Tokens mapped to `tenant_id` and `source_id`.
-- [ ] **Scheduler & Ingestion Loop** (`services/importers/oura/src/oura_importer/main.py`)
-  - APScheduler cron job polling Oura API every N minutes.
-  - Transform API JSON → standard `DataPoint` + SHA256 `idempotency_key` → publish to `qs.ingest.oura`.
-- [ ] **Mock / Sandbox Data Seed Generator**
-  - Script to generate realistic dummy Oura sleep & activity time-series data for dev testing.
-
----
-
-## 🟡 Phase 2: Core Data Service Query APIs
-
-- [ ] **REST Data Query Endpoint** (`services/core/src/core/main.py`)
-  - `GET /api/v1/data/metrics`: Query time-series metrics with filters (`tenant_id`, `metric_type`, `start_time`, `end_time`, `page`).
-  - `GET /api/v1/data/metrics/types`: List all available metric types for a tenant.
-- [ ] **gRPC Core Server Implementation** (`services/core/src/core/grpc/server.py`)
-  - Serves `QueryDataPoints`, `GetDataPoint`, and `ListMetricTypes` RPCs.
+- [x] **Formal Verification**: Fizzbee specification (`specs/importer_oura.fizz`) modeling polling, 429 rate limit backoff, 401 token refresh, and SHA256 idempotency key generation.
+- [x] **Oura Client Integration** (`services/importers/oura/src/oura_importer/client.py`):
+  - Oura API v2 client for `/v2/usercollection/daily_sleep`, `/v2/usercollection/daily_activity`, and `/v2/usercollection/daily_readiness`.
+  - Rate-limit handling (HTTP 429 backoff) & token error handling (HTTP 401).
+- [x] **Data Transformer** (`services/importers/oura/src/oura_importer/transformer.py`):
+  - Transforms Oura JSON into standard `DataPoint` records with 64-char SHA256 `idempotency_key`.
+- [x] **Scheduler & Ingestion Loop** (`services/importers/oura/src/oura_importer/main.py`):
+  - APScheduler cron job polling Oura API and publishing events to NATS subject `qs.ingest.oura`.
+- [x] **Mock Data Seed Generator** (`services/importers/oura/src/oura_importer/seed.py`):
+  - Generated 30 days of realistic time-series metric data (310 data points ingested into TimescaleDB).
 
 ---
 
-## 🟡 Phase 3: Auth & Gateway Proxy
+## 🟢 Phase 2: Core Data Service Query APIs (COMPLETED)
+
+- [x] **Formal Verification**: Fizzbee specification (`specs/core_query.fizz`) modeling multi-tenant read query isolation and consent checking.
+- [x] **REST Data Query Endpoints** (`services/core/src/core/main.py`):
+  - `GET /api/v1/data/metrics`: Query time-series data points with filters (`metric_type`, `start_time`, `end_time`, `limit`).
+  - `GET /api/v1/data/metrics/types`: List all distinct metric types stored for a tenant.
+  - `GET /api/v1/data/metrics/summary`: Summary statistics (count, average, min, max, latest timestamp) for all metric types.
+- [x] **Integration Test Suite**: 9 passing integration & context isolation tests (`services/core/tests/test_query_endpoints.py`).
+
+---
+
+## 🟡 Phase 3: Auth & Gateway Proxy (NEXT)
 
 - [ ] **JWT Auth & Header Injection** (`services/api-gateway/src/gateway/auth.py`)
   - Validate JWT, extract `tenant_id` claim, inject `X-Tenant-ID` header.
 - [ ] **Dev Token Generator**
   - Utility endpoint / CLI to generate dev JWT tokens for test tenants.
 - [ ] **Gateway Routing** (`services/api-gateway/src/gateway/main.py`)
-  - Reverse proxy `/api/v1/data/*` to Core Data Service.
+  - Reverse proxy `/api/v1/data/*` to Core Data Service (`http://localhost:8001`).
   - Reverse proxy `/api/v1/analysis/*` to Analysis Service.
 
 ---
@@ -60,7 +61,7 @@
 - [ ] **Web Dashboard UI** (`apps/dashboard/` or `services/dashboard/`)
   - Modern, responsive dashboard web interface.
   - **Summary Metrics Cards**: Sleep Score, Readiness Score, HRV, Daily Steps.
-  - **Interactive Time-Series Charts**: Visualizing trends over days/weeks/months (Chart.js / Recharts).
+  - **Interactive Time-Series Charts**: Visualizing trends over days/weeks/months.
   - **Data Source Status Widget**: Shows Oura connection status, last sync timestamp, and manual sync trigger.
 
 ---
