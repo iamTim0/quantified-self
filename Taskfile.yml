@@ -91,12 +91,13 @@ tasks:
       - task: start:local:services
 
   start:local:services:
-    desc: "Concurrently launch Core, Gateway, Oura Importer, and Next.js Dashboard"
+    desc: "Concurrently launch Core, Gateway, Oura Importer, and Next.js Dashboard (each isolated; one crash won't kill others)"
     deps:
-      - run:core
-      - run:gateway
-      - run:importer:oura
-      - dashboard
+      - task: run:core
+      - task: run:gateway
+      - task: run:importer:oura
+        ignore_error: true
+      - task: dashboard
 
   seed:oura:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"

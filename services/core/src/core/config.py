@@ -1,7 +1,11 @@
 import os
 import secrets
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Root .env is 4 levels up from this file: services/core/src/core/config.py
+_ROOT_ENV = Path(__file__).resolve().parents[4] / ".env"
 
 
 def _default_jwt_secret() -> str:
@@ -14,7 +18,8 @@ class Settings(BaseSettings):
     GRPC_PORT: int = 50051
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
+    ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

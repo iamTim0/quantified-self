@@ -51,9 +51,9 @@ async def test_dev_token_generator(monkeypatch):
     assert data["token_type"] == "bearer"
 
 @pytest.mark.asyncio
-async def test_dev_token_hidden_in_production():
-    """Dev-token endpoint should return 403 when ENVIRONMENT=production (default)."""
-    os.environ.pop("ENVIRONMENT", None)
+async def test_dev_token_hidden_in_production(monkeypatch):
+    """Dev-token endpoint should return 403 when ENVIRONMENT=production."""
+    monkeypatch.setenv("ENVIRONMENT", "production")
     import importlib
 
     import gateway.config
