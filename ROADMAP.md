@@ -6,7 +6,7 @@
 
 ## 🟢 Phase 0: Architecture & Foundation (COMPLETED)
 
-- [x] **Monorepo Architecture**: Independent microservices (`api-gateway`, `core`, `analysis`, `importers/oura`).
+- [x] **Monorepo Architecture**: Independent microservices (`api-gateway`, `core`, `analysis`, `importers/yazio`).
 - [x] **Database & Storage**: PostgreSQL 16 + TimescaleDB hypertable (`data_points`) + `pgvector` embeddings + JSONB metadata.
 - [x] **Infrastructure**: Docker Compose (`postgres:5433`, `nats:4222` JetStream), Taskfile, `uv` package management.
 - [x] **Tenant Isolation**: Async-safe `contextvars` tenant context middleware enforcing `WHERE tenant_id = :tid`.
@@ -18,18 +18,15 @@
 
 ---
 
-## 🟢 Phase 1: Real Oura Importer (ETL Pipeline) (COMPLETED)
+## 🟢 Phase 1: Real Yazio Importer (ETL Pipeline) (COMPLETED)
 
-- [x] **Formal Verification**: Fizzbee specification (`specs/importer_oura.fizz`) modeling polling, 429 rate limit backoff, 401 token refresh, and SHA256 idempotency key generation.
-- [x] **Oura Client Integration** (`services/importers/oura/src/oura_importer/client.py`):
-  - Oura API v2 client for `/v2/usercollection/daily_sleep`, `/v2/usercollection/daily_activity`, and `/v2/usercollection/daily_readiness`.
-  - Rate-limit handling (HTTP 429 backoff) & token error handling (HTTP 401).
-- [x] **Data Transformer** (`services/importers/oura/src/oura_importer/transformer.py`):
-  - Transforms Oura JSON into standard `DataPoint` records with 64-char SHA256 `idempotency_key`.
-- [x] **Scheduler & Ingestion Loop** (`services/importers/oura/src/oura_importer/main.py`):
-  - APScheduler cron job polling Oura API and publishing events to NATS subject `qs.ingest.oura`.
-- [x] **Mock Data Seed Generator** (`services/importers/oura/src/oura_importer/seed.py`):
-  - Generated 30 days of realistic time-series metric data (310 data points ingested into TimescaleDB).
+- [x] **Yazio Client Integration** (`services/importers/yazio/src/yazio_importer/client.py`):
+  - Yazio API v15 client for `/v15/user/consumed-items`.
+  - OAuth2 password grant token exchange & refresh, rate-limit backoff (HTTP 429), and HTTP 401 handling.
+- [x] **Data Transformer** (`services/importers/yazio/src/yazio_importer/transformer.py`):
+  - Transforms Yazio JSON consumed items into standard `DataPoint` records with 64-char SHA256 `idempotency_key`.
+- [x] **Ingestion Loop** (`services/importers/yazio/src/yazio_importer/main.py`):
+  - NATS JetStream consumer on `qs.task.sync.yazio` publishing ingested events to NATS subject `qs.ingest.yazio`.
 
 ---
 

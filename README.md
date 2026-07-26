@@ -69,7 +69,7 @@ quantified-self/
 │   ├── core/              # Owns PostgreSQL, NATS consumer, gRPC server
 │   ├── analysis/          # AI/DS, queries Core via gRPC
 │   └── importers/
-│       └── oura/          # NATS publisher, polls Oura API
+│       └── yazio/         # NATS publisher, polls Yazio API
 ├── packages/
 │   ├── proto/             # Protobuf definitions (buf)
 │   └── shared-schemas/    # Shared Pydantic models
@@ -108,7 +108,7 @@ You can run individual services using Taskfile commands:
 ```bash
 task run:core
 task run:gateway
-task run:importer:oura
+task run:importer:yazio
 ```
 
 ### Environment Variables

@@ -11,9 +11,9 @@
 The **Quantified Self Platform** is a multi-tenant, microservice-based personal health analytics platform built with Python (FastAPI, SQLAlchemy 2.0, TimescaleDB, pgvector), NATS JetStream, gRPC, and Next.js 15 App Router.
 
 ### Completed Milestones:
-- **Phase 1: Real Oura Importer & Mock Seed Generator**:
-  - Implemented Oura Ring v2 ETL importer (`services/importers/oura`) and 30-day mock seed data generator (`seed.py`).
-  - Ingested **310+ metric data points** into TimescaleDB via NATS JetStream.
+- **Phase 1: Real Yazio Importer**:
+  - Implemented Yazio v15 ETL importer (`services/importers/yazio`) fetching food diary, calories, and macros.
+  - Ingested metric data points into TimescaleDB via NATS JetStream.
 - **Phase 2: Core Data Service REST Query APIs**:
   - `GET /api/v1/data/metrics` (time-series filtering), `GET /api/v1/data/metrics/types`, `GET /api/v1/data/metrics/summary`.
 - **Phase 3: Auth & API Gateway Proxy**:
@@ -27,7 +27,7 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
   - **Data Sharing APIs**: `POST /api/v1/data/shares` (grant read access to grantee email) & `GET /api/v1/data/shares` & `DELETE /api/v1/data/shares/{id}`.
   - **Frontend UI Components**: Updated `Header.tsx`, `AuthScreen.tsx`, `page.tsx` showing active User (name, email, role) and Workspace Tenant Name & ID.
 - **Phase 6: End-to-End Request Correlation Tracing (`X-Request-ID`)**:
-  - Implemented `RequestTracingMiddleware` and contextvar-based `CorrelationLogFilter` in API Gateway, Core Service, and Oura Importer.
+  - Implemented `RequestTracingMiddleware` and contextvar-based `CorrelationLogFilter` in API Gateway, Core Service, and Yazio Importer.
   - Propagates `X-Request-ID` across HTTP calls and log lines with `[req_id=...]` prefix for full system visibility.
 - **Phase 7: Next.js 15 App Router Dashboard (`apps/dashboard`)**:
   - Full modern React 19 / Next.js 15 App Router frontend with Chart.js time-series graphs, live metric cards, connector modal, and sharing modal.
@@ -35,7 +35,7 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
   - Fully synchronized [agents.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/agents.md), [HANDOFF.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/HANDOFF.md), and [GEMINI.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/GEMINI.md).
   - All 34 automated unit, integration, and Fizzbee spec tests passing.
 - **Phase 9: Request-Driven Importers & Importer Standard**:
-  - **Zero Background Polling**: Converted Oura importer and defined platform blueprint for all future importers to run without periodic background polling loops.
+  - **Zero Background Polling**: Converted Yazio importer and defined platform blueprint for all future importers to run without periodic background polling loops.
   - **Asynchronous NATS Task Queue (`qs.task.sync.<source_type>`)**: Core publishes task events upon connector configuration (`POST /configure`) or on-demand sync triggers (`POST /{source_type}/sync`).
   - **In-Flight Lock**: Importers maintain an in-memory lock per `tenant_id` to skip duplicate concurrent tasks.
   - **Custom Configuration Payload**: Importers dynamically retrieve decrypted access tokens + custom `config` dicts (`lookback_days`, categories) from Core Data Service DB on demand.
@@ -53,7 +53,7 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
 | **API Gateway** | `services/api-gateway` | `8000` (HTTP) | Entry point, JWT auth, CORS, proxy |
 | **Core Data Service** | `services/core` | `8001` (HTTP), `50051` (gRPC) | Owns DB & NATS consumer, multi-tenant |
 | **Analysis Service** | `services/analysis` | `8002` (HTTP) | Data science & insights via gRPC to Core |
-| **Oura Importer** | `services/importers/oura` | Background ETL | Polls Oura API -> Publishes to NATS |
+| **Yazio Importer** | `services/importers/yazio` | Background ETL | Tasks from NATS -> Fetches Yazio API -> Publishes to NATS |
 | **Dashboard** | `apps/dashboard` | `3000` (HTTP) | Next.js 15 App Router + Tailwind CSS |
 
 ---

@@ -73,11 +73,6 @@ tasks:
     cmds:
       - uv run --directory services/api-gateway python -m gateway.main
 
-  run:importer:oura:
-    desc: "Run the Oura Ring importer microservice"
-    cmds:
-      - uv run --directory services/importers/oura python -m oura_importer.main
-
   run:importer:yazio:
     desc: "Run the Yazio nutrition importer microservice"
     cmds:
@@ -89,25 +84,25 @@ tasks:
       - npx pnpm --prefix apps/dashboard dev
 
   dev:local:
-    desc: "Start Postgres + NATS containers, run DB migrations, and launch all 4 local microservices concurrently"
+    desc: "Start Postgres + NATS containers, run DB migrations, and launch all local microservices concurrently"
     cmds:
       - docker compose -f infra/docker-compose.yml up -d postgres nats
       - uv run --directory services/core alembic upgrade head
       - task: start:local:services
 
   start:local:services:
-    desc: "Concurrently launch Core, Gateway, Oura Importer, and Dashboard. Ctrl+C kills all cleanly."
+    desc: "Concurrently launch Core, Gateway, Yazio Importer, and Dashboard. Ctrl+C kills all cleanly."
     env:
       PYTHONUTF8: "1"
     cmds:
       - >-
         npx --yes concurrently
-        --names "core,gateway,oura,dash"
+        --names "core,gateway,yazio,dash"
         --prefix-colors "blue,green,yellow,magenta"
         --handle-input
         "uv run --directory services/core python -m core.main"
         "uv run --directory services/api-gateway python -m gateway.main"
-        "uv run --directory services/importers/oura python -m oura_importer.main"
+        "uv run --directory services/importers/yazio python -m yazio_importer.main"
         "npx pnpm --prefix apps/dashboard dev"
 
 
