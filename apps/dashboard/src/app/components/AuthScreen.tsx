@@ -25,6 +25,26 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const formatErrorMessage = (detail: unknown): string => {
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) => {
+          if (typeof item === "string") return item;
+          if (item && typeof item === "object" && "msg" in item) {
+            return String((item as { msg: unknown }).msg);
+          }
+          return JSON.stringify(item);
+        })
+        .join("; ");
+    }
+    if (detail && typeof detail === "object") {
+      if ("msg" in detail) return String((detail as { msg: unknown }).msg);
+      return JSON.stringify(detail);
+    }
+    return "Authentication failed";
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -44,7 +64,7 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.detail || "Authentication failed");
+        throw new Error(formatErrorMessage(data.detail));
       }
 
       if (isLogin) {
@@ -64,7 +84,9 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
           body: JSON.stringify({ email, password }),
         });
         const loginData = await loginRes.json();
-        if (!loginRes.ok) throw new Error(loginData.detail);
+        if (!loginRes.ok) {
+          throw new Error(formatErrorMessage(loginData.detail));
+        }
 
         onLogin({
           token: loginData.access_token,
