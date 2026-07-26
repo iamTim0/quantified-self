@@ -47,12 +47,12 @@ async def test_dev_token_generator(monkeypatch):
     assert response.status_code == 200
     data = response.json()
     assert data["tenant_id"] == tenant_id
-    assert "token" in data
-    assert data["token_type"] == "Bearer"
+    assert "access_token" in data
+    assert data["token_type"] == "bearer"
 
 @pytest.mark.asyncio
 async def test_dev_token_hidden_in_production():
-    """Dev-token endpoint should return 404 when ENVIRONMENT=production (default)."""
+    """Dev-token endpoint should return 403 when ENVIRONMENT=production (default)."""
     os.environ.pop("ENVIRONMENT", None)
     import importlib
 
@@ -66,7 +66,7 @@ async def test_dev_token_hidden_in_production():
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         response = await ac.get("/api/v1/auth/dev-token")
 
-    assert response.status_code == 404
+    assert response.status_code == 403
 
 @pytest.mark.asyncio
 async def test_jwt_validation_invalid_token():

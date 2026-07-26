@@ -1,12 +1,13 @@
 """API Gateway Service Entry Point.
 
 Acts as the entry point for all external client traffic.
-Validates JWT tokens, injects X-Tenant-ID headers, and proxies HTTP requests
+Validates JWT tokens, injects X-Tenant-ID and X-Request-ID headers, and proxies HTTP requests
 to downstream microservices (Core Data Service, Analysis Service).
 
 Maps to Fizzbee Invariants:
 - UnauthenticatedRequestsBlocked
 - TenantHeaderAlwaysInjected
+- RequestCorrelationTracing
 """
 
 import logging
@@ -18,10 +19,18 @@ from fastapi.responses import JSONResponse
 
 from gateway.auth import create_dev_jwt, decode_jwt
 from gateway.config import settings
+from gateway.tracing import (
+    RequestTracingMiddleware,
+    get_current_request_id,
+    setup_tracing_logger,
+)
 
+setup_tracing_logger("api-gateway")
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.SERVICE_NAME)
+
+app.add_middleware(RequestTracingMiddleware)
 
 # SECURITY H1: Configure CORS with explicit allowed origins
 _allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
@@ -30,7 +39,7 @@ app.add_middleware(
     allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID"],
 )
 
 # SECURITY C3: Log warning if running in dev mode
@@ -54,6 +63,7 @@ _SAFE_FORWARD_HEADERS = {
     "accept-encoding",
     "accept-language",
     "user-agent",
+    "x-request-id",
 }
 
 
@@ -69,13 +79,12 @@ async def get_dev_token(tenant_id: str = Query("00000000-0000-0000-0000-00000000
     SECURITY L1: Only available in dev mode.
     """
     if settings.ENVIRONMENT.lower() != "dev":
-        raise HTTPException(status_code=404, detail="Not found")
+        raise HTTPException(
+            status_code=403,
+            detail="Dev token endpoint is disabled in production.",
+        )
     token = create_dev_jwt(tenant_id=tenant_id)
-    return {
-        "tenant_id": tenant_id,
-        "token": token,
-        "token_type": "Bearer",
-    }
+    return {"access_token": token, "token_type": "bearer", "tenant_id": tenant_id}
 
 
 @app.api_route("/api/v1/auth/{path:path}", methods=["POST"])
@@ -85,15 +94,15 @@ async def proxy_auth_service(
 ):
     """Proxy HTTP requests to Core Auth Service."""
     if path == "dev-token":
-        # Skip proxying dev-token as it's handled above
         return await get_dev_token()
 
     target_url = f"{settings.CORE_SERVICE_URL}/api/v1/auth/{path}"
-    
+
     forwarded_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -108,6 +117,7 @@ async def proxy_auth_service(
                 k: v for k, v in response.headers.items()
                 if k.lower() not in {"transfer-encoding", "connection", "server"}
             }
+            safe_response_headers["X-Request-ID"] = get_current_request_id()
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -125,7 +135,7 @@ async def proxy_core_service(
     path: str,
     request: Request,
 ):
-    """Proxy HTTP requests to Core Data Service with X-Tenant-ID injection."""
+    """Proxy HTTP requests to Core Data Service with X-Tenant-ID & X-Request-ID injection."""
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
         if settings.ENVIRONMENT.lower() == "dev":
@@ -142,12 +152,12 @@ async def proxy_core_service(
 
     target_url = f"{settings.CORE_SERVICE_URL}/api/v1/data/{path}"
 
-    # SECURITY M5: Whitelist headers — don't blindly forward cookies, auth, X-Forwarded-*
     forwarded_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
     forwarded_headers["X-Tenant-ID"] = tenant_id
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:
@@ -158,11 +168,11 @@ async def proxy_core_service(
                 params=request.query_params,
                 content=await request.body(),
             )
-            # Don't forward hop-by-hop or server-internal headers back
             safe_response_headers = {
                 k: v for k, v in response.headers.items()
                 if k.lower() not in {"transfer-encoding", "connection", "server"}
             }
+            safe_response_headers["X-Request-ID"] = get_current_request_id()
             return Response(
                 content=response.content,
                 status_code=response.status_code,
@@ -173,7 +183,3 @@ async def proxy_core_service(
                 status_code=503,
                 detail=f"Core Data Service unavailable: {e!s}",
             )
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

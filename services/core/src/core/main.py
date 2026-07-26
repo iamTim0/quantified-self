@@ -7,6 +7,7 @@ and secure encrypted connector configuration management.
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
@@ -76,8 +77,20 @@ async def lifespan(app: FastAPI):
         yield
 
 
-app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
+from core.tracing import (
+    RequestTracingMiddleware,
+    setup_tracing_logger,
+)
 
+setup_tracing_logger("qs-core")
+logger = logging.getLogger(__name__)
+
+app = FastAPI(
+    title=settings.SERVICE_NAME,
+    lifespan=lifespan,
+)
+
+app.add_middleware(RequestTracingMiddleware)
 # SECURITY C4: Core should only be accessed by Gateway, not browsers directly.
 # Restrict CORS to reject browser-originated cross-origin requests.
 app.add_middleware(
@@ -85,7 +98,7 @@ app.add_middleware(
     allow_origins=[],  # No browser origins allowed — Gateway proxies server-side
     allow_credentials=False,
     allow_methods=["GET", "POST"],
-    allow_headers=["X-Tenant-ID", "Content-Type"],
+    allow_headers=["X-Tenant-ID", "X-Request-ID", "Content-Type"],
 )
 app.add_middleware(TenantMiddleware)
 

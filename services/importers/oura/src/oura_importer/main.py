@@ -34,10 +34,10 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 
-async def get_connector_token_from_core(tenant_id: str) -> str | None:
+async def get_connector_token_from_core(tenant_id: str, req_id: str = "req_importer_poll") -> str | None:
     """Fetch decrypted access token for Oura connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/oura/token"
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
