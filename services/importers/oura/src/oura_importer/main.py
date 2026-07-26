@@ -4,7 +4,8 @@ Orchestrates periodic polling of Oura API v2 (daily_sleep, daily_readiness, dail
 transforms raw JSON into standard DataPoints with deterministic SHA256 idempotency_keys,
 and publishes IngestEvent payloads to NATS JetStream subject 'qs.ingest.oura'.
 
-NOTE: Never runs auto-seed generator automatically. Seed data must be executed explicitly.
+NOTE: Access tokens are fetched dynamically from Core Data Service DB (configured via Dashboard UI),
+never hardcoded in .env files. Zero auto-seed fallback.
 """
 
 import asyncio
@@ -12,6 +13,7 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import nats
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -32,13 +34,32 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 
+async def get_connector_token_from_core(tenant_id: str) -> str | None:
+    """Fetch decrypted access token for Oura connector from Core Data Service DB."""
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/oura/token"
+    headers = {"X-Tenant-ID": tenant_id}
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            res = await client.get(url, headers=headers)
+            if res.status_code == 200:
+                data = res.json()
+                if data.get("status") == "active" and data.get("access_token"):
+                    return data["access_token"]
+            return None
+        except Exception as e:
+            logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
+            return None
+
+
 async def fetch_and_publish(nc: nats.NATS):
     """Poll Oura API for sleep, readiness, and activity, and publish to NATS."""
-    token = settings.OURA_ACCESS_TOKEN
-    if not token or token.startswith("your_") or token.strip() == "":
+    token = await get_connector_token_from_core(settings.TENANT_ID)
+
+    if not token:
         logger.info(
-            f"No valid OURA_ACCESS_TOKEN configured for tenant '{settings.TENANT_ID}'. "
-            "Waiting for token configuration via UI or environment..."
+            f"No active Oura connector configured in Dashboard UI for tenant '{settings.TENANT_ID}'. "
+            "Waiting for token configuration via Dashboard UI..."
         )
         return
 

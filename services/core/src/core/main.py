@@ -26,18 +26,14 @@ from core.db.models import DataPoint, DataSource, Tenant, TenantShare
 from core.db.session import get_session
 from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
-from core.security.crypto import encrypt_secret, mask_secret
+from core.security.crypto import (
+    DecryptionError,
+    decrypt_secret,
+    encrypt_secret,
+    mask_secret,
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def create_access_token(data: dict, expires_delta: timedelta | None = None):
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
-    else:
-        expire = datetime.now(timezone.utc) + timedelta(days=365)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
 
 # SECURITY H3: Constrain source_type to known connectors
 ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit"]
@@ -50,16 +46,21 @@ class ConfigureConnectorRequest(BaseModel):
     access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
 
-class AuthRequest(BaseModel):
-    email: str
-    password: str
 
-class SignupRequest(AuthRequest):
-    name: str
+class UserSignupRequest(BaseModel):
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=6, description="User password")
+    name: str = Field(..., description="Tenant / user display name")
+
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
 
 class CreateShareRequest(BaseModel):
-    grantee_email: str
-    scope: str = Field(default="read_all", description="Access scope, e.g. read_all")
+    grantee_email: str = Field(..., description="Email of the user to share data with")
+    scope: str = Field("read_all", description="Scope of shared data e.g. read_all or read_metric:sleep_score")
 
 
 @asynccontextmanager
@@ -74,6 +75,7 @@ async def lifespan(app: FastAPI):
     except Exception:
         yield
 
+
 app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
 
 # SECURITY C4: Core should only be accessed by Gateway, not browsers directly.
@@ -87,46 +89,171 @@ app.add_middleware(
 )
 app.add_middleware(TenantMiddleware)
 
+
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
+
+# ─── Auth Endpoints ──────────────────────────────────────────
+
 @app.post("/api/v1/auth/signup")
-async def signup(req: SignupRequest, session: AsyncSession = Depends(get_session)):
+async def signup(
+    req: UserSignupRequest,
+    session: AsyncSession = Depends(get_session),
+):
     stmt = select(Tenant).where(Tenant.email == req.email)
     res = await session.execute(stmt)
     if res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
-    
-    hashed_password = pwd_context.hash(req.password)
+
     tenant_id = str(uuid.uuid4())
-    new_tenant = Tenant(
+    hashed_pwd = pwd_context.hash(req.password)
+
+    tenant = Tenant(
         id=tenant_id,
         name=req.name,
         email=req.email,
-        password_hash=hashed_password,
+        password_hash=hashed_pwd,
     )
-    session.add(new_tenant)
+    session.add(tenant)
     await session.commit()
-    
-    return {"message": "Tenant created successfully", "tenant_id": tenant_id}
+
+    token_payload = {
+        "sub": req.email,
+        "tenant_id": tenant_id,
+        "exp": datetime.now(timezone.utc) + timedelta(days=30),
+        "iat": datetime.now(timezone.utc),
+    }
+    jwt_secret = getattr(settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026")
+    token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
+
+    return {
+        "status": "success",
+        "access_token": token,
+        "tenant_id": tenant_id,
+        "email": req.email,
+        "name": req.name,
+    }
+
 
 @app.post("/api/v1/auth/login")
-async def login(req: AuthRequest, session: AsyncSession = Depends(get_session)):
+async def login(
+    req: UserLoginRequest,
+    session: AsyncSession = Depends(get_session),
+):
     stmt = select(Tenant).where(Tenant.email == req.email)
     res = await session.execute(stmt)
     tenant = res.scalar_one_or_none()
-    
+
     if not tenant or not tenant.password_hash:
         raise HTTPException(status_code=401, detail="Invalid email or password")
-        
+
     if not pwd_context.verify(req.password, tenant.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
-        
-    access_token = create_access_token(
-        data={"sub": tenant.email, "tenant_id": tenant.id}
+
+    token_payload = {
+        "sub": tenant.email,
+        "tenant_id": tenant.id,
+        "exp": datetime.now(timezone.utc) + timedelta(days=30),
+        "iat": datetime.now(timezone.utc),
+    }
+    jwt_secret = getattr(settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026")
+    token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
+
+    return {
+        "status": "success",
+        "access_token": token,
+        "tenant_id": tenant.id,
+        "email": tenant.email,
+        "name": tenant.name,
+    }
+
+
+# ─── Tenant Sharing Endpoints ───────────────────────────────
+
+@app.post("/api/v1/data/shares")
+async def create_share(
+    req: CreateShareRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(Tenant).where(Tenant.email == req.grantee_email)
+    res = await session.execute(stmt)
+    grantee = res.scalar_one_or_none()
+
+    if not grantee:
+        raise HTTPException(status_code=404, detail="Target user not found")
+
+    if grantee.id == tenant_id:
+        raise HTTPException(status_code=400, detail="Cannot share with yourself")
+
+    share_id = str(uuid.uuid4())
+    new_share = TenantShare(
+        id=share_id,
+        grantor_tenant_id=tenant_id,
+        grantee_tenant_id=grantee.id,
+        scope=req.scope,
     )
-    return {"access_token": access_token, "token_type": "bearer", "tenant_id": tenant.id}
+    session.add(new_share)
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=400, detail="Share already exists") from None
+
+    return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee.id}
+
+
+@app.get("/api/v1/data/shares")
+async def list_shares(session: AsyncSession = Depends(get_session)):
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(TenantShare).where(TenantShare.grantor_tenant_id == tenant_id)
+    res = await session.execute(stmt)
+    granted_by_me = res.scalars().all()
+
+    stmt_rec = select(TenantShare).where(TenantShare.grantee_tenant_id == tenant_id)
+    res_rec = await session.execute(stmt_rec)
+    granted_to_me = res_rec.scalars().all()
+
+    return {
+        "granted_by_me": [
+            {"id": s.id, "grantee_tenant_id": s.grantee_tenant_id, "scope": s.scope, "created_at": s.created_at.isoformat()}
+            for s in granted_by_me
+        ],
+        "granted_to_me": [
+            {"id": s.id, "grantor_tenant_id": s.grantor_tenant_id, "scope": s.scope, "created_at": s.created_at.isoformat()}
+            for s in granted_to_me
+        ],
+    }
+
+
+@app.delete("/api/v1/data/shares/{share_id}")
+async def revoke_share(
+    share_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(TenantShare).where(
+        TenantShare.id == share_id,
+        TenantShare.grantor_tenant_id == tenant_id,
+    )
+    res = await session.execute(stmt)
+    share = res.scalar_one_or_none()
+
+    if not share:
+        raise HTTPException(status_code=404, detail="Share not found or access denied")
+
+    await session.delete(share)
+    await session.commit()
+
+    return {"status": "success", "message": "Share revoked"}
+
+
+# ─── Core Metric Endpoints ───────────────────────────────────
 
 @app.get("/api/v1/data/metrics")
 async def query_metrics(
@@ -134,25 +261,11 @@ async def query_metrics(
     start_time: str | None = Query(None, description="ISO start timestamp"),
     end_time: str | None = Query(None, description="ISO end timestamp"),
     limit: int = Query(100, ge=1, le=1000, description="Max data points to return"),
-    target_tenant_id: str | None = Query(None, description="Query another tenant's data (requires consent)"),
     session: AsyncSession = Depends(get_session),
 ):
     """Query time-series metric data points for the authenticated tenant."""
     tenant_id = get_current_tenant_id()
-    
-    query_target = tenant_id
-    if target_tenant_id and target_tenant_id != tenant_id:
-        stmt = select(TenantShare).where(
-            TenantShare.grantor_tenant_id == target_tenant_id,
-            TenantShare.grantee_tenant_id == tenant_id,
-            TenantShare.scope == "read_all"
-        )
-        res = await session.execute(stmt)
-        if not res.scalar_one_or_none():
-            raise HTTPException(status_code=403, detail="No consent granted to access this tenant's data")
-        query_target = target_tenant_id
-
-    stmt = select(DataPoint).where(DataPoint.tenant_id == query_target)
+    stmt = select(DataPoint).where(DataPoint.tenant_id == tenant_id)
 
     if metric_type:
         stmt = stmt.where(DataPoint.metric_type == metric_type)
@@ -176,7 +289,7 @@ async def query_metrics(
     points = res.scalars().all()
 
     return {
-        "tenant_id": query_target,
+        "tenant_id": tenant_id,
         "count": len(points),
         "data_points": [
             {
@@ -191,71 +304,10 @@ async def query_metrics(
         ],
     }
 
-@app.post("/api/v1/data/shares")
-async def create_share(req: CreateShareRequest, session: AsyncSession = Depends(get_session)):
-    tenant_id = get_current_tenant_id()
-    
-    stmt = select(Tenant).where(Tenant.email == req.grantee_email)
-    res = await session.execute(stmt)
-    grantee = res.scalar_one_or_none()
-    
-    if not grantee:
-        raise HTTPException(status_code=404, detail="Grantee email not found")
-        
-    if grantee.id == tenant_id:
-        raise HTTPException(status_code=400, detail="Cannot share with yourself")
-        
-    share_id = str(uuid.uuid4())
-    new_share = TenantShare(
-        id=share_id,
-        grantor_tenant_id=tenant_id,
-        grantee_tenant_id=grantee.id,
-        scope=req.scope,
-    )
-    session.add(new_share)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=400, detail="Share already exists") from None
-        
-    return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee.id}
-
-@app.get("/api/v1/data/shares")
-async def list_shares(session: AsyncSession = Depends(get_session)):
-    tenant_id = get_current_tenant_id()
-    
-    stmt = select(TenantShare).where(TenantShare.grantor_tenant_id == tenant_id)
-    res = await session.execute(stmt)
-    granted_by_me = res.scalars().all()
-    
-    stmt2 = select(TenantShare).where(TenantShare.grantee_tenant_id == tenant_id)
-    res2 = await session.execute(stmt2)
-    granted_to_me = res2.scalars().all()
-    
-    return {
-        "tenant_id": tenant_id,
-        "granted_by_me": [{"id": s.id, "grantee_tenant_id": s.grantee_tenant_id, "scope": s.scope} for s in granted_by_me],
-        "granted_to_me": [{"id": s.id, "grantor_tenant_id": s.grantor_tenant_id, "scope": s.scope} for s in granted_to_me]
-    }
-
-@app.delete("/api/v1/data/shares/{share_id}")
-async def revoke_share(share_id: str, session: AsyncSession = Depends(get_session)):
-    tenant_id = get_current_tenant_id()
-    stmt = select(TenantShare).where(TenantShare.id == share_id, TenantShare.grantor_tenant_id == tenant_id)
-    res = await session.execute(stmt)
-    share = res.scalar_one_or_none()
-    
-    if not share:
-        raise HTTPException(status_code=404, detail="Share not found")
-        
-    await session.delete(share)
-    await session.commit()
-    return {"message": "Share revoked"}
 
 @app.get("/api/v1/data/metrics/types")
 async def list_metric_types(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """List all distinct metric types stored for the authenticated tenant."""
     tenant_id = get_current_tenant_id()
@@ -272,9 +324,10 @@ async def list_metric_types(
         "metric_types": list(metric_types),
     }
 
+
 @app.get("/api/v1/data/metrics/summary")
 async def get_metrics_summary(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """Get summary statistics (latest, average, min, max) for all metric types of the tenant."""
     tenant_id = get_current_tenant_id()
@@ -310,10 +363,13 @@ async def get_metrics_summary(
         "metrics": summary,
     }
 
+
+# ─── Connector Configuration Endpoints ──────────────────────
+
 @app.post("/api/v1/data/sources/configure")
 async def configure_connector(
     req: ConfigureConnectorRequest,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """Safely configure a connector for the tenant.
 
@@ -328,7 +384,7 @@ async def configure_connector(
     # Check existing data source
     stmt = select(DataSource).where(
         DataSource.tenant_id == tenant_id,
-        DataSource.source_type == req.source_type
+        DataSource.source_type == req.source_type,
     )
     res = await session.execute(stmt)
     existing = res.scalar_one_or_none()
@@ -352,7 +408,7 @@ async def configure_connector(
                 "masked_token": masked_token,
                 "status": req.status,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
-            }
+            },
         )
         session.add(new_source)
 
@@ -367,9 +423,10 @@ async def configure_connector(
         "masked_token": masked_token,
     }
 
+
 @app.get("/api/v1/data/sources")
 async def list_connectors(
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
 ):
     """List configured connectors for the tenant with masked secrets."""
     tenant_id = get_current_tenant_id()
@@ -395,6 +452,40 @@ async def list_connectors(
         "tenant_id": tenant_id,
         "connectors": connectors,
     }
+
+
+@app.get("/api/v1/internal/data/sources/{source_type}/token")
+async def get_connector_token(
+    source_type: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Internal endpoint for Importer microservices to fetch decrypted credentials."""
+    tenant_id = get_current_tenant_id()
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == source_type,
+    )
+    res = await session.execute(stmt)
+    source = res.scalar_one_or_none()
+
+    if not source or not source.config:
+        raise HTTPException(status_code=404, detail=f"No connector configured for {source_type}")
+
+    encrypted_token = source.config.get("encrypted_token")
+    if not encrypted_token:
+        raise HTTPException(status_code=404, detail="Token not found in connector configuration")
+
+    try:
+        decrypted_token = decrypt_secret(encrypted_token)
+        return {
+            "tenant_id": tenant_id,
+            "source_type": source_type,
+            "access_token": decrypted_token,
+            "status": source.config.get("status", "active"),
+        }
+    except DecryptionError:
+        raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
+
 
 if __name__ == "__main__":
     import uvicorn
