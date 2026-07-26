@@ -3,8 +3,17 @@
 import React, { useState } from "react";
 import { Lock, Mail, User, ArrowRight, Activity } from "lucide-react";
 
+export interface UserAuthData {
+  token: string;
+  tenantId: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  tenantName: string;
+}
+
 interface AuthScreenProps {
-  onLogin: (token: string, tenantId: string) => void;
+  onLogin: (data: UserAuthData) => void;
   apiBase: string;
 }
 
@@ -39,7 +48,14 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
       }
 
       if (isLogin) {
-        onLogin(data.access_token, data.tenant_id);
+        onLogin({
+          token: data.access_token,
+          tenantId: data.tenant_id,
+          userName: data.name || email.split("@")[0],
+          userEmail: data.email || email,
+          userRole: data.role || "owner",
+          tenantName: `${data.name || email.split("@")[0]}'s Workspace`,
+        });
       } else {
         // Automatically login after signup
         const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
@@ -49,7 +65,15 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
         });
         const loginData = await loginRes.json();
         if (!loginRes.ok) throw new Error(loginData.detail);
-        onLogin(loginData.access_token, loginData.tenant_id);
+
+        onLogin({
+          token: loginData.access_token,
+          tenantId: loginData.tenant_id,
+          userName: loginData.name || name,
+          userEmail: loginData.email || email,
+          userRole: loginData.role || "owner",
+          tenantName: `${loginData.name || name}'s Workspace`,
+        });
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

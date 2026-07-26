@@ -5,47 +5,50 @@ import Header from "./components/Header";
 import MetricCards, { SummaryMetrics } from "./components/MetricCards";
 import TrendChart from "./components/TrendChart";
 import ConnectorModal from "./components/ConnectorModal";
-import AuthScreen from "./components/AuthScreen";
+import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
-import { Activity, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 
-// SECURITY C5: All API calls go through the Gateway (port 8000), never directly to Core.
-// The Gateway validates JWT tokens and injects X-Tenant-ID headers.
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-
-interface ConnectorItem {
-  id: string;
-  source_type: string;
-  status: string;
-  masked_token: string;
-}
 
 export default function DashboardPage() {
   const [token, setToken] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_token") || "" : ""));
   const [tenantId, setTenantId] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_tenant_id") || "" : ""));
+  const [userName, setUserName] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_name") || "Timo" : "Timo"));
+  const [userEmail, setUserEmail] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_email") || "timo@example.com" : "timo@example.com"));
+  const [userRole, setUserRole] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_role") || "owner" : "owner"));
+  const [tenantName, setTenantName] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_tenant_name") || "Timo's Workspace" : "Timo's Workspace"));
+
   const [isAuthenticated, setIsAuthenticated] = useState(() => typeof window !== "undefined" && Boolean(localStorage.getItem("qs_token") && localStorage.getItem("qs_tenant_id")));
-  
+
   const [summary, setSummary] = useState<SummaryMetrics>({});
   const [chartLabels, setChartLabels] = useState<string[]>([]);
   const [sleepValues, setSleepValues] = useState<number[]>([]);
   const [readinessValues, setReadinessValues] = useState<number[]>([]);
-  const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const handleLogin = (jwtToken: string, tId: string) => {
-    localStorage.setItem("qs_token", jwtToken);
-    localStorage.setItem("qs_tenant_id", tId);
-    setToken(jwtToken);
-    setTenantId(tId);
+  const handleLogin = (auth: UserAuthData) => {
+    localStorage.setItem("qs_token", auth.token);
+    localStorage.setItem("qs_tenant_id", auth.tenantId);
+    localStorage.setItem("qs_user_name", auth.userName);
+    localStorage.setItem("qs_user_email", auth.userEmail);
+    localStorage.setItem("qs_user_role", auth.userRole);
+    localStorage.setItem("qs_tenant_name", auth.tenantName);
+
+    setToken(auth.token);
+    setTenantId(auth.tenantId);
+    setUserName(auth.userName);
+    setUserEmail(auth.userEmail);
+    setUserRole(auth.userRole);
+    setTenantName(auth.tenantName);
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("qs_token");
-    localStorage.removeItem("qs_tenant_id");
+    localStorage.clear();
     setToken("");
     setTenantId("");
     setIsAuthenticated(false);
@@ -58,67 +61,89 @@ export default function DashboardPage() {
     async function loadDashboardData() {
       if (!isAuthenticated) return;
       try {
-        const headers = { 
+        const headers = {
+          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
-          "Authorization": `Bearer ${token}` 
         };
-        const [sumRes, sleepRes, readinessRes, connRes] = await Promise.all([
+
+        const [summaryRes, metricsRes] = await Promise.all([
           fetch(`${API_BASE}/api/v1/data/metrics/summary`, { headers }),
-          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=sleep_score&limit=30`, { headers }),
-          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=readiness_score&limit=30`, { headers }),
-          fetch(`${API_BASE}/api/v1/data/sources`, { headers }),
+          fetch(`${API_BASE}/api/v1/data/metrics?limit=30`, { headers }),
         ]);
 
-        if (isMounted && sumRes.ok) {
-          const sumData = await sumRes.json();
-          setSummary(sumData.metrics || {});
+        if (summaryRes.ok && isMounted) {
+          const sData = await summaryRes.json();
+          setSummary(sData.metrics || {});
         }
 
-        if (isMounted && sleepRes.ok && readinessRes.ok) {
-          const sleepData = await sleepRes.json();
-          const readinessData = await readinessRes.json();
-          const points = sleepData.data_points || [];
-          const rPoints = readinessData.data_points || [];
-          setChartLabels(points.map((p: { timestamp: string }) => p.timestamp.split("T")[0]));
-          setSleepValues(points.map((p: { value: number }) => p.value));
-          setReadinessValues(rPoints.map((p: { value: number }) => p.value));
-        }
+        if (metricsRes.ok && isMounted) {
+          const mData = await metricsRes.json();
+          const points = mData.data_points || [];
 
-        if (isMounted && connRes.ok) {
-          const connData = await connRes.json();
-          setConnectors(connData.connectors || []);
+          const sleepPts = points.filter((p: { metric_type: string }) => p.metric_type === "sleep_score");
+          const readinessPts = points.filter((p: { metric_type: string }) => p.metric_type === "readiness_score");
+
+          const timestamps = Array.from(
+            new Set(points.map((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString()))
+          ).sort() as string[];
+
+          setChartLabels(timestamps);
+          setSleepValues(
+            timestamps.map((ts) => {
+              const pt = sleepPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pt ? pt.value : 0;
+            })
+          );
+          setReadinessValues(
+            timestamps.map((ts) => {
+              const pt = readinessPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pt ? pt.value : 0;
+            })
+          );
         }
       } catch (err) {
-        console.warn("Backend query fallback:", err);
+        console.error("Failed to load dashboard data:", err);
       }
     }
 
-    if (isAuthenticated) {
-      loadDashboardData();
-    }
+    loadDashboardData();
     return () => {
       isMounted = false;
     };
-  }, [tenantId, token, isAuthenticated, refreshTrigger]);
+  }, [isAuthenticated, token, tenantId, refreshTrigger]);
 
   if (!isAuthenticated) {
     return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
   }
 
   return (
-    <main className="min-h-screen bg-black text-gray-100 p-4 sm:p-8 font-sans selection:bg-blue-500/30">
-      <div className="max-w-6xl mx-auto">
-        <Header 
-          tenantId={tenantId} 
-          onOpenModal={() => setIsModalOpen(true)} 
+    <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto">
+        <Header
+          tenantId={tenantId}
+          userName={userName}
+          userEmail={userEmail}
+          userRole={userRole}
+          tenantName={tenantName}
+          onOpenModal={() => setIsModalOpen(true)}
           onShare={() => setIsShareModalOpen(true)}
           onLogout={handleLogout}
         />
 
-      <MetricCards metrics={summary} />
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-lg font-semibold text-neutral-200">Health & Fitness Overview</h2>
+          <button
+            onClick={triggerRefresh}
+            className="flex items-center gap-2 text-xs text-neutral-400 hover:text-white transition-colors bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-lg"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
+          </button>
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+        <MetricCards metrics={summary} />
+
+        <div className="mt-8">
           <TrendChart
             labels={chartLabels}
             sleepValues={sleepValues}
@@ -127,73 +152,21 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Configured Connectors Control Widget */}
-        <div className="glass-card p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-base font-semibold text-white flex items-center gap-2">
-                <Activity className="w-4 h-4 text-blue-400" />
-                <span>Configured Connectors</span>
-              </h2>
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors"
-              >
-                + Add
-              </button>
-            </div>
+        <ConnectorModal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          token={token}
+          tenantId={tenantId}
+          onSaved={triggerRefresh}
+        />
 
-            <div className="space-y-3">
-              {connectors.length === 0 ? (
-                <div className="text-xs text-gray-400 py-4">No connectors configured yet. Click + Add to configure.</div>
-              ) : (
-                connectors.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 font-bold flex items-center justify-center text-xs">
-                        {c.source_type.substring(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold text-white">{c.source_type.toUpperCase()}</div>
-                        <div className="text-xs text-gray-400 font-mono">Token: {c.masked_token}</div>
-                      </div>
-                    </div>
-                    <span className={`text-xs font-bold ${c.status === "active" ? "text-emerald-400" : "text-gray-400"}`}>
-                      {c.status.toUpperCase()}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="pt-6 border-t border-white/10 mt-6">
-            <button
-              onClick={triggerRefresh}
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Sync All Connectors</span>
-            </button>
-          </div>
-        </div>
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          apiBase={API_BASE}
+          token={token}
+        />
       </div>
-
-      <ConnectorModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        onSaved={triggerRefresh}
-        tenantId={tenantId}
-        token={token}
-      />
-
-      <ShareModal
-        isOpen={isShareModalOpen}
-        onClose={() => setIsShareModalOpen(false)}
-        apiBase={API_BASE}
-        token={token}
-      />
-      </div>
-    </main>
+    </div>
   );
 }
