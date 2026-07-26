@@ -4,7 +4,7 @@ Orchestrates periodic polling of Oura API v2 (daily_sleep, daily_readiness, dail
 transforms raw JSON into standard DataPoints with deterministic SHA256 idempotency_keys,
 and publishes IngestEvent payloads to NATS JetStream subject 'qs.ingest.oura'.
 
-If no live Oura token is set, operates in fallback seed mode to support local dev testing.
+NOTE: Never runs auto-seed generator automatically. Seed data must be executed explicitly.
 """
 
 import asyncio
@@ -22,7 +22,6 @@ from oura_importer.client import (
     OuraUnauthorizedError,
 )
 from oura_importer.config import settings
-from oura_importer.seed import seed_data
 from oura_importer.transformer import (
     transform_activity_data,
     transform_readiness_data,
@@ -35,13 +34,16 @@ logger = logging.getLogger(__name__)
 
 async def fetch_and_publish(nc: nats.NATS):
     """Poll Oura API for sleep, readiness, and activity, and publish to NATS."""
-    if not settings.OURA_ACCESS_TOKEN or settings.OURA_ACCESS_TOKEN.startswith("your_"):
-        logger.warning("No valid OURA_ACCESS_TOKEN found in environment. Running seed data generator instead...")
-        await seed_data(days=30)
+    token = settings.OURA_ACCESS_TOKEN
+    if not token or token.startswith("your_") or token.strip() == "":
+        logger.info(
+            f"No valid OURA_ACCESS_TOKEN configured for tenant '{settings.TENANT_ID}'. "
+            "Waiting for token configuration via UI or environment..."
+        )
         return
 
-    logger.info("Polling Oura API v2 for daily metrics...")
-    client = OuraClient()
+    logger.info(f"Polling Oura API v2 for daily metrics (tenant={settings.TENANT_ID})...")
+    client = OuraClient(access_token=token)
     js = nc.jetstream()
 
     # Poll lookback window configured in settings to ensure temporal overlap and backfill missing data
