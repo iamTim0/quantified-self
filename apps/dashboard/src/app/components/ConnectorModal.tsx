@@ -84,6 +84,7 @@ export default function ConnectorModal({
         }
       } else {
         let finalToken = accessToken.trim();
+        let payloadConfig: Record<string, any> | undefined = undefined;
 
         if (connectorType === "yazio" && yazioAuthMode === "login") {
           if (!yazioEmail.trim() || !yazioPassword.trim()) {
@@ -91,30 +92,12 @@ export default function ConnectorModal({
             setLoading(false);
             return;
           }
-          const authParams = new URLSearchParams();
-          authParams.append("client_id", "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c");
-          authParams.append("client_secret", "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o");
-          authParams.append("grant_type", "password");
-          authParams.append("username", yazioEmail.trim());
-          authParams.append("password", yazioPassword.trim());
-
-          const oauthRes = await fetch("https://yzapi.yazio.com/v15/oauth/token", {
-            method: "POST",
-            headers: { "Content-Type": "application/x-www-form-urlencoded" },
-            body: authParams,
-          });
-
-          if (!oauthRes.ok) {
-            setError("Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.");
-            setLoading(false);
-            return;
-          }
-
-          const oauthData = await oauthRes.json();
-          finalToken = oauthData.access_token;
-        }
-
-        if (!finalToken) {
+          finalToken = "SERVER_OAUTH_LOGIN";
+          payloadConfig = {
+            yazio_email: yazioEmail.trim(),
+            yazio_password: yazioPassword.trim(),
+          };
+        } else if (!finalToken) {
           setError("Bitte gib einen gültigen Access / Bearer Token ein.");
           setLoading(false);
           return;
@@ -131,6 +114,7 @@ export default function ConnectorModal({
             source_type: connectorType,
             access_token: finalToken,
             status: "active",
+            config: payloadConfig,
           }),
         });
 

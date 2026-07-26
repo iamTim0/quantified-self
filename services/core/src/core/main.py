@@ -485,12 +485,40 @@ async def configure_connector(
     """Safely configure a connector for the tenant.
 
     Encrypts raw access tokens with Fernet symmetric AES before database persistence.
+    If Yazio credentials (email/password) are passed, performs server-side OAuth exchange.
     """
     tenant_id = get_current_tenant_id()
+    raw_token = req.access_token
+
+    if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config:
+        email = req.config["yazio_email"]
+        password = req.config["yazio_password"]
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                resp = await client.post(
+                    "https://yzapi.yazio.com/v15/oauth/token",
+                    data={
+                        "client_id": "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c",
+                        "client_secret": "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o",
+                        "grant_type": "password",
+                        "username": email,
+                        "password": password,
+                    },
+                )
+                if not resp.is_success:
+                    raise HTTPException(status_code=400, detail="Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.")
+                token_data = resp.json()
+                raw_token = token_data.get("access_token")
+                if not raw_token:
+                    raise HTTPException(status_code=400, detail="Yazio OAuth token response did not contain access_token")
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Fehler bei Yazio OAuth Verbindung: {e}")
 
     # Encrypt secret at rest
-    encrypted_token = encrypt_secret(req.access_token)
-    masked_token = mask_secret(req.access_token)
+    encrypted_token = encrypt_secret(raw_token)
+    masked_token = mask_secret(raw_token)
 
     config_data = {
         "encrypted_token": encrypted_token,
@@ -499,7 +527,8 @@ async def configure_connector(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if req.config:
-        config_data.update(req.config)
+        clean_config = {k: v for k, v in req.config.items() if k not in ("yazio_email", "yazio_password")}
+        config_data.update(clean_config)
 
     # Check existing data source
     stmt = select(DataSource).where(
