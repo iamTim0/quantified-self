@@ -8,8 +8,8 @@ Ensures compliance with Fizzbee Invariants:
 
 import os
 import base64
+import hashlib
 import logging
-from typing import Dict, Any
 from cryptography.fernet import Fernet
 from core.config import settings
 
@@ -21,13 +21,11 @@ DEV_MASTER_KEY = b'u3vF81M5q9x0L1k7j5H3n9B2v7C1m6N4p8Q0w2E4r6T='
 def _get_fernet_instance() -> Fernet:
     key_str = getattr(settings, "ENCRYPTION_KEY", None) or os.environ.get("ENCRYPTION_KEY")
     if not key_str:
-        # Dev fallback: use deterministic dev key
         key_bytes = DEV_MASTER_KEY
     else:
-        key_bytes = key_str.encode()
-        if len(key_bytes) != 44:
-            # Ensure base64 32-byte key
-            key_bytes = base64.urlsafe_b64encode(key_bytes[:32].ljust(32, b'0'))
+        # Derives a deterministic 32-byte key using SHA-256 and base64 encodes for Fernet
+        hashed = hashlib.sha256(key_str.encode("utf-8")).digest()
+        key_bytes = base64.urlsafe_b64encode(hashed)
     return Fernet(key_bytes)
 
 def encrypt_secret(plaintext: str) -> str:

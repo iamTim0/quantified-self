@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     TENANT_ID: str = "00000000-0000-0000-0000-000000000001"
     SOURCE_ID: str = "00000000-0000-0000-0000-000000000002"
     POLL_INTERVAL_SECONDS: int = 3600
+    POLL_LOOKBACK_DAYS: int = 7
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

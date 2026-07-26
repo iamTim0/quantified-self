@@ -39,8 +39,8 @@ async def fetch_and_publish(nc: nats.NATS):
     client = OuraClient()
     js = nc.jetstream()
 
-    # Poll last 7 days to ensure temporal overlap and backfill missing data
-    start_date = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+    # Poll lookback window configured in settings to ensure temporal overlap and backfill missing data
+    start_date = (datetime.now(timezone.utc) - timedelta(days=settings.POLL_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
 
     data_points = []
 

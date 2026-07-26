@@ -41,7 +41,10 @@ async def proxy_core_service(
     """Proxy HTTP requests to Core Data Service with X-Tenant-ID injection."""
     auth_header = request.headers.get("Authorization")
     if not auth_header or not auth_header.startswith("Bearer "):
-        tenant_id = "00000000-0000-0000-0000-000000000001"
+        if settings.ENVIRONMENT.lower() == "dev":
+            tenant_id = "00000000-0000-0000-0000-000000000001"
+        else:
+            return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
     else:
         token = auth_header.split(" ")[1]
         try:
