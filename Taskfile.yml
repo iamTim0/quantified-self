@@ -59,6 +59,16 @@ tasks:
     cmds:
       - echo "Running linters..."
 
+  run:importer:oura:
+    desc: "Run the Oura Ring importer microservice"
+    cmds:
+      - uv run --directory services/importers/oura python -m oura_importer.main
+
+  seed:oura:
+    desc: "Generate 30 days of mock Oura metric data and publish to NATS"
+    cmds:
+      - uv run --directory services/importers/oura python -m oura_importer.seed
+
   new:importer:
     desc: "Scaffold a new importer (placeholder)"
     cmds:

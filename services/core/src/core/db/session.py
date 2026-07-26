@@ -1,8 +1,9 @@
 from typing import AsyncGenerator
+from sqlalchemy.pool import NullPool
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from core.config import settings
 
-# Disable SSL for local asyncpg connections
+# Use NullPool for asyncpg engine to ensure every request/test gets its own isolated connection
 connect_args = {
     "ssl": False,
 }
@@ -10,6 +11,7 @@ connect_args = {
 engine = create_async_engine(
     settings.DATABASE_URL,
     echo=False,
+    poolclass=NullPool,
     connect_args=connect_args,
 )
 

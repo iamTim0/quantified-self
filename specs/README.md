@@ -32,6 +32,9 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `EventualConsistency` | `test_network_partition_recovery` | NATS / Importers |
 | `NoUnauthorizedAccess` | `test_query_returns_only_own_data` | Core Data Service (Queries) |
 | `ShareRevocationImmediate` | `test_share_revocation_blocks_access` | Core Data Service (Queries) |
+| `IdempotencyKeyDeterministic` | `test_oura_idempotency_key_deterministic` | Oura Importer |
+| `TokenRefreshEnforced` | `test_oura_token_refresh_on_401` | Oura Importer |
+| `UniqueKeyMapping` | `test_oura_transformer_schema_mapping` | Oura Importer |
 
 ## Adding New Specs
 

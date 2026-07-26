@@ -1,0 +1,75 @@
+# Fizzbee Formal Specification: Core Data Service Query Layer
+# Models REST & gRPC read queries, tenant filtering, and cross-tenant consent checking.
+
+TENANTS = ["tenant_a", "tenant_b", "tenant_c"]
+METRICS = ["sleep_score", "readiness_score", "steps"]
+
+# State
+database_records = [
+    {"tenant_id": "tenant_a", "metric_type": "sleep_score", "val": 88},
+    {"tenant_id": "tenant_a", "metric_type": "steps", "val": 10000},
+    {"tenant_id": "tenant_b", "metric_type": "sleep_score", "val": 75},
+    {"tenant_id": "tenant_c", "metric_type": "readiness_score", "val": 90}
+]
+
+tenant_shares = [
+    {"grantor": "tenant_a", "grantee": "tenant_b", "scope": "read_all"}
+]
+
+query_result = []
+query_caller = "IDLE"
+query_target = "IDLE"
+access_granted = False
+
+atomic action QuerySelfData:
+    caller = any(TENANTS)
+    metric = any(METRICS)
+    
+    query_caller = caller
+    query_target = caller
+    access_granted = True
+    
+    query_result = []
+    for rec in database_records:
+        if rec["tenant_id"] == caller and rec["metric_type"] == metric:
+            query_result.append(rec)
+
+atomic action QueryOtherData:
+    caller = any(TENANTS)
+    target = any(TENANTS)
+    metric = any(METRICS)
+    
+    require caller != target
+    
+    query_caller = caller
+    query_target = target
+    
+    # Check consent grant
+    has_consent = False
+    for share in tenant_shares:
+        if share["grantor"] == target and share["grantee"] == caller:
+            has_consent = True
+            
+    access_granted = has_consent
+    query_result = []
+    
+    if has_consent == True:
+        for rec in database_records:
+            if rec["tenant_id"] == target and rec["metric_type"] == metric:
+                query_result.append(rec)
+
+# SAFETY INVARIANTS
+
+always assertion StrictTenantIsolationOnRead:
+    # If caller queries target without consent, result MUST be empty
+    if access_granted == False:
+        return len(query_result) == 0
+    return True
+
+always assertion ReturnedDataBelongsToTarget:
+    # Every record returned belongs to the requested target tenant
+    if len(query_result) > 0:
+        for rec in query_result:
+            if rec["tenant_id"] != query_target:
+                return False
+    return True
