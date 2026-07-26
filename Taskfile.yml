@@ -60,8 +60,8 @@ tasks:
     desc: "Run linters across Python & Next.js dashboard"
     cmds:
       - uv run --with ruff ruff check services/ specs/
-      - pnpm --prefix apps/dashboard lint
-      - pnpm --prefix apps/dashboard exec tsc --noEmit
+      - npx pnpm --prefix apps/dashboard lint
+      - npx pnpm --prefix apps/dashboard exec tsc --noEmit
 
   run:core:
     desc: "Run Core Data Service on port 8001"
@@ -81,7 +81,7 @@ tasks:
   dashboard:
     desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
     cmds:
-      - pnpm --prefix apps/dashboard dev
+      - npx pnpm --prefix apps/dashboard dev
 
   dev:local:
     desc: "Start Postgres + NATS containers, run DB migrations, and launch all 4 local microservices concurrently"
