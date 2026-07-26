@@ -130,27 +130,32 @@ async def proxy_auth_service(
             )
 
 
+@app.api_route("/api/v1/internal/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,
     request: Request,
 ):
     """Proxy HTTP requests to Core Data Service with X-Tenant-ID & X-Request-ID injection."""
+    tenant_id = request.headers.get("X-Tenant-ID")
     auth_header = request.headers.get("Authorization")
-    if not auth_header or not auth_header.startswith("Bearer "):
-        if settings.ENVIRONMENT.lower() == "dev":
-            tenant_id = "00000000-0000-0000-0000-000000000001"
-        else:
-            return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
-    else:
-        token = auth_header.split(" ", 1)[1]
-        try:
-            claims = decode_jwt(token)
-            tenant_id = claims["tenant_id"]
-        except HTTPException as e:
-            return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
 
-    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/data/{path}"
+    if not tenant_id:
+        if not auth_header or not auth_header.startswith("Bearer "):
+            if settings.ENVIRONMENT.lower() == "dev":
+                tenant_id = "00000000-0000-0000-0000-000000000001"
+            else:
+                return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
+        else:
+            token = auth_header.split(" ", 1)[1]
+            try:
+                claims = decode_jwt(token)
+                tenant_id = claims["tenant_id"]
+            except HTTPException as e:
+                return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+    prefix = "internal/data" if request.url.path.startswith("/api/v1/internal/data") else "data"
+    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/{prefix}/{path}"
 
     forwarded_headers = {
         k: v for k, v in request.headers.items()
