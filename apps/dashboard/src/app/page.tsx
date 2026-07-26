@@ -1,25 +1,26 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Header from "./components/Header";
-import MetricCards, { SummaryMetrics } from "./components/MetricCards";
-import TrendChart from "./components/TrendChart";
+import Header, { TabType } from "./components/Header";
+import OverviewTab from "./components/OverviewTab";
 import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
-import { RefreshCw } from "lucide-react";
+import { SummaryMetrics } from "./components/MetricCards";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function DashboardPage() {
-  const [token, setToken] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_token") || "" : ""));
-  const [tenantId, setTenantId] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_tenant_id") || "" : ""));
-  const [userName, setUserName] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_name") || "Timo" : "Timo"));
-  const [userEmail, setUserEmail] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_email") || "timo@example.com" : "timo@example.com"));
-  const [userRole, setUserRole] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_user_role") || "owner" : "owner"));
-  const [tenantName, setTenantName] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("qs_tenant_name") || "Timo's Workspace" : "Timo's Workspace"));
+  const [mounted, setMounted] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("overview");
 
-  const [isAuthenticated, setIsAuthenticated] = useState(() => typeof window !== "undefined" && Boolean(localStorage.getItem("qs_token") && localStorage.getItem("qs_tenant_id")));
+  const [token, setToken] = useState("");
+  const [tenantId, setTenantId] = useState("");
+  const [userName, setUserName] = useState("Timo");
+  const [userEmail, setUserEmail] = useState("timo@example.com");
+  const [userRole, setUserRole] = useState("owner");
+  const [tenantName, setTenantName] = useState("Timo's Workspace");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const [summary, setSummary] = useState<SummaryMetrics>({});
   const [chartLabels, setChartLabels] = useState<string[]>([]);
@@ -29,6 +30,21 @@ export default function DashboardPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  useEffect(() => {
+    setMounted(true);
+    const storedToken = localStorage.getItem("qs_token") || "";
+    const storedTenant = localStorage.getItem("qs_tenant_id") || "";
+    if (storedToken && storedTenant) {
+      setToken(storedToken);
+      setTenantId(storedTenant);
+      setUserName(localStorage.getItem("qs_user_name") || "Timo");
+      setUserEmail(localStorage.getItem("qs_user_email") || "timo@example.com");
+      setUserRole(localStorage.getItem("qs_user_role") || "owner");
+      setTenantName(localStorage.getItem("qs_tenant_name") || "Timo's Workspace");
+      setIsAuthenticated(true);
+    }
+  }, []);
 
   const handleLogin = (auth: UserAuthData) => {
     localStorage.setItem("qs_token", auth.token);
@@ -57,9 +73,10 @@ export default function DashboardPage() {
   const triggerRefresh = () => setRefreshTrigger((prev) => prev + 1);
 
   useEffect(() => {
+    if (!mounted || !isAuthenticated) return;
     let isMounted = true;
+
     async function loadDashboardData() {
-      if (!isAuthenticated) return;
       try {
         const headers = {
           Authorization: `Bearer ${token}`,
@@ -110,7 +127,11 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [isAuthenticated, token, tenantId, refreshTrigger]);
+  }, [mounted, isAuthenticated, token, tenantId, refreshTrigger]);
+
+  if (!mounted) {
+    return <div className="min-h-screen bg-neutral-950" />;
+  }
 
   if (!isAuthenticated) {
     return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
@@ -125,32 +146,23 @@ export default function DashboardPage() {
           userEmail={userEmail}
           userRole={userRole}
           tenantName={tenantName}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
           onOpenModal={() => setIsModalOpen(true)}
           onShare={() => setIsShareModalOpen(true)}
           onLogout={handleLogout}
         />
 
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold text-neutral-200">Health & Fitness Overview</h2>
-          <button
-            onClick={triggerRefresh}
-            className="flex items-center gap-2 text-xs text-neutral-400 hover:text-white transition-colors bg-neutral-900 border border-neutral-800 px-3 py-1.5 rounded-lg"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Refresh</span>
-          </button>
-        </div>
-
-        <MetricCards metrics={summary} />
-
-        <div className="mt-8">
-          <TrendChart
-            labels={chartLabels}
+        {activeTab === "overview" && (
+          <OverviewTab
+            summary={summary}
+            chartLabels={chartLabels}
             sleepValues={sleepValues}
             readinessValues={readinessValues}
             onRefresh={triggerRefresh}
+            onNavigateToConnectors={() => setActiveTab("connectors")}
           />
-        </div>
+        )}
 
         <ConnectorModal
           isOpen={isModalOpen}

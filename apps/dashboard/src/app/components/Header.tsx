@@ -1,14 +1,18 @@
 "use client";
 
 import React from "react";
-import { Activity, Settings, Share2, LogOut, User as UserIcon, Building2 } from "lucide-react";
+import { Activity, Plus, Share2, LogOut, LayoutDashboard, LineChart, Plug } from "lucide-react";
+
+export type TabType = "overview" | "explorer" | "connectors";
 
 interface HeaderProps {
   tenantId: string;
-  userName?: string;
-  userEmail?: string;
-  userRole?: string;
-  tenantName?: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  tenantName: string;
+  activeTab: TabType;
+  onTabChange: (tab: TabType) => void;
   onOpenModal: () => void;
   onShare: () => void;
   onLogout: () => void;
@@ -16,64 +20,93 @@ interface HeaderProps {
 
 export default function Header({
   tenantId,
-  userName = "Timo",
-  userEmail = "timo@example.com",
-  userRole = "owner",
-  tenantName = "Timo's Workspace",
+  userName,
+  userEmail,
+  userRole,
+  tenantName,
+  activeTab,
+  onTabChange,
   onOpenModal,
   onShare,
   onLogout,
 }: HeaderProps) {
   return (
-    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 pb-4 border-b border-white/10">
+    <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 pb-6 border-b border-neutral-800/80">
       <div className="flex items-center gap-4">
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-purple-500/20 text-white">
+        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/20">
           <Activity className="w-6 h-6" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-white">{tenantName}</h1>
-            <span className="px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300">
+            <h1 className="text-xl font-bold text-white">{tenantName}</h1>
+            <span className="text-[10px] uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/10 border border-purple-500/20 text-purple-300 font-semibold">
               {userRole}
             </span>
           </div>
-          <div className="flex items-center gap-3 text-xs text-neutral-400 mt-0.5">
-            <span className="flex items-center gap-1">
-              <UserIcon className="w-3.5 h-3.5 text-neutral-500" />
-              {userName} ({userEmail})
-            </span>
-            <span>•</span>
-            <span className="flex items-center gap-1 font-mono text-neutral-500">
-              <Building2 className="w-3.5 h-3.5" />
-              Tenant: {tenantId.slice(0, 8)}...
-            </span>
-          </div>
+          <p className="text-xs text-neutral-400">
+            Welcome back, {userName} <span className="text-neutral-600">({userEmail})</span>
+          </p>
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Navigation Tabs */}
+      <nav className="flex items-center p-1 rounded-xl bg-neutral-900/90 border border-neutral-800 backdrop-blur-md">
         <button
-          onClick={onShare}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-purple-600 hover:bg-purple-500 transition-all text-white shadow-lg shadow-purple-600/20"
+          onClick={() => onTabChange("overview")}
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === "overview"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+              : "text-neutral-400 hover:text-white"
+          }`}
         >
-          <Share2 className="w-4 h-4" />
-          <span>Share Data</span>
+          <LayoutDashboard className="w-3.5 h-3.5" />
+          <span>Overview</span>
         </button>
-
         <button
-          onClick={onOpenModal}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-neutral-200"
+          onClick={() => onTabChange("explorer")}
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === "explorer"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+              : "text-neutral-400 hover:text-white"
+          }`}
         >
-          <Settings className="w-4 h-4 text-purple-400" />
+          <LineChart className="w-3.5 h-3.5" />
+          <span>Data Explorer</span>
+        </button>
+        <button
+          onClick={() => onTabChange("connectors")}
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === "connectors"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+              : "text-neutral-400 hover:text-white"
+          }`}
+        >
+          <Plug className="w-3.5 h-3.5" />
           <span>Connectors</span>
         </button>
+      </nav>
 
+      <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+        <button
+          onClick={onShare}
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white hover:border-neutral-700 transition-colors"
+        >
+          <Share2 className="w-3.5 h-3.5" />
+          <span>Share</span>
+        </button>
+        <button
+          onClick={onOpenModal}
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-600/20"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Add Connector</span>
+        </button>
         <button
           onClick={onLogout}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-xl bg-red-500/10 hover:bg-red-500/20 transition-all text-red-400 border border-red-500/20"
+          className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-xl transition-colors"
+          title="Logout"
         >
           <LogOut className="w-4 h-4" />
-          <span>Sign Out</span>
         </button>
       </div>
     </header>
