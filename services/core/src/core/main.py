@@ -11,7 +11,8 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Literal
+from typing import Any, Literal
+import json
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Query
@@ -46,6 +47,7 @@ class ConfigureConnectorRequest(BaseModel):
     # SECURITY H6: Limit access_token length to prevent memory/DB abuse
     access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
+    config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
 
 
 class UserSignupRequest(BaseModel):
@@ -71,6 +73,7 @@ async def lifespan(app: FastAPI):
         return
     try:
         nc = await start_consumer()
+        app.state.nats_client = nc
         yield
         await nc.close()
     except Exception:
@@ -406,6 +409,15 @@ async def configure_connector(
     encrypted_token = encrypt_secret(req.access_token)
     masked_token = mask_secret(req.access_token)
 
+    config_data = {
+        "encrypted_token": encrypted_token,
+        "masked_token": masked_token,
+        "status": req.status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if req.config:
+        config_data.update(req.config)
+
     # Check existing data source
     stmt = select(DataSource).where(
         DataSource.tenant_id == tenant_id,
@@ -415,12 +427,7 @@ async def configure_connector(
     existing = res.scalars().first()
 
     if existing:
-        existing.config = {
-            "encrypted_token": encrypted_token,
-            "masked_token": masked_token,
-            "status": req.status,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+        existing.config = config_data
         source_id = existing.id
     else:
         source_id = str(uuid.uuid4())
@@ -428,16 +435,22 @@ async def configure_connector(
             id=source_id,
             tenant_id=tenant_id,
             source_type=req.source_type,
-            config={
-                "encrypted_token": encrypted_token,
-                "masked_token": masked_token,
-                "status": req.status,
-                "updated_at": datetime.now(timezone.utc).isoformat(),
-            },
+            config=config_data,
         )
         session.add(new_source)
 
     await session.commit()
+
+    req_id = str(uuid.uuid4())
+    payload = json.dumps({
+        "tenant_id": tenant_id,
+        "source_type": req.source_type,
+        "request_id": req_id
+    }).encode("utf-8")
+    
+    nc = getattr(app.state, "nats_client", None)
+    if nc:
+        await nc.publish(f"qs.task.sync.{req.source_type}", payload)
 
     return {
         "status": "success",
@@ -446,6 +459,40 @@ async def configure_connector(
         "tenant_id": tenant_id,
         "source_type": req.source_type,
         "masked_token": masked_token,
+    }
+
+
+@app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
+async def trigger_sync(
+    source_type: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Trigger an on-demand sync for a connector."""
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == source_type,
+    )
+    res = await session.execute(stmt)
+    if not res.scalars().first():
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    req_id = str(uuid.uuid4())
+    payload = json.dumps({
+        "tenant_id": tenant_id,
+        "source_type": source_type,
+        "request_id": req_id
+    }).encode("utf-8")
+    
+    nc = getattr(app.state, "nats_client", None)
+    if nc:
+        await nc.publish(f"qs.task.sync.{source_type}", payload)
+
+    return {
+        "status": "sync_queued",
+        "source_type": source_type,
+        "tenant_id": tenant_id
     }
 
 
@@ -507,6 +554,7 @@ async def get_connector_token(
             "source_type": source_type,
             "access_token": decrypted_token,
             "status": source.config.get("status", "active"),
+            "config": source.config or {},
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
