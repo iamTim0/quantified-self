@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plug, RefreshCw, CheckCircle2, ShieldCheck, UploadCloud, Key } from "lucide-react";
+import { Plug, RefreshCw, CheckCircle2, AlertCircle, ShieldCheck, UploadCloud, Key } from "lucide-react";
 
 interface ConnectorInfo {
   id: string;
@@ -28,7 +28,7 @@ export default function ConnectorsPage({
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   async function fetchConnectors() {
     setLoading(true);
@@ -58,7 +58,7 @@ export default function ConnectorsPage({
 
   const handleTriggerSync = async (sourceType: string) => {
     setSyncingSource(sourceType);
-    setSyncMessage(null);
+    setSyncStatus(null);
     try {
       const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}/sync`, {
         method: "POST",
@@ -68,12 +68,23 @@ export default function ConnectorsPage({
         },
       });
       if (res.ok) {
-        setSyncMessage(`Sync task queued successfully for ${sourceType.toUpperCase()}!`);
+        setSyncStatus({
+          type: "success",
+          message: `Sync task queued successfully for ${sourceType.toUpperCase()}!`,
+        });
       } else {
-        setSyncMessage(`Failed to trigger sync for ${sourceType.toUpperCase()}`);
+        const errData = await res.json().catch(() => ({}));
+        const detail = errData.detail || `Failed to trigger sync for ${sourceType.toUpperCase()}`;
+        setSyncStatus({
+          type: "error",
+          message: detail === "Connector not configured" ? `${sourceType.toUpperCase()} connector is not configured yet. Click 'Configure Connector' above to set it up.` : detail,
+        });
       }
     } catch (err) {
-      setSyncMessage("Error triggering sync task.");
+      setSyncStatus({
+        type: "error",
+        message: `Error triggering sync task for ${sourceType.toUpperCase()}.`,
+      });
     } finally {
       setSyncingSource(null);
     }
@@ -97,10 +108,20 @@ export default function ConnectorsPage({
         </button>
       </div>
 
-      {syncMessage && (
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300 flex items-center gap-2">
-          <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
-          <span>{syncMessage}</span>
+      {syncStatus && (
+        <div
+          className={`rounded-xl border p-3 text-xs flex items-center gap-2 ${
+            syncStatus.type === "success"
+              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
+              : "border-red-500/20 bg-red-500/10 text-red-300"
+          }`}
+        >
+          {syncStatus.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          ) : (
+            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+          )}
+          <span>{syncStatus.message}</span>
         </div>
       )}
 
