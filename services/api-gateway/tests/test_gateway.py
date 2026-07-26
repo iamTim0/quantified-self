@@ -32,6 +32,7 @@ async def test_dev_token_generator(monkeypatch):
     monkeypatch.setenv("ENVIRONMENT", "dev")
     # Re-import to pick up env change
     import importlib
+
     import gateway.config
     importlib.reload(gateway.config)
     import gateway.main
@@ -54,6 +55,7 @@ async def test_dev_token_hidden_in_production():
     """Dev-token endpoint should return 404 when ENVIRONMENT=production (default)."""
     os.environ.pop("ENVIRONMENT", None)
     import importlib
+
     import gateway.config
     importlib.reload(gateway.config)
     import gateway.main

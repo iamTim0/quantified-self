@@ -78,6 +78,48 @@ async def get_dev_token(tenant_id: str = Query("00000000-0000-0000-0000-00000000
     }
 
 
+@app.api_route("/api/v1/auth/{path:path}", methods=["POST"])
+async def proxy_auth_service(
+    path: str,
+    request: Request,
+):
+    """Proxy HTTP requests to Core Auth Service."""
+    if path == "dev-token":
+        # Skip proxying dev-token as it's handled above
+        return await get_dev_token()
+
+    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/auth/{path}"
+    
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _SAFE_FORWARD_HEADERS
+    }
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=forwarded_headers,
+                params=request.query_params,
+                content=await request.body(),
+            )
+            safe_response_headers = {
+                k: v for k, v in response.headers.items()
+                if k.lower() not in {"transfer-encoding", "connection", "server"}
+            }
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=safe_response_headers,
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Core Data Service unavailable: {e!s}",
+            )
+
+
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,

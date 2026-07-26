@@ -31,7 +31,7 @@ def set_current_tenant_id(tenant_id: str) -> None:
 class TenantMiddleware(BaseHTTPMiddleware):
     """Extract tenant_id from X-Tenant-ID header and bind to async context."""
 
-    EXEMPT_PATHS: ClassVar[set[str]] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json"}
+    EXEMPT_PATHS: ClassVar[set[str]] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json", "/api/v1/auth/signup", "/api/v1/auth/login"}
 
     async def dispatch(
         self, request: RequestResponseEndpoint, call_next: RequestResponseEndpoint

@@ -5,6 +5,8 @@ import Header from "./components/Header";
 import MetricCards, { SummaryMetrics } from "./components/MetricCards";
 import TrendChart from "./components/TrendChart";
 import ConnectorModal from "./components/ConnectorModal";
+import AuthScreen from "./components/AuthScreen";
+import ShareModal from "./components/ShareModal";
 import { Activity, RefreshCw } from "lucide-react";
 
 // SECURITY C5: All API calls go through the Gateway (port 8000), never directly to Core.
@@ -19,34 +21,63 @@ interface ConnectorItem {
 }
 
 export default function DashboardPage() {
-  const [tenantId] = useState("00000000-0000-0000-0000-000000000001");
+  const [tenantId, setTenantId] = useState("");
+  const [token, setToken] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
   const [summary, setSummary] = useState<SummaryMetrics>({});
   const [chartLabels, setChartLabels] = useState<string[]>([]);
   const [sleepValues, setSleepValues] = useState<number[]>([]);
   const [readinessValues, setReadinessValues] = useState<number[]>([]);
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Restore session from localStorage on mount
+  useEffect(() => {
+    const savedToken = localStorage.getItem("qs_token");
+    const savedTenantId = localStorage.getItem("qs_tenant_id");
+    if (savedToken && savedTenantId) {
+      setToken(savedToken);
+      setTenantId(savedTenantId);
+      setIsAuthenticated(true);
+    }
+  }, []);
+
+  const handleLogin = (jwtToken: string, tId: string) => {
+    localStorage.setItem("qs_token", jwtToken);
+    localStorage.setItem("qs_tenant_id", tId);
+    setToken(jwtToken);
+    setTenantId(tId);
+    setIsAuthenticated(true);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("qs_token");
+    localStorage.removeItem("qs_tenant_id");
+    setToken("");
+    setTenantId("");
+    setIsAuthenticated(false);
+  };
 
   const triggerRefresh = () => setRefreshTrigger((prev) => prev + 1);
 
   useEffect(() => {
     let isMounted = true;
     async function loadDashboardData() {
+      if (!isAuthenticated) return;
       try {
+        const headers = { 
+          "X-Tenant-ID": tenantId,
+          "Authorization": `Bearer ${token}` 
+        };
         const [sumRes, sleepRes, readinessRes, connRes] = await Promise.all([
-          fetch(`${API_BASE}/api/v1/data/metrics/summary`, {
-            headers: { "X-Tenant-ID": tenantId },
-          }),
-          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=sleep_score&limit=30`, {
-            headers: { "X-Tenant-ID": tenantId },
-          }),
-          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=readiness_score&limit=30`, {
-            headers: { "X-Tenant-ID": tenantId },
-          }),
-          fetch(`${API_BASE}/api/v1/data/sources`, {
-            headers: { "X-Tenant-ID": tenantId },
-          }),
+          fetch(`${API_BASE}/api/v1/data/metrics/summary`, { headers }),
+          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=sleep_score&limit=30`, { headers }),
+          fetch(`${API_BASE}/api/v1/data/metrics?metric_type=readiness_score&limit=30`, { headers }),
+          fetch(`${API_BASE}/api/v1/data/sources`, { headers }),
         ]);
 
         if (isMounted && sumRes.ok) {
@@ -67,22 +98,27 @@ export default function DashboardPage() {
         if (isMounted && connRes.ok) {
           const connData = await connRes.json();
           setConnectors(connData.connectors || []);
-        }
-      } catch (err) {
-        console.warn("Backend query fallback:", err);
-      }
+    if (isAuthenticated) {
+      loadDashboardData();
     }
-
-    loadDashboardData();
-
     return () => {
       isMounted = false;
     };
-  }, [tenantId, refreshTrigger]);
+  }, [tenantId, token, isAuthenticated, refreshTrigger]);
+
+  if (!isAuthenticated) {
+    return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
+  }
 
   return (
-    <main className="max-w-7xl mx-auto p-4 sm:p-8">
-      <Header tenantId={tenantId} onOpenModal={() => setIsModalOpen(true)} />
+    <main className="min-h-screen bg-black text-gray-100 p-4 sm:p-8 font-sans selection:bg-blue-500/30">
+      <div className="max-w-6xl mx-auto">
+        <Header 
+          tenantId={tenantId} 
+          onOpenModal={() => setIsModalOpen(true)} 
+          onShare={() => setIsShareModalOpen(true)}
+          onLogout={handleLogout}
+        />
 
       <MetricCards metrics={summary} />
 
@@ -153,7 +189,16 @@ export default function DashboardPage() {
         onClose={() => setIsModalOpen(false)}
         onSaved={triggerRefresh}
         tenantId={tenantId}
+        token={token}
       />
+
+      <ShareModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+        apiBase={API_BASE}
+        token={token}
+      />
+      </div>
     </main>
   );
 }

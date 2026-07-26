@@ -8,9 +8,10 @@ interface ConnectorModalProps {
   onClose: () => void;
   onSaved: () => void;
   tenantId: string;
+  token: string;
 }
 
-export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId }: ConnectorModalProps) {
+export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, token }: ConnectorModalProps) {
   const [sourceType, setSourceType] = useState("oura");
   const [accessToken, setAccessToken] = useState("");
   const [status, setStatus] = useState("active");
@@ -34,6 +35,7 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId }: C
         headers: {
           "Content-Type": "application/json",
           "X-Tenant-ID": tenantId,
+          "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
           source_type: sourceType,
