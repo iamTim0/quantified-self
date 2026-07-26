@@ -131,6 +131,11 @@ async def main():
     logger.info(f"Connected to NATS at {settings.NATS_URL}")
 
     js = nc.jetstream()
+    try:
+        await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+    except Exception as e:
+        logger.info(f"Stream 'tasks' check: {e}")
+
     await js.subscribe("qs.task.sync.oura", queue="oura_importer_task_group", cb=lambda msg: process_task_message(msg, nc))
     logger.info("Subscribed to NATS subject 'qs.task.sync.oura' (queue group: 'oura_importer_task_group')")
 

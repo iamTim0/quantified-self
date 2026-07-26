@@ -450,7 +450,18 @@ async def configure_connector(
     
     nc = getattr(app.state, "nats_client", None)
     if nc:
-        await nc.publish(f"qs.task.sync.{req.source_type}", payload)
+        try:
+            if hasattr(nc, "jetstream"):
+                js = nc.jetstream()
+                try:
+                    await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+                except Exception:
+                    pass
+                await js.publish(f"qs.task.sync.{req.source_type}", payload)
+            else:
+                await nc.publish(f"qs.task.sync.{req.source_type}", payload)
+        except Exception as e:
+            logger.warning(f"Failed to publish task sync event: {e}")
 
     return {
         "status": "success",
@@ -487,7 +498,18 @@ async def trigger_sync(
     
     nc = getattr(app.state, "nats_client", None)
     if nc:
-        await nc.publish(f"qs.task.sync.{source_type}", payload)
+        try:
+            if hasattr(nc, "jetstream"):
+                js = nc.jetstream()
+                try:
+                    await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+                except Exception:
+                    pass
+                await js.publish(f"qs.task.sync.{source_type}", payload)
+            else:
+                await nc.publish(f"qs.task.sync.{source_type}", payload)
+        except Exception as e:
+            logger.warning(f"Failed to publish task sync event: {e}")
 
     return {
         "status": "sync_queued",
