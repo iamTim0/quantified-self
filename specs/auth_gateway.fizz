@@ -1,0 +1,54 @@
+# Fizzbee Formal Specification: API Gateway & JWT Auth Proxy
+# Models gateway authentication, tenant header injection, and microservice proxy routing.
+
+CLIENT_REQUESTS = [
+    {"path": "/api/v1/data/metrics", "token": "valid_tenant_a"},
+    {"path": "/api/v1/data/metrics", "token": "valid_tenant_b"},
+    {"path": "/api/v1/data/metrics", "token": "expired_token"},
+    {"path": "/api/v1/data/metrics", "token": "no_token"}
+]
+
+TOKENS_DB = {
+    "valid_tenant_a": {"tenant_id": "tenant_a", "valid": True},
+    "valid_tenant_b": {"tenant_id": "tenant_b", "valid": True},
+    "expired_token": {"tenant_id": "tenant_a", "valid": False}
+}
+
+downstream_queue = []
+gateway_rejected_count = 0
+
+atomic action GatewayProcessRequest:
+    req = any(CLIENT_REQUESTS)
+    token = req["token"]
+    
+    # Auth validation logic
+    if token not in TOKENS_DB or TOKENS_DB[token]["valid"] == False:
+        # Reject at gateway
+        gateway_rejected_count = gateway_rejected_count + 1
+    else:
+        tenant_id = TOKENS_DB[token]["tenant_id"]
+        
+        # Inject X-Tenant-ID header and forward
+        forwarded_req = {
+            "path": req["path"],
+            "x_tenant_id": tenant_id,
+            "origin_token": token
+        }
+        downstream_queue.append(forwarded_req)
+
+# SAFETY INVARIANTS
+
+always assertion UnauthenticatedRequestsBlocked:
+    # No request in downstream_queue came from an invalid or missing token
+    for req in downstream_queue:
+        token = req["origin_token"]
+        if token not in TOKENS_DB or TOKENS_DB[token]["valid"] == False:
+            return False
+    return True
+
+always assertion TenantHeaderAlwaysInjected:
+    # Every request in downstream_queue has a non-empty x_tenant_id matching the token
+    for req in downstream_queue:
+        if req.get("x_tenant_id") == None or req.get("x_tenant_id") == "":
+            return False
+    return True

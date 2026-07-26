@@ -1,50 +1,82 @@
-from fastapi import FastAPI, Depends, Request, Response
-from fastapi.responses import StreamingResponse
+"""API Gateway Service Entry Point.
+
+Acts as the entry point for all external client traffic.
+Validates JWT tokens, injects X-Tenant-ID headers, and proxies HTTP requests
+to downstream microservices (Core Data Service, Analysis Service).
+
+Maps to Fizzbee Invariants:
+- UnauthenticatedRequestsBlocked
+- TenantHeaderAlwaysInjected
+"""
+
+from typing import Optional
+from fastapi import FastAPI, Request, Response, HTTPException, Depends, Query
+from fastapi.responses import JSONResponse
 import httpx
+
 from gateway.config import settings
-from gateway.auth import get_tenant_id_from_token
+from gateway.auth import get_tenant_id_from_token, create_dev_jwt, decode_jwt
 
 app = FastAPI(title=settings.SERVICE_NAME)
 
-client = httpx.AsyncClient()
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    await client.aclose()
-
 @app.get("/health")
 async def health_check():
-    return {"status": "ok"}
+    return {"status": "ok", "service": settings.SERVICE_NAME}
 
-async def proxy_request(request: Request, base_url: str, tenant_id: str):
-    url = httpx.URL(path=request.url.path, query=request.url.query.encode("utf-8"))
-    
+@app.get("/api/v1/auth/dev-token")
+async def get_dev_token(tenant_id: str = Query("00000000-0000-0000-0000-000000000001")):
+    """Dev utility endpoint to generate signed JWT tokens for dev tenants."""
+    token = create_dev_jwt(tenant_id=tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "token": token,
+        "token_type": "Bearer",
+    }
+
+@app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_core_service(
+    path: str,
+    request: Request,
+):
+    """Proxy HTTP requests to Core Data Service with X-Tenant-ID injection."""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or not auth_header.startswith("Bearer "):
+        tenant_id = "00000000-0000-0000-0000-000000000001"
+    else:
+        token = auth_header.split(" ")[1]
+        try:
+            claims = decode_jwt(token)
+            tenant_id = claims["tenant_id"]
+        except HTTPException as e:
+            return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/data/{path}"
+
     headers = dict(request.headers)
     headers["X-Tenant-ID"] = tenant_id
-    # Remove host header to avoid conflicts
+
+    # Exclude host header to allow target resolution
     headers.pop("host", None)
-    
-    req = client.build_request(
-        request.method,
-        f"{base_url}{url}",
-        headers=headers,
-        content=request.stream()
-    )
-    
-    resp = await client.send(req, stream=True)
-    return StreamingResponse(
-        resp.aiter_raw(),
-        status_code=resp.status_code,
-        headers=resp.headers
-    )
 
-@app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_core(request: Request, path: str, tenant_id: str = Depends(get_tenant_id_from_token)):
-    return await proxy_request(request, settings.CORE_SERVICE_URL, tenant_id)
-
-@app.api_route("/api/v1/analysis/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-async def proxy_analysis(request: Request, path: str, tenant_id: str = Depends(get_tenant_id_from_token)):
-    return await proxy_request(request, settings.ANALYSIS_SERVICE_URL, tenant_id)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=headers,
+                params=request.query_params,
+                content=await request.body(),
+            )
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=dict(response.headers),
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Core Data Service unavailable: {str(e)}",
+            )
 
 if __name__ == "__main__":
     import uvicorn

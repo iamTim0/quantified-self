@@ -35,6 +35,8 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `IdempotencyKeyDeterministic` | `test_oura_idempotency_key_deterministic` | Oura Importer |
 | `TokenRefreshEnforced` | `test_oura_token_refresh_on_401` | Oura Importer |
 | `UniqueKeyMapping` | `test_oura_transformer_schema_mapping` | Oura Importer |
+| `UnauthenticatedRequestsBlocked` | `test_unauthenticated_requests_blocked` | API Gateway |
+| `TenantHeaderAlwaysInjected` | `test_tenant_header_always_injected` | API Gateway |
 
 ## Adding New Specs
 
