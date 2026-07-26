@@ -39,6 +39,9 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `TenantHeaderAlwaysInjected` | `test_tenant_header_always_injected` | API Gateway |
 | `SecretsAlwaysEncryptedAtRest` | `test_secrets_always_encrypted_at_rest` | Core Data Service |
 | `SecretMaskedInReadResponse` | `test_secret_masked_in_read_response` | Core Data Service |
+| `CsvUploadTenantIsolation` | `test_oura_csv_import_is_tenant_scoped` | Core Data Service |
+| `CsvUploadNoDuplicateData` | `test_oura_csv_idempotency_key_is_deterministic` | Core Data Service |
+| `CsvUploadDataIntegrity` | `test_oura_csv_normalizes_native_export_columns` | Core Data Service |
 | `NoEmptyDataWhenReady` | `test_no_empty_data_when_ready` | Next.js Dashboard |
 | `ModalStateValid` | `test_modal_state_valid` | Next.js Dashboard |
 

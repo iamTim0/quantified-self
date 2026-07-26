@@ -12,13 +12,15 @@ Maps to Fizzbee Invariants:
 import pytest
 from core.main import app
 from httpx import ASGITransport, AsyncClient
+from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
 
 @pytest.mark.asyncio
 async def test_configure_and_list_connectors():
     transport = ASGITransport(app=app)
-    headers = {"X-Tenant-ID": "00000000-0000-0000-0000-000000000001"}
+    tenant_id = await create_test_tenant()
+    headers = {"X-Tenant-ID": tenant_id}
 
     # Step 1: Configure Oura Ring connector
     payload = {
@@ -27,25 +29,28 @@ async def test_configure_and_list_connectors():
         "status": "active"
     }
 
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        config_res = await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            config_res = await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
     
-    assert config_res.status_code == 200
-    config_data = config_res.json()
-    assert config_data["status"] == "success"
-    assert config_data["source_type"] == "oura"
-    assert config_data["masked_token"] == "••••••••9999"
-    assert "oura_personal_token" not in config_data["masked_token"]
+        assert config_res.status_code == 200
+        config_data = config_res.json()
+        assert config_data["status"] == "success"
+        assert config_data["source_type"] == "oura"
+        assert config_data["masked_token"] == "••••••••9999"
+        assert "oura_personal_token" not in config_data["masked_token"]
 
     # Step 2: List connectors for tenant and verify secret is masked
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        list_res = await ac.get("/api/v1/data/sources", headers=headers)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            list_res = await ac.get("/api/v1/data/sources", headers=headers)
 
-    assert list_res.status_code == 200
-    list_data = list_res.json()
-    assert "connectors" in list_data
-    assert len(list_data["connectors"]) >= 1
+        assert list_res.status_code == 200
+        list_data = list_res.json()
+        assert "connectors" in list_data
+        assert len(list_data["connectors"]) >= 1
 
-    source_id = config_data["source_id"]
-    oura_conn = next(c for c in list_data["connectors"] if c["id"] == source_id)
-    assert oura_conn["masked_token"] == "••••••••9999"
+        source_id = config_data["source_id"]
+        oura_conn = next(c for c in list_data["connectors"] if c["id"] == source_id)
+        assert oura_conn["masked_token"] == "••••••••9999"
+    finally:
+        await cleanup_test_tenant(tenant_id)

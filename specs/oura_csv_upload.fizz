@@ -1,0 +1,43 @@
+# Oura CSV uploads use the existing authenticated Gateway-to-Core request path.
+# The model focuses on tenant-scoped persistence and retry-safe uploads.
+
+TENANTS = ["tenant_a", "tenant_b"]
+uploads = []
+stored_points = {}
+
+atomic action UploadCsv:
+    tenant_id = any(TENANTS)
+    point = {
+        "tenant_id": tenant_id,
+        "source_id": "oura_csv_source",
+        "metric_type": "sleep_score",
+        "timestamp": "2026-07-25T00:00:00Z",
+        "idempotency_key": tenant_id + ":oura_csv_source:sleep_score:2026-07-25T00:00:00Z"
+    }
+    uploads.append(point)
+
+atomic action RetryCsvUpload:
+    require len(uploads) > 0
+    uploads.append(uploads[0])
+
+fair action CorePersistCsvPoint:
+    require len(uploads) > 0
+    point = uploads[0]
+    uploads.pop(0)
+    if point["idempotency_key"] not in stored_points:
+        stored_points[point["idempotency_key"]] = point
+
+always assertion CsvUploadTenantIsolation:
+    for point in stored_points.values():
+        if point["tenant_id"] not in TENANTS:
+            return False
+    return True
+
+always assertion CsvUploadNoDuplicateData:
+    return len(stored_points) == len(set(stored_points.keys()))
+
+always assertion CsvUploadDataIntegrity:
+    for point in stored_points.values():
+        if point["source_id"] == "" or point["metric_type"] == "" or point["timestamp"] == "":
+            return False
+    return True

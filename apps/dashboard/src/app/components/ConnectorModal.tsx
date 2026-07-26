@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { X, Lock, ShieldCheck } from "lucide-react";
+import { CheckCircle2, FileUp, Info, X } from "lucide-react";
 
 interface ConnectorModalProps {
   isOpen: boolean;
@@ -12,25 +12,35 @@ interface ConnectorModalProps {
 }
 
 export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, token }: ConnectorModalProps) {
-  const [sourceType, setSourceType] = useState("oura");
-  const [accessToken, setAccessToken] = useState("");
-  const [status, setStatus] = useState("active");
+  const [file, setFile] = useState<File | null>(null);
+  const [metricType, setMetricType] = useState("sleep_score");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!accessToken.trim()) {
-      alert("Please enter a valid access token.");
+    setMessage(null);
+    setError(null);
+    if (!file) {
+      setError("Bitte wähle eine Oura-CSV-Datei aus.");
+      return;
+    }
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setError("Es können nur CSV-Dateien importiert werden.");
+      return;
+    }
+    if (file.size > 5_000_000) {
+      setError("Die CSV-Datei darf maximal 5 MB groß sein.");
       return;
     }
 
     setLoading(true);
     try {
-      // SECURITY C5: Route through Gateway, not directly to Core
       const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-      const res = await fetch(`${apiBase}/api/v1/data/sources/configure`, {
+      const res = await fetch(`${apiBase}/api/v1/data/imports/oura/csv`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -38,23 +48,24 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, tok
           "Authorization": `Bearer ${token}`
         },
         body: JSON.stringify({
-          source_type: sourceType,
-          access_token: accessToken,
-          status: status,
+          file_name: file.name,
+          csv_content: await file.text(),
+          default_metric_type: metricType,
         }),
       });
 
       if (res.ok) {
-        alert(`Connector '${sourceType}' configured & encrypted successfully!`);
-        setAccessToken("");
+        const data = await res.json();
+        setMessage(`${data.inserted} Messwerte importiert${data.duplicates ? `, ${data.duplicates} Duplikate übersprungen` : ""}.`);
+        setFile(null);
         onSaved();
-        onClose();
       } else {
-        alert("Failed to save connector configuration.");
+        const data = await res.json().catch(() => null);
+        setError(data?.detail || "Der CSV-Import ist fehlgeschlagen.");
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      alert("Error submitting connector config: " + msg);
+      setError("Beim CSV-Import ist ein Fehler aufgetreten: " + msg);
     } finally {
       setLoading(false);
     }
@@ -65,8 +76,8 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, tok
       <div className="bg-[#111827] border border-white/10 rounded-2xl w-full max-w-lg p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-blue-400" />
-            <span>Configure Health Connector</span>
+            <FileUp className="w-5 h-5 text-blue-400" />
+            <span>Oura CSV importieren</span>
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <X className="w-5 h-5" />
@@ -76,50 +87,41 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, tok
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-              Connector Provider
-            </label>
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
-            >
-              <option value="oura" className="bg-gray-900 text-white">Oura Ring v2 API</option>
-              <option value="whoop" className="bg-gray-900 text-white">Whoop 4.0 API</option>
-              <option value="apple_health" className="bg-gray-900 text-white">Apple Health (gRPC Bridge)</option>
-              <option value="fitbit" className="bg-gray-900 text-white">Fitbit Web API</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-              Personal Access Token / API Secret
+              Oura-CSV-Datei
             </label>
             <input
-              type="password"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              placeholder="Paste your API access token..."
-              className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="block w-full text-sm text-gray-300 file:mr-4 file:rounded-lg file:border-0 file:bg-blue-600 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-blue-500"
             />
-            <div className="flex items-center gap-1.5 mt-2 text-xs text-emerald-400">
-              <Lock className="w-3.5 h-3.5" />
-              <span>Secrets are encrypted using Fernet AES-256 at rest before database storage.</span>
-            </div>
+            {file && <p className="mt-2 text-xs text-gray-400">Ausgewählt: {file.name}</p>}
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
-              Sync Status
+              Metrik der Datei
             </label>
             <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
+              value={metricType}
+              onChange={(e) => setMetricType(e.target.value)}
               className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
             >
-              <option value="active" className="bg-gray-900 text-white">Active (Periodic Sync)</option>
-              <option value="inactive" className="bg-gray-900 text-white">Inactive (Paused)</option>
+              <option value="sleep_score" className="bg-gray-900 text-white">Schlaf-Score</option>
+              <option value="readiness_score" className="bg-gray-900 text-white">Readiness-Score</option>
+              <option value="activity_score" className="bg-gray-900 text-white">Aktivitäts-Score</option>
+              <option value="steps" className="bg-gray-900 text-white">Schritte</option>
+              <option value="heart_rate" className="bg-gray-900 text-white">Herzfrequenz</option>
             </select>
           </div>
+
+          <div className="rounded-xl border border-blue-400/20 bg-blue-400/10 p-3 text-xs text-blue-100 flex gap-2">
+            <Info className="w-4 h-4 shrink-0 mt-0.5 text-blue-300" />
+            <p>Unterstützt werden Oura-Exporte mit <code>day</code>, <code>date</code> oder <code>timestamp</code> sowie <code>score</code> oder <code>value</code>. Eine vorhandene Spalte <code>metric_type</code> überschreibt die Auswahl oben.</p>
+          </div>
+
+          {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
+          {message && <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{message}</p>}
 
           <div className="flex justify-end gap-3 pt-4">
             <button
@@ -134,7 +136,7 @@ export default function ConnectorModal({ isOpen, onClose, onSaved, tenantId, tok
               disabled={loading}
               className="px-4 py-2 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
             >
-              {loading ? "Saving..." : "Save Connector Encrypted"}
+              {loading ? "Importiere..." : "CSV importieren"}
             </button>
           </div>
         </form>

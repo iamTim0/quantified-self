@@ -22,6 +22,7 @@ from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
 from core.events.consumer import process_message
 from sqlalchemy import select
+from tests.db_helpers import cleanup_test_tenant
 
 NATS_URL = "nats://127.0.0.1:4222"
 
@@ -34,72 +35,79 @@ async def test_end_to_end_ingestion_deduplication():
     now = datetime.now(timezone.utc)
     idempotency_key = f"test-idemp-{uuid.uuid4().hex[:8]}"
 
-    async with async_session_maker() as session:
-        t = Tenant(id=tenant_id, name="Test Integration Tenant")
-        session.add(t)
-        await session.flush()
-
-        ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura")
-        session.add(ds)
-        await session.commit()
-
-    # 2. Connect to NATS JetStream
-    nc = await nats.connect(NATS_URL)
-    js = nc.jetstream()
-
-    # Ensure stream
+    nc = None
     try:
-        await js.add_stream(name="ingestion", subjects=["qs.ingest.>"])
-    except Exception:
-        pass
+        async with async_session_maker() as session:
+            t = Tenant(id=tenant_id, name="Test Integration Tenant")
+            session.add(t)
+            await session.flush()
 
-    # 3. Create test event payload
-    event_payload = {
-        "id": str(uuid.uuid4()),
-        "tenant_id": tenant_id,
-        "source_id": source_id,
-        "metric_type": "sleep_score",
-        "timestamp": now.isoformat(),
-        "value": 88.5,
-        "metadata": {"source": "oura_api_v2", "readiness": 90},
-        "idempotency_key": idempotency_key,
-    }
+            ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura")
+            session.add(ds)
+            await session.commit()
 
-    # 4. Publish event TWICE (simulating at-least-once network retry)
-    payload_bytes = json.dumps(event_payload).encode()
-    ack1 = await js.publish("qs.ingest.oura", payload_bytes)
-    ack2 = await js.publish("qs.ingest.oura", payload_bytes)
+        # 2. Connect to NATS JetStream
+        nc = await nats.connect(NATS_URL)
+        js = nc.jetstream()
 
-    assert ack1.seq > 0
-    assert ack2.seq > 0
+        # Ensure stream
+        try:
+            await js.add_stream(name="ingestion", subjects=["qs.ingest.>"])
+        except Exception:
+            pass
 
-    # 5. Process messages from NATS
-    class MockMsg:
-        def __init__(self, data):
-            self.data = data
-            self.acked = False
-        async def ack(self):
-            self.acked = True
+        # 3. Create test event payload
+        event_payload = {
+            "id": str(uuid.uuid4()),
+            "tenant_id": tenant_id,
+            "source_id": source_id,
+            "metric_type": "sleep_score",
+            "timestamp": now.isoformat(),
+            "value": 88.5,
+            "metadata": {"source": "oura_api_v2", "readiness": 90},
+            "idempotency_key": idempotency_key,
+        }
 
-    msg1 = MockMsg(payload_bytes)
-    msg2 = MockMsg(payload_bytes)
+        # 4. Publish event TWICE (simulating at-least-once network retry)
+        payload_bytes = json.dumps(event_payload).encode()
+        ack1 = await js.publish("qs.ingest.oura", payload_bytes)
+        ack2 = await js.publish("qs.ingest.oura", payload_bytes)
 
-    await process_message(msg1)
-    await process_message(msg2)
+        assert ack1.seq > 0
+        assert ack2.seq > 0
 
-    assert msg1.acked
-    assert msg2.acked
+        # 5. Process messages from NATS
+        class MockMsg:
+            def __init__(self, data):
+                self.data = data
+                self.acked = False
 
-    # 6. Verify Database State: exactly ONE data point created (deduplication worked!)
-    async with async_session_maker() as session:
-        stmt = select(DataPoint).where(
-            DataPoint.tenant_id == tenant_id,
-            DataPoint.idempotency_key == idempotency_key
-        )
-        res = await session.execute(stmt)
-        points = res.scalars().all()
+            async def ack(self):
+                self.acked = True
 
-        assert len(points) == 1, "Deduplication failed: expected exactly 1 record in DB"
-        assert points[0].value == 88.5
-        assert points[0].metric_type == "sleep_score"
-        assert points[0].tenant_id == tenant_id
+        msg1 = MockMsg(payload_bytes)
+        msg2 = MockMsg(payload_bytes)
+
+        await process_message(msg1)
+        await process_message(msg2)
+
+        assert msg1.acked
+        assert msg2.acked
+
+        # 6. Verify Database State: exactly ONE data point created (deduplication worked!)
+        async with async_session_maker() as session:
+            stmt = select(DataPoint).where(
+                DataPoint.tenant_id == tenant_id,
+                DataPoint.idempotency_key == idempotency_key
+            )
+            res = await session.execute(stmt)
+            points = res.scalars().all()
+
+            assert len(points) == 1, "Deduplication failed: expected exactly 1 record in DB"
+            assert points[0].value == 88.5
+            assert points[0].metric_type == "sleep_score"
+            assert points[0].tenant_id == tenant_id
+    finally:
+        if nc:
+            await nc.close()
+        await cleanup_test_tenant(tenant_id)

@@ -10,11 +10,6 @@ CREATE TABLE tenants (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Seed default dev tenant
-INSERT INTO tenants (id, name)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Default Dev Tenant')
-ON CONFLICT (id) DO NOTHING;
-
 -- Create users table (User identity level)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

@@ -14,19 +14,13 @@ The Quantified Self Platform uses a microservice architecture built for scale, i
 flowchart TD
     subgraph External
         Client[User / Client App]
-        OuraAPI[Oura API]
-        OtherAPI[Other APIs]
+        OuraExport[Oura CSV export]
     end
 
     subgraph Platform
         Gateway[API Gateway\nFastAPI]
         Core[Core Data Service\nFastAPI]
         Analysis[Analysis Service\nFastAPI]
-        
-        subgraph Importers
-            OuraImporter[Oura Importer]
-            OtherImporter[Other Importer]
-        end
         
         NATS[(NATS JetStream)]
         DB[(PostgreSQL\n+ TimescaleDB + pgvector)]
@@ -36,12 +30,7 @@ flowchart TD
     Gateway -->|HTTP/REST| Core
     Gateway -->|HTTP/REST| Analysis
     
-    OuraAPI -->|HTTP Polling| OuraImporter
-    OtherAPI -->|HTTP Polling| OtherImporter
-    
-    OuraImporter -->|Publish Event| NATS
-    OtherImporter -->|Publish Event| NATS
-    
+    OuraExport -->|CSV upload| Gateway
     NATS -->|Consume Event| Core
     Core -->|SQL| DB
     
@@ -55,7 +44,7 @@ flowchart TD
 | **API Gateway** | 8000 | Auth, routing, JWT validation, injects tenant context | HTTP (REST) in/out |
 | **Core** | 8001 | Owns DB. Consumes ingestion events. Serves gRPC queries | NATS (in), gRPC (out), PostgreSQL |
 | **Analysis** | 8002 | AI/Data Science, complex queries, embeddings | gRPC (to Core), HTTP (from Gateway) |
-| **Oura Importer** | None | Polls Oura API, publishes standardized events to NATS | HTTP (to Oura), NATS (out) |
+| **Oura CSV import** | Dashboard | Imports a user-provided Oura CSV export | HTTP via Gateway to Core |
 
 ## Tech Stack
 
@@ -129,7 +118,6 @@ task run:importer:oura
 | `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://user:pass@localhost:5432/qs` |
 | `NATS_URL` | NATS JetStream URL | `nats://localhost:4222` |
 | `JWT_SECRET` | Secret for signing JWTs | `supersecret` |
-| `OURA_CLIENT_ID` | Oura API Client ID | `...` |
 
 ## Database Schema
 
@@ -154,7 +142,7 @@ Cross-tenant sharing uses an explicit consent model via the `tenant_shares` tabl
 
 ## Adding a New Importer
 
-Importers are stateless workers fetching data and pushing it into the system.
+API importers are stateless workers fetching data and pushing it into the system. The only currently enabled user-facing import is the Oura CSV upload in the Dashboard; API/token connectors are not presented as available integrations.
 
 1. **Create Directory**: Make `services/importers/<name>/`
 2. **Template**: Copy the structure from the Oura importer template.

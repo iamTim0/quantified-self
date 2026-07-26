@@ -22,12 +22,19 @@ from pydantic import BaseModel, Field
 from sqlalchemy import distinct, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.dialects.postgresql import insert
 
 from core.config import settings
 from core.db.models import DataPoint, DataSource, Tenant, TenantShare, User
 from core.db.session import get_session
 from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.oura_csv import (
+    CsvImportValidationError,
+    make_idempotency_key,
+    normalize_metric_type,
+    parse_oura_csv,
+)
 from core.security.crypto import (
     DecryptionError,
     decrypt_secret,
@@ -48,6 +55,14 @@ class ConfigureConnectorRequest(BaseModel):
     access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
     config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
+
+
+class OuraCsvUploadRequest(BaseModel):
+    """A real Oura CSV export sent from the authenticated dashboard."""
+
+    file_name: str = Field(..., min_length=1, max_length=255)
+    csv_content: str = Field(..., min_length=1, max_length=5_000_000)
+    default_metric_type: str = Field(..., min_length=1, max_length=100)
 
 
 class UserSignupRequest(BaseModel):
@@ -393,6 +408,74 @@ async def get_metrics_summary(
 
 
 # ─── Connector Configuration Endpoints ──────────────────────
+
+@app.post("/api/v1/data/imports/oura/csv")
+async def import_oura_csv(
+    req: OuraCsvUploadRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Import an authenticated tenant's Oura CSV export with exact-once semantics."""
+    tenant_id = get_current_tenant_id()
+    if not req.file_name.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only CSV files can be imported.")
+
+    try:
+        default_metric_type = normalize_metric_type(req.default_metric_type)
+        points = parse_oura_csv(req.csv_content, default_metric_type)
+    except CsvImportValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    source_stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == "oura_csv",
+    )
+    source_result = await session.execute(source_stmt)
+    source = source_result.scalars().first()
+    if source is None:
+        source = DataSource(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            source_type="oura_csv",
+            config={"import_mode": "csv", "status": "active"},
+        )
+        session.add(source)
+        await session.flush()
+
+    inserted = 0
+    duplicates = 0
+    for point in points:
+        idempotency_key = make_idempotency_key(tenant_id, source.id, point.metric_type, point.timestamp)
+        stmt = (
+            insert(DataPoint)
+            .values(
+                id=str(uuid.uuid4()),
+                tenant_id=tenant_id,
+                source_id=source.id,
+                metric_type=point.metric_type,
+                timestamp=point.timestamp,
+                value=point.value,
+                metadata_=point.metadata or None,
+                idempotency_key=idempotency_key,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["tenant_id", "idempotency_key", "timestamp"]
+            )
+        )
+        result = await session.execute(stmt)
+        if result.rowcount:
+            inserted += 1
+        else:
+            duplicates += 1
+
+    await session.commit()
+    return {
+        "status": "success",
+        "tenant_id": tenant_id,
+        "source_type": "oura_csv",
+        "processed": len(points),
+        "inserted": inserted,
+        "duplicates": duplicates,
+    }
 
 @app.post("/api/v1/data/sources/configure")
 async def configure_connector(

@@ -17,32 +17,22 @@ import pytest
 from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
 from core.main import app
+from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import select
 
 app.state.testing = True
 
-TENANT_ID = "00000000-0000-0000-0000-000000000001"
-
-
-async def ensure_seeded_data():
+async def ensure_seeded_data(tenant_id: str):
     """Seed test metric data points for query endpoint tests."""
     async with async_session_maker() as session:
-        stmt = select(Tenant).where(Tenant.id == TENANT_ID)
-        res = await session.execute(stmt)
-        if not res.scalar_one_or_none():
-            t = Tenant(id=TENANT_ID, name="Default Dev Tenant")
-            session.add(t)
-            await session.flush()
-
         source_id = str(uuid.uuid4())
-        ds = DataSource(id=source_id, tenant_id=TENANT_ID, source_type="oura")
+        ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura")
         session.add(ds)
         await session.flush()
 
         dp_sleep = DataPoint(
             id=str(uuid.uuid4()),
-            tenant_id=TENANT_ID,
+            tenant_id=tenant_id,
             source_id=source_id,
             metric_type="sleep_score",
             timestamp=datetime.now(timezone.utc),
@@ -51,7 +41,7 @@ async def ensure_seeded_data():
         )
         dp_steps = DataPoint(
             id=str(uuid.uuid4()),
-            tenant_id=TENANT_ID,
+            tenant_id=tenant_id,
             source_id=source_id,
             metric_type="steps",
             timestamp=datetime.now(timezone.utc),
@@ -74,26 +64,34 @@ async def test_health_check_endpoint():
 
 @pytest.mark.asyncio
 async def test_query_metrics_endpoint():
-    await ensure_seeded_data()
+    tenant_id = await create_test_tenant()
     transport = ASGITransport(app=app)
-    headers = {"X-Tenant-ID": TENANT_ID}
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        response = await ac.get("/api/v1/data/metrics?metric_type=sleep_score", headers=headers)
+    try:
+        await ensure_seeded_data(tenant_id)
+        headers = {"X-Tenant-ID": tenant_id}
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get("/api/v1/data/metrics?metric_type=sleep_score", headers=headers)
+    finally:
+        await cleanup_test_tenant(tenant_id)
 
     assert response.status_code == 200
     data = response.json()
-    assert data["tenant_id"] == TENANT_ID
+    assert data["tenant_id"] == tenant_id
     assert "data_points" in data
     assert isinstance(data["data_points"], list)
 
 
 @pytest.mark.asyncio
 async def test_list_metric_types_endpoint():
-    await ensure_seeded_data()
+    tenant_id = await create_test_tenant()
     transport = ASGITransport(app=app)
-    headers = {"X-Tenant-ID": TENANT_ID}
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        response = await ac.get("/api/v1/data/metrics/types", headers=headers)
+    try:
+        await ensure_seeded_data(tenant_id)
+        headers = {"X-Tenant-ID": tenant_id}
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get("/api/v1/data/metrics/types", headers=headers)
+    finally:
+        await cleanup_test_tenant(tenant_id)
 
     assert response.status_code == 200
     data = response.json()
@@ -104,11 +102,15 @@ async def test_list_metric_types_endpoint():
 
 @pytest.mark.asyncio
 async def test_metrics_summary_endpoint():
-    await ensure_seeded_data()
+    tenant_id = await create_test_tenant()
     transport = ASGITransport(app=app)
-    headers = {"X-Tenant-ID": TENANT_ID}
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        response = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+    try:
+        await ensure_seeded_data(tenant_id)
+        headers = {"X-Tenant-ID": tenant_id}
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+    finally:
+        await cleanup_test_tenant(tenant_id)
 
     assert response.status_code == 200
     data = response.json()
