@@ -125,30 +125,7 @@ export default function ConnectorsPage({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Oura API */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex flex-col justify-between space-y-4 backdrop-blur-md">
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-purple-400">API Connector</span>
-              <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
-                <ShieldCheck className="w-3 h-3" /> Active
-              </span>
-            </div>
-            <h3 className="text-lg font-bold text-white">Oura Ring API v2</h3>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              Sync daily sleep, readiness scores, and activity metrics directly from your Oura account.
-            </p>
-          </div>
-          <button
-            onClick={() => handleTriggerSync("oura")}
-            disabled={syncingSource === "oura"}
-            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white transition-colors disabled:opacity-50"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${syncingSource === "oura" ? "animate-spin" : ""}`} />
-            <span>{syncingSource === "oura" ? "Triggering..." : "Sync Now"}</span>
-          </button>
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
         {/* Yazio API */}
         <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex flex-col justify-between space-y-4 backdrop-blur-md">

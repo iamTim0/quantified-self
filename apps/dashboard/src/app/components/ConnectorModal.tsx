@@ -22,8 +22,11 @@ export default function ConnectorModal({
   token,
   apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000",
 }: ConnectorModalProps) {
-  const [connectorType, setConnectorType] = useState<ConnectorType>("oura");
+  const [connectorType, setConnectorType] = useState<ConnectorType>("yazio");
   const [accessToken, setAccessToken] = useState("");
+  const [yazioAuthMode, setYazioAuthMode] = useState<"token" | "login">("token");
+  const [yazioEmail, setYazioEmail] = useState("");
+  const [yazioPassword, setYazioPassword] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [metricType, setMetricType] = useState("sleep_score");
   const [message, setMessage] = useState<string | null>(null);
@@ -80,8 +83,39 @@ export default function ConnectorModal({
           setError(data?.detail || "Der CSV-Import ist fehlgeschlagen.");
         }
       } else {
-        if (!accessToken.trim()) {
-          setError("Bitte gib einen gültigen Access Token / Secret ein.");
+        let finalToken = accessToken.trim();
+
+        if (connectorType === "yazio" && yazioAuthMode === "login") {
+          if (!yazioEmail.trim() || !yazioPassword.trim()) {
+            setError("Bitte gib E-Mail und Passwort für deinen Yazio-Account ein.");
+            setLoading(false);
+            return;
+          }
+          const authParams = new URLSearchParams();
+          authParams.append("client_id", "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c");
+          authParams.append("client_secret", "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o");
+          authParams.append("grant_type", "password");
+          authParams.append("username", yazioEmail.trim());
+          authParams.append("password", yazioPassword.trim());
+
+          const oauthRes = await fetch("https://yzapi.yazio.com/v15/oauth/token", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            body: authParams,
+          });
+
+          if (!oauthRes.ok) {
+            setError("Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.");
+            setLoading(false);
+            return;
+          }
+
+          const oauthData = await oauthRes.json();
+          finalToken = oauthData.access_token;
+        }
+
+        if (!finalToken) {
+          setError("Bitte gib einen gültigen Access / Bearer Token ein.");
           setLoading(false);
           return;
         }
@@ -95,7 +129,7 @@ export default function ConnectorModal({
           },
           body: JSON.stringify({
             source_type: connectorType,
-            access_token: accessToken.trim(),
+            access_token: finalToken,
             status: "active",
           }),
         });
@@ -104,6 +138,8 @@ export default function ConnectorModal({
           const data = await res.json();
           setMessage(`Connector ${connectorType.toUpperCase()} erfolgreich konfiguriert (${data.masked_token}).`);
           setAccessToken("");
+          setYazioEmail("");
+          setYazioPassword("");
           onSaved();
         } else {
           const data = await res.json().catch(() => null);
@@ -135,17 +171,6 @@ export default function ConnectorModal({
         <div className="flex bg-neutral-900 border border-neutral-800 rounded-xl p-1 mb-6">
           <button
             type="button"
-            onClick={() => setConnectorType("oura")}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors ${
-              connectorType === "oura"
-                ? "bg-blue-600 text-white shadow-md"
-                : "text-neutral-400 hover:text-white"
-            }`}
-          >
-            Oura API Token
-          </button>
-          <button
-            type="button"
             onClick={() => setConnectorType("yazio")}
             className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-colors ${
               connectorType === "yazio"
@@ -169,23 +194,78 @@ export default function ConnectorModal({
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {connectorType !== "oura_csv" ? (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-purple-400" />
-                <span>{connectorType === "oura" ? "Oura Personal Access Token" : "Yazio Bearer Secret Token"}</span>
-              </label>
-              <input
-                type="password"
-                placeholder={connectorType === "oura" ? "z.B. eyJhbGciOi..." : "z.B. yazio_secret_token_12345"}
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none font-mono"
-              />
-              <p className="mt-1.5 text-[11px] text-neutral-400">
-                Token wird Serverseitig mit AES-256 Fernet verschlüsselt gespeichert.
-              </p>
+          {connectorType === "yazio" && (
+            <div className="flex bg-neutral-950 border border-neutral-800 rounded-lg p-1 mb-3 text-xs">
+              <button
+                type="button"
+                onClick={() => setYazioAuthMode("token")}
+                className={`flex-1 py-1 rounded font-medium transition-colors ${
+                  yazioAuthMode === "token" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                Bearer Token direkt eingeben
+              </button>
+              <button
+                type="button"
+                onClick={() => setYazioAuthMode("login")}
+                className={`flex-1 py-1 rounded font-medium transition-colors ${
+                  yazioAuthMode === "login" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                Yazio E-Mail & Passwort
+              </button>
             </div>
+          )}
+
+          {connectorType !== "oura_csv" ? (
+            connectorType === "yazio" && yazioAuthMode === "login" ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                    Yazio E-Mail
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="name@example.com"
+                    value={yazioEmail}
+                    onChange={(e) => setYazioEmail(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                    Yazio Passwort
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="••••••••"
+                    value={yazioPassword}
+                    onChange={(e) => setYazioPassword(e.target.value)}
+                    className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
+                  />
+                </div>
+                <p className="text-[11px] text-neutral-400">
+                  Dein Passwort wird nur verwendet, um den Yazio Bearer Token direkt abzurufen, und niemals gespeichert.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-purple-400" />
+                  <span>{connectorType === "oura" ? "Oura Personal Access Token" : "Yazio Bearer Access Token"}</span>
+                </label>
+                <input
+                  type="password"
+                  placeholder={connectorType === "oura" ? "z.B. eyJhbGciOi..." : "Füge deinen Yazio Bearer Token hier ein (z.B. eyJhbGciOi...)"}
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none font-mono"
+                />
+                <p className="mt-1.5 text-[11px] text-neutral-400">
+                  Der Token wird Serverseitig mit AES-256 Fernet verschlüsselt gespeichert und für API requests verwendet.
+                </p>
+              </div>
+            )
           ) : (
             <>
               <div>
