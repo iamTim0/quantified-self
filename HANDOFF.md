@@ -58,7 +58,10 @@ Agents working on this repository MUST obey these non-negotiable invariants:
 3. **Idempotency**: All ingestion events require deterministic `idempotency_key` = `SHA256(tenant_id + source_id + metric_type + timestamp)`.
 4. **Inter-service Communication**: Importers publish to NATS (`qs.ingest.<source>`); Analysis queries Core via gRPC.
 5. **Strict Workflow Order**: Every feature MUST follow `fizzbee spec` -> `invariant tests in specs/tests/` -> `production implementation`.
-6. **Lint & Typecheck Mandate**: Always run `uv run --with ruff ruff check services/ specs/`, `npx tsc --noEmit` (in `apps/dashboard`), and `npm run lint` (in `apps/dashboard`) before completing work.
+6. **Stateless Importers & Connector Credentials**: Importers MUST NOT store access tokens in `.env` files. Importers query Core Data Service dynamically (`GET /api/v1/internal/data/sources/{source_type}/token`) for encrypted credentials configured by users via Dashboard UI. If no token exists, importers stay idle.
+7. **NEVER Auto-Seed Data**: Microservices and importers MUST NEVER automatically generate mock seed data on startup or missing config. Seed data must only be generated via explicit manual CLI invocation (`python -m importer.seed` or `task seed:oura`).
+8. **Stateless & Data-Independent Tests**: Tests MUST NEVER assume pre-existing database state or pre-seeded rows. Tests must be completely self-contained.
+9. **Lint & Typecheck Mandate**: Always run `uv run --with ruff ruff check services/ specs/`, `npx tsc --noEmit` (in `apps/dashboard`), and `npx pnpm --prefix apps/dashboard lint` before completing work.
 
 ---
 
