@@ -7,6 +7,7 @@ and secure encrypted connector configuration management.
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
+import httpx
 import json
 import logging
 import os

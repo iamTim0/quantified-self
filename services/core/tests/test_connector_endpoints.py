@@ -54,3 +54,38 @@ async def test_configure_and_list_connectors():
         assert oura_conn["masked_token"] == "••••••••9999"
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_configure_yazio_and_delete_connector(monkeypatch):
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = {"X-Tenant-ID": tenant_id}
+
+    # Step 1: Configure Yazio with direct Bearer Token
+    payload = {
+        "source_type": "yazio",
+        "access_token": "yazio_token_secret_1234",
+        "status": "active"
+    }
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
+            assert res.status_code == 200
+            data = res.json()
+            assert data["status"] == "success"
+            assert data["source_type"] == "yazio"
+
+            # Verify DELETE endpoint
+            del_res = await ac.delete("/api/v1/data/sources/yazio", headers=headers)
+            assert del_res.status_code == 200
+            del_data = del_res.json()
+            assert del_data["status"] == "success"
+
+            # Verify list is empty
+            list_res = await ac.get("/api/v1/data/sources", headers=headers)
+            assert list_res.status_code == 200
+            assert len(list_res.json()["connectors"]) == 0
+    finally:
+        await cleanup_test_tenant(tenant_id)
