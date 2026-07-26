@@ -34,12 +34,14 @@ interface TrendChartProps {
 }
 
 export default function TrendChart({ labels, sleepValues, readinessValues, onRefresh }: TrendChartProps) {
+  const hasData = labels.length > 0 && (sleepValues.length > 0 || readinessValues.length > 0);
+
   const chartData = {
-    labels: labels.length > 0 ? labels : ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7"],
+    labels,
     datasets: [
       {
         label: "Sleep Score",
-        data: sleepValues.length > 0 ? sleepValues : [82, 85, 78, 91, 88, 84, 89],
+        data: sleepValues,
         borderColor: "#3b82f6",
         backgroundColor: "rgba(59, 130, 246, 0.1)",
         tension: 0.4,
@@ -48,7 +50,7 @@ export default function TrendChart({ labels, sleepValues, readinessValues, onRef
       },
       {
         label: "Readiness Score",
-        data: readinessValues.length > 0 ? readinessValues : [79, 82, 75, 88, 85, 80, 87],
+        data: readinessValues,
         borderColor: "#06b6d4",
         backgroundColor: "rgba(6, 182, 212, 0.05)",
         tension: 0.4,
@@ -76,7 +78,7 @@ export default function TrendChart({ labels, sleepValues, readinessValues, onRef
       y: {
         ticks: { color: "#9ca3af" },
         grid: { color: "rgba(255, 255, 255, 0.05)" },
-        min: 50,
+        min: 0,
         max: 100,
       },
     },
@@ -85,7 +87,7 @@ export default function TrendChart({ labels, sleepValues, readinessValues, onRef
   return (
     <div className="glass-card p-6">
       <div className="flex justify-between items-center mb-6">
-        <h2 className="text-base font-semibold text-white">Sleep & Readiness 30-Day Trends</h2>
+        <h2 className="text-base font-semibold text-white">Sleep & Readiness Trends</h2>
         <button
           onClick={onRefresh}
           className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition-colors"
@@ -95,9 +97,15 @@ export default function TrendChart({ labels, sleepValues, readinessValues, onRef
         </button>
       </div>
 
-      <div className="w-full h-64 sm:h-80">
-        <Line data={chartData} options={options} />
-      </div>
+      {hasData ? (
+        <div className="w-full h-64 sm:h-80">
+          <Line data={chartData} options={options} />
+        </div>
+      ) : (
+        <div className="w-full h-48 flex items-center justify-center text-xs text-neutral-500">
+          No trend data available for Sleep or Readiness yet.
+        </div>
+      )}
     </div>
   );
 }
