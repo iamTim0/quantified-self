@@ -665,6 +665,34 @@ async def list_connectors(
     }
 
 
+@app.delete("/api/v1/data/sources/{source_type}")
+async def delete_connector(
+    source_type: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a connector configuration and encrypted credentials for the tenant."""
+    tenant_id = get_current_tenant_id()
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == source_type,
+    )
+    res = await session.execute(stmt)
+    source = res.scalars().first()
+
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector configuration not found")
+
+    await session.delete(source)
+    await session.commit()
+
+    return {
+        "status": "success",
+        "message": f"Connector {source_type} token deleted successfully.",
+        "source_type": source_type,
+        "tenant_id": tenant_id,
+    }
+
+
 @app.get("/api/v1/internal/data/sources/{source_type}/token")
 async def get_connector_token(
     source_type: str,

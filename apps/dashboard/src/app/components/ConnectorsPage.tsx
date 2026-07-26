@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plug, RefreshCw, CheckCircle2, AlertCircle, ShieldCheck, UploadCloud, Key } from "lucide-react";
+import { Plug, RefreshCw, CheckCircle2, AlertCircle, ShieldCheck, UploadCloud, Key, Trash2 } from "lucide-react";
 
 interface ConnectorInfo {
   id: string;
@@ -55,6 +55,40 @@ export default function ConnectorsPage({
       fetchConnectors();
     }
   }, [apiBase, token, tenantId]);
+
+  const handleDeleteConnector = async (sourceType: string) => {
+    if (!confirm(`Möchtest Du die Zugangsdaten für ${sourceType.toUpperCase()} wirklich löschen?`)) {
+      return;
+    }
+    setSyncStatus(null);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      if (res.ok) {
+        setSyncStatus({
+          type: "success",
+          message: `Zugangsdaten für ${sourceType.toUpperCase()} wurden gelöscht.`,
+        });
+        fetchConnectors();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSyncStatus({
+          type: "error",
+          message: data.detail || `Fehler beim Löschen des Connectors ${sourceType.toUpperCase()}`,
+        });
+      }
+    } catch (err) {
+      setSyncStatus({
+        type: "error",
+        message: `Fehler beim Löschen des Connectors ${sourceType.toUpperCase()}`,
+      });
+    }
+  };
 
   const handleTriggerSync = async (sourceType: string) => {
     setSyncingSource(sourceType);
@@ -198,6 +232,13 @@ export default function ConnectorsPage({
                     title="Sync Now"
                   >
                     <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteConnector(c.source_type)}
+                    className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors"
+                    title="Delete Credentials"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
