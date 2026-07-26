@@ -11,8 +11,8 @@ Maps to Fizzbee Invariants:
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
 from core.main import app
+from httpx import ASGITransport, AsyncClient
 
 app.state.testing = True
 

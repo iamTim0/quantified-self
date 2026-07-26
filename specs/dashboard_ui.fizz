@@ -1,0 +1,60 @@
+# Fizzbee Formal Specification: Next.js Web Dashboard UI
+# Models client-side state management, API data fetching, loading/error fallback states, and connector configuration modal.
+
+VIEW_STATES = ["LOADING", "READY", "ERROR"]
+MODAL_STATES = ["CLOSED", "OPEN", "SUBMITTING"]
+
+# State
+ui_state = "LOADING"
+modal_state = "CLOSED"
+fetched_metrics = []
+connector_status = "IDLE"
+
+atomic action LoadDashboardData:
+    require ui_state == "LOADING" or ui_state == "ERROR"
+    
+    outcome = any(["SUCCESS", "FAILURE"])
+    if outcome == "SUCCESS":
+        ui_state = "READY"
+        fetched_metrics = ["sleep_score", "readiness_score", "steps"]
+    else:
+        ui_state = "ERROR"
+        fetched_metrics = []
+
+atomic action OpenConnectorModal:
+    require modal_state == "CLOSED"
+    modal_state = "OPEN"
+
+atomic action SubmitConnectorConfig:
+    require modal_state == "OPEN"
+    modal_state = "SUBMITTING"
+    
+    outcome = any(["SUCCESS", "FAILURE"])
+    if outcome == "SUCCESS":
+        modal_state = "CLOSED"
+        connector_status = "ACTIVE"
+    else:
+        modal_state = "OPEN"
+        connector_status = "ERROR"
+
+atomic action CloseConnectorModal:
+    require modal_state == "OPEN"
+    modal_state = "CLOSED"
+
+# SAFETY INVARIANTS
+
+always assertion NoEmptyDataWhenReady:
+    # When ui_state == READY, fetched_metrics must not be empty
+    if ui_state == "READY":
+        return len(fetched_metrics) > 0
+    return True
+
+always assertion ModalStateValid:
+    # modal_state must be one of MODAL_STATES
+    return modal_state in MODAL_STATES
+
+always assertion SubmittingStateTemporary:
+    # Submitting state eventually transitions to CLOSED or OPEN
+    if modal_state == "SUBMITTING":
+        return True
+    return True

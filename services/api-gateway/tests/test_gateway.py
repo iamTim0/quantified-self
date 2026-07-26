@@ -11,9 +11,9 @@ Maps to Fizzbee Invariants:
 """
 
 import pytest
-from httpx import AsyncClient, ASGITransport
 from gateway.main import app
-from gateway.auth import create_dev_jwt
+from httpx import ASGITransport, AsyncClient
+
 
 @pytest.mark.asyncio
 async def test_gateway_health():

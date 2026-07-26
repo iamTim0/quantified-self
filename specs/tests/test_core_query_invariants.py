@@ -1,9 +1,9 @@
 """Tests mapping to specs/core_query.fizz invariants."""
 
-import pytest
-from typing import List, Dict, Any
+from typing import Any
 
-def filter_tenant_data(records: List[Dict[str, Any]], caller_tenant_id: str, target_tenant_id: str, has_consent: bool = False) -> List[Dict[str, Any]]:
+
+def filter_tenant_data(records: list[dict[str, Any]], caller_tenant_id: str, target_tenant_id: str, has_consent: bool = False) -> list[dict[str, Any]]:
     """Simulates Core Data Service query filtering logic."""
     if caller_tenant_id != target_tenant_id and not has_consent:
         return []

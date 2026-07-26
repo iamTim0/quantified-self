@@ -3,9 +3,9 @@
 All models correspond to the PostgreSQL schema defined in infra/db/init.sql.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
 import uuid
+from datetime import datetime, timezone
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, String, UniqueConstraint
@@ -39,7 +39,7 @@ class DataSource(Base):
         UUID(as_uuid=False), ForeignKey("tenants.id"), nullable=False, index=True
     )
     source_type: Mapped[str] = mapped_column(String, nullable=False)  # e.g., 'oura', 'whoop'
-    config: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -61,9 +61,9 @@ class DataPoint(Base):
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), primary_key=True, nullable=False, index=True
     )
-    value: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
-    metadata_: Mapped[Optional[Dict[str, Any]]] = mapped_column("metadata", JSON, nullable=True)
-    embedding: Mapped[Optional[Any]] = mapped_column(Vector(1536), nullable=True)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
+    embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

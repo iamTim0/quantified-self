@@ -6,12 +6,13 @@ Ensures compliance with Fizzbee Invariants:
 - SecretMaskedInReadResponse
 """
 
-import os
 import base64
 import hashlib
 import logging
-from cryptography.fernet import Fernet
+import os
+
 from core.config import settings
+from cryptography.fernet import Fernet
 
 logger = logging.getLogger(__name__)
 

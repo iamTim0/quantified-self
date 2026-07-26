@@ -1,5 +1,5 @@
 import pytest
-from core.events.consumer import process_message
+
 
 @pytest.mark.asyncio
 async def test_deduplication_logic():

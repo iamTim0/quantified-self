@@ -6,24 +6,19 @@ every query MUST be scoped to a tenant_id.
 """
 
 from contextvars import ContextVar
-from typing import Optional
+from typing import ClassVar
 
-from fastapi import Request, HTTPException
+from sqlalchemy import Select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
-from sqlalchemy import Select
 
 # Async-safe context variable — each concurrent request gets its own value
-_current_tenant_id: ContextVar[Optional[str]] = ContextVar(
+_current_tenant_id: ContextVar[str | None] = ContextVar(
     "current_tenant_id", default=None
 )
 
 def get_current_tenant_id() -> str:
-    """Get the current tenant_id from the async context.
-
-    Raises:
-        RuntimeError: If no tenant_id is set in contextvars.
-    """
+    """Get the current tenant_id from the async context."""
     tenant_id = _current_tenant_id.get()
     if tenant_id is None:
         raise RuntimeError("tenant_id not set in context")
@@ -36,10 +31,10 @@ def set_current_tenant_id(tenant_id: str) -> None:
 class TenantMiddleware(BaseHTTPMiddleware):
     """Extract tenant_id from X-Tenant-ID header and bind to async context."""
 
-    EXEMPT_PATHS: set[str] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json"}
+    EXEMPT_PATHS: ClassVar[set[str]] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json"}
 
     async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
+        self, request: RequestResponseEndpoint, call_next: RequestResponseEndpoint
     ) -> Response:
         if request.url.path in self.EXEMPT_PATHS:
             return await call_next(request)

@@ -1,9 +1,9 @@
 """Tests mapping to specs/auth_gateway.fizz invariants."""
 
-import pytest
-from typing import Dict, Any, Optional
+from typing import Any
 
-def process_gateway_request(headers: Dict[str, str], jwt_validator) -> Dict[str, Any]:
+
+def process_gateway_request(headers: dict[str, str], jwt_validator) -> dict[str, Any]:
     """Simulates API Gateway auth & proxy pipeline."""
     auth_header = headers.get("Authorization", "")
     if not auth_header.startswith("Bearer "):
@@ -28,7 +28,7 @@ def test_unauthenticated_requests_blocked():
     
     Requests without Bearer token or with invalid JWT are blocked at Gateway with 401.
     """
-    def mock_validator(token: str) -> Optional[Dict[str, str]]:
+    def mock_validator(token: str) -> dict[str, str] | None:
         if token == "valid_jwt":
             return {"tenant_id": "tenant-123"}
         return None
@@ -46,7 +46,7 @@ def test_tenant_header_always_injected():
     
     Valid requests get X-Tenant-ID header injected prior to downstream routing.
     """
-    def mock_validator(token: str) -> Optional[Dict[str, str]]:
+    def mock_validator(token: str) -> dict[str, str] | None:
         if token == "valid_jwt":
             return {"tenant_id": "tenant-789"}
         return None

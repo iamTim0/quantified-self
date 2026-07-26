@@ -1,8 +1,7 @@
 """Tests mapping to specs/importer_oura.fizz invariants."""
 
-import pytest
 import hashlib
-from typing import Dict, Any
+
 
 def generate_idempotency_key(tenant_id: str, source_id: str, metric_type: str, timestamp: str) -> str:
     key_str = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"

@@ -3,7 +3,9 @@
 import os
 import sys
 from pathlib import Path
+
 from grpc_tools import protoc
+
 
 def generate():
     root_dir = Path(__file__).resolve().parent.parent.parent

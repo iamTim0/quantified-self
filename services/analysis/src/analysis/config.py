@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-analysis-service"
     CORE_GRPC_URL: str = "core-service:50051"

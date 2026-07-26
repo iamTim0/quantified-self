@@ -12,16 +12,16 @@ Verifies Fizzbee Invariants:
 - EventualConsistency
 """
 
-import asyncio
 import json
 import uuid
 from datetime import datetime, timezone
-import pytest
+
 import nats
-from sqlalchemy import select
+import pytest
+from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
-from core.db.models import DataPoint, Tenant, DataSource
 from core.events.consumer import process_message
+from sqlalchemy import select
 
 NATS_URL = "nats://127.0.0.1:4222"
 

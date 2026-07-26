@@ -1,13 +1,13 @@
 import json
 import logging
 from datetime import datetime
-from typing import Any
+
 import nats
-from nats.js.api import StreamConfig
 from sqlalchemy.dialects.postgresql import insert
+
 from core.config import settings
-from core.db.session import async_session_maker
 from core.db.models import DataPoint
+from core.db.session import async_session_maker
 
 logger = logging.getLogger(__name__)
 

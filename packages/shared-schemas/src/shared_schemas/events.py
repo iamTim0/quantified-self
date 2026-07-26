@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -13,7 +13,7 @@ class IngestEvent(BaseModel):
     metric_type: str = Field(..., description="Type of metric being recorded")
     timestamp: datetime = Field(..., description="When the event occurred")
     value: float = Field(..., description="The recorded value")
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional context or properties")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Additional context or properties")
     idempotency_key: str = Field(..., description="Key to prevent duplicate processing")
     source_type: str = Field(..., description="Type of source (e.g., 'oura', 'whoop')")
 

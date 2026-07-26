@@ -39,6 +39,8 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `TenantHeaderAlwaysInjected` | `test_tenant_header_always_injected` | API Gateway |
 | `SecretsAlwaysEncryptedAtRest` | `test_secrets_always_encrypted_at_rest` | Core Data Service |
 | `SecretMaskedInReadResponse` | `test_secret_masked_in_read_response` | Core Data Service |
+| `NoEmptyDataWhenReady` | `test_no_empty_data_when_ready` | Next.js Dashboard |
+| `ModalStateValid` | `test_modal_state_valid` | Next.js Dashboard |
 
 ## Adding New Specs
 

@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     NATS_URL: str = "nats://127.0.0.1:4222"
     OURA_API_BASE_URL: str = "https://api.ouraring.com"

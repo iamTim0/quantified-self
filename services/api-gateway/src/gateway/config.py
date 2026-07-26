@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-api-gateway"
     ENVIRONMENT: str = "dev"

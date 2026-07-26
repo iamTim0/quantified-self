@@ -1,9 +1,7 @@
 """Tests mapping to specs/connector_secrets.fizz invariants."""
 
-import pytest
-import base64
-import os
 from cryptography.fernet import Fernet
+
 
 def generate_dev_master_key() -> str:
     return Fernet.generate_key().decode()

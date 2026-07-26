@@ -13,6 +13,7 @@ import logging
 import random
 import uuid
 from datetime import datetime, timedelta, timezone
+
 import nats
 
 from oura_importer.config import settings

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from analysis.config import settings
 
 app = FastAPI(title=settings.SERVICE_NAME)

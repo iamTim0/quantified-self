@@ -9,13 +9,12 @@ Maps to Fizzbee Invariants:
 - TenantHeaderAlwaysInjected
 """
 
-from typing import Optional
-from fastapi import FastAPI, Request, Response, HTTPException, Depends, Query
-from fastapi.responses import JSONResponse
 import httpx
+from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import JSONResponse
 
+from gateway.auth import create_dev_jwt, decode_jwt
 from gateway.config import settings
-from gateway.auth import get_tenant_id_from_token, create_dev_jwt, decode_jwt
 
 app = FastAPI(title=settings.SERVICE_NAME)
 
@@ -78,7 +77,7 @@ async def proxy_core_service(
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=503,
-                detail=f"Core Data Service unavailable: {str(e)}",
+                detail=f"Core Data Service unavailable: {e!s}",
             )
 
 if __name__ == "__main__":

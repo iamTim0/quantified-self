@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+
 from core.events.consumer import start_consumer
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")

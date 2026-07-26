@@ -1,8 +1,9 @@
-import sys
 import json
-import subprocess
 import os
 import re
+import subprocess
+import sys
+
 
 def get_modified_files():
     """Returns list of modified or untracked files in git workspace."""

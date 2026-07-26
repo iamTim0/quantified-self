@@ -1,3 +1,4 @@
+# ruff: noqa: B008
 """Core Data Service FastAPI Entry Point.
 
 Serves REST endpoints for time-series metric data queries, metric type listing, summary statistics,
@@ -6,22 +7,22 @@ and secure encrypted connector configuration management.
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
-import uuid
 
-from fastapi import FastAPI, Depends, Query, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, distinct
+from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.db.models import DataPoint, DataSource
 from core.db.session import get_session
-from core.db.tenant import get_current_tenant_id, TenantMiddleware
+from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
 from core.security.crypto import encrypt_secret, mask_secret
+
 
 class ConfigureConnectorRequest(BaseModel):
     source_type: str = Field(..., description="e.g. oura, whoop, apple_health, fitbit")
@@ -49,9 +50,9 @@ async def health_check():
 
 @app.get("/api/v1/data/metrics")
 async def query_metrics(
-    metric_type: Optional[str] = Query(None, description="Filter by metric type (e.g. sleep_score, steps)"),
-    start_time: Optional[str] = Query(None, description="ISO start timestamp"),
-    end_time: Optional[str] = Query(None, description="ISO end timestamp"),
+    metric_type: str | None = Query(None, description="Filter by metric type (e.g. sleep_score, steps)"),
+    start_time: str | None = Query(None, description="ISO start timestamp"),
+    end_time: str | None = Query(None, description="ISO end timestamp"),
     limit: int = Query(100, ge=1, le=1000, description="Max data points to return"),
     session: AsyncSession = Depends(get_session),
 ):
@@ -67,14 +68,14 @@ async def query_metrics(
             start_dt = datetime.fromisoformat(start_time)
             stmt = stmt.where(DataPoint.timestamp >= start_dt)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_time ISO format")
+            raise HTTPException(status_code=400, detail="Invalid start_time ISO format") from None
 
     if end_time:
         try:
             end_dt = datetime.fromisoformat(end_time)
             stmt = stmt.where(DataPoint.timestamp <= end_dt)
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_time ISO format")
+            raise HTTPException(status_code=400, detail="Invalid end_time ISO format") from None
 
     stmt = stmt.order_by(DataPoint.timestamp.asc()).limit(limit)
     res = await session.execute(stmt)

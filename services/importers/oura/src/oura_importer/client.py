@@ -5,21 +5,20 @@ Maps to Fizzbee Invariants:
 - NoDataLossOnRateLimit (handles HTTP 429 backoff)
 """
 
-import asyncio
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
+
 import httpx
+
 from oura_importer.config import settings
 
 logger = logging.getLogger(__name__)
 
 class OuraApiError(Exception):
     """Base exception for Oura API errors."""
-    pass
 
 class OuraUnauthorizedError(OuraApiError):
     """Raised when Oura API returns 401 Unauthorized (invalid/expired access token)."""
-    pass
 
 class OuraRateLimitError(OuraApiError):
     """Raised when Oura API returns 429 Rate Limit Exceeded."""
@@ -28,7 +27,7 @@ class OuraRateLimitError(OuraApiError):
         self.retry_after = retry_after
 
 class OuraClient:
-    def __init__(self, access_token: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, access_token: str | None = None, base_url: str | None = None):
         self.access_token = access_token or settings.OURA_ACCESS_TOKEN
         self.base_url = (base_url or settings.OURA_API_BASE_URL).rstrip("/")
         self.headers = {
@@ -36,7 +35,7 @@ class OuraClient:
             "Accept": "application/json",
         }
 
-    async def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def _get(self, endpoint: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -62,21 +61,21 @@ class OuraClient:
                 logger.error(f"Network error communicating with Oura API: {e}")
                 raise OuraApiError(f"Network request failed: {e}")
 
-    async def get_daily_sleep(self, start_date: str, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_daily_sleep(self, start_date: str, end_date: str | None = None) -> dict[str, Any]:
         """Fetch daily sleep documents from Oura API v2."""
         params = {"start_date": start_date}
         if end_date:
             params["end_date"] = end_date
         return await self._get("v2/usercollection/daily_sleep", params=params)
 
-    async def get_daily_readiness(self, start_date: str, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_daily_readiness(self, start_date: str, end_date: str | None = None) -> dict[str, Any]:
         """Fetch daily readiness documents from Oura API v2."""
         params = {"start_date": start_date}
         if end_date:
             params["end_date"] = end_date
         return await self._get("v2/usercollection/daily_readiness", params=params)
 
-    async def get_daily_activity(self, start_date: str, end_date: Optional[str] = None) -> Dict[str, Any]:
+    async def get_daily_activity(self, start_date: str, end_date: str | None = None) -> dict[str, Any]:
         """Fetch daily activity documents from Oura API v2."""
         params = {"start_date": start_date}
         if end_date:

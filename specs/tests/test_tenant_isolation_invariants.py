@@ -13,7 +13,6 @@ def test_query_returns_only_own_data():
     Ensures that a standard query by a tenant only returns data
     belonging to that tenant.
     """
-    pass
 
 def test_shared_data_accessible():
     """
@@ -21,7 +20,6 @@ def test_shared_data_accessible():
     Ensures that a tenant can query another tenant's data only
     if an explicit share grant exists.
     """
-    pass
 
 def test_share_revocation_blocks_access():
     """
@@ -29,7 +27,6 @@ def test_share_revocation_blocks_access():
     Ensures that immediately after a share is revoked, the grantee
     can no longer access the grantor's data.
     """
-    pass
 
 def test_query_without_tenant_id_fails():
     """
@@ -37,4 +34,3 @@ def test_query_without_tenant_id_fails():
     Ensures that any attempt to query data without specifying a
     tenant_id results in a failure/error.
     """
-    pass

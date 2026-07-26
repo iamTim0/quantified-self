@@ -9,7 +9,8 @@ Maps to Fizzbee Invariants:
 """
 
 import hashlib
-from typing import Any, Dict, List
+from typing import Any
+
 from oura_importer.config import settings
 
 
@@ -25,10 +26,10 @@ def generate_idempotency_key(
 
 
 def transform_sleep_data(
-    raw_data: Dict[str, Any],
+    raw_data: dict[str, Any],
     tenant_id: str = settings.TENANT_ID,
     source_id: str = settings.SOURCE_ID,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Transform Oura v2 daily_sleep document array into DataPoints."""
     data_points = []
 
@@ -77,10 +78,10 @@ def transform_sleep_data(
 
 
 def transform_readiness_data(
-    raw_data: Dict[str, Any],
+    raw_data: dict[str, Any],
     tenant_id: str = settings.TENANT_ID,
     source_id: str = settings.SOURCE_ID,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Transform Oura v2 daily_readiness document array into DataPoints."""
     data_points = []
 
@@ -125,10 +126,10 @@ def transform_readiness_data(
 
 
 def transform_activity_data(
-    raw_data: Dict[str, Any],
+    raw_data: dict[str, Any],
     tenant_id: str = settings.TENANT_ID,
     source_id: str = settings.SOURCE_ID,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Transform Oura v2 daily_activity document array into DataPoints."""
     data_points = []
 

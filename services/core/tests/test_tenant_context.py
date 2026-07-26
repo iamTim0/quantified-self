@@ -3,15 +3,15 @@
 Verifies the Fizzbee TenantIsolation invariant in Python application code.
 """
 
-import pytest
 import asyncio
-from fastapi import HTTPException, Request
+
+import pytest
 from core.db.tenant import (
+    _current_tenant_id,
     get_current_tenant_id,
     set_current_tenant_id,
-    TenantMiddleware,
-    _current_tenant_id,
 )
+
 
 def test_tenant_context_default_raises_runtime_error():
     """Verify that accessing tenant_id without setting it raises RuntimeError.

@@ -14,7 +14,6 @@ def test_tenant_id_always_present():
     Ensures that any data processed and saved by the Core Data Service
     always has a valid tenant_id.
     """
-    pass
 
 def test_deduplication_via_idempotency_key():
     """
@@ -22,7 +21,6 @@ def test_deduplication_via_idempotency_key():
     Ensures that if the same message is delivered twice by JetStream,
     the Core Data Service deduplicates it using the idempotency_key.
     """
-    pass
 
 def test_concurrent_duplicate_messages():
     """
@@ -30,7 +28,6 @@ def test_concurrent_duplicate_messages():
     Ensures that concurrently arriving duplicate messages do not result
     in duplicate database entries or data corruption.
     """
-    pass
 
 def test_message_survives_consumer_crash():
     """
@@ -38,7 +35,6 @@ def test_message_survives_consumer_crash():
     Ensures that if the consumer crashes before acknowledging a message,
     the message remains in the broker and is processed when the consumer recovers.
     """
-    pass
 
 def test_network_partition_recovery():
     """
@@ -46,4 +42,3 @@ def test_network_partition_recovery():
     Ensures that messages produced during a partition are eventually
     delivered and processed once the network recovers.
     """
-    pass
