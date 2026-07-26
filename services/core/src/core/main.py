@@ -493,7 +493,7 @@ async def configure_connector(
     if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config:
         email = req.config["yazio_email"]
         password = req.config["yazio_password"]
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             try:
                 resp = await client.post(
                     "https://yzapi.yazio.com/v15/oauth/token",
@@ -504,13 +504,16 @@ async def configure_connector(
                         "username": email,
                         "password": password,
                     },
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
+                if resp.status_code == 401:
+                    raise HTTPException(status_code=401, detail="Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.")
                 if not resp.is_success:
-                    raise HTTPException(status_code=400, detail="Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.")
+                    raise HTTPException(status_code=resp.status_code, detail=f"Yazio Login fehlgeschlagen: {resp.text}")
                 token_data = resp.json()
                 raw_token = token_data.get("access_token")
                 if not raw_token:
-                    raise HTTPException(status_code=400, detail="Yazio OAuth token response did not contain access_token")
+                    raise HTTPException(status_code=400, detail="Yazio OAuth Antwort enthielt keinen access_token.")
             except HTTPException:
                 raise
             except Exception as e:
