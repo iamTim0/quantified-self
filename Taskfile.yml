@@ -65,22 +65,16 @@ tasks:
 
   run:core:
     desc: "Run Core Data Service on port 8001"
-    env:
-      PYTHONUTF8: "1"
     cmds:
       - uv run --directory services/core python -m core.main
 
   run:gateway:
     desc: "Run API Gateway Service on port 8000"
-    env:
-      PYTHONUTF8: "1"
     cmds:
       - uv run --directory services/api-gateway python -m gateway.main
 
   run:importer:oura:
     desc: "Run the Oura Ring importer microservice"
-    env:
-      PYTHONUTF8: "1"
     cmds:
       - uv run --directory services/importers/oura python -m oura_importer.main
 
@@ -97,13 +91,18 @@ tasks:
       - task: start:local:services
 
   start:local:services:
-    desc: "Concurrently launch Core, Gateway, Oura Importer, and Next.js Dashboard (each isolated; one crash won't kill others)"
-    deps:
-      - task: run:core
-      - task: run:gateway
-      - task: run:importer:oura
-        ignore_error: true
-      - task: dashboard
+    desc: "Concurrently launch Core, Gateway, Oura Importer, and Dashboard. Ctrl+C kills all cleanly."
+    env:
+      PYTHONUTF8: "1"
+    cmds:
+      - npx --yes concurrently
+          --names "core,gateway,oura,dash"
+          --prefix-colors "blue,green,yellow,magenta"
+          --handle-input
+          "uv run --directory services/core python -m core.main"
+          "uv run --directory services/api-gateway python -m gateway.main"
+          "uv run --directory services/importers/oura python -m oura_importer.main"
+          "npx pnpm --prefix apps/dashboard dev"
 
   seed:oura:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"
