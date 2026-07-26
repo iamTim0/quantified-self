@@ -1,6 +1,7 @@
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
+ENV PYTHONPATH=/app/src
 
 RUN pip install --no-cache-dir uv
 
@@ -9,4 +10,4 @@ RUN uv pip install --system -r pyproject.toml
 
 COPY src/ ./src/
 
-CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001"]
