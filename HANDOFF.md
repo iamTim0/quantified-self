@@ -34,6 +34,12 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
 - **Phase 8: Security Audit, Documentation & Invariant Rules Synchronization**:
   - Fully synchronized [agents.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/agents.md), [HANDOFF.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/HANDOFF.md), and [GEMINI.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/GEMINI.md).
   - All 34 automated unit, integration, and Fizzbee spec tests passing.
+- **Phase 9: Request-Driven Importers & Importer Standard**:
+  - **Zero Background Polling**: Converted Oura importer and defined platform blueprint for all future importers to run without periodic background polling loops.
+  - **Asynchronous NATS Task Queue (`qs.task.sync.<source_type>`)**: Core publishes task events upon connector configuration (`POST /configure`) or on-demand sync triggers (`POST /{source_type}/sync`).
+  - **In-Flight Lock**: Importers maintain an in-memory lock per `tenant_id` to skip duplicate concurrent tasks.
+  - **Custom Configuration Payload**: Importers dynamically retrieve decrypted access tokens + custom `config` dicts (`lookback_days`, categories) from Core Data Service DB on demand.
+  - **Importer Standard Specification (`docs/importer-standard.md`)**: Formal architectural specification and developer contract for all platform importers. All 38 automated test suites passing cleanly.
 
 ---
 
