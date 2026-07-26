@@ -78,6 +78,11 @@ tasks:
     cmds:
       - uv run --directory services/importers/oura python -m oura_importer.main
 
+  run:importer:yazio:
+    desc: "Run the Yazio nutrition importer microservice"
+    cmds:
+      - uv run --directory services/importers/yazio python -m yazio_importer.main
+
   dashboard:
     desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
     cmds:
@@ -109,6 +114,11 @@ tasks:
     desc: "Generate 30 days of mock Oura metric data and publish to NATS"
     cmds:
       - uv run --directory services/importers/oura python -m oura_importer.seed
+
+  seed:yazio:
+    desc: "Generate 30 days of mock Yazio diary metric data and publish to NATS"
+    cmds:
+      - uv run --directory services/importers/yazio python -m yazio_importer.seed
 
   new:importer:
     desc: "Scaffold a new importer (placeholder)"
