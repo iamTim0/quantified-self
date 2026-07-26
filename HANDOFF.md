@@ -3,7 +3,7 @@
 **Date**: 2026-07-26  
 **Repository**: Quantified Self Platform (`iamTim0/quantified-self`)  
 **Current Branch**: `main`  
-**Latest Commit**: `66d7727` (`security: fix 5 CRITICAL, 6 HIGH, 5 MEDIUM, 3 LOW findings...`)
+**Latest Commit**: `d70db23` (`fix(db,dashboard): apply alembic migration 002, update init.sql, and resolve frontend ESLint/typecheck issues`)
 
 ---
 
@@ -14,25 +14,23 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
 ### Completed Milestones:
 - **Phase 1: Real Oura Importer & Mock Seed Generator**:
   - Implemented Oura Ring v2 ETL importer (`services/importers/oura`) and 30-day mock seed data generator (`seed.py`).
-  - Successfully published and ingested **310+ metric data points** into TimescaleDB via NATS JetStream.
+  - Ingested **310+ metric data points** into TimescaleDB via NATS JetStream.
 - **Phase 2: Core Data Service REST Query APIs**:
-  - `GET /api/v1/data/metrics` (time-series filtering with `metric_type`, `start_time`, `end_time`, `limit`).
-  - `GET /api/v1/data/metrics/types` (distinct metric listing).
-  - `GET /api/v1/data/metrics/summary` (aggregated averages, min, max, count, latest timestamp).
+  - `GET /api/v1/data/metrics` (time-series filtering), `GET /api/v1/data/metrics/types`, `GET /api/v1/data/metrics/summary`.
 - **Phase 3: Auth & API Gateway Proxy**:
-  - HTTP reverse proxy (`services/api-gateway`) with PyJWT validation, `X-Tenant-ID` header injection, and dev token generator `/api/v1/auth/dev-token`.
+  - Reverse proxy (`services/api-gateway`) with PyJWT validation, `X-Tenant-ID` header injection, and dev token generator `/api/v1/auth/dev-token`.
 - **Phase 4: Encrypted Connector Secrets Management**:
   - Fernet AES-256 symmetric encryption at rest for API keys (`services/core/src/core/security/crypto.py`).
   - `POST /api/v1/data/sources/configure` (encrypts tokens) and `GET /api/v1/data/sources` (returns masked tokens `••••••••a1b2`).
-- **Phase 5: Next.js 15 App Router Dashboard (`apps/dashboard`)**:
-  - Full modern React 19 / Next.js 15 App Router frontend with Chart.js time-series graphs, live metric cards, and connector configuration modal.
-- **Phase 6: Full Security Audit & Hardening**:
+- **Phase 5: User Auth & Cross-Tenant Data Sharing (`de0813a` & `d70db23`)**:
+  - **User Auth Endpoints**: `POST /api/v1/auth/signup` & `POST /api/v1/auth/login` in Core Service & Gateway with Argon2 / bcrypt password hashing.
+  - **Alembic Migration `002_add_auth_fields`**: Added `email` (unique) & `password_hash` to `tenants` table. Updated `infra/db/init.sql`.
+  - **Data Sharing APIs**: `POST /api/v1/data/shares` (grant read access to grantee email) & `GET /api/v1/data/shares` & `DELETE /api/v1/data/shares/{id}`.
+  - **Frontend UI Components**: Added `AuthScreen.tsx` (Login/Signup screen with token persistence) & `ShareModal.tsx` (Cross-tenant sharing modal).
+- **Phase 6: Next.js 15 App Router Dashboard (`apps/dashboard`)**:
+  - Full modern React 19 / Next.js 15 App Router frontend with Chart.js time-series graphs, live metric cards, connector modal, and sharing modal.
+- **Phase 7: Full Security Audit & Hardening**:
   - Fixed 5 CRITICAL, 6 HIGH, 5 MEDIUM, and 3 LOW findings (CORS, header whitelisting, ephemeral dev key fallback, Next.js CSP headers, env template).
-- **Phase 7: Full Authentication & Cross-Tenant Data Sharing**:
-  - Implemented DB Alembic Migration (`002_add_auth_fields`) for user authentication (`email`, `password_hash`).
-  - Added REST Endpoints: `/api/v1/auth/signup`, `/api/v1/auth/login`, and sharing endpoints `/api/v1/data/shares` (`POST`, `GET`, `DELETE`).
-  - Enforced authorization/consent grants in metric querying (`GET /api/v1/data/metrics?target_tenant_id=...`).
-  - Built out Next.js Dashboard UI for Auth (`AuthScreen.tsx`) & Consent Grant Management (`ShareModal.tsx`).
 
 ---
 
@@ -73,7 +71,7 @@ All test suites are passing (34/34 total tests):
 uv run --with pytest --with cryptography pytest specs/tests -v
 
 # 2. Run Core Service Integration & API Tests (10 tests)
-uv run --directory services/core --with pytest --with pytest-asyncio --with httpx --with cryptography python -m pytest tests -v
+uv run --directory services/core --with pytest --with pytest-asyncio --with httpx --with cryptography --with passlib --with argon2-cffi --with pyjwt python -m pytest tests -v
 
 # 3. Run API Gateway Tests (4 tests)
 uv run --directory services/api-gateway --with pytest --with pytest-asyncio --with httpx --with pyjwt python -m pytest tests -v
@@ -98,8 +96,6 @@ Refer to [ROADMAP.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/RO
    - Write `.fizz` specifications in `specs/` first.
 2. **Analysis Service gRPC Endpoints**:
    - Expand `services/analysis` with trend detection, anomaly detection algorithms, and gRPC client connection to Core.
-3. **User Authentication Flow**:
-   - Replace dev JWT token generator with full user login/signup or OAuth2 flow.
 
 ---
 
