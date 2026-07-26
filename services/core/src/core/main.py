@@ -651,6 +651,8 @@ async def list_connectors(
     connectors = []
     for s in sources:
         config = s.config or {}
+        if config.get("status") == "inactive" or not config.get("encrypted_token"):
+            continue
         connectors.append({
             "id": s.id,
             "tenant_id": s.tenant_id,
@@ -672,7 +674,7 @@ async def delete_connector(
     source_type: str,
     session: AsyncSession = Depends(get_session),
 ):
-    """Delete a connector configuration and encrypted credentials for the tenant."""
+    """Safely wipe connector credentials for the tenant without deleting ingested metric data points."""
     tenant_id = get_current_tenant_id()
     stmt = select(DataSource).where(
         DataSource.tenant_id == tenant_id,
@@ -684,12 +686,16 @@ async def delete_connector(
     if not source:
         raise HTTPException(status_code=404, detail="Connector configuration not found")
 
-    await session.delete(source)
+    # Clear encrypted token and deactivate connector while preserving all ingested data_points
+    source.config = {
+        "status": "inactive",
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
     await session.commit()
 
     return {
         "status": "success",
-        "message": f"Connector {source_type} token deleted successfully.",
+        "message": f"Token for connector '{source_type}' deleted successfully. Ingested metric data preserved.",
         "source_type": source_type,
         "tenant_id": tenant_id,
     }
