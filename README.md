@@ -14,13 +14,14 @@ The Quantified Self Platform uses a microservice architecture built for scale, i
 flowchart TD
     subgraph External
         Client[User / Client App]
-        OuraExport[Oura CSV export]
+        YazioAPI[Yazio API v15]
     end
 
     subgraph Platform
         Gateway[API Gateway\nFastAPI]
         Core[Core Data Service\nFastAPI]
         Analysis[Analysis Service\nFastAPI]
+        YazioImporter[Yazio Importer\nPython Stateless Worker]
         
         NATS[(NATS JetStream)]
         DB[(PostgreSQL\n+ TimescaleDB + pgvector)]
@@ -30,7 +31,8 @@ flowchart TD
     Gateway -->|HTTP/REST| Core
     Gateway -->|HTTP/REST| Analysis
     
-    OuraExport -->|CSV upload| Gateway
+    YazioImporter -->|Poll v15| YazioAPI
+    YazioImporter -->|Publish Event| NATS
     NATS -->|Consume Event| Core
     Core -->|SQL| DB
     
@@ -44,7 +46,7 @@ flowchart TD
 | **API Gateway** | 8000 | Auth, routing, JWT validation, injects tenant context | HTTP (REST) in/out |
 | **Core** | 8001 | Owns DB. Consumes ingestion events. Serves gRPC queries | NATS (in), gRPC (out), PostgreSQL |
 | **Analysis** | 8002 | AI/Data Science, complex queries, embeddings | gRPC (to Core), HTTP (from Gateway) |
-| **Oura CSV import** | Dashboard | Imports a user-provided Oura CSV export | HTTP via Gateway to Core |
+| **Yazio Importer** | Container | Polls Yazio API v15 for meals, products & daily macros | NATS publisher (`qs.ingest.yazio`) |
 
 ## Tech Stack
 
@@ -64,12 +66,14 @@ flowchart TD
 
 ```text
 quantified-self/
+├── apps/
+│   └── dashboard/         # Next.js 16 Web Dashboard UI
 ├── services/
 │   ├── api-gateway/       # Auth, routing, JWT
 │   ├── core/              # Owns PostgreSQL, NATS consumer, gRPC server
 │   ├── analysis/          # AI/DS, queries Core via gRPC
 │   └── importers/
-│       └── yazio/         # NATS publisher, polls Yazio API
+│       └── yazio/         # NATS publisher, polls Yazio API v15
 ├── packages/
 │   ├── proto/             # Protobuf definitions (buf)
 │   └── shared-schemas/    # Shared Pydantic models
@@ -79,7 +83,7 @@ quantified-self/
 │   └── db/init.sql
 ├── Taskfile.yml
 ├── README.md
-└── agents.md
+└── AGENTS.md
 ```
 
 ## Getting Started
@@ -88,7 +92,7 @@ quantified-self/
 - Docker & Docker Compose
 - `uv` (Python dependency manager)
 - Taskfile (`go-task`)
-- `buf` (Protobuf compiler)
+- Node.js 22 & pnpm 9+
 
 ### Clone & Setup
 ```bash
@@ -97,18 +101,19 @@ cd quantified-self
 task setup
 ```
 
-### Start Infrastructure
-Start the database and NATS:
+### Start Infrastructure & Microservices
+Start all backing services and microservices using Docker Compose:
 ```bash
-task dev:up
+docker compose -f infra/docker-compose.yml up -d
 ```
 
-### Run Services
-You can run individual services using Taskfile commands:
+### Run Services Locally
+You can run individual services locally using Taskfile commands:
 ```bash
 task run:core
 task run:gateway
 task run:importer:yazio
+task dashboard
 ```
 
 ### Environment Variables
@@ -124,58 +129,37 @@ task run:importer:yazio
 The database utilizes PostgreSQL extended with **TimescaleDB** for hypertable-based time-series data storage and **pgvector** for AI embeddings. Additional flexibility is provided via JSONB metadata columns.
 
 ### Key Tables
-- `tenants`: Core multi-tenancy entity.
-- `data_sources`: Registered integrations (e.g., specific user's Oura ring).
+- `tenants`: Core multi-tenancy workspace entity.
+- `users`: Individual user accounts with roles and hashed credentials.
+- `data_sources`: Registered integrations (e.g., user's Yazio connector).
 - `data_points`: TimescaleDB hypertable containing actual metrics.
 - `tenant_shares`: Explicit consent grants for cross-tenant data sharing.
 
 ### Deduplication Strategy
-Deduplication happens at the database level using an `idempotency_key` (a unique constraint). The core service performs an `INSERT ... ON CONFLICT (tenant_id, idempotency_key) DO NOTHING`.
+Deduplication happens at the database level using a 64-character SHA256 `idempotency_key`:
+$$\text{SHA256}(\text{tenant\_id} + ":" + \text{source\_id} + ":" + \text{metric\_type} + ":" + \text{timestamp})$$
+The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
 
 ## Multi-Tenancy & Data Sharing
 
 ### Tenant Isolation
-The platform employs **application-level filtering**. There is no Row-Level Security (RLS). Every database query in the Core service MUST explicitly filter by `tenant_id`. The API Gateway extracts the `tenant_id` from the JWT and passes it downstream (via HTTP headers or gRPC metadata).
+The platform employs **application-level filtering**. Every database query in the Core service MUST explicitly filter by `tenant_id`. The API Gateway extracts the `tenant_id` from the JWT and passes it downstream (`X-Tenant-ID`).
 
 ### Data Sharing
-Cross-tenant sharing uses an explicit consent model via the `tenant_shares` table. If Tenant A queries Tenant B's data, the application checks this table before fulfilling the request.
+Cross-tenant sharing uses an explicit consent model via the `tenant_shares` table.
 
 ## Adding a New Importer
 
-API importers are stateless workers fetching data and pushing it into the system. The only currently enabled user-facing import is the Oura CSV upload in the Dashboard; API/token connectors are not presented as available integrations.
+API importers are stateless workers fetching data and pushing it into NATS JetStream.
 
 1. **Create Directory**: Make `services/importers/<name>/`
-2. **Template**: Copy the structure from the Oura importer template.
+2. **Template**: Copy structure from `services/importers/yazio/`.
 3. **Client**: Implement `client.py` to handle external API pagination, rate limits, and auth.
-4. **Transformer**: Implement `transformer.py` to map external data to the standard platform `DataPoint`.
+4. **Transformer**: Implement `transformer.py` to map external JSON to standard platform `DataPoint` records.
 5. **NATS Subject**: Configure publishing to `qs.ingest.<name>`.
 6. **Docker**: Add the service to `infra/docker-compose.yml`.
-7. **Verify**: Write a Fizzbee spec for any novel data flows introduced.
-8. **Tests**: Add unit and integration tests.
+7. **Tests**: Add unit and integration tests.
 
 ## Fizzbee (Formal Verification)
 
-We use **Fizzbee** to mathematically model and verify our distributed architecture patterns before writing code.
-- **Why**: To prevent race conditions, dropped messages, and complex distributed bugs.
-- **Where**: Specifications live in `specs/`.
-- **How**: Run `task spec:check` to verify invariants.
-
-## Development
-
-### Task Commands
-
-| Command | Action |
-| --- | --- |
-| `task setup` | Install dependencies, tools |
-| `task dev:up` | Start infra (DB, NATS) via Docker |
-| `task proto:generate`| Compile protobuf files |
-| `task test` | Run all test suites |
-| `task lint` | Run ruff and mypy |
-
-### Testing
-- **Unit**: Pytest, mocking external APIs and DBs.
-- **Integration**: Testing against actual local Docker services.
-- **Fizzbee Mapping**: Tests must explicitly reference the Fizzbee invariants they are validating in their docstrings.
-
-## License
-[PolyForm Noncommercial License 1.0.0](LICENSE). Free for personal use, self-hosting, modification, and non-commercial sharing. Commercial use, monetization, or selling as a paid service is strictly prohibited.
+We use **Fizzbee** to mathematically model and verify our distributed architecture patterns before writing code. Specifications live in `specs/`.
