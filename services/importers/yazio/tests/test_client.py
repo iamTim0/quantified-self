@@ -1,12 +1,11 @@
-import pytest
 from unittest.mock import AsyncMock, patch
-import httpx
 
+import httpx
+import pytest
 from yazio_importer.client import (
     YazioClient,
-    YazioUnauthorizedError,
     YazioRateLimitError,
-    YazioApiError,
+    YazioUnauthorizedError,
 )
 
 

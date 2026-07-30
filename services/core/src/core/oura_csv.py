@@ -9,7 +9,6 @@ import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-
 MAX_CSV_ROWS = 10_000
 _METRIC_TYPE_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
 _TIMESTAMP_COLUMNS = ("timestamp", "date", "day")

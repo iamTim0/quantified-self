@@ -22,6 +22,7 @@ from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
 from core.events.consumer import process_message
 from sqlalchemy import select
+
 from tests.db_helpers import cleanup_test_tenant
 
 NATS_URL = "nats://127.0.0.1:4222"

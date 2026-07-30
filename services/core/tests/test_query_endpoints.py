@@ -14,11 +14,12 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from core.db.models import DataPoint, DataSource, Tenant
+from core.db.models import DataPoint, DataSource
 from core.db.session import async_session_maker
 from core.main import app
-from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 from httpx import ASGITransport, AsyncClient
+
+from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
 

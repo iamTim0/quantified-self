@@ -11,7 +11,6 @@ Maps to Fizzbee Invariants:
 - TenantHeaderAlwaysInjected
 """
 
-import os
 
 import pytest
 from httpx import ASGITransport, AsyncClient

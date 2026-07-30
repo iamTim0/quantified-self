@@ -13,4 +13,3 @@ def test_importer_standard_invariants():
     proper in-flight locking semantics (e.g. single sync per user/connector),
     and correctly receive and propagate custom configuration payloads.
     """
-    pass

@@ -5,7 +5,6 @@ NATS JetStream events, and Importer background workers.
 """
 
 import logging
-import os
 import time
 import uuid
 from contextvars import ContextVar
@@ -80,6 +79,18 @@ class RequestTracingMiddleware(BaseHTTPMiddleware):
             _current_request_id.reset(token)
 
 
+def _get_log_dir() -> Path:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "logs").is_dir() or ((parent / "pyproject.toml").exists() and parent.name == "quantified-self"):
+            log_dir = parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+            return log_dir
+    log_dir = Path.cwd() / "logs"
+    log_dir.mkdir(exist_ok=True)
+    return log_dir
+
+
 def setup_tracing_logger(service_name: str):
     """Configure root logger format with correlation ID prefix.
 
@@ -91,9 +102,7 @@ def setup_tracing_logger(service_name: str):
     All handlers inject the correlation request_id via CorrelationLogFilter.
     Logs are always written to the project root logs/ directory.
     """
-    # Resolve project root: services/core/src/core/tracing.py -> 4 levels up
-    _log_dir = Path(__file__).resolve().parents[4] / "logs"
-    _log_dir.mkdir(exist_ok=True)
+    _log_dir = _get_log_dir()
 
     log_format = f"%(asctime)s [{service_name}] [%(levelname)s] [req_id=%(request_id)s] %(message)s"
     formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")

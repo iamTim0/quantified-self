@@ -7,7 +7,6 @@ and secure encrypted connector configuration management.
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
-import httpx
 import json
 import logging
 import os
@@ -16,15 +15,16 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
+import httpx
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import distinct, func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.dialects.postgresql import insert
 
 from core.config import settings
 from core.db.models import DataPoint, DataSource, Tenant, TenantShare, User

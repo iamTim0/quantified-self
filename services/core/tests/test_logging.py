@@ -1,7 +1,5 @@
 import logging
-import os
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 
 def test_setup_tracing_logger_registers_three_handlers():
@@ -10,8 +8,10 @@ def test_setup_tracing_logger_registers_three_handlers():
     root = logging.getLogger()
     original_handlers = root.handlers[:]
 
-    with patch('core.tracing.RotatingFileHandler') as mock_rfh:
-        with patch('pathlib.Path.mkdir') as mock_mkdir:
+    with (
+        patch('core.tracing.RotatingFileHandler') as mock_rfh,
+        patch('pathlib.Path.mkdir') as mock_mkdir,
+    ):
             # Give the mock handler a real integer .level so logging callHandlers doesn't break
             mock_handler = MagicMock()
             mock_handler.level = logging.NOTSET

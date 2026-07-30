@@ -1,7 +1,7 @@
 import json
 import logging
-from datetime import datetime
 import uuid
+from datetime import datetime
 
 import nats
 from sqlalchemy.dialects.postgresql import insert
@@ -56,7 +56,7 @@ async def process_message(msg):
 
         await msg.ack()
     except Exception as e:
-        logger.error(f"Error processing message: {e}", exc_info=True)
+        logger.exception("Error processing message")
         # Not acking — message will be redelivered by JetStream (at-least-once)
 
 async def start_consumer():

@@ -1,4 +1,5 @@
 import hashlib
+
 from yazio_importer.transformer import (
     generate_idempotency_key,
     transform_consumed_items,

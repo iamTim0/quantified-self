@@ -1,12 +1,13 @@
 FROM python:3.11-slim
 
 WORKDIR /app
+ENV PYTHONPATH=/app/src
 
-RUN pip install uv
+RUN pip install --no-cache-dir uv
 
-COPY pyproject.toml .
-RUN uv pip install --system .
+COPY pyproject.toml README.md ./
+RUN uv pip install --system -r pyproject.toml
 
-COPY src/ src/
+COPY src/ ./src/
 
 CMD ["python", "-m", "yazio_importer.main"]

@@ -1,8 +1,8 @@
 import json
-import pytest
 from unittest.mock import AsyncMock, patch
 
-from yazio_importer.main import process_task_message, active_syncs
+import pytest
+from yazio_importer.main import active_syncs, process_task_message
 
 
 @pytest.mark.asyncio

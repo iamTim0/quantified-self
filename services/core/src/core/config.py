@@ -1,11 +1,18 @@
 import os
-import secrets
 from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Root .env is 4 levels up from this file: services/core/src/core/config.py
-_ROOT_ENV = Path(__file__).resolve().parents[4] / ".env"
+
+def _find_root_env() -> Path:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / ".env").exists():
+            return parent / ".env"
+    return current.parents[min(4, len(current.parents) - 1)] / ".env"
+
+
+_ROOT_ENV = _find_root_env()
 
 
 def _default_jwt_secret() -> str:

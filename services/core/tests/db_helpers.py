@@ -2,10 +2,9 @@
 
 import uuid
 
-from sqlalchemy import delete, or_
-
 from core.db.models import DataPoint, DataSource, Tenant, TenantShare, User
 from core.db.session import async_session_maker
+from sqlalchemy import delete, or_
 
 
 async def create_test_tenant() -> str:

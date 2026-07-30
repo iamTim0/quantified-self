@@ -25,10 +25,21 @@ from yazio_importer.config import settings
 from yazio_importer.transformer import transform_consumed_items
 
 
+def _get_log_dir() -> Path:
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "logs").is_dir() or ((parent / "pyproject.toml").exists() and parent.name == "quantified-self"):
+            log_dir = parent / "logs"
+            log_dir.mkdir(exist_ok=True)
+            return log_dir
+    log_dir = Path.cwd() / "logs"
+    log_dir.mkdir(exist_ok=True)
+    return log_dir
+
+
 def _setup_importer_logging():
     """Configure rotating file log handlers for the Yazio importer service."""
-    _log_dir = Path(__file__).resolve().parents[5] / "logs"
-    _log_dir.mkdir(exist_ok=True)
+    _log_dir = _get_log_dir()
 
     log_format = "%(asctime)s [qs-importer-yazio] [%(levelname)s] %(message)s"
     formatter = logging.Formatter(log_format, datefmt="%Y-%m-%d %H:%M:%S")

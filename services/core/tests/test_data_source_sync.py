@@ -1,6 +1,7 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
 from core.main import app
+from httpx import ASGITransport, AsyncClient
+
 from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
@@ -41,7 +42,7 @@ async def test_manual_sync_trigger_returns_202(mock_nats):
         
             # Check task published
             assert len(mock_nats.published) > 0
-            subject, msg_payload = mock_nats.published[-1]
+            subject, _msg_payload = mock_nats.published[-1]
             assert subject == "qs.task.sync.oura"
     finally:
         await cleanup_test_tenant(tenant_id)
@@ -63,7 +64,7 @@ async def test_configure_source_stores_custom_config_and_publishes_task(mock_nat
             
             # Check task published
             assert len(mock_nats.published) > 0
-            subject, msg_payload = mock_nats.published[-1]
+            subject, _msg_payload = mock_nats.published[-1]
             assert subject == "qs.task.sync.oura"
     finally:
         await cleanup_test_tenant(tenant_id)
