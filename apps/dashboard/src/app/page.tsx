@@ -33,9 +33,15 @@ export default function DashboardPage() {
   const [carbValues, setCarbValues] = useState<number[]>([]);
   const [fatValues, setFatValues] = useState<number[]>([]);
 
+  const [selectedModalSourceType, setSelectedModalSourceType] = useState<string | undefined>(undefined);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const handleOpenConfigureModal = (connector?: ConnectorInfo) => {
+    setSelectedModalSourceType(connector?.source_type);
+    setIsModalOpen(true);
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -185,13 +191,6 @@ export default function DashboardPage() {
   if (!isAuthenticated) {
     return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
   }
-
-  const [selectedModalSourceType, setSelectedModalSourceType] = useState<string | undefined>(undefined);
-
-  const handleOpenConfigureModal = (connector?: ConnectorInfo) => {
-    setSelectedModalSourceType(connector?.source_type);
-    setIsModalOpen(true);
-  };
 
   return (
     <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8">
