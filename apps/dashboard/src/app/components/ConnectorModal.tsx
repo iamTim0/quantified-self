@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, Watch, Trophy, Moon, Compass, Scale, Smartphone, Zap } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin } from "lucide-react";
 
 export interface ProviderCatalogItem {
   id: string;
@@ -27,7 +27,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   },
   {
     id: "whoop",
-    name: "Whoop 4.0 / Peak",
+    name: "Whoop 4.0",
     category: "Regeneration & Schlaf",
     description: "Synchronisiert Recovery Score, HRV, Tiefschlaf-Phasen, Ruhepuls und Daily Strain.",
     icon: Activity,
@@ -37,83 +37,23 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   },
   {
     id: "apple_health",
-    name: "Apple Health / Watch",
+    name: "Apple Health",
     category: "Fitness & Vitaldaten",
     description: "Importiert Schritte, HF-Verlauf, Aktivitäts-Energie und VO2 Max direkt vom iPhone / Apple Watch.",
     icon: Heart,
     iconColor: "text-rose-400",
     status: "coming_soon",
-    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien", "VO2 Max"],
+    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien"],
   },
   {
-    id: "oura",
-    name: "Oura Ring Gen 3 / Horizon",
-    category: "Schlaf & Bio-Tracking",
-    description: "Synchronisiert Sleep Score, Readiness Score, Temperaturabweichung und Atemfrequenz.",
-    icon: Moon,
-    iconColor: "text-blue-400",
-    status: "coming_soon",
-    supportedMetrics: ["Sleep Score", "Readiness", "Hauttemperatur", "Atemfrequenz"],
-  },
-  {
-    id: "garmin",
-    name: "Garmin Connect",
-    category: "Sport & Performance",
-    description: "Tracking von Body Battery, Trainingsbelastung, VO2 Max, Läufen und Radfahrten.",
-    icon: Compass,
-    iconColor: "text-cyan-400",
-    status: "coming_soon",
-    supportedMetrics: ["Body Battery", "Trainingszustand", "Pace", "Höhenmeter"],
-  },
-  {
-    id: "fitbit",
-    name: "Fitbit / Pixel Watch",
-    category: "Wearables & Schlaf",
-    description: "Tägliches Tracking von Schritten, verbrannten Kalorien, Etagen und Schlafstadien.",
-    icon: Watch,
+    id: "dawarich",
+    name: "Dawarich",
+    category: "Location & GPS Tracking",
+    description: "Self-hosted Alternative zu Google Location History. Importiert Standorte, Besuchsorte und Bewegungsstrecken.",
+    icon: MapPin,
     iconColor: "text-emerald-400",
     status: "coming_soon",
-    supportedMetrics: ["Schritte", "Etagen", "Schlafstunden", "Active Zone Mins"],
-  },
-  {
-    id: "strava",
-    name: "Strava",
-    category: "Sport & Workouts",
-    description: "Importiert Outdoor-Läufe, Radfahrten, Pace, Höhenmeter und Segment-Zeiten.",
-    icon: Trophy,
-    iconColor: "text-orange-400",
-    status: "coming_soon",
-    supportedMetrics: ["Distanz (km)", "Pace", "Höhenmeter", "Suffer Score"],
-  },
-  {
-    id: "withings",
-    name: "Withings Body Scale & Sleep",
-    category: "Gewicht & Schlafanalyse",
-    description: "Synchronisiert Gewicht, Körperfett %, Muskelmasse, Pulswellen-Geschwindigkeit und Schlafqualität.",
-    icon: Scale,
-    iconColor: "text-purple-400",
-    status: "coming_soon",
-    supportedMetrics: ["Gewicht (kg)", "Körperfett %", "Muskelmasse", "Schlaf-Index"],
-  },
-  {
-    id: "health_connect",
-    name: "Google Health Connect",
-    category: "Android Sync",
-    description: "Zentrale Schnittstelle für Android Fitnessdaten, Blutdruck, Glukose und SpO2.",
-    icon: Smartphone,
-    iconColor: "text-teal-400",
-    status: "coming_soon",
-    supportedMetrics: ["Schritte", "SpO2", "Blutdruck", "Sauerstoffstoffsättigung"],
-  },
-  {
-    id: "dexcom",
-    name: "Dexcom / Freestyle Libre CGM",
-    category: "Kontinuierlicher Glukosesensor",
-    description: "Kontinuierliche Blutzuckermessung, Glukose-Variabilität und Time-in-Range Analysen.",
-    icon: Zap,
-    iconColor: "text-yellow-400",
-    status: "coming_soon",
-    supportedMetrics: ["Glukose (mg/dL)", "Time-in-Range %", "Glukose-Trend"],
+    supportedMetrics: ["Standorte", "Besuchte Orte", "GPS-Tracks"],
   },
 ];
 
