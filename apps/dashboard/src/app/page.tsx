@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import Header, { TabType } from "./components/Header";
 import OverviewTab from "./components/OverviewTab";
 import ExplorerTab from "./components/ExplorerTab";
-import ConnectorsPage from "./components/ConnectorsPage";
+import ConnectorsPage, { ConnectorInfo } from "./components/ConnectorsPage";
 import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
@@ -139,6 +139,13 @@ export default function DashboardPage() {
     return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
   }
 
+  const [selectedModalSourceType, setSelectedModalSourceType] = useState<string | undefined>(undefined);
+
+  const handleOpenConfigureModal = (connector?: ConnectorInfo) => {
+    setSelectedModalSourceType(connector?.source_type);
+    setIsModalOpen(true);
+  };
+
   return (
     <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
@@ -150,7 +157,7 @@ export default function DashboardPage() {
           tenantName={tenantName}
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          onOpenModal={() => setIsModalOpen(true)}
+          onOpenModal={() => handleOpenConfigureModal()}
           onShare={() => setIsShareModalOpen(true)}
           onLogout={handleLogout}
         />
@@ -175,13 +182,17 @@ export default function DashboardPage() {
             apiBase={API_BASE}
             token={token}
             tenantId={tenantId}
-            onOpenConfigureModal={() => setIsModalOpen(true)}
+            onOpenConfigureModal={(c) => handleOpenConfigureModal(c)}
           />
         )}
 
         <ConnectorModal
           isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedModalSourceType(undefined);
+          }}
+          initialSourceType={selectedModalSourceType}
           token={token}
           tenantId={tenantId}
           onSaved={triggerRefresh}

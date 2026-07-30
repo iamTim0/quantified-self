@@ -1,7 +1,71 @@
 "use client";
 
-import React, { useState } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, Watch, Trophy } from "lucide-react";
+
+export interface ProviderCatalogItem {
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  icon: React.ElementType;
+  iconColor: string;
+  status: "available" | "coming_soon";
+  supportedMetrics: string[];
+}
+
+export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
+  {
+    id: "yazio",
+    name: "Yazio Nutrition v15",
+    category: "Ernährung & Tagebuch",
+    description: "Importiert Mahlzeiten, Lebensmittelnamen, Kalorien, Protein, Kohlenhydrate und Fett aus deinem Yazio-Tagebuch.",
+    icon: Flame,
+    iconColor: "text-amber-400",
+    status: "available",
+    supportedMetrics: ["Kalorien", "Protein", "Kohlenhydrate", "Fett", "Gegessene Produkte"],
+  },
+  {
+    id: "whoop",
+    name: "Whoop 4.0 / Peak",
+    category: "Regeneration & Schlaf",
+    description: "Synchronisiert Recovery Score, HRV, Tiefschlaf-Phasen, Ruhepuls und Daily Strain.",
+    icon: Activity,
+    iconColor: "text-red-400",
+    status: "coming_soon",
+    supportedMetrics: ["Recovery %", "HRV (ms)", "Ruhepuls", "Schlafqualität"],
+  },
+  {
+    id: "apple_health",
+    name: "Apple Health",
+    category: "Fitness & Vitaldaten",
+    description: "Importiert Schritte, HF-Verlauf, Aktivitäts-Energie und Vorhofflimmern direkt vom iPhone / Apple Watch.",
+    icon: Heart,
+    iconColor: "text-rose-400",
+    status: "coming_soon",
+    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien"],
+  },
+  {
+    id: "fitbit",
+    name: "Fitbit",
+    category: "Wearables & Schlaf",
+    description: "Tägliches Tracking von Schritten, verbrannten Kalorien, Etagen und Schlafstadien.",
+    icon: Watch,
+    iconColor: "text-emerald-400",
+    status: "coming_soon",
+    supportedMetrics: ["Schritte", "Etagen", "Schlafstunden"],
+  },
+  {
+    id: "strava",
+    name: "Strava",
+    category: "Sport & Workouts",
+    description: "Importiert Outdoor-Läufe, Radfahrten, Pace, Höhenmeter und GPS-Tracks.",
+    icon: Trophy,
+    iconColor: "text-orange-400",
+    status: "coming_soon",
+    supportedMetrics: ["Distanz (km)", "Pace", "Höhenmeter"],
+  },
+];
 
 interface ConnectorModalProps {
   isOpen: boolean;
@@ -10,6 +74,7 @@ interface ConnectorModalProps {
   tenantId: string;
   token: string;
   apiBase?: string;
+  initialSourceType?: string;
   initialPollInterval?: number;
   initialLookbackDays?: number;
 }
@@ -21,9 +86,13 @@ export default function ConnectorModal({
   tenantId,
   token,
   apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000",
+  initialSourceType,
   initialPollInterval = 6,
   initialLookbackDays = 30,
 }: ConnectorModalProps) {
+  const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
+  const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
+
   const [accessToken, setAccessToken] = useState("");
   const [yazioAuthMode, setYazioAuthMode] = useState<"token" | "login">("token");
   const [yazioEmail, setYazioEmail] = useState("");
@@ -34,10 +103,37 @@ export default function ConnectorModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (isOpen) {
+      if (initialSourceType) {
+        const item = PROVIDER_CATALOG.find((p) => p.id === initialSourceType);
+        if (item) {
+          setSelectedProvider(item);
+          setStep("configure_provider");
+        } else {
+          setStep("select_provider");
+        }
+      } else {
+        setStep("select_provider");
+        setSelectedProvider(null);
+      }
+      setMessage(null);
+      setError(null);
+    }
+  }, [isOpen, initialSourceType]);
+
   if (!isOpen) return null;
+
+  const handleSelectProvider = (provider: ProviderCatalogItem) => {
+    if (provider.status === "coming_soon") return;
+    setSelectedProvider(provider);
+    setStep("configure_provider");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProvider) return;
+
     setMessage(null);
     setError(null);
 
@@ -46,21 +142,23 @@ export default function ConnectorModal({
       let finalToken = accessToken.trim();
       let payloadConfig: Record<string, any> | undefined = undefined;
 
-      if (yazioAuthMode === "login") {
-        if (!yazioEmail.trim() || !yazioPassword.trim()) {
-          setError("Bitte gib E-Mail und Passwort für deinen Yazio-Account ein.");
+      if (selectedProvider.id === "yazio") {
+        if (yazioAuthMode === "login") {
+          if (!yazioEmail.trim() || !yazioPassword.trim()) {
+            setError("Bitte gib E-Mail und Passwort für deinen Yazio-Account ein.");
+            setLoading(false);
+            return;
+          }
+          finalToken = "SERVER_OAUTH_LOGIN";
+          payloadConfig = {
+            yazio_email: yazioEmail.trim(),
+            yazio_password: yazioPassword.trim(),
+          };
+        } else if (!finalToken) {
+          setError("Bitte gib einen Yazio Bearer Token ein.");
           setLoading(false);
           return;
         }
-        finalToken = "SERVER_OAUTH_LOGIN";
-        payloadConfig = {
-          yazio_email: yazioEmail.trim(),
-          yazio_password: yazioPassword.trim(),
-        };
-      } else if (!finalToken) {
-        setError("Bitte gib einen Yazio Bearer Token ein.");
-        setLoading(false);
-        return;
       }
 
       const res = await fetch(`${apiBase}/api/v1/data/sources/configure`, {
@@ -71,7 +169,7 @@ export default function ConnectorModal({
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          source_type: "yazio",
+          source_type: selectedProvider.id,
           access_token: finalToken,
           status: "active",
           poll_interval_hours: Number(pollIntervalHours),
@@ -81,7 +179,7 @@ export default function ConnectorModal({
       });
 
       if (res.ok) {
-        setMessage("Yazio Connector erfolgreich konfiguriert!");
+        setMessage(`${selectedProvider.name} erfolgreich konfiguriert!`);
         setAccessToken("");
         setYazioEmail("");
         setYazioPassword("");
@@ -101,12 +199,26 @@ export default function ConnectorModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-md bg-neutral-950 border border-neutral-800 rounded-2xl p-6 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-xl bg-neutral-950 border border-neutral-800 rounded-3xl p-6 shadow-2xl space-y-6">
+        {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-neutral-800">
-          <div className="flex items-center gap-2.5 text-white">
-            <Plug className="w-5 h-5 text-blue-400" />
-            <h2 className="text-lg font-bold">Yazio Connector konfigurieren</h2>
+          <div className="flex items-center gap-3">
+            {step === "configure_provider" && (
+              <button
+                onClick={() => setStep("select_provider")}
+                className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition-colors"
+                title="Zurück zur Auswahl"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
+            <div className="flex items-center gap-2 text-white">
+              <Plug className="w-5 h-5 text-blue-400" />
+              <h2 className="text-lg font-bold">
+                {step === "select_provider" ? "Datenquelle auswählen" : `${selectedProvider?.name} konfigurieren`}
+              </h2>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -116,134 +228,191 @@ export default function ConnectorModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="flex bg-neutral-900 border border-neutral-800 rounded-lg p-1 mb-3 text-xs">
-            <button
-              type="button"
-              onClick={() => setYazioAuthMode("token")}
-              className={`flex-1 py-1.5 rounded font-medium transition-colors ${
-                yazioAuthMode === "token" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Bearer Token direkt eingeben
-            </button>
-            <button
-              type="button"
-              onClick={() => setYazioAuthMode("login")}
-              className={`flex-1 py-1.5 rounded font-medium transition-colors ${
-                yazioAuthMode === "login" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              Yazio E-Mail & Passwort
-            </button>
-          </div>
+        {/* Step 1: Provider Selection Gallery */}
+        {step === "select_provider" ? (
+          <div className="space-y-4">
+            <p className="text-xs text-neutral-400">
+              Wähle einen Connector aus dem Katalog, um dein Konto zu verknüpfen und automatisches Syncing einzurichten:
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
+              {PROVIDER_CATALOG.map((provider) => {
+                const Icon = provider.icon;
+                const isAvailable = provider.status === "available";
+                return (
+                  <button
+                    key={provider.id}
+                    onClick={() => handleSelectProvider(provider)}
+                    disabled={!isAvailable}
+                    className={`text-left p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${
+                      isAvailable
+                        ? "bg-neutral-900/80 border-neutral-800 hover:border-blue-500/50 hover:bg-neutral-900 cursor-pointer shadow-lg hover:shadow-blue-500/10"
+                        : "bg-neutral-950/40 border-neutral-900 opacity-60 cursor-not-allowed"
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center">
+                        <Icon className={`w-5 h-5 ${provider.iconColor}`} />
+                        <span
+                          className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                            isAvailable
+                              ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                              : "bg-neutral-800 text-neutral-400 border border-neutral-700"
+                          }`}
+                        >
+                          {isAvailable ? "Verfügbar" : "Demnächst"}
+                        </span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white">{provider.name}</h3>
+                      <p className="text-[11px] text-neutral-400 leading-snug">{provider.description}</p>
+                    </div>
 
-          {yazioAuthMode === "login" ? (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                  Yazio E-Mail
-                </label>
-                <input
-                  type="email"
-                  placeholder="name@example.com"
-                  value={yazioEmail}
-                  onChange={(e) => setYazioEmail(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                  Yazio Passwort
-                </label>
-                <input
-                  type="password"
-                  placeholder="••••••••"
-                  value={yazioPassword}
-                  onChange={(e) => setYazioPassword(e.target.value)}
-                  className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
-                />
-              </div>
-            </div>
-          ) : (
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1.5">
-                <Key className="w-3.5 h-3.5 text-purple-400" />
-                <span>Yazio Bearer Access Token</span>
-              </label>
-              <input
-                type="password"
-                placeholder="Füge deinen Yazio Bearer Token hier ein (z.B. eyJhbGciOi...)"
-                value={accessToken}
-                onChange={(e) => setAccessToken(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none font-mono"
-              />
-            </div>
-          )}
-
-          {/* Sync Frequency & Period Configuration */}
-          <div className="pt-2 border-t border-neutral-800 space-y-3">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum
-            </h3>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-purple-400" /> Sync-Frequenz
-                </label>
-                <select
-                  value={pollIntervalHours}
-                  onChange={(e) => setPollIntervalHours(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
-                >
-                  <option value={1} className="bg-neutral-900">Jede Stunde</option>
-                  <option value={3} className="bg-neutral-900">Alle 3 Stunden</option>
-                  <option value={6} className="bg-neutral-900">Alle 6 Stunden (Standard)</option>
-                  <option value={12} className="bg-neutral-900">Alle 12 Stunden</option>
-                  <option value={24} className="bg-neutral-900">Täglich (24 Std)</option>
-                  <option value={168} className="bg-neutral-900">Wöchentlich (168 Std)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-emerald-400" /> Import-Zeitraum
-                </label>
-                <select
-                  value={lookbackDays}
-                  onChange={(e) => setLookbackDays(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
-                >
-                  <option value={7} className="bg-neutral-900">Letzte 7 Tage</option>
-                  <option value={14} className="bg-neutral-900">Letzte 14 Tage</option>
-                  <option value={30} className="bg-neutral-900">Letzte 30 Tage (Standard)</option>
-                  <option value={60} className="bg-neutral-900">Letzte 60 Tage</option>
-                  <option value={90} className="bg-neutral-900">Letzte 90 Tage</option>
-                </select>
-              </div>
+                    <div className="flex flex-wrap gap-1 pt-1 border-t border-neutral-800/60">
+                      {provider.supportedMetrics.slice(0, 3).map((m) => (
+                        <span key={m} className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-300 font-mono">
+                          {m}
+                        </span>
+                      ))}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
+        ) : (
+          /* Step 2: Configuration Form for Selected Provider */
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {selectedProvider?.id === "yazio" && (
+              <>
+                <div className="flex bg-neutral-900 border border-neutral-800 rounded-xl p-1 mb-3 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setYazioAuthMode("token")}
+                    className={`flex-1 py-1.5 rounded-lg font-medium transition-colors ${
+                      yazioAuthMode === "token" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    Bearer Token direkt eingeben
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setYazioAuthMode("login")}
+                    className={`flex-1 py-1.5 rounded-lg font-medium transition-colors ${
+                      yazioAuthMode === "login" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    Yazio E-Mail & Passwort
+                  </button>
+                </div>
 
-          {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
-          {message && <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{message}</p>}
+                {yazioAuthMode === "login" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                        Yazio E-Mail
+                      </label>
+                      <input
+                        type="email"
+                        placeholder="name@example.com"
+                        value={yazioEmail}
+                        onChange={(e) => setYazioEmail(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
+                        Yazio Passwort
+                      </label>
+                      <input
+                        type="password"
+                        placeholder="••••••••"
+                        value={yazioPassword}
+                        onChange={(e) => setYazioPassword(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-purple-400" />
+                      <span>Yazio Bearer Access Token</span>
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Füge deinen Yazio Bearer Token hier ein (z.B. eyJhbGciOi...)"
+                      value={accessToken}
+                      onChange={(e) => setAccessToken(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none font-mono"
+                    />
+                  </div>
+                )}
+              </>
+            )}
 
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors"
-            >
-              Abbrechen
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="px-4 py-2 text-sm font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
-            >
-              {loading ? "Speichere..." : "Einstellungen Speichern"}
-            </button>
-          </div>
-        </form>
+            {/* Sync Frequency & Period Configuration */}
+            <div className="pt-3 border-t border-neutral-800 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                    <Clock className="w-3 h-3 text-purple-400" /> Sync-Frequenz
+                  </label>
+                  <select
+                    value={pollIntervalHours}
+                    onChange={(e) => setPollIntervalHours(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
+                  >
+                    <option value={1} className="bg-neutral-900">Jede Stunde</option>
+                    <option value={3} className="bg-neutral-900">Alle 3 Stunden</option>
+                    <option value={6} className="bg-neutral-900">Alle 6 Stunden (Standard)</option>
+                    <option value={12} className="bg-neutral-900">Alle 12 Stunden</option>
+                    <option value={24} className="bg-neutral-900">Täglich (24 Std)</option>
+                    <option value={168} className="bg-neutral-900">Wöchentlich (168 Std)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-neutral-400 mb-1 flex items-center gap-1">
+                    <Calendar className="w-3 h-3 text-emerald-400" /> Import-Zeitraum
+                  </label>
+                  <select
+                    value={lookbackDays}
+                    onChange={(e) => setLookbackDays(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
+                  >
+                    <option value={7} className="bg-neutral-900">Letzte 7 Tage</option>
+                    <option value={14} className="bg-neutral-900">Letzte 14 Tage</option>
+                    <option value={30} className="bg-neutral-900">Letzte 30 Tage (Standard)</option>
+                    <option value={60} className="bg-neutral-900">Letzte 60 Tage</option>
+                    <option value={90} className="bg-neutral-900">Letzte 90 Tage</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            {error && <p role="alert" className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-300">{error}</p>}
+            {message && <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{message}</p>}
+
+            <div className="flex justify-between items-center pt-4">
+              <button
+                type="button"
+                onClick={() => setStep("select_provider")}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors flex items-center gap-1.5"
+              >
+                <ArrowLeft className="w-3.5 h-3.5" /> Zurück
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-5 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50 shadow-lg shadow-blue-600/20"
+              >
+                {loading ? "Speichere..." : "Verbindung Speichern"}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   );
