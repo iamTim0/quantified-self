@@ -94,44 +94,62 @@ async def get_connector_token_from_core(
             return None, None, None
 
 
-product_cache: dict[str, str] = {}
-recipe_cache: dict[str, str] = {}
+product_cache: dict[str, dict[str, Any]] = {}
+recipe_cache: dict[str, dict[str, Any]] = {}
 
 
-async def resolve_product_name(client: YazioClient, product_id: str) -> str:
+async def resolve_product_info(client: YazioClient, product_id: str) -> dict[str, Any]:
     if product_id in product_cache:
         return product_cache[product_id]
     try:
         p = await client.get_product(product_id)
-        if isinstance(p, dict):
+        if isinstance(p, dict) and p:
             brand = p.get("brand") or p.get("brand_name")
             name = p.get("name") or p.get("title") or p.get("product_name")
             if brand and name:
                 full_name = f"{brand} - {name}"
             else:
                 full_name = name or brand or f"Produkt #{product_id[:8]}"
-            product_cache[product_id] = full_name
-            return full_name
+
+            nutrients = p.get("nutrients") or {}
+            info = {
+                "name": full_name,
+                "base_amount": float(p.get("base_amount") or 100.0),
+                "energy_kcal": float(nutrients.get("energy.energy") or p.get("calories") or p.get("energy") or 0.0),
+                "protein_g": float(nutrients.get("nutrient.protein") or p.get("protein") or 0.0),
+                "carbs_g": float(nutrients.get("nutrient.carb") or p.get("carbs") or 0.0),
+                "fat_g": float(nutrients.get("nutrient.fat") or p.get("fat") or 0.0),
+            }
+            product_cache[product_id] = info
+            return info
     except Exception as e:
-        logger.debug(f"Could not fetch name for product {product_id}: {e}")
-    fallback = f"Produkt #{product_id[:8]}"
+        logger.debug(f"Could not fetch info for product {product_id}: {e}")
+
+    fallback = {
+        "name": f"Produkt #{product_id[:8]}",
+        "base_amount": 100.0,
+        "energy_kcal": 0.0,
+        "protein_g": 0.0,
+        "carbs_g": 0.0,
+        "fat_g": 0.0,
+    }
     product_cache[product_id] = fallback
     return fallback
 
 
 async def resolve_recipe_name(client: YazioClient, recipe_id: str) -> str:
     if recipe_id in recipe_cache:
-        return recipe_cache[recipe_id]
+        return recipe_cache[recipe_id]["name"]
     try:
         r = await client.get_recipe(recipe_id)
-        if isinstance(r, dict):
+        if isinstance(r, dict) and r:
             name = r.get("name") or r.get("title") or f"Rezept #{recipe_id[:8]}"
-            recipe_cache[recipe_id] = name
+            recipe_cache[recipe_id] = {"name": name}
             return name
     except Exception as e:
         logger.debug(f"Could not fetch name for recipe {recipe_id}: {e}")
     fallback = f"Rezept #{recipe_id[:8]}"
-    recipe_cache[recipe_id] = fallback
+    recipe_cache[recipe_id] = {"name": fallback}
     return fallback
 
 
@@ -150,7 +168,10 @@ async def fetch_and_publish(
         day_str = (now - timedelta(days=d)).strftime("%Y-%m-%d")
         try:
             items_data = await client.get_consumed_items(date=day_str)
-            if items_data:
+            summary_data = await client.get_daily_summary(date=day_str)
+            if items_data and isinstance(items_data, dict):
+                if summary_data and isinstance(summary_data, dict):
+                    items_data["summary"] = summary_data.get("summary") or summary_data.get("totals") or summary_data
                 daily_responses.append((day_str, items_data))
         except YazioUnauthorizedError:
             logger.error(
@@ -162,7 +183,7 @@ async def fetch_and_publish(
         except (YazioRateLimitError, YazioApiError) as e:
             logger.error(f"Failed to fetch Yazio consumed items for {day_str}: {e}")
 
-    # Collect unique product_ids and recipe_ids to resolve food names
+    # Collect unique product_ids and recipe_ids to resolve food names and nutrients
     product_ids_to_resolve = set()
     recipe_ids_to_resolve = set()
 
@@ -179,9 +200,9 @@ async def fetch_and_publish(
                     if rid not in recipe_cache:
                         recipe_ids_to_resolve.add(rid)
 
-    # Resolve product and recipe names
+    # Resolve product and recipe names & nutrients
     for pid in product_ids_to_resolve:
-        await resolve_product_name(client, pid)
+        await resolve_product_info(client, pid)
 
     for rid in recipe_ids_to_resolve:
         await resolve_recipe_name(client, rid)

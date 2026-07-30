@@ -23,8 +23,8 @@ def transform_consumed_items(
     day: str,
     tenant_id: str = settings.TENANT_ID,
     source_id: str = settings.SOURCE_ID,
-    product_cache: dict[str, str] | None = None,
-    recipe_cache: dict[str, str] | None = None,
+    product_cache: dict[str, dict[str, Any]] | None = None,
+    recipe_cache: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Transform Yazio consumed items document for a given date into DataPoints."""
     data_points = []
@@ -60,24 +60,41 @@ def transform_consumed_items(
         item_id = item.get("id") or item.get("product_id") or f"prod_{idx}"
         pid = str(item.get("product_id", ""))
         meal_cat = item.get("daytime") or item.get("meal_category") or item.get("category") or "general"
-        amount = item.get("amount") or item.get("quantity") or 1.0
+        amount = float(item.get("amount") or item.get("quantity") or 1.0)
 
-        cached_name = product_cache.get(pid) if product_cache and pid else None
+        p_info = product_cache.get(pid) if product_cache and pid else None
         food_name = (
             item.get("name")
             or item.get("title")
             or item.get("product_name")
             or (item.get("food") or {}).get("name")
-            or cached_name
+            or (p_info.get("name") if p_info else None)
             or (f"Produkt #{pid[:8]}" if pid else "Unbekanntes Lebensmittel")
         )
 
         item_cal = item.get("calories") or item.get("energy") or item.get("kcal")
+        item_prot = item.get("protein") or item.get("protein_g")
+        item_carb = item.get("carbs") or item.get("carbs_g")
+        item_fat = item.get("fat") or item.get("fat_g")
+
+        if item_cal is None and p_info and p_info.get("energy_kcal", 0) > 0:
+            base_amt = float(p_info.get("base_amount", 100.0) or 100.0)
+            ratio = amount / base_amt
+            item_cal = p_info["energy_kcal"] * ratio
+            item_prot = p_info["protein_g"] * ratio
+            item_carb = p_info["carbs_g"] * ratio
+            item_fat = p_info["fat_g"] * ratio
+
         val_flt = float(item_cal) if item_cal is not None else float(amount)
-
         metric_type = "consumed_item_calories" if item_cal is not None else "consumed_product"
-        item_source_id = f"{source_id}_product_{item_id}"
 
+        if item_cal is not None:
+            total_cal += float(item_cal)
+            total_prot += float(item_prot or 0.0)
+            total_carb += float(item_carb or 0.0)
+            total_fat += float(item_fat or 0.0)
+
+        item_source_id = f"{source_id}_product_{item_id}"
         idempotency_key = generate_idempotency_key(
             tenant_id, item_source_id, metric_type, timestamp
         )
@@ -98,7 +115,10 @@ def transform_consumed_items(
                 "meal_category": str(meal_cat),
                 "amount": amount,
                 "unit": item.get("serving") or "g",
-                "serving_quantity": item.get("serving_quantity"),
+                "calories_kcal": float(item_cal) if item_cal is not None else None,
+                "protein_g": float(item_prot) if item_prot is not None else None,
+                "carbs_g": float(item_carb) if item_carb is not None else None,
+                "fat_g": float(item_fat) if item_fat is not None else None,
                 "logged_time": item.get("date"),
             },
             "idempotency_key": idempotency_key,
