@@ -1,9 +1,19 @@
 "use client";
 
 import React from "react";
+import dynamic from "next/dynamic";
 import MetricCards, { SummaryMetrics } from "./MetricCards";
-import TrendChart from "./TrendChart";
 import { RefreshCw } from "lucide-react";
+
+// Client-only dynamic import to prevent Chart.js SSR hydration mismatch
+const TrendChart = dynamic(() => import("./TrendChart"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-80 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex items-center justify-center text-xs text-neutral-500">
+      Lade Diagramm...
+    </div>
+  ),
+});
 
 interface OverviewTabProps {
   summary: SummaryMetrics;

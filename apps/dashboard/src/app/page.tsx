@@ -110,44 +110,59 @@ export default function DashboardPage() {
           const carbPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_carbs");
           const fatPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_fat");
 
+          const formatDate = (isoString?: string) => {
+            if (!isoString) return "";
+            try {
+              const d = new Date(isoString);
+              if (isNaN(d.getTime())) return "";
+              return d.toISOString().split("T")[0];
+            } catch {
+              return "";
+            }
+          };
+
           const timestamps = Array.from(
-            new Set(points.map((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString()))
+            new Set(
+              points
+                .map((p: { timestamp?: string }) => formatDate(p.timestamp))
+                .filter(Boolean)
+            )
           ).sort() as string[];
 
           setChartLabels(timestamps);
           setSleepValues(
             timestamps.map((ts) => {
-              const pt = sleepPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pt = sleepPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pt ? pt.value : 0;
             })
           );
           setReadinessValues(
             timestamps.map((ts) => {
-              const pt = readinessPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pt = readinessPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pt ? pt.value : 0;
             })
           );
           setCalorieValues(
             timestamps.map((ts) => {
-              const pts = caloriePts.filter((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pts = caloriePts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
             })
           );
           setProteinValues(
             timestamps.map((ts) => {
-              const pt = proteinPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pt = proteinPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pt ? pt.value : 0;
             })
           );
           setCarbValues(
             timestamps.map((ts) => {
-              const pt = carbPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pt = carbPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pt ? pt.value : 0;
             })
           );
           setFatValues(
             timestamps.map((ts) => {
-              const pt = fatPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              const pt = fatPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
               return pt ? pt.value : 0;
             })
           );
