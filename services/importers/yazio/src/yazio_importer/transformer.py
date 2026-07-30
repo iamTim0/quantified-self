@@ -23,6 +23,8 @@ def transform_consumed_items(
     day: str,
     tenant_id: str = settings.TENANT_ID,
     source_id: str = settings.SOURCE_ID,
+    product_cache: dict[str, str] | None = None,
+    recipe_cache: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Transform Yazio consumed items document for a given date into DataPoints."""
     data_points = []
@@ -56,8 +58,19 @@ def transform_consumed_items(
     # 1. Transform Products (Logged items with product_id, amount, daytime)
     for idx, item in enumerate(products):
         item_id = item.get("id") or item.get("product_id") or f"prod_{idx}"
+        pid = str(item.get("product_id", ""))
         meal_cat = item.get("daytime") or item.get("meal_category") or item.get("category") or "general"
         amount = item.get("amount") or item.get("quantity") or 1.0
+
+        cached_name = product_cache.get(pid) if product_cache and pid else None
+        food_name = (
+            item.get("name")
+            or item.get("title")
+            or item.get("product_name")
+            or (item.get("food") or {}).get("name")
+            or cached_name
+            or (f"Produkt #{pid[:8]}" if pid else "Unbekanntes Lebensmittel")
+        )
 
         item_cal = item.get("calories") or item.get("energy") or item.get("kcal")
         val_flt = float(item_cal) if item_cal is not None else float(amount)
@@ -78,8 +91,9 @@ def transform_consumed_items(
             "metadata": {
                 "source_type": "yazio",
                 "day": day,
+                "food_name": str(food_name),
                 "item_id": str(item_id),
-                "product_id": str(item.get("product_id", "")),
+                "product_id": pid,
                 "item_type": item.get("type", "product"),
                 "meal_category": str(meal_cat),
                 "amount": amount,
@@ -95,8 +109,17 @@ def transform_consumed_items(
     # 2. Transform Recipe Portions
     for idx, r_item in enumerate(recipe_portions):
         r_id = r_item.get("id") or r_item.get("recipe_id") or f"rec_{idx}"
+        rid = str(r_item.get("recipe_id", ""))
         meal_cat = r_item.get("daytime") or r_item.get("meal_category") or "general"
         portion_count = r_item.get("portion_count", 1)
+
+        cached_rname = recipe_cache.get(rid) if recipe_cache and rid else None
+        recipe_name = (
+            r_item.get("name")
+            or r_item.get("title")
+            or cached_rname
+            or (f"Rezept #{rid[:8]}" if rid else "Unbekanntes Rezept")
+        )
 
         metric_type = "consumed_recipe_portion"
         item_source_id = f"{source_id}_recipe_{r_id}"
@@ -114,8 +137,9 @@ def transform_consumed_items(
             "metadata": {
                 "source_type": "yazio",
                 "day": day,
+                "food_name": str(recipe_name),
                 "item_id": str(r_id),
-                "recipe_id": str(r_item.get("recipe_id", "")),
+                "recipe_id": rid,
                 "item_type": "recipe_portion",
                 "meal_category": str(meal_cat),
                 "portion_count": portion_count,
@@ -126,7 +150,7 @@ def transform_consumed_items(
         }
         data_points.append(dp)
 
-    # 3. Transform Simple Products (Custom & AI-generated meal entries with nutrients dict)
+    # 3. Transform Simple Products (Custom & AI-generated meal entries)
     for idx, s_item in enumerate(simple_products):
         s_id = s_item.get("id") or f"simple_{idx}"
         meal_cat = s_item.get("daytime") or s_item.get("meal_category") or "general"
@@ -222,7 +246,7 @@ def transform_consumed_items(
             }
             data_points.append(dp)
 
-    # 5. Daily macro summary totals (from Yazio summary object or aggregated sum)
+    # 5. Daily macro summary totals
     daily_metrics = {
         "calories": summary.get("calories") or (total_cal if total_cal > 0 else None),
         "protein": summary.get("protein_g") or summary.get("protein") or (total_prot if total_prot > 0 else None),

@@ -129,6 +129,13 @@ class YazioClient:
         except YazioApiError:
             return {}
 
+    async def get_recipe(self, recipe_id: str) -> dict[str, Any]:
+        """Fetch recipe details for a given recipe_id."""
+        try:
+            return await self._get(f"v15/recipes/{recipe_id}")
+        except YazioApiError:
+            return {}
+
     async def get_user_profile(self) -> dict[str, Any]:
         """Fetch user profile information."""
         return await self._get("v15/user")

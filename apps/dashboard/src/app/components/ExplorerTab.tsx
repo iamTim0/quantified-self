@@ -313,7 +313,12 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
                       {dp.source_type || dp.metadata?.source_type || "api"}
                     </span>
                   </td>
-                  <td className="py-3 px-3 text-white font-medium">{dp.metric_type}</td>
+                  <td className="py-3 px-3 text-white font-medium">
+                    <div>{dp.metric_type}</div>
+                    {dp.metadata?.food_name && (
+                      <div className="text-xs text-blue-400 font-normal">{dp.metadata.food_name}</div>
+                    )}
+                  </td>
                   <td className="py-3 px-3 text-emerald-400 font-bold font-mono">{dp.value}</td>
                   <td className="py-3 px-3 text-right">
                     <button

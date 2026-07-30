@@ -94,6 +94,47 @@ async def get_connector_token_from_core(
             return None, None, None
 
 
+product_cache: dict[str, str] = {}
+recipe_cache: dict[str, str] = {}
+
+
+async def resolve_product_name(client: YazioClient, product_id: str) -> str:
+    if product_id in product_cache:
+        return product_cache[product_id]
+    try:
+        p = await client.get_product(product_id)
+        if isinstance(p, dict):
+            brand = p.get("brand") or p.get("brand_name")
+            name = p.get("name") or p.get("title") or p.get("product_name")
+            if brand and name:
+                full_name = f"{brand} - {name}"
+            else:
+                full_name = name or brand or f"Produkt #{product_id[:8]}"
+            product_cache[product_id] = full_name
+            return full_name
+    except Exception as e:
+        logger.debug(f"Could not fetch name for product {product_id}: {e}")
+    fallback = f"Produkt #{product_id[:8]}"
+    product_cache[product_id] = fallback
+    return fallback
+
+
+async def resolve_recipe_name(client: YazioClient, recipe_id: str) -> str:
+    if recipe_id in recipe_cache:
+        return recipe_cache[recipe_id]
+    try:
+        r = await client.get_recipe(recipe_id)
+        if isinstance(r, dict):
+            name = r.get("name") or r.get("title") or f"Rezept #{recipe_id[:8]}"
+            recipe_cache[recipe_id] = name
+            return name
+    except Exception as e:
+        logger.debug(f"Could not fetch name for recipe {recipe_id}: {e}")
+    fallback = f"Rezept #{recipe_id[:8]}"
+    recipe_cache[recipe_id] = fallback
+    return fallback
+
+
 async def fetch_and_publish(
     nc: nats.NATS, tenant_id: str, source_id: str, token: str, lookback_days: int
 ):
@@ -102,17 +143,15 @@ async def fetch_and_publish(
     client = YazioClient(access_token=token)
     js = nc.jetstream()
 
-    data_points = []
+    daily_responses = []
     now = datetime.now(timezone.utc)
 
     for d in range(lookback_days + 1):
         day_str = (now - timedelta(days=d)).strftime("%Y-%m-%d")
         try:
             items_data = await client.get_consumed_items(date=day_str)
-            dps = transform_consumed_items(
-                raw_data=items_data, day=day_str, tenant_id=tenant_id, source_id=source_id
-            )
-            data_points.extend(dps)
+            if items_data:
+                daily_responses.append((day_str, items_data))
         except YazioUnauthorizedError:
             logger.error(
                 f"Yazio API 401 Unauthorized for tenant {tenant_id}. "
@@ -122,6 +161,43 @@ async def fetch_and_publish(
             break
         except (YazioRateLimitError, YazioApiError) as e:
             logger.error(f"Failed to fetch Yazio consumed items for {day_str}: {e}")
+
+    # Collect unique product_ids and recipe_ids to resolve food names
+    product_ids_to_resolve = set()
+    recipe_ids_to_resolve = set()
+
+    for _, resp in daily_responses:
+        if isinstance(resp, dict):
+            for p in resp.get("products") or []:
+                if isinstance(p, dict) and p.get("product_id"):
+                    pid = str(p["product_id"])
+                    if pid not in product_cache:
+                        product_ids_to_resolve.add(pid)
+            for r in resp.get("recipe_portions") or []:
+                if isinstance(r, dict) and r.get("recipe_id"):
+                    rid = str(r["recipe_id"])
+                    if rid not in recipe_cache:
+                        recipe_ids_to_resolve.add(rid)
+
+    # Resolve product and recipe names
+    for pid in product_ids_to_resolve:
+        await resolve_product_name(client, pid)
+
+    for rid in recipe_ids_to_resolve:
+        await resolve_recipe_name(client, rid)
+
+    # Transform into DataPoints
+    data_points = []
+    for day_str, items_data in daily_responses:
+        dps = transform_consumed_items(
+            raw_data=items_data,
+            day=day_str,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            product_cache=product_cache,
+            recipe_cache=recipe_cache,
+        )
+        data_points.extend(dps)
 
     published_count = 0
     for dp in data_points:
