@@ -45,13 +45,6 @@ ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit", "yazio"]
 ValidStatus = Literal["active", "inactive"]
 
 
-class ConfigureConnectorRequest(BaseModel):
-    source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit, yazio")
-    # SECURITY H6: Limit access_token length to prevent memory/DB abuse
-    access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
-    status: ValidStatus = Field("active", description="active / inactive")
-    config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
-
 
 class UserSignupRequest(BaseModel):
     email: str = Field(..., description="User email address")
@@ -397,6 +390,16 @@ async def get_metrics_summary(
 
 # ─── Connector Configuration Endpoints ──────────────────────
 
+class ConfigureConnectorRequest(BaseModel):
+    source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit, yazio")
+    # SECURITY H6: Limit access_token length to prevent memory/DB abuse
+    access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
+    status: ValidStatus = Field("active", description="active / inactive")
+    poll_interval_hours: int = Field(6, ge=1, le=168, description="Poll frequency in hours")
+    lookback_days: int = Field(30, ge=1, le=365, description="Lookback window in days")
+    config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
+
+
 @app.post("/api/v1/data/sources/configure")
 async def configure_connector(
     req: ConfigureConnectorRequest,
@@ -449,6 +452,8 @@ async def configure_connector(
         "encrypted_token": encrypted_token,
         "masked_token": masked_token,
         "status": req.status,
+        "poll_interval_hours": req.poll_interval_hours,
+        "lookback_days": req.lookback_days,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
     if req.config:
@@ -464,7 +469,9 @@ async def configure_connector(
     existing = res.scalars().first()
 
     if existing:
-        existing.config = config_data
+        merged_config = dict(existing.config or {})
+        merged_config.update(config_data)
+        existing.config = merged_config
         source_id = existing.id
     else:
         source_id = str(uuid.uuid4())
@@ -507,6 +514,8 @@ async def configure_connector(
         "tenant_id": tenant_id,
         "source_type": req.source_type,
         "masked_token": masked_token,
+        "poll_interval_hours": req.poll_interval_hours,
+        "lookback_days": req.lookback_days,
     }
 
 
@@ -523,8 +532,14 @@ async def trigger_sync(
         DataSource.source_type == source_type,
     )
     res = await session.execute(stmt)
-    if not res.scalars().first():
+    source = res.scalars().first()
+    if not source:
         raise HTTPException(status_code=404, detail="Connector not configured")
+
+    new_config = dict(source.config or {})
+    new_config["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+    source.config = new_config
+    await session.commit()
 
     req_id = str(uuid.uuid4())
     payload = json.dumps({
@@ -559,7 +574,7 @@ async def trigger_sync(
 async def list_connectors(
     session: AsyncSession = Depends(get_session),
 ):
-    """List configured connectors for the tenant with masked secrets."""
+    """List configured connectors for the tenant with masked secrets and sync details."""
     tenant_id = get_current_tenant_id()
 
     stmt = select(DataSource).where(DataSource.tenant_id == tenant_id)
@@ -571,12 +586,29 @@ async def list_connectors(
         config = s.config or {}
         if config.get("status") == "inactive" or not config.get("encrypted_token"):
             continue
+
+        last_dp_stmt = select(func.max(DataPoint.created_at)).where(
+            DataPoint.tenant_id == tenant_id,
+            DataPoint.source_id == s.id,
+        )
+        last_dp_res = await session.execute(last_dp_stmt)
+        last_dp_dt = last_dp_res.scalar()
+
+        last_sync_at = (
+            last_dp_dt.isoformat()
+            if last_dp_dt
+            else config.get("last_sync_at")
+        )
+
         connectors.append({
             "id": s.id,
             "tenant_id": s.tenant_id,
             "source_type": s.source_type,
             "status": config.get("status", "active"),
             "masked_token": config.get("masked_token", "••••••••"),
+            "poll_interval_hours": config.get("poll_interval_hours", 6),
+            "lookback_days": config.get("lookback_days", 30),
+            "last_sync_at": last_sync_at,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "updated_at": config.get("updated_at"),
         })
