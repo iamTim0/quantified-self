@@ -10,6 +10,10 @@ interface OverviewTabProps {
   chartLabels: string[];
   sleepValues: number[];
   readinessValues: number[];
+  calorieValues?: number[];
+  proteinValues?: number[];
+  carbValues?: number[];
+  fatValues?: number[];
   onRefresh: () => void;
   onNavigateToConnectors: () => void;
 }
@@ -19,6 +23,10 @@ export default function OverviewTab({
   chartLabels,
   sleepValues,
   readinessValues,
+  calorieValues = [],
+  proteinValues = [],
+  carbValues = [],
+  fatValues = [],
   onRefresh,
   onNavigateToConnectors,
 }: OverviewTabProps) {
@@ -28,8 +36,8 @@ export default function OverviewTab({
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-xl font-bold text-white">Health & Fitness Overview</h2>
-          <p className="text-xs text-neutral-400">Live summary of your connected metrics</p>
+          <h2 className="text-xl font-bold text-white">Health & Nutrition Overview</h2>
+          <p className="text-xs text-neutral-400">Live-Analyse deiner verbundenen Sensoren und Ernährungs-Tracker</p>
         </div>
         <button
           onClick={onRefresh}
@@ -48,17 +56,21 @@ export default function OverviewTab({
             labels={chartLabels}
             sleepValues={sleepValues}
             readinessValues={readinessValues}
+            calorieValues={calorieValues}
+            proteinValues={proteinValues}
+            carbValues={carbValues}
+            fatValues={fatValues}
             onRefresh={onRefresh}
           />
         </div>
       ) : (
         <div className="mt-8 rounded-2xl border border-neutral-800 bg-neutral-900/50 p-8 text-center backdrop-blur-md">
-          <p className="text-sm text-neutral-400 mb-4">No health or fitness data ingested yet.</p>
+          <p className="text-sm text-neutral-400 mb-4">Noch keine Gesundheits- oder Ernährungsdaten vorhanden.</p>
           <button
             onClick={onNavigateToConnectors}
             className="px-4 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors"
           >
-            Configure Connectors & Import Data
+            Connectoren verknüpfen & Daten importieren
           </button>
         </div>
       )}

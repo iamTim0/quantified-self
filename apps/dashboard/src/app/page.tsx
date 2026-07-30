@@ -28,6 +28,10 @@ export default function DashboardPage() {
   const [chartLabels, setChartLabels] = useState<string[]>([]);
   const [sleepValues, setSleepValues] = useState<number[]>([]);
   const [readinessValues, setReadinessValues] = useState<number[]>([]);
+  const [calorieValues, setCalorieValues] = useState<number[]>([]);
+  const [proteinValues, setProteinValues] = useState<number[]>([]);
+  const [carbValues, setCarbValues] = useState<number[]>([]);
+  const [fatValues, setFatValues] = useState<number[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -87,7 +91,7 @@ export default function DashboardPage() {
 
         const [summaryRes, metricsRes] = await Promise.all([
           fetch(`${API_BASE}/api/v1/data/metrics/summary`, { headers }),
-          fetch(`${API_BASE}/api/v1/data/metrics?limit=30`, { headers }),
+          fetch(`${API_BASE}/api/v1/data/metrics?limit=300`, { headers }),
         ]);
 
         if (summaryRes.ok && isMounted) {
@@ -101,6 +105,10 @@ export default function DashboardPage() {
 
           const sleepPts = points.filter((p: { metric_type: string }) => p.metric_type === "sleep_score");
           const readinessPts = points.filter((p: { metric_type: string }) => p.metric_type === "readiness_score");
+          const caloriePts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_calories" || p.metric_type === "consumed_item_calories");
+          const proteinPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_protein");
+          const carbPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_carbs");
+          const fatPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_fat");
 
           const timestamps = Array.from(
             new Set(points.map((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString()))
@@ -116,6 +124,30 @@ export default function DashboardPage() {
           setReadinessValues(
             timestamps.map((ts) => {
               const pt = readinessPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pt ? pt.value : 0;
+            })
+          );
+          setCalorieValues(
+            timestamps.map((ts) => {
+              const pts = caloriePts.filter((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
+            })
+          );
+          setProteinValues(
+            timestamps.map((ts) => {
+              const pt = proteinPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pt ? pt.value : 0;
+            })
+          );
+          setCarbValues(
+            timestamps.map((ts) => {
+              const pt = carbPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
+              return pt ? pt.value : 0;
+            })
+          );
+          setFatValues(
+            timestamps.map((ts) => {
+              const pt = fatPts.find((p: { timestamp: string }) => new Date(p.timestamp).toLocaleDateString() === ts);
               return pt ? pt.value : 0;
             })
           );
@@ -168,6 +200,10 @@ export default function DashboardPage() {
             chartLabels={chartLabels}
             sleepValues={sleepValues}
             readinessValues={readinessValues}
+            calorieValues={calorieValues}
+            proteinValues={proteinValues}
+            carbValues={carbValues}
+            fatValues={fatValues}
             onRefresh={triggerRefresh}
             onNavigateToConnectors={() => setActiveTab("connectors")}
           />
