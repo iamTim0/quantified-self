@@ -27,7 +27,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   },
   {
     id: "whoop",
-    name: "Whoop 4.0",
+    name: "Whoop",
     category: "Regeneration & Schlaf",
     description: "Synchronisiert Recovery Score, HRV, Tiefschlaf-Phasen, Ruhepuls und Daily Strain.",
     icon: Activity,
