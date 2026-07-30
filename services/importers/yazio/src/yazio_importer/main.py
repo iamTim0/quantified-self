@@ -68,10 +68,13 @@ logger = logging.getLogger(__name__)
 active_syncs: set[str] = set()
 
 
+import uuid
+
+
 async def get_connector_token_from_core(
     tenant_id: str, req_id: str = "req_importer_poll"
-) -> tuple[str | None, dict[str, Any] | None]:
-    """Fetch decrypted access token for Yazio connector from Core Data Service DB."""
+) -> tuple[str | None, str | None, dict[str, Any] | None]:
+    """Fetch decrypted access token & source_id for Yazio connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/yazio/token"
     headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
 
@@ -81,15 +84,18 @@ async def get_connector_token_from_core(
             if res.status_code == 200:
                 data = res.json()
                 if data.get("status") == "active" and data.get("access_token"):
-                    return data["access_token"], data.get("config", {})
-            return None, None
+                    source_id = data.get("source_id") or str(
+                        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:yazio")
+                    )
+                    return data["access_token"], source_id, data.get("config", {})
+            return None, None, None
         except Exception as e:
             logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
-            return None, None
+            return None, None, None
 
 
 async def fetch_and_publish(
-    nc: nats.NATS, tenant_id: str, token: str, lookback_days: int
+    nc: nats.NATS, tenant_id: str, source_id: str, token: str, lookback_days: int
 ):
     """Poll Yazio API for diary consumed items and publish to NATS."""
     logger.info(f"Polling Yazio API v15 for diary metrics (tenant={tenant_id})...")
@@ -104,7 +110,7 @@ async def fetch_and_publish(
         try:
             items_data = await client.get_consumed_items(date=day_str)
             dps = transform_consumed_items(
-                raw_data=items_data, day=day_str, tenant_id=tenant_id
+                raw_data=items_data, day=day_str, tenant_id=tenant_id, source_id=source_id
             )
             data_points.extend(dps)
         except YazioUnauthorizedError:
@@ -144,8 +150,8 @@ async def process_task_message(msg, nc: nats.NATS):
 
         active_syncs.add(tenant_id)
         try:
-            token, config = await get_connector_token_from_core(tenant_id)
-            if not token:
+            token, source_id, config = await get_connector_token_from_core(tenant_id)
+            if not token or not source_id:
                 logger.info(
                     f"No active Yazio connector configured in Dashboard UI for tenant '{tenant_id}'. "
                     "Waiting for token configuration via Dashboard UI..."
@@ -154,7 +160,7 @@ async def process_task_message(msg, nc: nats.NATS):
 
             config = config or {}
             lookback_days = config.get("lookback_days", settings.POLL_LOOKBACK_DAYS)
-            await fetch_and_publish(nc, tenant_id, token, lookback_days)
+            await fetch_and_publish(nc, tenant_id, source_id, token, lookback_days)
         finally:
             active_syncs.discard(tenant_id)
             await msg.ack()

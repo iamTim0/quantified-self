@@ -115,6 +115,20 @@ class YazioClient:
         """Fetch consumed items diary document for a given ISO date (YYYY-MM-DD)."""
         return await self._get("v15/user/consumed-items", params={"date": date})
 
+    async def get_daily_summary(self, date: str) -> dict[str, Any]:
+        """Fetch daily nutrition summary (calories, macros, water) for a given date."""
+        try:
+            return await self._get("v15/user/summary", params={"date": date})
+        except YazioApiError:
+            return {}
+
+    async def get_product(self, product_id: str) -> dict[str, Any]:
+        """Fetch product details for a given product_id."""
+        try:
+            return await self._get(f"v15/products/{product_id}")
+        except YazioApiError:
+            return {}
+
     async def get_user_profile(self) -> dict[str, Any]:
         """Fetch user profile information."""
         return await self._get("v15/user")

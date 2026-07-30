@@ -184,29 +184,6 @@ export default function ConnectorsPage({
             <span>{syncingSource === "yazio" ? "Triggering..." : "Sync Now"}</span>
           </button>
         </div>
-
-        {/* Oura CSV Upload */}
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex flex-col justify-between space-y-4 backdrop-blur-md">
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-cyan-400">File Importer</span>
-              <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-semibold">
-                <UploadCloud className="w-3 h-3" /> CSV Export
-              </span>
-            </div>
-            <h3 className="text-lg font-bold text-white">Oura CSV Upload</h3>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              Import historical Oura CSV export files directly into your workspace.
-            </p>
-          </div>
-          <button
-            onClick={onOpenConfigureModal}
-            className="w-full flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 transition-colors"
-          >
-            <UploadCloud className="w-3.5 h-3.5" />
-            <span>Upload CSV File</span>
-          </button>
-        </div>
       </div>
 
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md">

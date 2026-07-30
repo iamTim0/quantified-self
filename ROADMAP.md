@@ -68,4 +68,8 @@
 
 - [ ] **Analysis Service AI Features**: gRPC reader querying Core → vector embeddings with pgvector → LLM health insights & correlation analysis.
 - [ ] **Cross-Tenant Data Sharing**: UI & API for managing `tenant_shares` consent grants with friends/partner.
+- [ ] **Smart Duplicate & Cross-Source Conflict Resolution**:
+  - Core Service automatic exact-match hash filtering (`ON CONFLICT DO NOTHING`).
+  - Core Service fuzzy duplicate detector for cross-source metrics (e.g. Yazio vs. Apple Health).
+  - Dashboard UI "Conflict Resolver" modal for user approval/rejection of ambiguous duplicates with similarity scoring.
 - [ ] **Additional Importers**: Whoop, Apple Health, Garmin, Strava ETL services.
