@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw } from "lucide-react";
+import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Layers } from "lucide-react";
 
 export interface GpsPoint {
   latitude: number;
@@ -23,6 +23,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
 
   // 1. Load Leaflet JS dynamically from CDN
   useEffect(() => {
@@ -88,7 +89,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
 
   // 3. Initialize & render Leaflet Map
   useEffect(() => {
-    if (!leafletLoaded || !mapContainerRef.current || points.length === 0) return;
+    if (!leafletLoaded || !mapContainerRef.current || points.length === 0 || viewMode !== "leaflet") return;
     const L = (window as any).L;
     if (!L) return;
 
@@ -110,18 +111,18 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
 
       mapInstanceRef.current = map;
 
-      // Tile Layer (OpenStreetMap CartoDB Voyager)
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/">CARTO</a>',
+      // Standard OpenStreetMap Tile Layer
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
         maxZoom: 19,
       }).addTo(map);
 
       // Custom Emerald Circle Marker Icon
       const customIcon = L.divIcon({
         className: "custom-leaflet-marker",
-        html: `<div style="background-color: #0d5c3a; width: 14px; height: 14px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);"></div>`,
-        iconSize: [14, 14],
-        iconAnchor: [7, 7],
+        html: `<div style="background-color: #0d5c3a; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 8px rgba(0,0,0,0.3);"></div>`,
+        iconSize: [16, 16],
+        iconAnchor: [8, 8],
       });
 
       // Draw Polyline Route
@@ -151,16 +152,18 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
           .bindPopup(popupContent);
       });
 
-      // Crucial Leaflet resize fix for dynamic container sizing
-      setTimeout(() => {
-        if (mapInstanceRef.current) {
-          mapInstanceRef.current.invalidateSize();
-        }
-      }, 250);
+      // Force Leaflet recalculation after DOM attach
+      const timer1 = setTimeout(() => map.invalidateSize(), 100);
+      const timer2 = setTimeout(() => map.invalidateSize(), 500);
+
+      return () => {
+        clearTimeout(timer1);
+        clearTimeout(timer2);
+      };
     } catch (e) {
       console.error("Error initializing Leaflet map:", e);
     }
-  }, [leafletLoaded, points]);
+  }, [leafletLoaded, points, viewMode]);
 
   if (loading) {
     return (
@@ -176,24 +179,25 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
 
   const latestPoint = points[points.length - 1];
 
+  // SVG Path projection calculation for vector view mode
+  const minLat = Math.min(...points.map((p) => p.latitude));
+  const maxLat = Math.max(...points.map((p) => p.latitude));
+  const minLon = Math.min(...points.map((p) => p.longitude));
+  const maxLon = Math.max(...points.map((p) => p.longitude));
+
+  const latSpan = maxLat - minLat || 0.01;
+  const lonSpan = maxLon - minLon || 0.01;
+
+  const svgPoints = points.map((p) => {
+    const x = 50 + ((p.longitude - minLon) / lonSpan) * 700;
+    const y = 350 - ((p.latitude - minLat) / latSpan) * 300;
+    return { ...p, x, y };
+  });
+
+  const polylinePathStr = svgPoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+
   return (
     <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4 shadow-sm">
-      {/* Include Leaflet CSS directly */}
-      <link
-        rel="stylesheet"
-        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-        crossOrigin=""
-      />
-      <style jsx global>{`
-        .leaflet-container {
-          width: 100% !important;
-          height: 100% !important;
-          border-radius: 1rem !important;
-          z-index: 1 !important;
-        }
-      `}</style>
-
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
         <div>
           <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
@@ -206,6 +210,26 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         </div>
 
         <div className="flex items-center gap-2">
+          {/* View Mode Toggle */}
+          <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
+            <button
+              onClick={() => setViewMode("leaflet")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
+                viewMode === "leaflet" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              OpenStreetMap
+            </button>
+            <button
+              onClick={() => setViewMode("svg")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
+                viewMode === "svg" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+              }`}
+            >
+              Vector Route
+            </button>
+          </div>
+
           <button
             onClick={fetchLocationData}
             className="p-2 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
@@ -221,8 +245,37 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
       </div>
 
       {/* Map Container */}
-      <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 z-0">
-        <div ref={mapContainerRef} className="w-full h-full min-h-[400px] z-0" />
+      <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 z-0">
+        {viewMode === "leaflet" ? (
+          <div ref={mapContainerRef} className="w-full h-full min-h-[400px] z-0" />
+        ) : (
+          /* High-Precision Interactive SVG Vector Map View */
+          <div className="w-full h-full p-4 flex flex-col justify-between bg-slate-900 text-white relative">
+            <svg className="w-full h-full" viewBox="0 0 800 400">
+              {/* Background Grid */}
+              <defs>
+                <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
+                </pattern>
+              </defs>
+              <rect width="100%" height="100%" fill="url(#grid)" />
+
+              {/* Trajectory Route Path */}
+              <path d={polylinePathStr} fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 6" />
+
+              {/* GPS Waypoints */}
+              {svgPoints.map((pt, idx) => (
+                <g key={idx} className="cursor-pointer group">
+                  <circle cx={pt.x} cy={pt.y} r="6" fill="#0d5c3a" stroke="#34d399" strokeWidth="2" />
+                  <title>{`📍 Punkt #${idx + 1}: ${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°`}</title>
+                </g>
+              ))}
+            </svg>
+            <div className="absolute bottom-3 left-3 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-mono text-emerald-400">
+              Bounding Box: [{minLat.toFixed(3)}°, {minLon.toFixed(3)}°] ➔ [{maxLat.toFixed(3)}°, {maxLon.toFixed(3)}°]
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer Info Details */}
