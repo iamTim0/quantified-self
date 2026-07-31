@@ -114,9 +114,9 @@ export default function TrendChart({
       {
         label: "Kalorien (kcal)",
         data: filtered.cal,
-        borderColor: "#f59e0b",
-        backgroundColor: chartType === "area" ? "rgba(245, 158, 11, 0.25)" : "rgba(245, 158, 11, 0.7)",
-        borderWidth: 2,
+        borderColor: "#0d5c3a",
+        backgroundColor: chartType === "area" ? "rgba(13, 92, 58, 0.15)" : "rgba(13, 92, 58, 0.8)",
+        borderWidth: 2.5,
         tension: 0.3,
         fill: chartType === "area",
         pointRadius: 3,
@@ -126,8 +126,8 @@ export default function TrendChart({
       {
         label: "Protein (g)",
         data: filtered.prot,
-        borderColor: "#3b82f6",
-        backgroundColor: chartType === "area" ? "rgba(59, 130, 246, 0.15)" : "rgba(59, 130, 246, 0.7)",
+        borderColor: "#10b981",
+        backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.12)" : "rgba(16, 185, 129, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -138,8 +138,8 @@ export default function TrendChart({
       {
         label: "Kohlenhydrate (g)",
         data: filtered.carb,
-        borderColor: "#10b981",
-        backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.7)",
+        borderColor: "#f59e0b",
+        backgroundColor: chartType === "area" ? "rgba(245, 158, 11, 0.12)" : "rgba(245, 158, 11, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -150,8 +150,8 @@ export default function TrendChart({
       {
         label: "Fett (g)",
         data: filtered.fat,
-        borderColor: "#ec4899",
-        backgroundColor: chartType === "area" ? "rgba(236, 72, 153, 0.15)" : "rgba(236, 72, 153, 0.7)",
+        borderColor: "#06b6d4",
+        backgroundColor: chartType === "area" ? "rgba(6, 182, 212, 0.12)" : "rgba(6, 182, 212, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -168,9 +168,9 @@ export default function TrendChart({
       {
         label: "Sleep Score",
         data: filtered.sleep,
-        borderColor: "#3b82f6",
-        backgroundColor: chartType === "area" ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.7)",
-        borderWidth: 2,
+        borderColor: "#0d5c3a",
+        backgroundColor: chartType === "area" ? "rgba(13, 92, 58, 0.15)" : "rgba(13, 92, 58, 0.8)",
+        borderWidth: 2.5,
         tension: 0.4,
         fill: chartType === "area",
         pointRadius: 4,
@@ -179,8 +179,8 @@ export default function TrendChart({
       {
         label: "Readiness Score",
         data: filtered.readiness,
-        borderColor: "#06b6d4",
-        backgroundColor: chartType === "area" ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.7)",
+        borderColor: "#10b981",
+        backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.8)",
         borderWidth: 2,
         tension: 0.4,
         fill: chartType === "area",
@@ -203,20 +203,20 @@ export default function TrendChart({
       legend: {
         position: "top" as const,
         labels: {
-          color: "#e5e7eb",
-          font: { family: "'Outfit', 'Inter', sans-serif", size: 12, weight: 600 },
+          color: "#334155",
+          font: { family: "var(--font-outfit), 'Outfit', sans-serif", size: 12, weight: 600 },
           usePointStyle: true,
           boxWidth: 8,
         },
       },
       tooltip: {
-        backgroundColor: "rgba(10, 10, 15, 0.95)",
-        borderColor: "rgba(255, 255, 255, 0.15)",
+        backgroundColor: "#0f172a",
+        borderColor: "#334155",
         borderWidth: 1,
         titleColor: "#ffffff",
-        titleFont: { family: "'Outfit', sans-serif", size: 13, weight: 700 },
-        bodyColor: "#d1d5db",
-        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+        titleFont: { family: "var(--font-outfit), sans-serif", size: 13, weight: 700 },
+        bodyColor: "#cbd5e1",
+        bodyFont: { family: "var(--font-jetbrains-mono), monospace", size: 12 },
         padding: 12,
         cornerRadius: 12,
       },
@@ -224,13 +224,13 @@ export default function TrendChart({
     scales: {
       x: {
         ticks: {
-          color: "#9ca3af",
-          font: { family: "'JetBrains Mono', monospace", size: 10, weight: 500 },
+          color: "#64748b",
+          font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 500 },
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 12,
         },
-        grid: { color: "rgba(255, 255, 255, 0.05)" },
+        grid: { color: "#f1f5f9" },
       },
       ...(activeCategory === "nutrition"
         ? {
@@ -238,16 +238,16 @@ export default function TrendChart({
               type: "linear" as const,
               display: true,
               position: "left" as const,
-              title: { display: true, text: "Kalorien (kcal)", color: "#f59e0b", font: { family: "'Outfit', sans-serif", size: 11, weight: 700 } },
-              ticks: { color: "#f59e0b", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
-              grid: { color: "rgba(255, 255, 255, 0.05)" },
+              title: { display: true, text: "Kalorien (kcal)", color: "#0d5c3a", font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 } },
+              ticks: { color: "#0d5c3a", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+              grid: { color: "#f1f5f9" },
             },
             yGrams: {
               type: "linear" as const,
               display: true,
               position: "right" as const,
-              title: { display: true, text: "Makros (g)", color: "#3b82f6", font: { family: "'Outfit', sans-serif", size: 11, weight: 700 } },
-              ticks: { color: "#3b82f6", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
+              title: { display: true, text: "Makros (g)", color: "#10b981", font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 } },
+              ticks: { color: "#10b981", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
               grid: { drawOnChartArea: false },
             },
           }
@@ -258,8 +258,8 @@ export default function TrendChart({
               position: "left" as const,
               min: 0,
               max: 100,
-              ticks: { color: "#9ca3af", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
-              grid: { color: "rgba(255, 255, 255, 0.05)" },
+              ticks: { color: "#64748b", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+              grid: { color: "#f1f5f9" },
             },
           }),
     },
@@ -268,19 +268,19 @@ export default function TrendChart({
   const hasCurrentData = activeCategory === "nutrition" ? hasNutritionData : hasBioData;
 
   return (
-    <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md overflow-hidden space-y-4">
+    <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
       {/* Header controls */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-neutral-800 pb-4">
-        {/* Category Switcher (Curated: Only show when multiple data categories are present) */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 pb-4">
+        {/* Category Switcher */}
         {hasNutritionData && hasBioData && (
           <div className="flex items-center gap-2">
-            <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+            <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs">
               <button
                 onClick={() => setDatasetCategory("nutrition")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition-all ${
                   activeCategory === "nutrition"
-                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    : "text-neutral-400 hover:text-white"
+                    ? "bg-[#0d5c3a] text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
                 }`}
               >
                 <Flame className="w-3.5 h-3.5" />
@@ -288,10 +288,10 @@ export default function TrendChart({
               </button>
               <button
                 onClick={() => setDatasetCategory("bio")}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-semibold transition-all ${
                   activeCategory === "bio"
-                    ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                    : "text-neutral-400 hover:text-white"
+                    ? "bg-[#0d5c3a] text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
                 }`}
               >
                 <Moon className="w-3.5 h-3.5" />
@@ -303,12 +303,12 @@ export default function TrendChart({
 
         {/* Date Range Picker Bar */}
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-1 text-xs font-semibold text-neutral-400 uppercase tracking-wider mr-1">
-            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+          <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
+            <Calendar className="w-3.5 h-3.5 text-[#0d5c3a]" />
             <span>Zeitraum:</span>
           </div>
 
-          <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+          <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs">
             {[
               { id: "7d", label: "7 Tage" },
               { id: "14d", label: "14 Tage" },
@@ -320,10 +320,10 @@ export default function TrendChart({
               <button
                 key={preset.id}
                 onClick={() => setDatePreset(preset.id as any)}
-                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                className={`px-3 py-1.5 rounded-xl font-semibold transition-all ${
                   datePreset === preset.id
-                    ? "bg-emerald-600 text-white"
-                    : "text-neutral-400 hover:text-white"
+                    ? "bg-[#0d5c3a] text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-900"
                 }`}
               >
                 {preset.label}
@@ -337,24 +337,24 @@ export default function TrendChart({
                 type="date"
                 value={customStart}
                 onChange={(e) => setCustomStart(e.target.value)}
-                className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+                className="bg-white border border-slate-200 text-slate-800 rounded-xl px-2.5 py-1.5 outline-none focus:border-[#0d5c3a] text-[11px]"
               />
-              <span className="text-neutral-500">bis</span>
+              <span className="text-slate-400">bis</span>
               <input
                 type="date"
                 value={customEnd}
                 onChange={(e) => setCustomEnd(e.target.value)}
-                className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+                className="bg-white border border-slate-200 text-slate-800 rounded-xl px-2.5 py-1.5 outline-none focus:border-[#0d5c3a] text-[11px]"
               />
             </div>
           )}
 
           {/* Chart Type Selector */}
-          <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs ml-auto lg:ml-0">
+          <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs ml-auto lg:ml-0">
             <button
               onClick={() => setChartType("area")}
-              className={`p-1.5 rounded-lg transition-colors ${
-                chartType === "area" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+              className={`p-2 rounded-xl transition-all ${
+                chartType === "area" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
               title="Flächendiagramm"
             >
@@ -362,8 +362,8 @@ export default function TrendChart({
             </button>
             <button
               onClick={() => setChartType("line")}
-              className={`p-1.5 rounded-lg transition-colors ${
-                chartType === "line" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+              className={`p-2 rounded-xl transition-all ${
+                chartType === "line" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
               title="Liniendiagramm"
             >
@@ -371,8 +371,8 @@ export default function TrendChart({
             </button>
             <button
               onClick={() => setChartType("bar")}
-              className={`p-1.5 rounded-lg transition-colors ${
-                chartType === "bar" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
+              className={`p-2 rounded-xl transition-all ${
+                chartType === "bar" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
               title="Balkendiagramm"
             >

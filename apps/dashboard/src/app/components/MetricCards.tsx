@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Flame, Dumbbell, Wheat, Droplets, Moon, Footprints, Activity, Heart, Activity as Pulse } from "lucide-react";
+import { Flame, Dumbbell, Wheat, Droplets, Moon, Footprints, Activity, Heart, ArrowUpRight } from "lucide-react";
 
 export interface MetricSummaryDetail {
   average: number;
@@ -35,9 +35,6 @@ interface CardConfig {
   title: string;
   unit: string;
   icon: React.ElementType;
-  colorClass: string;
-  borderClass: string;
-  textClass: string;
 }
 
 const CARD_CONFIGS: CardConfig[] = [
@@ -46,86 +43,53 @@ const CARD_CONFIGS: CardConfig[] = [
     title: "Ø Kalorien",
     unit: "kcal",
     icon: Flame,
-    colorClass: "hover:shadow-orange-500/10",
-    borderClass: "border-orange-500/20",
-    textClass: "text-orange-400",
   },
   {
     keys: ["protein"],
     title: "Ø Protein",
     unit: "g",
     icon: Dumbbell,
-    colorClass: "hover:shadow-purple-500/10",
-    borderClass: "border-purple-500/20",
-    textClass: "text-purple-400",
   },
   {
     keys: ["carbohydrates", "carbs"],
     title: "Ø Kohlenhydrate",
     unit: "g",
     icon: Wheat,
-    colorClass: "hover:shadow-emerald-500/10",
-    borderClass: "border-emerald-500/20",
-    textClass: "text-emerald-400",
   },
   {
     keys: ["fat"],
     title: "Ø Fett",
     unit: "g",
     icon: Droplets,
-    colorClass: "hover:shadow-rose-500/10",
-    borderClass: "border-rose-500/20",
-    textClass: "text-rose-400",
   },
   {
     keys: ["sleep_score"],
     title: "Ø Schlaf-Score",
     unit: "/100",
     icon: Moon,
-    colorClass: "hover:shadow-blue-500/10",
-    borderClass: "border-blue-500/20",
-    textClass: "text-blue-400",
   },
   {
     keys: ["readiness_score"],
-    title: "Ø Readiness Score",
+    title: "Ø Readiness",
     unit: "/100",
     icon: Activity,
-    colorClass: "hover:shadow-cyan-500/10",
-    borderClass: "border-cyan-500/20",
-    textClass: "text-cyan-400",
   },
   {
     keys: ["hrv_balance"],
     title: "Ø HRV Balance",
     unit: "ms",
     icon: Heart,
-    colorClass: "hover:shadow-indigo-500/10",
-    borderClass: "border-indigo-500/20",
-    textClass: "text-indigo-400",
   },
   {
     keys: ["steps"],
     title: "Ø Schritte",
     unit: "Schritte",
     icon: Footprints,
-    colorClass: "hover:shadow-amber-500/10",
-    borderClass: "border-amber-500/20",
-    textClass: "text-amber-400",
-  },
-  {
-    keys: ["resting_hr"],
-    title: "Ø Ruhepuls",
-    unit: "bpm",
-    icon: Pulse,
-    colorClass: "hover:shadow-red-500/10",
-    borderClass: "border-red-500/20",
-    textClass: "text-red-400",
   },
 ];
 
 export default function MetricCards({ metrics }: MetricCardsProps) {
-  // Curate present-only metric cards
+  // Curate active cards
   const activeCards = CARD_CONFIGS.map((cfg) => {
     let detail: MetricSummaryDetail | undefined = undefined;
     for (const key of cfg.keys) {
@@ -144,26 +108,56 @@ export default function MetricCards({ metrics }: MetricCardsProps) {
 
   return (
     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(activeCards.length, 4)} gap-6 mb-8`}>
-      {activeCards.map(({ cfg, detail }) => {
-        const IconComponent = cfg.icon;
+      {activeCards.map(({ cfg, detail }, index) => {
+        const isFirst = index === 0;
         const avgFormatted = Math.round(detail.average).toLocaleString();
         const minFormatted = Math.round(detail.min).toLocaleString();
         const maxFormatted = Math.round(detail.max).toLocaleString();
 
+        if (isFirst) {
+          // Card 1: Highlighted Solid Emerald Green (Reference Image Style)
+          return (
+            <div
+              key={cfg.title}
+              className="dark-emerald-card p-6 relative overflow-hidden transition-all hover:-translate-y-1 hover:shadow-2xl"
+            >
+              <div className="flex justify-between items-start mb-4">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-100/90">
+                  {cfg.title}
+                </span>
+                <div className="w-8 h-8 rounded-full bg-white/10 border border-white/20 flex items-center justify-center text-white backdrop-blur-sm">
+                  <ArrowUpRight className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="text-4xl font-extrabold text-white tracking-tight mb-3">
+                {avgFormatted} <span className="text-xs font-medium text-emerald-200">{cfg.unit}</span>
+              </div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-semibold text-emerald-100">
+                <span>Spanne: {minFormatted} - {maxFormatted} {cfg.unit}</span>
+              </div>
+            </div>
+          );
+        }
+
+        // Cards 2, 3, 4: Pure White Card with Circular Arrow Badge (Reference Image Style)
         return (
           <div
             key={cfg.title}
-            className={`glass-card p-6 transition-all hover:-translate-y-1 hover:shadow-xl ${cfg.colorClass}`}
+            className="glass-card p-6 relative transition-all hover:-translate-y-1 hover:shadow-xl border border-slate-200/80"
           >
-            <div className="flex justify-between items-center mb-4">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400">{cfg.title}</span>
-              <IconComponent className={`w-5 h-5 ${cfg.textClass}`} />
+            <div className="flex justify-between items-start mb-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                {cfg.title}
+              </span>
+              <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 hover:bg-slate-200 transition-colors">
+                <ArrowUpRight className="w-4 h-4" />
+              </div>
             </div>
-            <div className={`text-4xl font-extrabold tracking-tight ${cfg.textClass}`}>
-              {avgFormatted} <span className="text-xs font-normal text-neutral-400">{cfg.unit}</span>
+            <div className="text-4xl font-extrabold text-slate-900 tracking-tight mb-3">
+              {avgFormatted} <span className="text-xs font-normal text-slate-500">{cfg.unit}</span>
             </div>
-            <div className="text-xs text-neutral-400 mt-2">
-              Spanne: {minFormatted} - {maxFormatted} {cfg.unit}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-[11px] font-semibold text-slate-600">
+              <span>Spanne: {minFormatted} - {maxFormatted} {cfg.unit}</span>
             </div>
           </div>
         );

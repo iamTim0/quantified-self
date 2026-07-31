@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import Header, { TabType } from "./components/Header";
+import Sidebar, { TabType } from "./components/Sidebar";
+import TopHeader from "./components/TopHeader";
 import OverviewTab from "./components/OverviewTab";
 import ExplorerTab from "./components/ExplorerTab";
 import ConnectorsPage, { ConnectorInfo } from "./components/ConnectorsPage";
@@ -207,7 +208,7 @@ export default function DashboardPage() {
   }, [mounted, isAuthenticated, token, tenantId, refreshTrigger]);
 
   if (!mounted) {
-    return <div className="min-h-screen bg-neutral-950" />;
+    return <div className="min-h-screen bg-slate-200/60" />;
   }
 
   if (!isAuthenticated) {
@@ -215,90 +216,99 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-white p-4 sm:p-6 lg:p-8">
-      <div className="max-w-7xl mx-auto">
-        <Header
-          tenantId={tenantId}
-          userName={userName}
-          userEmail={userEmail}
-          userRole={userRole}
-          tenantName={tenantName}
+    <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
+      {/* Main Outer App Window Shell (Reference Image Style) */}
+      <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
+        {/* Sidebar Navigation */}
+        <Sidebar
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          onOpenModal={() => handleOpenConfigureModal()}
           onShare={() => setIsShareModalOpen(true)}
           onLogout={handleLogout}
         />
 
-        {activeTab === "overview" && (
-          <OverviewTab
-            summary={summary}
-            chartLabels={chartLabels}
-            sleepValues={sleepValues}
-            readinessValues={readinessValues}
-            calorieValues={calorieValues}
-            proteinValues={proteinValues}
-            carbValues={carbValues}
-            fatValues={fatValues}
-            onRefresh={triggerRefresh}
-            onNavigateToConnectors={() => setActiveTab("connectors")}
-          />
-        )}
-
-        {activeTab === "explorer" && (
-          <ExplorerTab apiBase={API_BASE} token={token} tenantId={tenantId} />
-        )}
-
-        {activeTab === "connectors" && (
-          <ConnectorsPage
-            apiBase={API_BASE}
-            token={token}
-            tenantId={tenantId}
-            onOpenConfigureModal={(c) => handleOpenConfigureModal(c)}
-          />
-        )}
-
-        {activeTab === "profile" && (
-          <ProfileTab
-            apiBase={API_BASE}
-            token={token}
-            tenantId={tenantId}
+        {/* Main Content Area */}
+        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+          <TopHeader
             userName={userName}
             userEmail={userEmail}
             userRole={userRole}
-            tenantName={tenantName}
-            onUpdateProfile={(name, email) => {
-              setUserName(name);
-              setUserEmail(email);
-              localStorage.setItem("qs_user_name", name);
-              localStorage.setItem("qs_user_email", email);
-            }}
-            onLogout={handleLogout}
+            onOpenConfigureModal={() => handleOpenConfigureModal()}
+            onShare={() => setIsShareModalOpen(true)}
+            onNavigateToProfile={() => setActiveTab("profile")}
           />
-        )}
 
-        <ConnectorModal
-          isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setSelectedModalConnector(undefined);
-          }}
-          initialSourceType={selectedModalConnector?.source_type}
-          initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
-          initialLookbackDays={selectedModalConnector?.lookback_days || 30}
-          isEditing={Boolean(selectedModalConnector)}
-          token={token}
-          tenantId={tenantId}
-          onSaved={triggerRefresh}
-        />
+          {activeTab === "overview" && (
+            <OverviewTab
+              summary={summary}
+              chartLabels={chartLabels}
+              sleepValues={sleepValues}
+              readinessValues={readinessValues}
+              calorieValues={calorieValues}
+              proteinValues={proteinValues}
+              carbValues={carbValues}
+              fatValues={fatValues}
+              onRefresh={triggerRefresh}
+              onNavigateToConnectors={() => setActiveTab("connectors")}
+            />
+          )}
 
-        <ShareModal
-          isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
-          apiBase={API_BASE}
-          token={token}
-        />
+          {activeTab === "explorer" && (
+            <ExplorerTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+          )}
+
+          {activeTab === "connectors" && (
+            <ConnectorsPage
+              apiBase={API_BASE}
+              token={token}
+              tenantId={tenantId}
+              onOpenConfigureModal={(c) => handleOpenConfigureModal(c)}
+            />
+          )}
+
+          {activeTab === "profile" && (
+            <ProfileTab
+              apiBase={API_BASE}
+              token={token}
+              tenantId={tenantId}
+              userName={userName}
+              userEmail={userEmail}
+              userRole={userRole}
+              tenantName={tenantName}
+              onUpdateProfile={(name, email) => {
+                setUserName(name);
+                setUserEmail(email);
+                localStorage.setItem("qs_user_name", name);
+                localStorage.setItem("qs_user_email", email);
+              }}
+              onLogout={handleLogout}
+            />
+          )}
+
+          <ConnectorModal
+            isOpen={isModalOpen}
+            onClose={() => {
+              setIsModalOpen(false);
+              setSelectedModalConnector(undefined);
+            }}
+            initialSourceType={selectedModalConnector?.source_type}
+            initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
+            initialLookbackDays={selectedModalConnector?.lookback_days || 30}
+            isEditing={Boolean(selectedModalConnector)}
+            token={token}
+            tenantId={tenantId}
+            onSaved={triggerRefresh}
+          />
+
+          <ShareModal
+            isOpen={isShareModalOpen}
+            onClose={() => setIsShareModalOpen(false)}
+            apiBase={API_BASE}
+            token={token}
+          />
+        </main>
       </div>
     </div>
   );
 }
+

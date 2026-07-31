@@ -1,25 +1,22 @@
 @import "tailwindcss";
 
 :root {
-  --bg-dark: #0b0f19;
-  --card-bg: rgba(23, 31, 51, 0.65);
-  --card-border: rgba(255, 255, 255, 0.08);
-  --accent-blue: #3b82f6;
-  --accent-cyan: #06b6d4;
-  --accent-purple: #8b5cf6;
-  --accent-emerald: #10b981;
-  --accent-rose: #f43f5e;
-  --text-main: #f3f4f6;
-  --text-muted: #9ca3af;
-  --glass-blur: blur(16px);
+  --bg-app: #f1f5f9;
+  --bg-shell: #f8fafc;
+  --card-bg: #ffffff;
+  --card-border: rgba(226, 232, 240, 0.8);
+  --accent-emerald: #0d5c3a;
+  --accent-emerald-hover: #08432a;
+  --accent-mint: #10b981;
+  --accent-mint-light: #d1fae5;
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #94a3b8;
 }
 
 body {
-  background-color: var(--bg-dark);
-  background-image: 
-    radial-gradient(circle at 15% 15%, rgba(59, 130, 246, 0.12) 0%, transparent 40%),
-    radial-gradient(circle at 85% 75%, rgba(139, 92, 246, 0.12) 0%, transparent 40%);
-  color: var(--text-main);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
   min-height: 100vh;
   font-family: var(--font-outfit), 'Outfit', system-ui, -apple-system, sans-serif;
 }
@@ -29,8 +26,15 @@ code, pre, .font-mono {
 }
 
 .glass-card {
-  background: var(--card-bg);
-  backdrop-filter: var(--glass-blur);
-  border: 1px solid var(--card-border);
-  border-radius: 16px;
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+}
+
+.dark-emerald-card {
+  background: linear-gradient(145deg, #0d5c3a 0%, #08432a 100%);
+  border-radius: 20px;
+  color: #ffffff;
+  box-shadow: 0 10px 25px -5px rgba(13, 92, 58, 0.25);
 }

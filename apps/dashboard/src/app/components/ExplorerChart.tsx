@@ -67,20 +67,20 @@ export default function ExplorerChart({ dates, series, chartType, aggregation }:
       legend: {
         position: "top" as const,
         labels: {
-          color: "#e5e7eb",
-          font: { family: "'Outfit', 'Inter', sans-serif", size: 12, weight: 600 },
+          color: "#334155",
+          font: { family: "var(--font-outfit), 'Outfit', sans-serif", size: 12, weight: 600 },
           usePointStyle: true,
           boxWidth: 8,
         },
       },
       tooltip: {
-        backgroundColor: "rgba(10, 10, 15, 0.95)",
-        borderColor: "rgba(255, 255, 255, 0.15)",
+        backgroundColor: "#0f172a",
+        borderColor: "#334155",
         borderWidth: 1,
         titleColor: "#ffffff",
-        titleFont: { family: "'Outfit', sans-serif", size: 13, weight: 700 },
-        bodyColor: "#d1d5db",
-        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
+        titleFont: { family: "var(--font-outfit), sans-serif", size: 13, weight: 700 },
+        bodyColor: "#cbd5e1",
+        bodyFont: { family: "var(--font-jetbrains-mono), monospace", size: 12 },
         padding: 12,
         cornerRadius: 12,
         callbacks: {
@@ -91,18 +91,18 @@ export default function ExplorerChart({ dates, series, chartType, aggregation }:
     scales: {
       x: {
         ticks: {
-          color: "#9ca3af",
-          font: { family: "'JetBrains Mono', monospace", size: 10, weight: 500 },
+          color: "#64748b",
+          font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 500 },
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 12,
         },
-        grid: { color: "rgba(255, 255, 255, 0.05)" },
+        grid: { color: "#f1f5f9" },
       },
       y: {
         type: "linear" as const,
-        ticks: { color: "#9ca3af", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
-        grid: { color: "rgba(255, 255, 255, 0.05)" },
+        ticks: { color: "#64748b", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+        grid: { color: "#f1f5f9" },
       },
     },
   };
