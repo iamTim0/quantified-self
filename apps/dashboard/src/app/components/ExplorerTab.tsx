@@ -118,6 +118,9 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const [selectedSource, setSelectedSource] = useState("all");
   const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
   const [chartType, setChartType] = useState<"area" | "line" | "bar">("area");
+  const [dateRangePreset, setDateRangePreset] = useState<"7d" | "14d" | "30d" | "90d" | "all" | "custom">("30d");
+  const [customStartDate, setCustomStartDate] = useState("");
+  const [customEndDate, setCustomEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [inspectPoint, setInspectPoint] = useState<DataPointItem | null>(null);
 
@@ -280,9 +283,21 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
       return true;
     });
 
-    const dates = Array.from(
+    let dates = Array.from(
       new Set(filtered.map((p) => formatDate(p.timestamp)).filter(Boolean))
     ).sort() as string[];
+
+    if (dateRangePreset === "7d") dates = dates.slice(Math.max(0, dates.length - 7));
+    else if (dateRangePreset === "14d") dates = dates.slice(Math.max(0, dates.length - 14));
+    else if (dateRangePreset === "30d") dates = dates.slice(Math.max(0, dates.length - 30));
+    else if (dateRangePreset === "90d") dates = dates.slice(Math.max(0, dates.length - 90));
+    else if (dateRangePreset === "custom") {
+      dates = dates.filter((d) => {
+        if (customStartDate && d < customStartDate) return false;
+        if (customEndDate && d > customEndDate) return false;
+        return true;
+      });
+    }
 
     const series = selectedMetrics.map((m, idx) => {
       const color = COLOR_PALETTE[idx % COLOR_PALETTE.length];
@@ -308,14 +323,32 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     });
 
     return { dates, series };
-  }, [dataPoints, selectedMetrics, selectedSource, searchQuery, aggregation]);
+  }, [dataPoints, selectedMetrics, selectedSource, searchQuery, aggregation, dateRangePreset, customStartDate, customEndDate]);
 
   // Compute table data
   const tableData = useMemo(() => {
+    const formatDate = (isoString?: string) => {
+      if (!isoString) return "";
+      try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return "";
+        return d.toISOString().split("T")[0];
+      } catch {
+        return "";
+      }
+    };
+
     return dataPoints.filter((p) => {
       const src = p.source_type || p.metadata?.source_type || "unknown";
       if (selectedSource !== "all" && src !== selectedSource) return false;
       if (selectedMetrics.length > 0 && !selectedMetrics.includes(p.metric_type)) return false;
+
+      const d = formatDate(p.timestamp);
+      if (dateRangePreset === "custom") {
+        if (customStartDate && d < customStartDate) return false;
+        if (customEndDate && d > customEndDate) return false;
+      }
+
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         const mStr = JSON.stringify(p.metadata || {}).toLowerCase();
@@ -323,7 +356,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
       }
       return true;
     });
-  }, [dataPoints, selectedSource, selectedMetrics, searchQuery]);
+  }, [dataPoints, selectedSource, selectedMetrics, searchQuery, dateRangePreset, customStartDate, customEndDate]);
 
   return (
     <div className="space-y-8">
@@ -409,23 +442,72 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
       {/* Universal Query & Filter Control Bar */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
-          {/* Category Tabs */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 mr-2">
-              <Filter className="w-3.5 h-3.5 text-blue-400" /> Kategorie:
-            </span>
-            <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
-              {Object.keys(CATEGORIES).map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-                    selectedCategory === cat ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
+          {/* Category Tabs & Date Range Filter */}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 mr-1">
+                <Filter className="w-3.5 h-3.5 text-blue-400" /> Kategorie:
+              </span>
+              <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+                {Object.keys(CATEGORIES).map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-3 py-1 rounded-lg font-medium transition-colors ${
+                      selectedCategory === cat ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Date Range Picker Bar */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 mr-1">
+                <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Zeitraum:
+              </span>
+              <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+                {[
+                  { id: "7d", label: "7 Tage" },
+                  { id: "14d", label: "14 Tage" },
+                  { id: "30d", label: "30 Tage" },
+                  { id: "90d", label: "90 Tage" },
+                  { id: "all", label: "Gesamt" },
+                  { id: "custom", label: "Datum..." },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => setDateRangePreset(preset.id as any)}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                      dateRangePreset === preset.id
+                        ? "bg-emerald-600 text-white"
+                        : "text-neutral-400 hover:text-white"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+
+              {dateRangePreset === "custom" && (
+                <div className="flex items-center gap-1 text-xs">
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+                  />
+                  <span className="text-neutral-500">bis</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+                  />
+                </div>
+              )}
             </div>
           </div>
 

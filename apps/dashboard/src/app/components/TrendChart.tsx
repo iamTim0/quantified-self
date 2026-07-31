@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,7 +14,7 @@ import {
   Filler,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
-import { RefreshCw, BarChart2, TrendingUp, AreaChart, Flame, Moon } from "lucide-react";
+import { RefreshCw, BarChart2, TrendingUp, AreaChart, Flame, Moon, Calendar, Filter } from "lucide-react";
 
 ChartJS.register(
   CategoryScale,
@@ -52,18 +52,66 @@ export default function TrendChart({
   const [chartType, setChartType] = useState<"line" | "bar" | "area">("area");
   const [datasetCategory, setDatasetCategory] = useState<"nutrition" | "bio">("nutrition");
 
-  const hasBioData = labels.length > 0 && (sleepValues.some((v) => v > 0) || readinessValues.some((v) => v > 0));
-  const hasNutritionData = labels.length > 0 && (calorieValues.some((v) => v > 0) || proteinValues.some((v) => v > 0));
+  // Date Filter State
+  const [datePreset, setDatePreset] = useState<"7d" | "14d" | "30d" | "90d" | "all" | "custom">("30d");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
 
-  // Default to bio if no nutrition data
+  // Filter series data based on selected date preset or custom range
+  const filtered = useMemo(() => {
+    if (labels.length === 0) {
+      return { labels: [], sleep: [], readiness: [], cal: [], prot: [], carb: [], fat: [] };
+    }
+
+    const total = labels.length;
+    let startIndex = 0;
+
+    if (datePreset === "7d") startIndex = Math.max(0, total - 7);
+    else if (datePreset === "14d") startIndex = Math.max(0, total - 14);
+    else if (datePreset === "30d") startIndex = Math.max(0, total - 30);
+    else if (datePreset === "90d") startIndex = Math.max(0, total - 90);
+    else if (datePreset === "custom" && (customStart || customEnd)) {
+      const indices: number[] = [];
+      labels.forEach((l, i) => {
+        if (customStart && l < customStart) return;
+        if (customEnd && l > customEnd) return;
+        indices.push(i);
+      });
+      if (indices.length > 0) {
+        return {
+          labels: indices.map((i) => labels[i]),
+          sleep: indices.map((i) => sleepValues[i] || 0),
+          readiness: indices.map((i) => readinessValues[i] || 0),
+          cal: indices.map((i) => calorieValues[i] || 0),
+          prot: indices.map((i) => proteinValues[i] || 0),
+          carb: indices.map((i) => carbValues[i] || 0),
+          fat: indices.map((i) => fatValues[i] || 0),
+        };
+      }
+    }
+
+    return {
+      labels: labels.slice(startIndex),
+      sleep: sleepValues.slice(startIndex),
+      readiness: readinessValues.slice(startIndex),
+      cal: calorieValues.slice(startIndex),
+      prot: proteinValues.slice(startIndex),
+      carb: carbValues.slice(startIndex),
+      fat: fatValues.slice(startIndex),
+    };
+  }, [labels, sleepValues, readinessValues, calorieValues, proteinValues, carbValues, fatValues, datePreset, customStart, customEnd]);
+
+  const hasBioData = filtered.labels.length > 0 && (filtered.sleep.some((v) => v > 0) || filtered.readiness.some((v) => v > 0));
+  const hasNutritionData = filtered.labels.length > 0 && (filtered.cal.some((v) => v > 0) || filtered.prot.some((v) => v > 0));
+
   const activeCategory = datasetCategory === "nutrition" && !hasNutritionData && hasBioData ? "bio" : datasetCategory;
 
   const nutritionChartData = {
-    labels,
+    labels: filtered.labels,
     datasets: [
       {
         label: "Kalorien (kcal)",
-        data: calorieValues,
+        data: filtered.cal,
         borderColor: "#f59e0b",
         backgroundColor: chartType === "area" ? "rgba(245, 158, 11, 0.25)" : "rgba(245, 158, 11, 0.7)",
         borderWidth: 2,
@@ -75,7 +123,7 @@ export default function TrendChart({
       },
       {
         label: "Protein (g)",
-        data: proteinValues,
+        data: filtered.prot,
         borderColor: "#3b82f6",
         backgroundColor: chartType === "area" ? "rgba(59, 130, 246, 0.15)" : "rgba(59, 130, 246, 0.7)",
         borderWidth: 2,
@@ -87,7 +135,7 @@ export default function TrendChart({
       },
       {
         label: "Kohlenhydrate (g)",
-        data: carbValues,
+        data: filtered.carb,
         borderColor: "#10b981",
         backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.7)",
         borderWidth: 2,
@@ -99,7 +147,7 @@ export default function TrendChart({
       },
       {
         label: "Fett (g)",
-        data: fatValues,
+        data: filtered.fat,
         borderColor: "#ec4899",
         backgroundColor: chartType === "area" ? "rgba(236, 72, 153, 0.15)" : "rgba(236, 72, 153, 0.7)",
         borderWidth: 2,
@@ -113,11 +161,11 @@ export default function TrendChart({
   };
 
   const bioChartData = {
-    labels,
+    labels: filtered.labels,
     datasets: [
       {
         label: "Sleep Score",
-        data: sleepValues,
+        data: filtered.sleep,
         borderColor: "#3b82f6",
         backgroundColor: chartType === "area" ? "rgba(59, 130, 246, 0.2)" : "rgba(59, 130, 246, 0.7)",
         borderWidth: 2,
@@ -128,7 +176,7 @@ export default function TrendChart({
       },
       {
         label: "Readiness Score",
-        data: readinessValues,
+        data: filtered.readiness,
         borderColor: "#06b6d4",
         backgroundColor: chartType === "area" ? "rgba(6, 182, 212, 0.15)" : "rgba(6, 182, 212, 0.7)",
         borderWidth: 2,
@@ -144,7 +192,7 @@ export default function TrendChart({
 
   const options: any = {
     responsive: true,
-    maintainAspectRatio: false, // CRITICAL: Prevent container overflow
+    maintainAspectRatio: false,
     interaction: {
       mode: "index" as const,
       intersect: false,
@@ -218,9 +266,9 @@ export default function TrendChart({
   return (
     <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md overflow-hidden space-y-4">
       {/* Header controls */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-neutral-800 pb-4">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-neutral-800 pb-4">
+        {/* Category Switcher */}
         <div className="flex items-center gap-2">
-          {/* Category Switcher */}
           <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
             <button
               onClick={() => setDatasetCategory("nutrition")}
@@ -247,9 +295,56 @@ export default function TrendChart({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
-          {/* Chart Type Selector */}
+        {/* Date Range Picker Bar */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 text-xs font-semibold text-neutral-400 uppercase tracking-wider mr-1">
+            <Calendar className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Zeitraum:</span>
+          </div>
+
           <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+            {[
+              { id: "7d", label: "7 Tage" },
+              { id: "14d", label: "14 Tage" },
+              { id: "30d", label: "30 Tage" },
+              { id: "90d", label: "90 Tage" },
+              { id: "all", label: "Gesamt" },
+              { id: "custom", label: "Datum..." },
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                onClick={() => setDatePreset(preset.id as any)}
+                className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
+                  datePreset === preset.id
+                    ? "bg-emerald-600 text-white"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
+          {datePreset === "custom" && (
+            <div className="flex items-center gap-1 text-xs">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+              />
+              <span className="text-neutral-500">bis</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="bg-neutral-950 border border-neutral-800 text-white rounded-lg px-2 py-1 outline-none focus:border-emerald-500 text-[11px]"
+              />
+            </div>
+          )}
+
+          {/* Chart Type Selector */}
+          <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs ml-auto lg:ml-0">
             <button
               onClick={() => setChartType("area")}
               className={`p-1.5 rounded-lg transition-colors ${
