@@ -112,10 +112,10 @@ export default function DashboardPage() {
 
           const sleepPts = points.filter((p: { metric_type: string }) => p.metric_type === "sleep_score");
           const readinessPts = points.filter((p: { metric_type: string }) => p.metric_type === "readiness_score");
-          const caloriePts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_calories" || p.metric_type === "consumed_item_calories");
-          const proteinPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_protein");
-          const carbPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_carbs");
-          const fatPts = points.filter((p: { metric_type: string }) => p.metric_type === "yazio_fat");
+          const caloriePts = points.filter((p: { metric_type: string }) => p.metric_type === "calories" || p.metric_type === "yazio_calories" || p.metric_type === "consumed_item_calories");
+          const proteinPts = points.filter((p: { metric_type: string }) => p.metric_type === "protein" || p.metric_type === "yazio_protein");
+          const carbPts = points.filter((p: { metric_type: string }) => p.metric_type === "carbohydrates" || p.metric_type === "yazio_carbs" || p.metric_type === "carbs");
+          const fatPts = points.filter((p: { metric_type: string }) => p.metric_type === "fat" || p.metric_type === "yazio_fat");
 
           const formatDate = (isoString?: string) => {
             if (!isoString) return "";
@@ -178,20 +178,20 @@ export default function DashboardPage() {
           );
           setProteinValues(
             timestamps.map((ts) => {
-              const pt = proteinPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
+              const pts = proteinPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
+              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
             })
           );
           setCarbValues(
             timestamps.map((ts) => {
-              const pt = carbPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
+              const pts = carbPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
+              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
             })
           );
           setFatValues(
             timestamps.map((ts) => {
-              const pt = fatPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
+              const pts = fatPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
+              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
             })
           );
         }
