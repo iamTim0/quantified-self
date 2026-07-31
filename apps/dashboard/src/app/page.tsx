@@ -333,6 +333,9 @@ export default function DashboardPage() {
               proteinValues={proteinValues}
               carbValues={carbValues}
               fatValues={fatValues}
+              apiBase={API_BASE}
+              token={token}
+              tenantId={tenantId}
               onRefresh={triggerRefresh}
               onNavigateToConnectors={() => handleTabChange("connectors")}
             />

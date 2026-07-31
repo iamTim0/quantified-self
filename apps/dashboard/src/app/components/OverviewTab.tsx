@@ -14,6 +14,15 @@ const TrendChart = dynamic(() => import("./TrendChart"), {
   ),
 });
 
+const LocationMap = dynamic(() => import("./LocationMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-80 rounded-3xl border border-slate-200 bg-white p-6 flex items-center justify-center text-xs text-slate-400">
+      Lade Dawarich GPS Karte...
+    </div>
+  ),
+});
+
 interface OverviewTabProps {
   summary: SummaryMetrics;
   chartLabels: string[];
@@ -23,6 +32,9 @@ interface OverviewTabProps {
   proteinValues?: number[];
   carbValues?: number[];
   fatValues?: number[];
+  apiBase: string;
+  token: string;
+  tenantId: string;
   onRefresh: () => void;
   onNavigateToConnectors: () => void;
 }
@@ -36,6 +48,9 @@ export default function OverviewTab({
   proteinValues = [],
   carbValues = [],
   fatValues = [],
+  apiBase,
+  token,
+  tenantId,
   onRefresh,
   onNavigateToConnectors,
 }: OverviewTabProps) {
@@ -74,7 +89,7 @@ export default function OverviewTab({
         </div>
       </div>
 
-      {/* Dynamic Curated Metric Stat Cards (Renders only metrics with present data) */}
+      {/* Dynamic Curated Metric Stat Cards */}
       <MetricCards metrics={summary} />
 
       {/* Main Analytics Trend Chart */}
@@ -102,6 +117,9 @@ export default function OverviewTab({
           </div>
         )}
       </div>
+
+      {/* Dawarich Interactive GPS Location Map */}
+      <LocationMap apiBase={apiBase} token={token} tenantId={tenantId} />
     </div>
   );
 }
