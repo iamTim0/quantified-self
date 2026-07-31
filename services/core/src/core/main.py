@@ -445,6 +445,12 @@ async def configure_connector(
     tenant_id = get_current_tenant_id()
     raw_token = (req.access_token or "").strip()
 
+    t_stmt = select(Tenant).where(Tenant.id == tenant_id)
+    t_res = await session.execute(t_stmt)
+    if not t_res.scalar_one_or_none():
+        session.add(Tenant(id=tenant_id, name="Default Workspace"))
+        await session.flush()
+
     # Check existing data source
     stmt = select(DataSource).where(
         DataSource.tenant_id == tenant_id,
