@@ -81,15 +81,15 @@ export default function DashboardPage() {
   const handleLogin = (data: UserAuthData) => {
     setToken(data.token);
     setTenantId(data.tenantId);
-    setUserName(data.name);
-    setUserEmail(data.email);
-    setUserRole(data.role);
+    setUserName(data.userName);
+    setUserEmail(data.userEmail);
+    setUserRole(data.userRole);
 
     localStorage.setItem("qs_token", data.token);
     localStorage.setItem("qs_tenant_id", data.tenantId);
-    localStorage.setItem("qs_user_name", data.name);
-    localStorage.setItem("qs_user_email", data.email);
-    localStorage.setItem("qs_user_role", data.role);
+    localStorage.setItem("qs_user_name", data.userName);
+    localStorage.setItem("qs_user_email", data.userEmail);
+    localStorage.setItem("qs_user_role", data.userRole);
 
     setIsAuthenticated(true);
   };

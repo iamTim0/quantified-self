@@ -596,12 +596,14 @@ async def trigger_sync(
     if not source:
         raise HTTPException(status_code=404, detail="Connector not configured")
 
+    req_id = str(uuid.uuid4())
     new_config = dict(source.config or {})
     new_config["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+    new_config["sync_status"] = "queued"
+    new_config["last_request_id"] = req_id
+    new_config["last_sync_message"] = f"NATS Sync Event an 'qs.task.sync.{source_type}' übergeben."
     source.config = new_config
     await session.commit()
-
-    req_id = str(uuid.uuid4())
     payload = json.dumps({
         "tenant_id": tenant_id,
         "source_type": source_type,
@@ -665,6 +667,11 @@ async def list_connectors(
             "tenant_id": s.tenant_id,
             "source_type": s.source_type,
             "status": config.get("status", "active"),
+            "sync_status": config.get("sync_status", "idle" if last_dp_dt else "pending"),
+            "last_sync_message": config.get("last_sync_message", "NATS Task Group bereit"),
+            "last_request_id": config.get("last_request_id"),
+            "nats_subject": f"qs.task.sync.{s.source_type}",
+            "nats_queue_group": f"{s.source_type}_importer_task_group",
             "masked_token": config.get("masked_token", "••••••••"),
             "poll_interval_hours": config.get("poll_interval_hours", 6),
             "lookback_days": config.get("lookback_days", 30),
