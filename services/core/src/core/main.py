@@ -560,6 +560,19 @@ async def configure_connector(
     }
 
 
+
+class TriggerSyncRequest(BaseModel):
+    source_type: str = Field(..., description="Connector provider name (e.g. yazio, dawarich)")
+
+
+@app.post("/api/v1/data/sources/sync", status_code=202)
+async def trigger_sync_post(
+    req: TriggerSyncRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    return await trigger_sync(source_type=req.source_type, session=session)
+
+
 @app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
 async def trigger_sync(
     source_type: str,
