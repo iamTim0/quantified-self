@@ -267,33 +267,35 @@ export default function TrendChart({
     <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md overflow-hidden space-y-4">
       {/* Header controls */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-neutral-800 pb-4">
-        {/* Category Switcher */}
-        <div className="flex items-center gap-2">
-          <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
-            <button
-              onClick={() => setDatasetCategory("nutrition")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
-                activeCategory === "nutrition"
-                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Flame className="w-3.5 h-3.5" />
-              <span>Yazio Ernährung</span>
-            </button>
-            <button
-              onClick={() => setDatasetCategory("bio")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
-                activeCategory === "bio"
-                  ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
-                  : "text-neutral-400 hover:text-white"
-              }`}
-            >
-              <Moon className="w-3.5 h-3.5" />
-              <span>Schlaf & Bio-Scores</span>
-            </button>
+        {/* Category Switcher (Curated: Only show when multiple data categories are present) */}
+        {hasNutritionData && hasBioData && (
+          <div className="flex items-center gap-2">
+            <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
+              <button
+                onClick={() => setDatasetCategory("nutrition")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                  activeCategory === "nutrition"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                <Flame className="w-3.5 h-3.5" />
+                <span>Yazio Ernährung</span>
+              </button>
+              <button
+                onClick={() => setDatasetCategory("bio")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-semibold transition-colors ${
+                  activeCategory === "bio"
+                    ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                    : "text-neutral-400 hover:text-white"
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5" />
+                <span>Schlaf & Bio-Scores</span>
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Date Range Picker Bar */}
         <div className="flex flex-wrap items-center gap-2">
