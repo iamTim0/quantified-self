@@ -48,6 +48,14 @@ export default function ProfileTab({
   const [copiedTenantId, setCopiedTenantId] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
 
+  // Password Change State
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordLoading, setPasswordLoading] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
   const getInitials = (name: string) => {
     if (!name) return "QS";
     const parts = name.trim().split(" ");
@@ -68,6 +76,51 @@ export default function ProfileTab({
     onUpdateProfile(nameInput.trim(), emailInput.trim());
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2500);
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError(null);
+    setPasswordSuccess(null);
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError("Die neuen Passwörter stimmen nicht überein.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setPasswordError("Das neue Passwort muss mindestens 6 Zeichen lang sein.");
+      return;
+    }
+
+    setPasswordLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/auth/change-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+        body: JSON.stringify({
+          current_password: currentPassword,
+          new_password: newPassword,
+        }),
+      });
+
+      if (res.ok) {
+        setPasswordSuccess("Passwort erfolgreich geändert!");
+        setCurrentPassword("");
+        setNewPassword("");
+        setConfirmPassword("");
+      } else {
+        const data = await res.json().catch(() => null);
+        setPasswordError(data?.detail || "Passwort konnte nicht geändert werden.");
+      }
+    } catch (err: any) {
+      setPasswordError(`Netzwerkfehler: ${err?.message || "Server nicht erreichbar"}`);
+    } finally {
+      setPasswordLoading(false);
+    }
   };
 
   // Decode mock or actual JWT token payload safely
@@ -189,6 +242,88 @@ export default function ProfileTab({
                   className="px-5 py-2.5 text-xs font-semibold rounded-xl bg-purple-600 hover:bg-purple-500 text-white transition-colors shadow-lg shadow-purple-600/20"
                 >
                   Änderungen Speichern
+                </button>
+              </div>
+            </form>
+          </div>
+
+          {/* Password Change Card */}
+          <div className="rounded-3xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-6">
+            <div className="flex items-center justify-between border-b border-neutral-800 pb-4">
+              <div className="flex items-center gap-2">
+                <Lock className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Passwort Ändern</h3>
+              </div>
+              <span className="text-xs text-neutral-500">Sicherheits-Aktualisierung</span>
+            </div>
+
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                  Aktuelles Passwort
+                </label>
+                <input
+                  type="password"
+                  placeholder="••••••••"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  required
+                  className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-emerald-500 outline-none transition-colors"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                    Neues Passwort
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Mindestens 6 Zeichen"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-emerald-500 outline-none transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-neutral-400 mb-1.5">
+                    Neues Passwort Wiederholen
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Wiederholen"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
+                    minLength={6}
+                    className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-emerald-500 outline-none transition-colors"
+                  />
+                </div>
+              </div>
+
+              {passwordError && (
+                <div role="alert" className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-300">
+                  {passwordError}
+                </div>
+              )}
+
+              {passwordSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>{passwordSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={passwordLoading}
+                  className="px-5 py-2.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white transition-colors disabled:opacity-50 shadow-lg shadow-emerald-600/20"
+                >
+                  {passwordLoading ? "Wird geändert..." : "Passwort Ändern"}
                 </button>
               </div>
             </form>

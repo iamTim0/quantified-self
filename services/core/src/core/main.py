@@ -194,6 +194,38 @@ async def login(
     }
 
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1, description="Current user password")
+    new_password: str = Field(..., min_length=6, max_length=128, description="New password")
+
+
+@app.post("/api/v1/auth/change-password")
+async def change_password(
+    req: ChangePasswordRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Safely update account password for authenticated user."""
+    tenant_id = get_current_tenant_id()
+
+    stmt = select(User).where(User.tenant_id == tenant_id)
+    res = await session.execute(stmt)
+    user = res.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Benutzerkonto nicht gefunden.")
+
+    if not pwd_context.verify(req.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch.")
+
+    user.password_hash = pwd_context.hash(req.new_password)
+    await session.commit()
+
+    return {
+        "status": "success",
+        "message": "Passwort wurde erfolgreich geändert."
+    }
+
+
 # ─── Tenant Sharing Endpoints ───────────────────────────────
 
 @app.post("/api/v1/data/shares")
