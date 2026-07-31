@@ -112,9 +112,24 @@ async def resolve_product_info(client: YazioClient, product_id: str) -> dict[str
                 full_name = name or brand or f"Produkt #{product_id[:8]}"
 
             nutrients = p.get("nutrients") or {}
+            base_unit = str(p.get("base_unit") or p.get("base") or p.get("unit") or "100g").lower()
+            raw_base_amt = p.get("base_amount")
+
+            if raw_base_amt is not None and float(raw_base_amt) > 0:
+                base_amount = float(raw_base_amt)
+            elif "100" in base_unit:
+                base_amount = 100.0
+            elif "1g" in base_unit or "1ml" in base_unit or base_unit in ("g", "ml"):
+                base_amount = 1.0
+            elif "serving" in base_unit or "portion" in base_unit or "piece" in base_unit:
+                base_amount = 1.0
+            else:
+                base_amount = 100.0
+
             info = {
                 "name": full_name,
-                "base_amount": float(p.get("base_amount") or 100.0),
+                "base_amount": base_amount,
+                "base_unit": base_unit,
                 "energy_kcal": float(nutrients.get("energy.energy") or p.get("calories") or p.get("energy") or 0.0),
                 "protein_g": float(nutrients.get("nutrient.protein") or p.get("protein") or 0.0),
                 "carbs_g": float(nutrients.get("nutrient.carb") or p.get("carbs") or 0.0),

@@ -80,18 +80,11 @@ def transform_consumed_items(
         if item_cal is None and p_info and p_info.get("energy_kcal", 0) > 0:
             base_amt = float(p_info.get("base_amount", 100.0) or 100.0)
             raw_cal = float(p_info["energy_kcal"])
-            if raw_cal < 10.0 and base_amt >= 100.0:
-                # Nutrient values are expressed per 1 gram
-                item_cal = raw_cal * amount
-                item_prot = float(p_info.get("protein_g", 0.0)) * amount
-                item_carb = float(p_info.get("carbs_g", 0.0)) * amount
-                item_fat = float(p_info.get("fat_g", 0.0)) * amount
-            else:
-                ratio = amount / base_amt
-                item_cal = raw_cal * ratio
-                item_prot = float(p_info.get("protein_g", 0.0)) * ratio
-                item_carb = float(p_info.get("carbs_g", 0.0)) * ratio
-                item_fat = float(p_info.get("fat_g", 0.0)) * ratio
+            ratio = amount / base_amt
+            item_cal = raw_cal * ratio
+            item_prot = float(p_info.get("protein_g", 0.0)) * ratio
+            item_carb = float(p_info.get("carbs_g", 0.0)) * ratio
+            item_fat = float(p_info.get("fat_g", 0.0)) * ratio
 
         val_flt = float(item_cal) if item_cal is not None else float(amount)
         metric_type = "consumed_item_calories" if item_cal is not None else "consumed_product"
