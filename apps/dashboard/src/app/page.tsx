@@ -131,13 +131,31 @@ export default function DashboardPage() {
             }
           };
 
-          const timestamps = Array.from(
-            new Set(
-              points
-                .map((p: { timestamp?: string }) => formatDate(p.timestamp))
-                .filter(Boolean)
-            )
-          ).sort() as string[];
+          const today = new Date();
+          const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+
+          let earliestDateStr = todayStr;
+          points.forEach((p: { timestamp?: string }) => {
+            const dStr = formatDate(p.timestamp);
+            if (dStr && dStr < earliestDateStr) {
+              earliestDateStr = dStr;
+            }
+          });
+
+          const earliestDate = new Date(earliestDateStr);
+          const minDaysAgo = new Date();
+          minDaysAgo.setDate(today.getDate() - 30);
+          const startDate = earliestDate < minDaysAgo ? earliestDate : minDaysAgo;
+
+          const timestamps: string[] = [];
+          const curr = new Date(startDate);
+          while (curr <= today) {
+            const y = curr.getFullYear();
+            const m = String(curr.getMonth() + 1).padStart(2, "0");
+            const d = String(curr.getDate()).padStart(2, "0");
+            timestamps.push(`${y}-${m}-${d}`);
+            curr.setDate(curr.getDate() + 1);
+          }
 
           setChartLabels(timestamps);
           setSleepValues(
