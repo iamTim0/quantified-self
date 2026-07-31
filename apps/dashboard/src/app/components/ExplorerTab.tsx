@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { Filter, Search, ChevronRight, X, Bookmark, Save, Trash2, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu } from "lucide-react";
+import { Search, ChevronRight, X, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu } from "lucide-react";
 
 // Client-only dynamic import for ChartJS canvas
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
@@ -25,55 +25,11 @@ export interface DataPointItem {
   idempotency_key?: string;
 }
 
-export interface SavedView {
-  id: string;
-  name: string;
-  source: string;
-  metrics: string[];
-  aggregation: "sum" | "avg" | "max" | "raw";
-  chartType: "area" | "line" | "bar";
-  search: string;
-  isDefault?: boolean;
-}
-
 interface ExplorerTabProps {
   apiBase: string;
   token: string;
   tenantId: string;
 }
-
-const DEFAULT_PRESET_VIEWS: SavedView[] = [
-  {
-    id: "preset_nutrition_macros",
-    name: "🍏 Yazio Makronährstoffe (Summe)",
-    source: "all",
-    metrics: ["yazio_protein", "yazio_carbs", "yazio_fat"],
-    aggregation: "sum",
-    chartType: "bar",
-    search: "",
-    isDefault: true,
-  },
-  {
-    id: "preset_calories",
-    name: "🔥 Kalorien & Produkte",
-    source: "all",
-    metrics: ["consumed_item_calories", "consumed_product"],
-    aggregation: "sum",
-    chartType: "area",
-    search: "",
-    isDefault: true,
-  },
-  {
-    id: "preset_sleep",
-    name: "🌙 Schlaf & Regeneration",
-    source: "all",
-    metrics: ["sleep_score", "readiness_score"],
-    aggregation: "avg",
-    chartType: "line",
-    search: "",
-    isDefault: true,
-  },
-];
 
 const COLOR_PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#ec4899", "#a855f7", "#06b6d4", "#f43f5e", "#eab308"];
 
@@ -81,7 +37,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Active Raw Filter Query State (No arbitrary categories)
+  // Active Raw Filter Query State (Pure data engine without hardcoded presets or categories)
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState("all");
   const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
@@ -91,27 +47,6 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const [customEndDate, setCustomEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [inspectPoint, setInspectPoint] = useState<DataPointItem | null>(null);
-
-  // Saved Views State
-  const [savedViews, setSavedViews] = useState<SavedView[]>(DEFAULT_PRESET_VIEWS);
-  const [activeViewId, setActiveViewId] = useState<string>("preset_nutrition_macros");
-  const [newViewName, setNewViewName] = useState("");
-  const [isSavingView, setIsSavingView] = useState(false);
-
-  // Load saved views from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem(`qs_saved_views_${tenantId}`);
-      if (stored) {
-        const parsed: SavedView[] = JSON.parse(stored);
-        if (parsed.length > 0) {
-          setSavedViews([...DEFAULT_PRESET_VIEWS, ...parsed.filter((p) => !p.isDefault)]);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load saved views:", e);
-    }
-  }, [tenantId]);
 
   // Fetch metrics data points from Core Data Service
   const fetchAllMetrics = async () => {
@@ -146,7 +81,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     }
   }, [apiBase, token, tenantId]);
 
-  // Extract available data sources and raw metric types with counts
+  // Extract available data sources
   const availableSources = useMemo(() => {
     const set = new Set<string>();
     dataPoints.forEach((p) => {
@@ -179,54 +114,6 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
 
   const clearMetrics = () => {
     setSelectedMetrics([]);
-  };
-
-  // Handle Load Saved View
-  const handleLoadView = (view: SavedView) => {
-    setActiveViewId(view.id);
-    setSelectedSource(view.source);
-    setSelectedMetrics(view.metrics);
-    setAggregation(view.aggregation);
-    setChartType(view.chartType);
-    setSearchQuery(view.search);
-  };
-
-  // Handle Save New View
-  const handleSaveCurrentView = () => {
-    if (!newViewName.trim()) return;
-    const newView: SavedView = {
-      id: `view_${Date.now()}`,
-      name: newViewName.trim(),
-      source: selectedSource,
-      metrics: [...selectedMetrics],
-      aggregation,
-      chartType,
-      search: searchQuery,
-      isDefault: false,
-    };
-    const updated = [...savedViews, newView];
-    setSavedViews(updated);
-    localStorage.setItem(
-      `qs_saved_views_${tenantId}`,
-      JSON.stringify(updated.filter((v) => !v.isDefault))
-    );
-    setActiveViewId(newView.id);
-    setNewViewName("");
-    setIsSavingView(false);
-  };
-
-  // Handle Delete View
-  const handleDeleteView = (viewId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = savedViews.filter((v) => v.id !== viewId);
-    setSavedViews(updated);
-    localStorage.setItem(
-      `qs_saved_views_${tenantId}`,
-      JSON.stringify(updated.filter((v) => !v.isDefault))
-    );
-    if (activeViewId === viewId) {
-      setActiveViewId(DEFAULT_PRESET_VIEWS[0].id);
-    }
   };
 
   // Compute chart timeline data with deterministic date formatting & date range filtering
@@ -342,7 +229,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
             <h2 className="text-xl font-bold text-white">Raw Data Explorer & Abfrage-Engine</h2>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
-            Direkter Zugriff auf alle Rohdatenpunkte in TimescaleDB — ohne Einschränkungen.
+            Direkter Zugriff auf alle Rohdatenpunkte in TimescaleDB — ohne Schnörkel. Simple & Powerful.
           </p>
         </div>
         <button
@@ -352,73 +239,6 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           <span>Daten Aktualisieren</span>
         </button>
-      </div>
-
-      {/* Saved Views Bar */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-md space-y-3">
-        <div className="flex justify-between items-center">
-          <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-            <Bookmark className="w-3.5 h-3.5" /> Gespeicherte Ansichten
-          </span>
-          {!isSavingView ? (
-            <button
-              onClick={() => setIsSavingView(true)}
-              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30 transition-colors"
-            >
-              <Save className="w-3.5 h-3.5" /> Ansicht Speichern
-            </button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                placeholder="Name der Ansicht..."
-                value={newViewName}
-                onChange={(e) => setNewViewName(e.target.value)}
-                className="px-3 py-1 rounded-lg bg-neutral-950 border border-neutral-700 text-white text-xs outline-none focus:border-purple-500"
-              />
-              <button
-                onClick={handleSaveCurrentView}
-                className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-semibold hover:bg-purple-500"
-              >
-                Speichern
-              </button>
-              <button
-                onClick={() => setIsSavingView(false)}
-                className="p-1 text-neutral-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          {savedViews.map((view) => {
-            const isActive = activeViewId === view.id;
-            return (
-              <div
-                key={view.id}
-                onClick={() => handleLoadView(view)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-all ${
-                  isActive
-                    ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-md shadow-purple-600/10"
-                    : "bg-neutral-950 border-neutral-800/80 text-neutral-400 hover:text-white hover:border-neutral-700"
-                }`}
-              >
-                <span>{view.name}</span>
-                {!view.isDefault && (
-                  <button
-                    onClick={(e) => handleDeleteView(view.id, e)}
-                    className="text-neutral-500 hover:text-red-400 transition-colors"
-                    title="Ansicht löschen"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
       </div>
 
       {/* Raw Query & Control Bar */}
