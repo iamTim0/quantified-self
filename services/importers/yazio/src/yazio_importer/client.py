@@ -114,6 +114,9 @@ class YazioClient:
                     if response.status_code == 401:
                         logger.error("Yazio API 401 Unauthorized.")
                         raise YazioUnauthorizedError("Yazio access token is invalid or expired.")
+                    if response.status_code == 404:
+                        logger.debug(f"Yazio endpoint '{endpoint}' returned 404 Not Found (no entry for date/resource).")
+                        return {}
                     if response.status_code == 429:
                         retry_after = int(response.headers.get("Retry-After", 10))
                         if attempt == max_retries - 1:
