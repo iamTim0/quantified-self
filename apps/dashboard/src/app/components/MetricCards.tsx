@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { Flame, Dumbbell, Wheat, Droplets, Moon, Footprints, Activity, Heart, ArrowUpRight } from "lucide-react";
+import { Flame, Dumbbell, Wheat, Droplets, Moon, Footprints, Activity, Heart, ArrowUpRight, MapPin } from "lucide-react";
 
 export interface MetricSummaryDetail {
   average: number;
@@ -23,6 +23,8 @@ export interface SummaryMetrics {
   steps?: MetricSummaryDetail;
   activity_score?: MetricSummaryDetail;
   resting_hr?: MetricSummaryDetail;
+  location_point?: MetricSummaryDetail;
+  location_latitude?: MetricSummaryDetail;
   [key: string]: MetricSummaryDetail | undefined;
 }
 
@@ -63,6 +65,12 @@ const CARD_CONFIGS: CardConfig[] = [
     icon: Droplets,
   },
   {
+    keys: ["location_point", "location_latitude"],
+    title: "Standorte / GPS",
+    unit: "Punkte",
+    icon: MapPin,
+  },
+  {
     keys: ["sleep_score"],
     title: "Ø Schlaf-Score",
     unit: "/100",
@@ -73,12 +81,6 @@ const CARD_CONFIGS: CardConfig[] = [
     title: "Ø Readiness",
     unit: "/100",
     icon: Activity,
-  },
-  {
-    keys: ["hrv_balance"],
-    title: "Ø HRV Balance",
-    unit: "ms",
-    icon: Heart,
   },
   {
     keys: ["steps"],
@@ -110,12 +112,12 @@ export default function MetricCards({ metrics }: MetricCardsProps) {
     <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(activeCards.length, 4)} gap-6 mb-8`}>
       {activeCards.map(({ cfg, detail }, index) => {
         const isFirst = index === 0;
-        const avgFormatted = Math.round(detail.average).toLocaleString();
-        const minFormatted = Math.round(detail.min).toLocaleString();
-        const maxFormatted = Math.round(detail.max).toLocaleString();
+        const avgFormatted = Math.round(detail.average).toLocaleString("de-DE");
+        const minFormatted = Math.round(detail.min).toLocaleString("de-DE");
+        const maxFormatted = Math.round(detail.max).toLocaleString("de-DE");
 
         if (isFirst) {
-          // Card 1: Highlighted Solid Emerald Green (Reference Image Style)
+          // Card 1: Highlighted Solid Emerald Green
           return (
             <div
               key={cfg.title}
@@ -139,7 +141,7 @@ export default function MetricCards({ metrics }: MetricCardsProps) {
           );
         }
 
-        // Cards 2, 3, 4: Pure White Card with Circular Arrow Badge (Reference Image Style)
+        // Cards 2, 3, 4: Pure White Card
         return (
           <div
             key={cfg.title}

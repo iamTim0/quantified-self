@@ -79,6 +79,17 @@ export default function DashboardPage() {
       if (savedUserEmail) setUserEmail(savedUserEmail);
       if (savedUserRole) setUserRole(savedUserRole);
       setIsAuthenticated(true);
+    } else {
+      fetch(`${API_BASE}/api/v1/auth/dev-token?tenant_id=${activeTenant}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.access_token) {
+            setToken(data.access_token);
+            localStorage.setItem("qs_token", data.access_token);
+            setIsAuthenticated(true);
+          }
+        })
+        .catch((err) => console.error("Error fetching dev token:", err));
     }
   }, []);
 
