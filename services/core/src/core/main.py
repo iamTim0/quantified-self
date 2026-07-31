@@ -41,7 +41,7 @@ from core.security.crypto import (
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # SECURITY H3: Constrain source_type to known connectors
-ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit", "yazio"]
+ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit", "yazio", "dawarich"]
 ValidStatus = Literal["active", "inactive"]
 
 
