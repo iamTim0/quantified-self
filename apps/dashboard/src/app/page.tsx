@@ -167,13 +167,6 @@ export default function DashboardPage() {
           const mData = await metricsRes.json();
           const points = mData.data_points || [];
 
-          const sleepPts = points.filter((p: { metric_type: string }) => p.metric_type === "sleep_score");
-          const readinessPts = points.filter((p: { metric_type: string }) => p.metric_type === "readiness_score");
-          const caloriePts = points.filter((p: { metric_type: string }) => p.metric_type === "calories" || p.metric_type === "yazio_calories" || p.metric_type === "consumed_item_calories");
-          const proteinPts = points.filter((p: { metric_type: string }) => p.metric_type === "protein" || p.metric_type === "yazio_protein");
-          const carbPts = points.filter((p: { metric_type: string }) => p.metric_type === "carbohydrates" || p.metric_type === "yazio_carbs" || p.metric_type === "carbs");
-          const fatPts = points.filter((p: { metric_type: string }) => p.metric_type === "fat" || p.metric_type === "yazio_fat");
-
           const formatDate = (isoString?: string) => {
             if (!isoString) return "";
             try {
@@ -215,40 +208,76 @@ export default function DashboardPage() {
           }
 
           setChartLabels(timestamps);
-          setSleepValues(
-            timestamps.map((ts) => {
-              const pt = sleepPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
-            })
-          );
-          setReadinessValues(
-            timestamps.map((ts) => {
-              const pt = readinessPts.find((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
-            })
-          );
+
+          // Calorie Values: Prioritize daily summary 'calories' or 'yazio_calories'.
+          // Fall back to sum of 'consumed_item_calories' ONLY if summary is missing to prevent double counting.
           setCalorieValues(
             timestamps.map((ts) => {
-              const pts = caloriePts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
+              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
+                (p.metric_type === "calories" || p.metric_type === "yazio_calories") && formatDate(p.timestamp) === ts
+              );
+              if (summaryPt) return summaryPt.value || 0;
+
+              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
+                p.metric_type === "consumed_item_calories" && formatDate(p.timestamp) === ts
+              );
+              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
             })
           );
+
           setProteinValues(
             timestamps.map((ts) => {
-              const pts = proteinPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
+              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
+                (p.metric_type === "protein" || p.metric_type === "yazio_protein") && formatDate(p.timestamp) === ts
+              );
+              if (summaryPt) return summaryPt.value || 0;
+
+              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
+                p.metric_type === "consumed_item_protein" && formatDate(p.timestamp) === ts
+              );
+              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
             })
           );
+
           setCarbValues(
             timestamps.map((ts) => {
-              const pts = carbPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
+              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
+                (p.metric_type === "carbohydrates" || p.metric_type === "yazio_carbs" || p.metric_type === "carbs") && formatDate(p.timestamp) === ts
+              );
+              if (summaryPt) return summaryPt.value || 0;
+
+              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
+                p.metric_type === "consumed_item_carbs" && formatDate(p.timestamp) === ts
+              );
+              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
             })
           );
+
           setFatValues(
             timestamps.map((ts) => {
-              const pts = fatPts.filter((p: { timestamp: string }) => formatDate(p.timestamp) === ts);
-              return pts.length > 0 ? pts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0) : 0;
+              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
+                (p.metric_type === "fat" || p.metric_type === "yazio_fat") && formatDate(p.timestamp) === ts
+              );
+              if (summaryPt) return summaryPt.value || 0;
+
+              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
+                p.metric_type === "consumed_item_fat" && formatDate(p.timestamp) === ts
+              );
+              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
+            })
+          );
+
+          setSleepValues(
+            timestamps.map((ts) => {
+              const pt = points.find((p: { metric_type: string; timestamp: string }) => p.metric_type === "sleep_score" && formatDate(p.timestamp) === ts);
+              return pt ? pt.value : 0;
+            })
+          );
+
+          setReadinessValues(
+            timestamps.map((ts) => {
+              const pt = points.find((p: { metric_type: string; timestamp: string }) => p.metric_type === "readiness_score" && formatDate(p.timestamp) === ts);
+              return pt ? pt.value : 0;
             })
           );
         }
