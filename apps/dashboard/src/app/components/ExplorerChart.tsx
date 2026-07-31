@@ -27,7 +27,7 @@ ChartJS.register(
   Filler
 );
 
-ChartJS.defaults.font.family = "'Outfit', 'Inter', system-ui, sans-serif";
+ChartJS.defaults.font.family = "var(--font-outfit), 'Outfit', system-ui, sans-serif";
 
 interface ExplorerChartProps {
   dates: string[];
