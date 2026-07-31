@@ -392,8 +392,8 @@ async def get_metrics_summary(
 
 class ConfigureConnectorRequest(BaseModel):
     source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit, yazio")
-    # SECURITY H6: Limit access_token length to prevent memory/DB abuse
-    access_token: str = Field(..., description="Raw API access token / credential", min_length=1, max_length=2048)
+    # SECURITY H6: Optional access_token to allow editing frequency without re-entering token
+    access_token: str | None = Field(None, description="Raw API access token / credential", max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
     poll_interval_hours: int = Field(6, ge=1, le=168, description="Poll frequency in hours")
     lookback_days: int = Field(30, ge=1, le=365, description="Lookback window in days")
@@ -405,15 +405,23 @@ async def configure_connector(
     req: ConfigureConnectorRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Safely configure a connector for the tenant.
+    """Safely configure or edit a connector for the tenant.
 
     Encrypts raw access tokens with Fernet symmetric AES before database persistence.
-    If Yazio credentials (email/password) are passed, performs server-side OAuth exchange.
+    If access_token is omitted when editing an existing connector, preserves existing encrypted credentials.
     """
     tenant_id = get_current_tenant_id()
-    raw_token = req.access_token
+    raw_token = (req.access_token or "").strip()
 
-    if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config:
+    # Check existing data source
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == req.source_type,
+    )
+    res = await session.execute(stmt)
+    existing = res.scalars().first()
+
+    if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config and req.config["yazio_email"] and req.config["yazio_password"]:
         email = req.config["yazio_email"]
         password = req.config["yazio_password"]
         base_url = os.getenv("YAZIO_API_BASE_URL", "https://yzapi.yazio.com").rstrip("/")
@@ -436,7 +444,7 @@ async def configure_connector(
                 if not resp.is_success:
                     raise HTTPException(status_code=resp.status_code, detail=f"Yazio Login fehlgeschlagen: {resp.text}")
                 token_data = resp.json()
-                raw_token = token_data.get("access_token")
+                raw_token = token_data.get("access_token", "")
                 if not raw_token:
                     raise HTTPException(status_code=400, detail="Yazio OAuth Antwort enthielt keinen access_token.")
             except HTTPException:
@@ -444,29 +452,30 @@ async def configure_connector(
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Fehler bei Yazio OAuth Verbindung: {e}")
 
-    # Encrypt secret at rest
-    encrypted_token = encrypt_secret(raw_token)
-    masked_token = mask_secret(raw_token)
-
-    config_data = {
-        "encrypted_token": encrypted_token,
-        "masked_token": masked_token,
+    config_data: dict[str, Any] = {
         "status": req.status,
         "poll_interval_hours": req.poll_interval_hours,
         "lookback_days": req.lookback_days,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    if raw_token:
+        encrypted_token = encrypt_secret(raw_token)
+        masked_token = mask_secret(raw_token)
+        config_data["encrypted_token"] = encrypted_token
+        config_data["masked_token"] = masked_token
+    elif existing and existing.config and "encrypted_token" in existing.config:
+        config_data["encrypted_token"] = existing.config["encrypted_token"]
+        config_data["masked_token"] = existing.config.get("masked_token", "••••••••")
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Zugangsdaten / Access Token sind für die Erst-Einrichtung erforderlich."
+        )
+
     if req.config:
         clean_config = {k: v for k, v in req.config.items() if k not in ("yazio_email", "yazio_password")}
         config_data.update(clean_config)
-
-    # Check existing data source
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == req.source_type,
-    )
-    res = await session.execute(stmt)
-    existing = res.scalars().first()
 
     if existing:
         merged_config = dict(existing.config or {})
@@ -509,11 +518,11 @@ async def configure_connector(
 
     return {
         "status": "success",
-        "message": f"Connector {req.source_type} configured safely.",
+        "message": f"Connector {req.source_type} erfolgreich aktualisiert.",
         "source_id": source_id,
         "tenant_id": tenant_id,
         "source_type": req.source_type,
-        "masked_token": masked_token,
+        "masked_token": config_data.get("masked_token", "••••••••"),
         "poll_interval_hours": req.poll_interval_hours,
         "lookback_days": req.lookback_days,
     }

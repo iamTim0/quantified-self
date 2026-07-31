@@ -46,7 +46,7 @@ async def process_message(msg):
                 index_elements=["tenant_id", "idempotency_key", "timestamp"],
                 set_={
                     "value": stmt.excluded.value,
-                    "metadata_": stmt.excluded.metadata_,
+                    "metadata": stmt.excluded.metadata,
                 },
             )
             result = await session.execute(stmt)

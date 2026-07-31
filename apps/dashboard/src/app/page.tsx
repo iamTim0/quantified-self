@@ -33,13 +33,13 @@ export default function DashboardPage() {
   const [carbValues, setCarbValues] = useState<number[]>([]);
   const [fatValues, setFatValues] = useState<number[]>([]);
 
-  const [selectedModalSourceType, setSelectedModalSourceType] = useState<string | undefined>(undefined);
+  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorInfo | undefined>(undefined);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const handleOpenConfigureModal = (connector?: ConnectorInfo) => {
-    setSelectedModalSourceType(connector?.source_type);
+    setSelectedModalConnector(connector);
     setIsModalOpen(true);
   };
 
@@ -240,9 +240,12 @@ export default function DashboardPage() {
           isOpen={isModalOpen}
           onClose={() => {
             setIsModalOpen(false);
-            setSelectedModalSourceType(undefined);
+            setSelectedModalConnector(undefined);
           }}
-          initialSourceType={selectedModalSourceType}
+          initialSourceType={selectedModalConnector?.source_type}
+          initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
+          initialLookbackDays={selectedModalConnector?.lookback_days || 30}
+          isEditing={Boolean(selectedModalConnector)}
           token={token}
           tenantId={tenantId}
           onSaved={triggerRefresh}

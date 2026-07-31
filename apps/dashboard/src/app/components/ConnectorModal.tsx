@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck } from "lucide-react";
 
 export interface ProviderCatalogItem {
   id: string;
@@ -67,6 +67,7 @@ interface ConnectorModalProps {
   initialSourceType?: string;
   initialPollInterval?: number;
   initialLookbackDays?: number;
+  isEditing?: boolean;
 }
 
 export default function ConnectorModal({
@@ -79,6 +80,7 @@ export default function ConnectorModal({
   initialSourceType,
   initialPollInterval = 6,
   initialLookbackDays = 30,
+  isEditing = false,
 }: ConnectorModalProps) {
   const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
   const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
@@ -95,6 +97,8 @@ export default function ConnectorModal({
 
   useEffect(() => {
     if (isOpen) {
+      setPollIntervalHours(initialPollInterval);
+      setLookbackDays(initialLookbackDays);
       if (initialSourceType) {
         const item = PROVIDER_CATALOG.find((p) => p.id === initialSourceType);
         if (item) {
@@ -107,10 +111,13 @@ export default function ConnectorModal({
         setStep("select_provider");
         setSelectedProvider(null);
       }
+      setAccessToken("");
+      setYazioEmail("");
+      setYazioPassword("");
       setMessage(null);
       setError(null);
     }
-  }, [isOpen, initialSourceType]);
+  }, [isOpen, initialSourceType, initialPollInterval, initialLookbackDays]);
 
   if (!isOpen) return null;
 
@@ -134,21 +141,27 @@ export default function ConnectorModal({
 
       if (selectedProvider.id === "yazio") {
         if (yazioAuthMode === "login") {
-          if (!yazioEmail.trim() || !yazioPassword.trim()) {
-            setError("Bitte gib E-Mail und Passwort für deinen Yazio-Account ein.");
-            setLoading(false);
-            return;
+          if (yazioEmail.trim() || yazioPassword.trim()) {
+            if (!yazioEmail.trim() || !yazioPassword.trim()) {
+              setError("Bitte gib sowohl E-Mail als auch Passwort ein.");
+              setLoading(false);
+              return;
+            }
+            finalToken = "SERVER_OAUTH_LOGIN";
+            payloadConfig = {
+              yazio_email: yazioEmail.trim(),
+              yazio_password: yazioPassword.trim(),
+            };
           }
-          finalToken = "SERVER_OAUTH_LOGIN";
-          payloadConfig = {
-            yazio_email: yazioEmail.trim(),
-            yazio_password: yazioPassword.trim(),
-          };
-        } else if (!finalToken) {
-          setError("Bitte gib einen Yazio Bearer Token ein.");
+        } else if (!finalToken && !isEditing) {
+          setError("Bitte gib einen Yazio Bearer Access Token ein.");
           setLoading(false);
           return;
         }
+      } else if (!finalToken && !isEditing) {
+        setError("Bitte gib den API Access Token ein.");
+        setLoading(false);
+        return;
       }
 
       const res = await fetch(`${apiBase}/api/v1/data/sources/configure`, {
@@ -160,7 +173,7 @@ export default function ConnectorModal({
         },
         body: JSON.stringify({
           source_type: selectedProvider.id,
-          access_token: finalToken,
+          access_token: finalToken || undefined,
           status: "active",
           poll_interval_hours: Number(pollIntervalHours),
           lookback_days: Number(lookbackDays),
@@ -169,7 +182,7 @@ export default function ConnectorModal({
       });
 
       if (res.ok) {
-        setMessage(`${selectedProvider.name} erfolgreich konfiguriert!`);
+        setMessage(`${selectedProvider.name} Einstellungen erfolgreich gespeichert!`);
         setAccessToken("");
         setYazioEmail("");
         setYazioPassword("");
@@ -194,7 +207,7 @@ export default function ConnectorModal({
         {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-neutral-800">
           <div className="flex items-center gap-3">
-            {step === "configure_provider" && (
+            {step === "configure_provider" && !isEditing && (
               <button
                 onClick={() => setStep("select_provider")}
                 className="p-1.5 rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white transition-colors"
@@ -206,7 +219,11 @@ export default function ConnectorModal({
             <div className="flex items-center gap-2 text-white">
               <Plug className="w-5 h-5 text-blue-400" />
               <h2 className="text-lg font-bold">
-                {step === "select_provider" ? "Datenquelle auswählen" : `${selectedProvider?.name} konfigurieren`}
+                {step === "select_provider"
+                  ? "Datenquelle auswählen"
+                  : isEditing
+                  ? `${selectedProvider?.name} bearbeiten`
+                  : `${selectedProvider?.name} verbinden`}
               </h2>
             </div>
           </div>
@@ -271,6 +288,18 @@ export default function ConnectorModal({
         ) : (
           /* Step 2: Configuration Form for Selected Provider */
           <form onSubmit={handleSubmit} className="space-y-4">
+            {isEditing && (
+              <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 flex items-start gap-2.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold block">Zugangsdaten sind hinterlegt (Fernet AES-256)</span>
+                  <span className="text-[11px] text-emerald-400/80 leading-relaxed block mt-0.5">
+                    Du kannst Abfrage-Frequenz und Zeitraum anpassen, ohne das Passwort oder den Bearer Token neu einzugeben.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {selectedProvider?.id === "yazio" && (
               <>
                 <div className="flex bg-neutral-900 border border-neutral-800 rounded-xl p-1 mb-3 text-xs">
@@ -281,7 +310,7 @@ export default function ConnectorModal({
                       yazioAuthMode === "token" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
                     }`}
                   >
-                    Bearer Token direkt eingeben
+                    Bearer Token {isEditing ? "(optional)" : "direkt eingeben"}
                   </button>
                   <button
                     type="button"
@@ -290,7 +319,7 @@ export default function ConnectorModal({
                       yazioAuthMode === "login" ? "bg-purple-600 text-white" : "text-neutral-400 hover:text-white"
                     }`}
                   >
-                    Yazio E-Mail & Passwort
+                    Yazio Login {isEditing ? "(optional)" : ""}
                   </button>
                 </div>
 
@@ -298,11 +327,11 @@ export default function ConnectorModal({
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                        Yazio E-Mail
+                        Yazio E-Mail {isEditing && <span className="text-neutral-500 font-normal lowercase">(nur ändern bei neuem Login)</span>}
                       </label>
                       <input
                         type="email"
-                        placeholder="name@example.com"
+                        placeholder={isEditing ? "Bestehende Zugangsdaten beibehalten..." : "name@example.com"}
                         value={yazioEmail}
                         onChange={(e) => setYazioEmail(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
@@ -310,11 +339,11 @@ export default function ConnectorModal({
                     </div>
                     <div>
                       <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                        Yazio Passwort
+                        Yazio Passwort {isEditing && <span className="text-neutral-500 font-normal lowercase">(nur ändern bei neuem Login)</span>}
                       </label>
                       <input
                         type="password"
-                        placeholder="••••••••"
+                        placeholder={isEditing ? "•••••••• (unverändert lassen)" : "••••••••"}
                         value={yazioPassword}
                         onChange={(e) => setYazioPassword(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
@@ -326,10 +355,11 @@ export default function ConnectorModal({
                     <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1.5 flex items-center gap-1.5">
                       <Key className="w-3.5 h-3.5 text-purple-400" />
                       <span>Yazio Bearer Access Token</span>
+                      {isEditing && <span className="text-neutral-500 font-normal text-[11px] lowercase">(optional)</span>}
                     </label>
                     <input
                       type="password"
-                      placeholder="Füge deinen Yazio Bearer Token hier ein (z.B. eyJhbGciOi...)"
+                      placeholder={isEditing ? "•••••••• (Zugangsdaten beibehalten)" : "Füge deinen Yazio Bearer Token hier ein"}
                       value={accessToken}
                       onChange={(e) => setAccessToken(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none font-mono"
@@ -342,7 +372,7 @@ export default function ConnectorModal({
             {/* Sync Frequency & Period Configuration */}
             <div className="pt-3 border-t border-neutral-800 space-y-3">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-blue-400 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum
+                <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum bearbeiten
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -352,9 +382,9 @@ export default function ConnectorModal({
                   <select
                     value={pollIntervalHours}
                     onChange={(e) => setPollIntervalHours(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none font-semibold"
                   >
-                    <option value={1} className="bg-neutral-900">Jede Stunde</option>
+                    <option value={1} className="bg-neutral-900">Jede Stunde (1 Std)</option>
                     <option value={3} className="bg-neutral-900">Alle 3 Stunden</option>
                     <option value={6} className="bg-neutral-900">Alle 6 Stunden (Standard)</option>
                     <option value={12} className="bg-neutral-900">Alle 12 Stunden</option>
@@ -370,7 +400,7 @@ export default function ConnectorModal({
                   <select
                     value={lookbackDays}
                     onChange={(e) => setLookbackDays(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none"
+                    className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-white text-xs focus:border-blue-500 outline-none font-semibold"
                   >
                     <option value={7} className="bg-neutral-900">Letzte 7 Tage</option>
                     <option value={14} className="bg-neutral-900">Letzte 14 Tage</option>
@@ -386,19 +416,29 @@ export default function ConnectorModal({
             {message && <p className="rounded-xl bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300 flex items-center gap-2"><CheckCircle2 className="w-4 h-4" />{message}</p>}
 
             <div className="flex justify-between items-center pt-4">
-              <button
-                type="button"
-                onClick={() => setStep("select_provider")}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors flex items-center gap-1.5"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" /> Zurück
-              </button>
+              {!isEditing ? (
+                <button
+                  type="button"
+                  onClick={() => setStep("select_provider")}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" /> Zurück
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-xs font-semibold rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 text-gray-300 transition-colors"
+                >
+                  Abbrechen
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading}
                 className="px-5 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50 shadow-lg shadow-blue-600/20"
               >
-                {loading ? "Speichere..." : "Verbindung Speichern"}
+                {loading ? "Speichere..." : isEditing ? "Einstellungen Speichern" : "Verbindung Speichern"}
               </button>
             </div>
           </form>
