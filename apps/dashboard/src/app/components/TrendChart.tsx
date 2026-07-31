@@ -28,6 +28,8 @@ ChartJS.register(
   Filler
 );
 
+ChartJS.defaults.font.family = "'Outfit', 'Inter', system-ui, sans-serif";
+
 interface TrendChartProps {
   labels: string[];
   sleepValues: number[];
@@ -201,18 +203,20 @@ export default function TrendChart({
       legend: {
         position: "top" as const,
         labels: {
-          color: "#d1d5db",
-          font: { family: "Inter", size: 11 },
+          color: "#e5e7eb",
+          font: { family: "'Outfit', 'Inter', sans-serif", size: 12, weight: 600 },
           usePointStyle: true,
           boxWidth: 8,
         },
       },
       tooltip: {
-        backgroundColor: "rgba(10, 10, 10, 0.9)",
-        borderColor: "rgba(255, 255, 255, 0.1)",
+        backgroundColor: "rgba(10, 10, 15, 0.95)",
+        borderColor: "rgba(255, 255, 255, 0.15)",
         borderWidth: 1,
         titleColor: "#ffffff",
-        bodyColor: "#9ca3af",
+        titleFont: { family: "'Outfit', sans-serif", size: 13, weight: 700 },
+        bodyColor: "#d1d5db",
+        bodyFont: { family: "'JetBrains Mono', monospace", size: 12 },
         padding: 12,
         cornerRadius: 12,
       },
@@ -221,7 +225,7 @@ export default function TrendChart({
       x: {
         ticks: {
           color: "#9ca3af",
-          font: { size: 10 },
+          font: { family: "'JetBrains Mono', monospace", size: 10, weight: 500 },
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 12,
@@ -234,16 +238,16 @@ export default function TrendChart({
               type: "linear" as const,
               display: true,
               position: "left" as const,
-              title: { display: true, text: "Kalorien (kcal)", color: "#f59e0b", font: { size: 10 } },
-              ticks: { color: "#f59e0b", font: { size: 10 } },
+              title: { display: true, text: "Kalorien (kcal)", color: "#f59e0b", font: { family: "'Outfit', sans-serif", size: 11, weight: 700 } },
+              ticks: { color: "#f59e0b", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
               grid: { color: "rgba(255, 255, 255, 0.05)" },
             },
             yGrams: {
               type: "linear" as const,
               display: true,
               position: "right" as const,
-              title: { display: true, text: "Makros (g)", color: "#3b82f6", font: { size: 10 } },
-              ticks: { color: "#3b82f6", font: { size: 10 } },
+              title: { display: true, text: "Makros (g)", color: "#3b82f6", font: { family: "'Outfit', sans-serif", size: 11, weight: 700 } },
+              ticks: { color: "#3b82f6", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
               grid: { drawOnChartArea: false },
             },
           }
@@ -254,7 +258,7 @@ export default function TrendChart({
               position: "left" as const,
               min: 0,
               max: 100,
-              ticks: { color: "#9ca3af", font: { size: 10 } },
+              ticks: { color: "#9ca3af", font: { family: "'JetBrains Mono', monospace", size: 10, weight: 600 } },
               grid: { color: "rgba(255, 255, 255, 0.05)" },
             },
           }),
