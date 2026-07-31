@@ -47,13 +47,13 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   },
   {
     id: "dawarich",
-    name: "Dawarich",
+    name: "Dawarich Location",
     category: "Location & GPS Tracking",
-    description: "Self-hosted Alternative zu Google Location History. Importiert Standorte, Besuchsorte und Bewegungsstrecken.",
+    description: "Self-hosted Alternative zu Google Location History. Importiert Standorte, GPS-Punkte und Bewegungsstrecken.",
     icon: MapPin,
-    iconColor: "text-emerald-400",
-    status: "coming_soon",
-    supportedMetrics: ["Standorte", "Besuchte Orte", "GPS-Tracks"],
+    iconColor: "text-emerald-500",
+    status: "available",
+    supportedMetrics: ["Standortpunkte", "Breitengrad", "Längengrad"],
   },
 ];
 
@@ -89,6 +89,9 @@ export default function ConnectorModal({
   const [yazioAuthMode, setYazioAuthMode] = useState<"token" | "login">("token");
   const [yazioEmail, setYazioEmail] = useState("");
   const [yazioPassword, setYazioPassword] = useState("");
+  const [dawarichUrl, setDawarichUrl] = useState("http://localhost:3000");
+  const [dawarichApiKey, setDawarichApiKey] = useState("");
+
   const [pollIntervalHours, setPollIntervalHours] = useState(initialPollInterval);
   const [lookbackDays, setLookbackDays] = useState(initialLookbackDays);
   const [message, setMessage] = useState<string | null>(null);
@@ -114,6 +117,8 @@ export default function ConnectorModal({
       setAccessToken("");
       setYazioEmail("");
       setYazioPassword("");
+      setDawarichUrl("http://localhost:3000");
+      setDawarichApiKey("");
       setMessage(null);
       setError(null);
     }
@@ -155,6 +160,16 @@ export default function ConnectorModal({
           }
         } else if (!finalToken && !isEditing) {
           setError("Bitte gib einen Yazio Bearer Access Token ein.");
+          setLoading(false);
+          return;
+        }
+      } else if (selectedProvider.id === "dawarich") {
+        finalToken = dawarichApiKey.trim();
+        payloadConfig = {
+          base_url: dawarichUrl.trim() || "http://localhost:3000",
+        };
+        if (!finalToken && !isEditing) {
+          setError("Bitte gib den Dawarich API Key ein.");
           setLoading(false);
           return;
         }
@@ -367,6 +382,39 @@ export default function ConnectorModal({
                   </div>
                 )}
               </>
+            )}
+
+            {selectedProvider?.id === "dawarich" && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Dawarich Server URL (Base URL)
+                  </label>
+                  <input
+                    type="url"
+                    placeholder="https://dawarich.example.com"
+                    value={dawarichUrl}
+                    onChange={(e) => setDawarichUrl(e.target.value)}
+                    required
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                    <span>Dawarich API Key</span>
+                    {isEditing && <span className="text-slate-400 font-normal text-[11px] lowercase">(optional)</span>}
+                  </label>
+                  <input
+                    type="password"
+                    placeholder={isEditing ? "•••••••• (API Key beibehalten)" : "Füge deinen Dawarich API Key hier ein"}
+                    value={dawarichApiKey}
+                    onChange={(e) => setDawarichApiKey(e.target.value)}
+                    required={!isEditing}
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
+                  />
+                </div>
+              </div>
             )}
 
             {/* Sync Frequency & Period Configuration */}

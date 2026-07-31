@@ -64,6 +64,18 @@ services:
     networks:
       - qs-network
 
+  dawarich-importer:
+    build:
+      context: ../services/importers/dawarich
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
   dashboard:
     build:
       context: ../apps/dashboard
