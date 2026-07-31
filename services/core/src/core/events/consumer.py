@@ -42,8 +42,12 @@ async def process_message(msg):
             )
             # INVARIANT: NoDuplicateData — composite unique constraint matches
             # the TimescaleDB hypertable requirement: (tenant_id, idempotency_key, timestamp)
-            stmt = stmt.on_conflict_do_nothing(
-                index_elements=["tenant_id", "idempotency_key", "timestamp"]
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["tenant_id", "idempotency_key", "timestamp"],
+                set_={
+                    "value": stmt.excluded.value,
+                    "metadata_": stmt.excluded.metadata_,
+                },
             )
             result = await session.execute(stmt)
             await session.commit()

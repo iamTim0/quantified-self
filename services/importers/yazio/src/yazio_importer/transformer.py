@@ -79,11 +79,19 @@ def transform_consumed_items(
 
         if item_cal is None and p_info and p_info.get("energy_kcal", 0) > 0:
             base_amt = float(p_info.get("base_amount", 100.0) or 100.0)
-            ratio = amount / base_amt
-            item_cal = p_info["energy_kcal"] * ratio
-            item_prot = p_info["protein_g"] * ratio
-            item_carb = p_info["carbs_g"] * ratio
-            item_fat = p_info["fat_g"] * ratio
+            raw_cal = float(p_info["energy_kcal"])
+            if raw_cal < 10.0 and base_amt >= 100.0:
+                # Nutrient values are expressed per 1 gram
+                item_cal = raw_cal * amount
+                item_prot = float(p_info.get("protein_g", 0.0)) * amount
+                item_carb = float(p_info.get("carbs_g", 0.0)) * amount
+                item_fat = float(p_info.get("fat_g", 0.0)) * amount
+            else:
+                ratio = amount / base_amt
+                item_cal = raw_cal * ratio
+                item_prot = float(p_info.get("protein_g", 0.0)) * ratio
+                item_carb = float(p_info.get("carbs_g", 0.0)) * ratio
+                item_fat = float(p_info.get("fat_g", 0.0)) * ratio
 
         val_flt = float(item_cal) if item_cal is not None else float(amount)
         metric_type = "consumed_item_calories" if item_cal is not None else "consumed_product"
@@ -267,12 +275,18 @@ def transform_consumed_items(
             data_points.append(dp)
 
     # 5. Daily macro summary totals
+    raw_cal_val = summary.get("calories") or (total_cal if total_cal > 0 else None)
+    raw_prot_val = summary.get("protein_g") or summary.get("protein") or (total_prot if total_prot > 0 else None)
+    raw_carb_val = summary.get("carbs_g") or summary.get("carbohydrates") or summary.get("carbs") or (total_carb if total_carb > 0 else None)
+    raw_fat_val = summary.get("fat_g") or summary.get("fat") or (total_fat if total_fat > 0 else None)
+    raw_fiber_val = summary.get("fiber_g") or summary.get("fiber")
+
     daily_metrics = {
-        "calories": summary.get("calories") or (total_cal if total_cal > 0 else None),
-        "protein": summary.get("protein_g") or summary.get("protein") or (total_prot if total_prot > 0 else None),
-        "carbohydrates": summary.get("carbs_g") or summary.get("carbohydrates") or summary.get("carbs") or (total_carb if total_carb > 0 else None),
-        "fat": summary.get("fat_g") or summary.get("fat") or (total_fat if total_fat > 0 else None),
-        "fiber": summary.get("fiber_g") or summary.get("fiber"),
+        "calories": float(raw_cal_val) if raw_cal_val is not None else None,
+        "protein": float(raw_prot_val) if raw_prot_val is not None else None,
+        "carbohydrates": float(raw_carb_val) if raw_carb_val is not None else None,
+        "fat": float(raw_fat_val) if raw_fat_val is not None else None,
+        "fiber": float(raw_fiber_val) if raw_fiber_val is not None else None,
     }
 
     for metric_type, val in daily_metrics.items():
