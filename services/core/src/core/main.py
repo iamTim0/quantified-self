@@ -1,6 +1,6 @@
 async def ensure_default_tenant_seeded():
     try:
-        from core.db.session import AsyncSessionLocal
+        from core.db.session import async_session_maker as AsyncSessionLocal
         async with AsyncSessionLocal() as session:
             tenant_id = "56fe04c2-b103-40f1-b5f4-2326d1c52830"
             t_stmt = select(Tenant).where(Tenant.id == tenant_id)

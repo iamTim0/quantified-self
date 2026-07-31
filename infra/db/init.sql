@@ -2,6 +2,7 @@
 CREATE EXTENSION IF NOT EXISTS timescaledb;
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Create tenants table (Workspace / Organization level)
 CREATE TABLE tenants (
@@ -43,6 +44,7 @@ CREATE TABLE data_points (
     value DOUBLE PRECISION,
     metadata JSONB DEFAULT '{}',
     embedding vector(1536), -- For AI embeddings
+    location_geom geometry(Point, 4326), -- PostGIS spatial location point
     idempotency_key TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     -- TimescaleDB hypertables require the partitioning column to be part of the primary key
@@ -58,6 +60,7 @@ SELECT create_hypertable('data_points', 'timestamp');
 CREATE INDEX idx_data_points_tenant_metric_time ON data_points (tenant_id, metric_type, timestamp DESC);
 CREATE INDEX idx_data_points_tenant_source_time ON data_points (tenant_id, source_id, timestamp DESC);
 CREATE INDEX idx_data_points_metadata ON data_points USING GIN (metadata);
+CREATE INDEX idx_data_points_location_geom ON data_points USING GIST (location_geom);
 
 -- Create tenant_shares table for cross-tenant data sharing
 CREATE TABLE tenant_shares (

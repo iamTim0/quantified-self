@@ -58,6 +58,27 @@ async def process_message(msg):
                     f"key={data.get('idempotency_key')}"
                 )
 
+            # Update DataSource sync_status to idle
+            source_id = data.get("source_id")
+            source_type = data.get("source_type") or (data.get("metadata") or {}).get("source_type")
+            if source_id or source_type:
+                from core.db.models import DataSource
+                from sqlalchemy import select
+                from datetime import timezone
+                if source_id:
+                    s_stmt = select(DataSource).where(DataSource.id == source_id)
+                else:
+                    s_stmt = select(DataSource).where(DataSource.tenant_id == tenant_id, DataSource.source_type == source_type)
+                res = await session.execute(s_stmt)
+                ds = res.scalar_one_or_none()
+                if ds:
+                    cfg = dict(ds.config or {})
+                    cfg["sync_status"] = "idle"
+                    cfg["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+                    cfg["last_sync_message"] = "Erfolgreich Datenpunkte importiert."
+                    ds.config = cfg
+                    await session.commit()
+
         await msg.ack()
     except Exception as e:
         logger.exception("Error processing message")
