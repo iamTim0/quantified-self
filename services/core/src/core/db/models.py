@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from geoalchemy2 import Geometry
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -91,6 +92,7 @@ class DataPoint(Base):
     value: Mapped[float | None] = mapped_column(Float, nullable=True)
     metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
     embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
+    location_geom: Mapped[Any | None] = mapped_column("location_geom", Geometry("POINT", srid=4326), nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

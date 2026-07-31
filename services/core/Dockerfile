@@ -8,6 +8,8 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml ./
 RUN uv pip install --system -r pyproject.toml
 
+COPY alembic.ini ./
+COPY alembic/ ./alembic/
 COPY src/ ./src/
 
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001"]
