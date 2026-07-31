@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { Search, ChevronRight, X, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu } from "lucide-react";
+import { Search, ChevronRight, X, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu, Bookmark, Save, Trash2 } from "lucide-react";
 
 // Client-only dynamic import for ChartJS canvas
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
@@ -25,6 +25,21 @@ export interface DataPointItem {
   idempotency_key?: string;
 }
 
+export interface BackendSavedView {
+  id: string;
+  name: string;
+  query_config: {
+    source?: string;
+    metrics?: string[];
+    aggregation?: "sum" | "avg" | "max" | "raw";
+    chartType?: "area" | "line" | "bar";
+    dateRangePreset?: "7d" | "14d" | "30d" | "90d" | "all" | "custom";
+    searchQuery?: string;
+  };
+  is_shared?: boolean;
+  created_at?: string;
+}
+
 interface ExplorerTabProps {
   apiBase: string;
   token: string;
@@ -37,7 +52,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Active Raw Filter Query State (Pure data engine without hardcoded presets or categories)
+  // Active Raw Filter Query State
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState("all");
   const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
@@ -47,6 +62,12 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const [customEndDate, setCustomEndDate] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [inspectPoint, setInspectPoint] = useState<DataPointItem | null>(null);
+
+  // SaaS Multi-Tenant Backend Saved Views (PostgreSQL)
+  const [savedViews, setSavedViews] = useState<BackendSavedView[]>([]);
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [newViewName, setNewViewName] = useState("");
+  const [isSavingView, setIsSavingView] = useState(false);
 
   // Fetch metrics data points from Core Data Service
   const fetchAllMetrics = async () => {
@@ -75,11 +96,98 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     }
   };
 
+  // Fetch saved views directly from PostgreSQL Core Service
+  const fetchSavedViews = async () => {
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/explorer/views`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSavedViews(data.views || []);
+      }
+    } catch (e) {
+      console.error("Failed to fetch saved views from PostgreSQL:", e);
+    }
+  };
+
   useEffect(() => {
     if (token && tenantId) {
       fetchAllMetrics();
+      fetchSavedViews();
     }
   }, [apiBase, token, tenantId]);
+
+  // Handle Save New View to PostgreSQL
+  const handleSaveCurrentView = async () => {
+    if (!newViewName.trim()) return;
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/explorer/views`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+        body: JSON.stringify({
+          name: newViewName.trim(),
+          query_config: {
+            source: selectedSource,
+            metrics: selectedMetrics,
+            aggregation,
+            chartType,
+            dateRangePreset,
+            searchQuery,
+          },
+          is_shared: false,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setNewViewName("");
+        setIsSavingView(false);
+        fetchSavedViews();
+        if (data.view_id) setActiveViewId(data.view_id);
+      }
+    } catch (e) {
+      console.error("Failed to save view to PostgreSQL:", e);
+    }
+  };
+
+  // Handle Delete View from PostgreSQL
+  const handleDeleteView = async (viewId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/explorer/views/${viewId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      if (res.ok) {
+        if (activeViewId === viewId) setActiveViewId(null);
+        fetchSavedViews();
+      }
+    } catch (e) {
+      console.error("Failed to delete view from PostgreSQL:", e);
+    }
+  };
+
+  // Handle Load Saved View
+  const handleLoadView = (view: BackendSavedView) => {
+    setActiveViewId(view.id);
+    const cfg = view.query_config || {};
+    if (cfg.source) setSelectedSource(cfg.source);
+    if (cfg.metrics) setSelectedMetrics(cfg.metrics);
+    if (cfg.aggregation) setAggregation(cfg.aggregation);
+    if (cfg.chartType) setChartType(cfg.chartType);
+    if (cfg.dateRangePreset) setDateRangePreset(cfg.dateRangePreset);
+    if (cfg.searchQuery !== undefined) setSearchQuery(cfg.searchQuery);
+  };
 
   // Extract available data sources
   const availableSources = useMemo(() => {
@@ -229,7 +337,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
             <h2 className="text-xl font-bold text-white">Raw Data Explorer & Abfrage-Engine</h2>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
-            Direkter Zugriff auf alle Rohdatenpunkte in TimescaleDB — ohne Schnörkel. Simple & Powerful.
+            Direkter Zugriff auf alle Rohdatenpunkte in TimescaleDB. Ansichten werden dauerhaft in PostgreSQL gespeichert.
           </p>
         </div>
         <button
@@ -239,6 +347,77 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
           <span>Daten Aktualisieren</span>
         </button>
+      </div>
+
+      {/* SaaS Multi-Tenant PostgreSQL Saved Views Bar */}
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-md space-y-3">
+        <div className="flex justify-between items-center">
+          <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+            <Bookmark className="w-3.5 h-3.5" /> Gespeicherte Ansichten (PostgreSQL Synced)
+          </span>
+          {!isSavingView ? (
+            <button
+              onClick={() => setIsSavingView(true)}
+              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30 transition-colors"
+            >
+              <Save className="w-3.5 h-3.5" /> Aktuelle Ansicht Speichern
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Name der Ansicht..."
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                className="px-3 py-1 rounded-lg bg-neutral-950 border border-neutral-700 text-white text-xs outline-none focus:border-purple-500"
+              />
+              <button
+                onClick={handleSaveCurrentView}
+                className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-semibold hover:bg-purple-500"
+              >
+                Speichern
+              </button>
+              <button
+                onClick={() => setIsSavingView(false)}
+                className="p-1 text-neutral-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {savedViews.length > 0 ? (
+          <div className="flex flex-wrap gap-2">
+            {savedViews.map((view) => {
+              const isActive = activeViewId === view.id;
+              return (
+                <div
+                  key={view.id}
+                  onClick={() => handleLoadView(view)}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-all ${
+                    isActive
+                      ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-md shadow-purple-600/10 font-bold"
+                      : "bg-neutral-950 border-neutral-800/80 text-neutral-400 hover:text-white hover:border-neutral-700"
+                  }`}
+                >
+                  <span>{view.name}</span>
+                  <button
+                    onClick={(e) => handleDeleteView(view.id, e)}
+                    className="text-neutral-500 hover:text-red-400 transition-colors ml-1"
+                    title="Ansicht aus PostgreSQL löschen"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500">
+            Noch keine benutzerdefinierten Ansichten in PostgreSQL gespeichert. Konfiguriere Filter und klicke auf "Aktuelle Ansicht Speichern".
+          </p>
+        )}
       </div>
 
       {/* Raw Query & Control Bar */}
@@ -380,7 +559,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
           </div>
         </div>
 
-        {/* Dynamic Metric Selection Pills (Category-Free Raw Selector) */}
+        {/* Dynamic Metric Selection Pills */}
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">

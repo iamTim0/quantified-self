@@ -27,7 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
-from core.db.models import DataPoint, DataSource, Tenant, TenantShare, User
+from core.db.models import DataPoint, DataSource, ExplorerView, Tenant, TenantShare, User
 from core.db.session import get_session
 from core.db.tenant import TenantMiddleware, get_current_tenant_id
 from core.events.consumer import start_consumer
@@ -725,6 +725,98 @@ async def get_connector_token(
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
+
+
+# ─── Explorer Saved Views Endpoints ─────────────────────────
+
+class CreateExplorerViewRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Name of the saved view")
+    query_config: dict[str, Any] = Field(..., description="Query configuration JSON")
+    is_shared: bool = Field(False, description="Share view with workspace members")
+
+
+@app.get("/api/v1/data/explorer/views")
+async def list_explorer_views(
+    session: AsyncSession = Depends(get_session),
+):
+    """List all saved Explorer Views for the authenticated tenant from PostgreSQL."""
+    tenant_id = get_current_tenant_id()
+    stmt = (
+        select(ExplorerView)
+        .where(ExplorerView.tenant_id == tenant_id)
+        .order_by(ExplorerView.created_at.desc())
+    )
+    res = await session.execute(stmt)
+    views = res.scalars().all()
+    return {
+        "status": "success",
+        "tenant_id": tenant_id,
+        "views": [
+            {
+                "id": str(v.id),
+                "name": v.name,
+                "query_config": v.query_config,
+                "is_shared": v.is_shared,
+                "created_at": v.created_at.isoformat() if v.created_at else None,
+            }
+            for v in views
+        ],
+    }
+
+
+@app.post("/api/v1/data/explorer/views")
+async def create_explorer_view(
+    req: CreateExplorerViewRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Save a custom Explorer View query configuration directly in PostgreSQL."""
+    tenant_id = get_current_tenant_id()
+    view_id = str(uuid.uuid4())
+    new_view = ExplorerView(
+        id=view_id,
+        tenant_id=tenant_id,
+        name=req.name,
+        query_config=req.query_config,
+        is_shared=req.is_shared,
+    )
+    session.add(new_view)
+    await session.commit()
+
+    return {
+        "status": "success",
+        "message": "Ansicht erfolgreich in PostgreSQL gespeichert.",
+        "view_id": view_id,
+        "tenant_id": tenant_id,
+        "name": req.name,
+        "query_config": req.query_config,
+    }
+
+
+@app.delete("/api/v1/data/explorer/views/{view_id}")
+async def delete_explorer_view(
+    view_id: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Delete a saved Explorer View from PostgreSQL with tenant isolation."""
+    tenant_id = get_current_tenant_id()
+    stmt = select(ExplorerView).where(
+        ExplorerView.id == view_id,
+        ExplorerView.tenant_id == tenant_id,
+    )
+    res = await session.execute(stmt)
+    view = res.scalars().first()
+
+    if not view:
+        raise HTTPException(status_code=404, detail="Ansicht nicht gefunden oder keine Berechtigung.")
+
+    await session.delete(view)
+    await session.commit()
+
+    return {
+        "status": "success",
+        "message": f"Ansicht {view_id} erfolgreich aus PostgreSQL gelöscht.",
+        "view_id": view_id,
+    }
 
 
 if __name__ == "__main__":

@@ -129,3 +129,27 @@ class TenantShare(Base):
             "grantor_tenant_id", "grantee_tenant_id", "scope", name="uq_tenant_shares_grant"
         ),
     )
+
+
+class ExplorerView(Base):
+    """SaaS Multi-tenant saved Explorer View query configuration model."""
+    __tablename__ = "explorer_views"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id"), nullable=False, index=True
+    )
+    user_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    query_config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
