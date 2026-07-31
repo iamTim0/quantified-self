@@ -48,8 +48,8 @@ def upgrade() -> None:
     """)
 
     # 5. Attach Trigger to data_points table
+    op.execute("DROP TRIGGER IF EXISTS trg_data_points_populate_location_geom ON data_points;")
     op.execute("""
-    DROP TRIGGER IF EXISTS trg_data_points_populate_location_geom ON data_points;
     CREATE TRIGGER trg_data_points_populate_location_geom
     BEFORE INSERT OR UPDATE ON data_points
     FOR EACH ROW
