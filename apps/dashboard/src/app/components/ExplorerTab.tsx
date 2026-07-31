@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
-import { Filter, Search, ChevronRight, X, Bookmark, Save, Trash2, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw } from "lucide-react";
+import { Filter, Search, ChevronRight, X, Bookmark, Save, Trash2, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu } from "lucide-react";
 
 // Client-only dynamic import for ChartJS canvas
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-80 rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex items-center justify-center text-xs text-neutral-500">
-      Lade Diagramm...
+      Lade Raw Analytics Diagramm...
     </div>
   ),
 });
@@ -28,7 +28,6 @@ export interface DataPointItem {
 export interface SavedView {
   id: string;
   name: string;
-  category: string;
   source: string;
   metrics: string[];
   aggregation: "sum" | "avg" | "max" | "raw";
@@ -43,38 +42,10 @@ interface ExplorerTabProps {
   tenantId: string;
 }
 
-const CATEGORIES: Record<string, string[]> = {
-  Alle: [],
-  "Ernährung & Tagebuch": [
-    "consumed_item_calories",
-    "consumed_product",
-    "consumed_recipe_portion",
-    "yazio_calories",
-    "yazio_protein",
-    "yazio_carbs",
-    "yazio_fat",
-    "calories",
-    "protein",
-    "carbohydrates",
-    "fat",
-  ],
-  "Schlaf & Regeneration": [
-    "sleep_score",
-    "readiness_score",
-    "total_sleep_duration",
-    "deep_sleep_duration",
-    "rem_sleep_duration",
-    "hrv_balance",
-    "resting_hr",
-  ],
-  "Fitness & Aktivität": ["activity_score", "steps", "active_calories", "total_calories"],
-};
-
 const DEFAULT_PRESET_VIEWS: SavedView[] = [
   {
     id: "preset_nutrition_macros",
     name: "🍏 Yazio Makronährstoffe (Summe)",
-    category: "Ernährung & Tagebuch",
     source: "all",
     metrics: ["yazio_protein", "yazio_carbs", "yazio_fat"],
     aggregation: "sum",
@@ -85,7 +56,6 @@ const DEFAULT_PRESET_VIEWS: SavedView[] = [
   {
     id: "preset_calories",
     name: "🔥 Kalorien & Produkte",
-    category: "Ernährung & Tagebuch",
     source: "all",
     metrics: ["consumed_item_calories", "consumed_product"],
     aggregation: "sum",
@@ -96,7 +66,6 @@ const DEFAULT_PRESET_VIEWS: SavedView[] = [
   {
     id: "preset_sleep",
     name: "🌙 Schlaf & Regeneration",
-    category: "Schlaf & Regeneration",
     source: "all",
     metrics: ["sleep_score", "readiness_score"],
     aggregation: "avg",
@@ -106,14 +75,13 @@ const DEFAULT_PRESET_VIEWS: SavedView[] = [
   },
 ];
 
-const COLOR_PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#ec4899", "#a855f7", "#06b6d4", "#f43f5e"];
+const COLOR_PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#ec4899", "#a855f7", "#06b6d4", "#f43f5e", "#eab308"];
 
 export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabProps) {
   const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Active Filter Query State
-  const [selectedCategory, setSelectedCategory] = useState("Alle");
+  // Active Raw Filter Query State (No arbitrary categories)
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState("all");
   const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
@@ -126,7 +94,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
 
   // Saved Views State
   const [savedViews, setSavedViews] = useState<SavedView[]>(DEFAULT_PRESET_VIEWS);
-  const [activeViewId, setActiveViewId] = useState<string>("preset_calories");
+  const [activeViewId, setActiveViewId] = useState<string>("preset_nutrition_macros");
   const [newViewName, setNewViewName] = useState("");
   const [isSavingView, setIsSavingView] = useState(false);
 
@@ -145,7 +113,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     }
   }, [tenantId]);
 
-  // Fetch metrics data points
+  // Fetch metrics data points from Core Data Service
   const fetchAllMetrics = async () => {
     setLoading(true);
     try {
@@ -160,13 +128,13 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
         const points: DataPointItem[] = data.data_points || [];
         setDataPoints(points);
 
-        const uniqueTypes = Array.from(new Set(points.map((p) => p.metric_type)));
+        const uniqueTypes = Array.from(new Set(points.map((p) => p.metric_type))).sort();
         if (uniqueTypes.length > 0 && selectedMetrics.length === 0) {
-          setSelectedMetrics(uniqueTypes.slice(0, 2));
+          setSelectedMetrics(uniqueTypes.slice(0, 3));
         }
       }
     } catch (err) {
-      console.error("Failed to fetch data points for explorer:", err);
+      console.error("Failed to fetch data points for raw explorer:", err);
     } finally {
       setLoading(false);
     }
@@ -178,7 +146,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     }
   }, [apiBase, token, tenantId]);
 
-  // Extract available sources and metric types
+  // Extract available data sources and raw metric types with counts
   const availableSources = useMemo(() => {
     const set = new Set<string>();
     dataPoints.forEach((p) => {
@@ -188,16 +156,16 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     return Array.from(set);
   }, [dataPoints]);
 
-  const availableMetricTypes = useMemo(() => {
-    const catMetrics = CATEGORIES[selectedCategory] || [];
-    const set = new Set<string>();
+  // Extract ALL unique metrics present in DB with their item counts
+  const availableMetricsWithCount = useMemo(() => {
+    const map = new Map<string, number>();
     dataPoints.forEach((p) => {
-      if (catMetrics.length === 0 || catMetrics.includes(p.metric_type)) {
-        set.add(p.metric_type);
-      }
+      const src = p.source_type || p.metadata?.source_type || "unknown";
+      if (selectedSource !== "all" && src !== selectedSource) return;
+      map.set(p.metric_type, (map.get(p.metric_type) || 0) + 1);
     });
-    return Array.from(set);
-  }, [dataPoints, selectedCategory]);
+    return Array.from(map.entries()).sort((a, b) => b[1] - a[1]);
+  }, [dataPoints, selectedSource]);
 
   const toggleMetric = (m: string) => {
     setSelectedMetrics((prev) =>
@@ -205,10 +173,17 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     );
   };
 
+  const selectAllMetrics = () => {
+    setSelectedMetrics(availableMetricsWithCount.map(([m]) => m));
+  };
+
+  const clearMetrics = () => {
+    setSelectedMetrics([]);
+  };
+
   // Handle Load Saved View
   const handleLoadView = (view: SavedView) => {
     setActiveViewId(view.id);
-    setSelectedCategory(view.category);
     setSelectedSource(view.source);
     setSelectedMetrics(view.metrics);
     setAggregation(view.aggregation);
@@ -222,7 +197,6 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     const newView: SavedView = {
       id: `view_${Date.now()}`,
       name: newViewName.trim(),
-      category: selectedCategory,
       source: selectedSource,
       metrics: [...selectedMetrics],
       aggregation,
@@ -255,7 +229,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     }
   };
 
-  // Compute chart timeline data with deterministic date formatting
+  // Compute chart timeline data with deterministic date formatting & date range filtering
   const timelineData = useMemo(() => {
     if (selectedMetrics.length === 0 || dataPoints.length === 0) return { dates: [], series: [] };
 
@@ -325,7 +299,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
     return { dates, series };
   }, [dataPoints, selectedMetrics, selectedSource, searchQuery, aggregation, dateRangePreset, customStartDate, customEndDate]);
 
-  // Compute table data
+  // Compute raw table data
   const tableData = useMemo(() => {
     const formatDate = (isoString?: string) => {
       if (!isoString) return "";
@@ -360,20 +334,23 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
 
   return (
     <div className="space-y-8">
-      {/* Page Title & Actions */}
+      {/* Header & Refresh */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">Universal Data Explorer & Analytics Engine</h2>
-          <p className="text-xs text-neutral-400">
-            Dynamisches Abfrage-System mit Multimetrik-Aggregaten, Volltextsuche und gespeicherten Ansichten.
+          <div className="flex items-center gap-2">
+            <Database className="w-5 h-5 text-purple-400" />
+            <h2 className="text-xl font-bold text-white">Raw Data Explorer & Abfrage-Engine</h2>
+          </div>
+          <p className="text-xs text-neutral-400 mt-1">
+            Direkter Zugriff auf alle Rohdatenpunkte in TimescaleDB — ohne Einschränkungen.
           </p>
         </div>
         <button
           onClick={fetchAllMetrics}
-          className="flex items-center gap-2 px-3 py-2 text-xs font-semibold rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
+          className="flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-xl bg-neutral-900 border border-neutral-800 text-neutral-300 hover:text-white transition-colors"
         >
           <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
-          <span>Daten aktualisieren</span>
+          <span>Daten Aktualisieren</span>
         </button>
       </div>
 
@@ -381,15 +358,14 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-4 backdrop-blur-md space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
-            <Bookmark className="w-3.5 h-3.5" /> Gespeicherte Ansichten & Presets
+            <Bookmark className="w-3.5 h-3.5" /> Gespeicherte Ansichten
           </span>
           {!isSavingView ? (
             <button
               onClick={() => setIsSavingView(true)}
               className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 hover:bg-purple-600/30 transition-colors"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>Ansicht speichern</span>
+              <Save className="w-3.5 h-3.5" /> Ansicht Speichern
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -398,11 +374,11 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
                 placeholder="Name der Ansicht..."
                 value={newViewName}
                 onChange={(e) => setNewViewName(e.target.value)}
-                className="px-3 py-1 text-xs bg-neutral-950 border border-purple-500 text-white rounded-lg outline-none"
+                className="px-3 py-1 rounded-lg bg-neutral-950 border border-neutral-700 text-white text-xs outline-none focus:border-purple-500"
               />
               <button
                 onClick={handleSaveCurrentView}
-                className="px-3 py-1 text-xs bg-purple-600 hover:bg-purple-500 text-white rounded-lg font-semibold"
+                className="px-3 py-1 rounded-lg bg-purple-600 text-white text-xs font-semibold hover:bg-purple-500"
               >
                 Speichern
               </button>
@@ -417,63 +393,69 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {savedViews.map((view) => (
-            <button
-              key={view.id}
-              onClick={() => handleLoadView(view)}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                activeViewId === view.id
-                  ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
-                  : "bg-neutral-950 border border-neutral-800 text-neutral-400 hover:text-white"
-              }`}
-            >
-              <span>{view.name}</span>
-              {!view.isDefault && (
-                <Trash2
-                  className="w-3 h-3 text-neutral-400 hover:text-red-400 transition-colors"
-                  onClick={(e) => handleDeleteView(view.id, e)}
-                />
-              )}
-            </button>
-          ))}
+          {savedViews.map((view) => {
+            const isActive = activeViewId === view.id;
+            return (
+              <div
+                key={view.id}
+                onClick={() => handleLoadView(view)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium cursor-pointer transition-all ${
+                  isActive
+                    ? "bg-purple-600/20 text-purple-300 border-purple-500/50 shadow-md shadow-purple-600/10"
+                    : "bg-neutral-950 border-neutral-800/80 text-neutral-400 hover:text-white hover:border-neutral-700"
+                }`}
+              >
+                <span>{view.name}</span>
+                {!view.isDefault && (
+                  <button
+                    onClick={(e) => handleDeleteView(view.id, e)}
+                    className="text-neutral-500 hover:text-red-400 transition-colors"
+                    title="Ansicht löschen"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
-      {/* Universal Query & Filter Control Bar */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-4">
+      {/* Raw Query & Control Bar */}
+      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-5">
+        {/* Controls Row: Source, Date Range, Aggregation, Chart Type */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-neutral-800 pb-4">
-          {/* Category Tabs & Date Range Filter */}
           <div className="flex flex-wrap items-center gap-4">
+            {/* Source Provider Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 mr-1">
-                <Filter className="w-3.5 h-3.5 text-blue-400" /> Kategorie:
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-blue-400" /> Quelle:
               </span>
-              <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
-                {Object.keys(CATEGORIES).map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setSelectedCategory(cat)}
-                    className={`px-3 py-1 rounded-lg font-medium transition-colors ${
-                      selectedCategory === cat ? "bg-blue-600 text-white" : "text-neutral-400 hover:text-white"
-                    }`}
-                  >
-                    {cat}
-                  </button>
+              <select
+                value={selectedSource}
+                onChange={(e) => setSelectedSource(e.target.value)}
+                className="px-3 py-1.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white text-xs font-semibold outline-none focus:border-blue-500"
+              >
+                <option value="all">Alle Quellen</option>
+                {availableSources.map((src) => (
+                  <option key={src} value={src}>
+                    {src.toUpperCase()}
+                  </option>
                 ))}
-              </div>
+              </select>
             </div>
 
             {/* Date Range Picker Bar */}
             <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5 mr-1">
+              <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 <Calendar className="w-3.5 h-3.5 text-emerald-400" /> Zeitraum:
               </span>
               <div className="flex bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
                 {[
-                  { id: "7d", label: "7 Tage" },
-                  { id: "14d", label: "14 Tage" },
-                  { id: "30d", label: "30 Tage" },
-                  { id: "90d", label: "90 Tage" },
+                  { id: "7d", label: "7T" },
+                  { id: "14d", label: "14T" },
+                  { id: "30d", label: "30T" },
+                  { id: "90d", label: "90T" },
                   { id: "all", label: "Gesamt" },
                   { id: "custom", label: "Datum..." },
                 ].map((preset) => (
@@ -482,7 +464,7 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
                     onClick={() => setDateRangePreset(preset.id as any)}
                     className={`px-2.5 py-1 rounded-lg font-medium transition-colors ${
                       dateRangePreset === preset.id
-                        ? "bg-emerald-600 text-white"
+                        ? "bg-emerald-600 text-white font-semibold"
                         : "text-neutral-400 hover:text-white"
                     }`}
                   >
@@ -512,36 +494,36 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
           </div>
 
           {/* Aggregation Mode & Chart Type Selector */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Aggregation Mode */}
             <div className="flex items-center gap-1 bg-neutral-950 border border-neutral-800 rounded-xl p-1 text-xs">
               <span className="text-[10px] text-neutral-500 font-semibold px-2">Aggregat:</span>
               <button
                 onClick={() => setAggregation("sum")}
-                className={`px-2 py-1 rounded-lg transition-colors ${
-                  aggregation === "sum" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-neutral-400"
+                className={`px-2.5 py-1 rounded-lg transition-colors font-medium ${
+                  aggregation === "sum" ? "bg-amber-500/20 text-amber-300 border border-amber-500/30" : "text-neutral-400 hover:text-white"
                 }`}
-                title="Tages-Summe (z.B. Kalorien, Makros)"
+                title="Tages-Summe"
               >
-                Summe (SUM)
+                SUM
               </button>
               <button
                 onClick={() => setAggregation("avg")}
-                className={`px-2 py-1 rounded-lg transition-colors ${
-                  aggregation === "avg" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-neutral-400"
+                className={`px-2.5 py-1 rounded-lg transition-colors font-medium ${
+                  aggregation === "avg" ? "bg-blue-500/20 text-blue-300 border border-blue-500/30" : "text-neutral-400 hover:text-white"
                 }`}
-                title="Tages-Durchschnitt (z.B. Scores)"
+                title="Tages-Durchschnitt"
               >
-                Ø Schnitt (AVG)
+                Ø AVG
               </button>
               <button
                 onClick={() => setAggregation("max")}
-                className={`px-2 py-1 rounded-lg transition-colors ${
-                  aggregation === "max" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-neutral-400"
+                className={`px-2.5 py-1 rounded-lg transition-colors font-medium ${
+                  aggregation === "max" ? "bg-purple-500/20 text-purple-300 border border-purple-500/30" : "text-neutral-400 hover:text-white"
                 }`}
-                title="Tages-Maximalwert"
+                title="Maximalwert"
               >
-                Peak (MAX)
+                MAX
               </button>
             </div>
 
@@ -578,157 +560,203 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
           </div>
         </div>
 
-        {/* Source Dropdown & Fulltext Search */}
-        <div className="flex flex-col sm:flex-row justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-neutral-400">Quelle / Provider:</span>
-            <select
-              value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="bg-neutral-950 border border-neutral-800 text-xs text-neutral-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-purple-500"
-            >
-              <option value="all">Alle Quellen (Multi-Source)</option>
-              {availableSources.map((src) => (
-                <option key={src} value={src}>
-                  {src.toUpperCase()}
-                </option>
-              ))}
-            </select>
+        {/* Dynamic Metric Selection Pills (Category-Free Raw Selector) */}
+        <div className="space-y-2">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
+              <Cpu className="w-3.5 h-3.5 text-purple-400" /> Ausgewählte Metriken ({selectedMetrics.length}):
+            </span>
+            <div className="flex items-center gap-2 text-[11px]">
+              <button
+                onClick={selectAllMetrics}
+                className="text-purple-400 hover:underline font-medium"
+              >
+                Alle auswählen
+              </button>
+              <span className="text-neutral-700">•</span>
+              <button
+                onClick={clearMetrics}
+                className="text-neutral-400 hover:text-white font-medium"
+              >
+                Auswahl leeren
+              </button>
+            </div>
           </div>
 
-          <div className="relative w-full sm:w-72">
-            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-neutral-500" />
-            <input
-              type="text"
-              placeholder="Volltextsuche (z.B. Nektarine, Magerquark)..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-neutral-950 border border-neutral-800 text-xs text-white pl-9 pr-3 py-2 rounded-xl focus:outline-none focus:border-purple-500"
-            />
-          </div>
-        </div>
-
-        {/* Metric Selector Pills */}
-        <div className="space-y-2 pt-2">
-          <label className="text-xs font-semibold text-neutral-400">Aktive Metriken im Diagramm:</label>
-          <div className="flex flex-wrap gap-2">
-            {availableMetricTypes.map((m) => {
-              const isSelected = selectedMetrics.includes(m);
-              const idx = selectedMetrics.indexOf(m);
-              const color = isSelected ? COLOR_PALETTE[idx % COLOR_PALETTE.length] : undefined;
-
+          <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
+            {availableMetricsWithCount.map(([m, count]) => {
+              const selected = selectedMetrics.includes(m);
               return (
                 <button
                   key={m}
                   onClick={() => toggleMetric(m)}
-                  style={isSelected ? { backgroundColor: `${color}20`, borderColor: color, color } : undefined}
-                  className={`px-3 py-1.5 text-xs font-medium rounded-xl border transition-all ${
-                    isSelected
-                      ? "font-semibold shadow-sm"
-                      : "bg-neutral-950/80 border-neutral-800 text-neutral-400 hover:text-white"
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono transition-all ${
+                    selected
+                      ? "bg-purple-600 text-white border-purple-500 shadow-md shadow-purple-600/20 font-bold"
+                      : "bg-neutral-950/80 border-neutral-800 text-neutral-400 hover:text-white hover:border-neutral-700"
                   }`}
                 >
-                  {m}
+                  {selected && <Check className="w-3 h-3 text-white shrink-0" />}
+                  <span>{m}</span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.2 rounded-full font-sans ${
+                      selected ? "bg-white/20 text-white" : "bg-neutral-800 text-neutral-500"
+                    }`}
+                  >
+                    {count}
+                  </span>
                 </button>
               );
             })}
           </div>
         </div>
-      </div>
 
-      {/* Responsive Analytics Diagram Container */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-4 overflow-hidden">
-        <div className="flex justify-between items-center border-b border-neutral-800 pb-3">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <Layers className="w-4 h-4 text-purple-400" /> Analytics Trend & Vergleichs-Diagramm
-          </h3>
-          <span className="text-[11px] text-neutral-400 font-mono">
-            {timelineData.dates.length} Tage analysiert ({aggregation.toUpperCase()} Aggregation)
-          </span>
+        {/* Fulltext Search Input */}
+        <div className="relative pt-1">
+          <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-4" />
+          <input
+            type="text"
+            placeholder="Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata...)"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-neutral-950 border border-neutral-800 text-white text-xs outline-none focus:border-purple-500 transition-colors"
+          />
         </div>
-
-        <ExplorerChart
-          dates={timelineData.dates}
-          series={timelineData.series}
-          chartType={chartType}
-          aggregation={aggregation}
-        />
       </div>
 
-      {/* Raw Data Points Table */}
+      {/* Chart Render */}
+      <ExplorerChart
+        dates={timelineData.dates}
+        series={timelineData.series}
+        chartType={chartType}
+        aggregation={aggregation}
+      />
+
+      {/* Raw Data Log Table */}
       <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-4">
         <div className="flex justify-between items-center">
-          <div>
-            <h3 className="text-sm font-semibold text-neutral-200">Gefilterte Datenpunkte Log</h3>
-            <p className="text-xs text-neutral-400">Inspektion der Rohdaten ({tableData.length} Einträge)</p>
-          </div>
+          <h3 className="text-sm font-semibold text-neutral-200">
+            Rohdatenpunkte Log ({tableData.length} Treffer)
+          </h3>
+          <span className="text-[11px] text-neutral-500">Live TimescaleDB Query</span>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold">
-                <th className="pb-3 px-3">Zeitstempel</th>
-                <th className="pb-3 px-3">Quelle</th>
-                <th className="pb-3 px-3">Metrik Typ / Name</th>
-                <th className="pb-3 px-3">Wert</th>
-                <th className="pb-3 px-3 text-right">Details</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-neutral-800/60">
-              {tableData.slice(0, 50).map((dp) => (
-                <tr key={dp.id || dp.idempotency_key} className="hover:bg-neutral-800/40 transition-colors">
-                  <td className="py-3 px-3 text-neutral-300 font-mono">
-                    {new Date(dp.timestamp).toLocaleString()}
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="px-2 py-0.5 rounded-full text-[10px] uppercase font-bold bg-neutral-800 border border-neutral-700 text-purple-300">
-                      {dp.source_type || dp.metadata?.source_type || "api"}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-white font-medium">
-                    <div>{dp.metric_type}</div>
-                    {dp.metadata?.food_name && (
-                      <div className="text-xs text-blue-400 font-normal">{dp.metadata.food_name}</div>
-                    )}
-                  </td>
-                  <td className="py-3 px-3 text-emerald-400 font-bold font-mono">{dp.value}</td>
-                  <td className="py-3 px-3 text-right">
-                    <button
-                      onClick={() => setInspectPoint(dp)}
-                      className="p-1 text-neutral-400 hover:text-white transition-colors"
-                      title="Metadata Inspektor öffnen"
-                    >
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </td>
+        {tableData.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">
+                  <th className="pb-3 px-3">Zeitstempel</th>
+                  <th className="pb-3 px-3">Quelle</th>
+                  <th className="pb-3 px-3">Metrik</th>
+                  <th className="pb-3 px-3">Wert</th>
+                  <th className="pb-3 px-3">Metadata (JSON)</th>
+                  <th className="pb-3 px-3 text-right">Details</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-neutral-800/60">
+                {tableData.slice(0, 100).map((pt) => {
+                  const foodName = pt.metadata?.food_name || pt.metadata?.name;
+                  return (
+                    <tr key={pt.id} className="hover:bg-neutral-800/40 transition-colors font-mono">
+                      <td className="py-2.5 px-3 text-neutral-400 text-[11px]">
+                        {pt.timestamp?.replace("T", " ")?.replace("Z", "") || "N/A"}
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-white uppercase text-[10px]">
+                        <span className="px-2 py-0.5 rounded bg-neutral-800 text-neutral-300">
+                          {pt.source_type || pt.metadata?.source_type || "yazio"}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-purple-300 font-medium">
+                        {pt.metric_type}
+                      </td>
+                      <td className="py-2.5 px-3 text-amber-400 font-bold">
+                        {pt.value}
+                      </td>
+                      <td className="py-2.5 px-3 text-neutral-400 max-w-xs truncate text-[11px]">
+                        {foodName ? (
+                          <span className="text-emerald-400 font-sans font-semibold mr-1.5">
+                            {foodName}
+                          </span>
+                        ) : null}
+                        <span className="text-neutral-500">
+                          {JSON.stringify(pt.metadata || {})}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <button
+                          onClick={() => setInspectPoint(pt)}
+                          className="p-1 text-neutral-400 hover:text-purple-400 transition-colors"
+                          title="JSON Inspizieren"
+                        >
+                          <ChevronRight className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-xs text-neutral-500 py-4">Keine Datenpunkte für die aktuelle Abfrage gefunden.</p>
+        )}
       </div>
 
-      {/* Metadata Inspector Dialog */}
+      {/* JSON Inspector Modal */}
       {inspectPoint && (
-        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-neutral-950 border border-neutral-800 p-6 shadow-2xl space-y-4">
-            <div className="flex justify-between items-center border-b border-neutral-800 pb-3">
-              <h4 className="text-sm font-bold text-white">DataPoint Metadata Inspector</h4>
-              <button onClick={() => setInspectPoint(null)} className="text-neutral-400 hover:text-white">
-                <X className="w-4 h-4" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-neutral-950 border border-neutral-800 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center pb-3 border-b border-neutral-800">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-purple-400" />
+                <h3 className="text-sm font-bold text-white">Rohdaten-Punkt Inspektor</h3>
+              </div>
+              <button
+                onClick={() => setInspectPoint(null)}
+                className="text-neutral-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="space-y-2 text-xs">
-              <p><span className="text-neutral-400">ID:</span> <span className="font-mono text-white">{inspectPoint.id}</span></p>
-              <p><span className="text-neutral-400">Metric:</span> <span className="text-purple-300 font-semibold">{inspectPoint.metric_type}</span></p>
-              <p><span className="text-neutral-400">Idempotency Key:</span> <span className="font-mono text-neutral-400 break-all">{inspectPoint.idempotency_key}</span></p>
-              <div className="mt-3">
-                <span className="text-neutral-400 block mb-1">Metadata Payload:</span>
-                <pre className="bg-neutral-900 p-3 rounded-xl border border-neutral-800 text-emerald-400 font-mono text-[11px] overflow-x-auto max-h-60">
+
+            <div className="space-y-2 text-xs font-mono">
+              <div className="flex justify-between text-neutral-400">
+                <span>ID:</span>
+                <span className="text-white">{inspectPoint.id}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Metric Type:</span>
+                <span className="text-purple-300 font-bold">{inspectPoint.metric_type}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Value:</span>
+                <span className="text-amber-400 font-bold">{inspectPoint.value}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Timestamp:</span>
+                <span className="text-neutral-300">{inspectPoint.timestamp}</span>
+              </div>
+              <div className="flex justify-between text-neutral-400">
+                <span>Idempotency Key:</span>
+                <span className="text-neutral-500 text-[10px] truncate max-w-[200px]">{inspectPoint.idempotency_key}</span>
+              </div>
+
+              <div className="pt-2">
+                <span className="text-neutral-400 block mb-1">Metadata (JSONB):</span>
+                <pre className="bg-neutral-900 p-3 rounded-xl border border-neutral-800 text-emerald-300 text-[11px] overflow-x-auto max-h-48">
                   {JSON.stringify(inspectPoint.metadata || {}, null, 2)}
                 </pre>
               </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setInspectPoint(null)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white transition-colors"
+              >
+                Schließen
+              </button>
             </div>
           </div>
         </div>
