@@ -51,7 +51,7 @@ export default function TopHeader({
           className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
         >
           <Share2 className="w-3.5 h-3.5 text-slate-500" />
-          <span>Export</span>
+          <span>Export & Teilen</span>
         </button>
 
         {/* Add Connector Button (Primary Dark Emerald) */}
@@ -65,16 +65,7 @@ export default function TopHeader({
 
         <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
 
-        {/* Notification Icons */}
-        <button className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 shadow-sm transition-all">
-          <Mail className="w-4 h-4" />
-        </button>
-        <button className="w-10 h-10 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-50 shadow-sm transition-all relative">
-          <Bell className="w-4 h-4" />
-          <span className="w-2 h-2 rounded-full bg-emerald-500 absolute top-2 right-2 border-2 border-white" />
-        </button>
-
-        {/* User Profile Pill (Reference Image Style) */}
+        {/* User Profile Pill */}
         <button
           onClick={onNavigateToProfile}
           className="flex items-center gap-3 pl-2 pr-3 py-1.5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm group"
