@@ -35,7 +35,8 @@ async def test_get_consumed_items_401():
 @pytest.mark.asyncio
 async def test_get_consumed_items_429():
     mock_response = httpx.Response(status_code=429, headers={"Retry-After": "30"})
-    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_response):
+    with patch("httpx.AsyncClient.get", new_callable=AsyncMock, return_value=mock_response), \
+         patch("asyncio.sleep", new_callable=AsyncMock):
         client = YazioClient(access_token="test_token")
         with pytest.raises(YazioRateLimitError) as exc_info:
             await client.get_consumed_items(date="2026-07-26")

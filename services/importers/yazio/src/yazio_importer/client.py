@@ -116,6 +116,8 @@ class YazioClient:
                         raise YazioUnauthorizedError("Yazio access token is invalid or expired.")
                     if response.status_code == 429:
                         retry_after = int(response.headers.get("Retry-After", 10))
+                        if attempt == max_retries - 1:
+                            raise YazioRateLimitError(retry_after=retry_after)
                         backoff = retry_after + (attempt * 5) + random.uniform(1.0, 3.0)
                         logger.warning(
                             f"Yazio API 429 Rate Limit (attempt {attempt + 1}/{max_retries}). "
