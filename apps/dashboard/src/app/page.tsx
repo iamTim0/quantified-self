@@ -8,6 +8,7 @@ import ConnectorsPage, { ConnectorInfo } from "./components/ConnectorsPage";
 import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
+import ProfileTab from "./components/ProfileTab";
 import { SummaryMetrics } from "./components/MetricCards";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -233,6 +234,25 @@ export default function DashboardPage() {
             token={token}
             tenantId={tenantId}
             onOpenConfigureModal={(c) => handleOpenConfigureModal(c)}
+          />
+        )}
+
+        {activeTab === "profile" && (
+          <ProfileTab
+            apiBase={API_BASE}
+            token={token}
+            tenantId={tenantId}
+            userName={userName}
+            userEmail={userEmail}
+            userRole={userRole}
+            tenantName={tenantName}
+            onUpdateProfile={(name, email) => {
+              setUserName(name);
+              setUserEmail(email);
+              localStorage.setItem("qs_user_name", name);
+              localStorage.setItem("qs_user_email", email);
+            }}
+            onLogout={handleLogout}
           />
         )}
 

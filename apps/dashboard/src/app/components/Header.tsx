@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { Activity, Plus, Share2, LogOut, LayoutDashboard, LineChart, Plug } from "lucide-react";
+import { Activity, Plus, Share2, LogOut, LayoutDashboard, LineChart, Plug, User } from "lucide-react";
 
-export type TabType = "overview" | "explorer" | "connectors";
+export type TabType = "overview" | "explorer" | "connectors" | "profile";
 
 interface HeaderProps {
   tenantId: string;
@@ -30,12 +30,23 @@ export default function Header({
   onShare,
   onLogout,
 }: HeaderProps) {
+  const getInitials = (name: string) => {
+    if (!name) return "QS";
+    const parts = name.trim().split(" ");
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
     <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 pb-6 border-b border-neutral-800/80">
       <div className="flex items-center gap-4">
-        <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-500/20">
-          <Activity className="w-6 h-6" />
-        </div>
+        <button
+          onClick={() => onTabChange("profile")}
+          className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-500 to-indigo-600 flex items-center justify-center text-white font-bold text-sm shadow-lg shadow-purple-500/20 hover:scale-105 transition-transform"
+          title="Zum Profil"
+        >
+          {getInitials(userName)}
+        </button>
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-white">{tenantName}</h1>
@@ -44,7 +55,7 @@ export default function Header({
             </span>
           </div>
           <p className="text-xs text-neutral-400">
-            Welcome back, {userName} <span className="text-neutral-600">({userEmail})</span>
+            Willkommen zurück, {userName} <span className="text-neutral-600">({userEmail})</span>
           </p>
         </div>
       </div>
@@ -83,6 +94,17 @@ export default function Header({
         >
           <Plug className="w-3.5 h-3.5" />
           <span>Connectors</span>
+        </button>
+        <button
+          onClick={() => onTabChange("profile")}
+          className={`flex items-center gap-2 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+            activeTab === "profile"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/20"
+              : "text-neutral-400 hover:text-white"
+          }`}
+        >
+          <User className="w-3.5 h-3.5" />
+          <span>Profil</span>
         </button>
       </nav>
 
