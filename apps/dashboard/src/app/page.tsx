@@ -14,6 +14,7 @@ import ProfileTab from "./components/ProfileTab";
 import { SummaryMetrics } from "./components/MetricCards";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const DEFAULT_TENANT_ID = "56fe04c2-b103-40f1-b5f4-2326d1c52830";
 
 export default function DashboardPage() {
   const [mounted, setMounted] = useState(false);
@@ -37,7 +38,7 @@ export default function DashboardPage() {
   };
 
   const [token, setToken] = useState("");
-  const [tenantId, setTenantId] = useState("");
+  const [tenantId, setTenantId] = useState(DEFAULT_TENANT_ID);
   const [userName, setUserName] = useState("Timo");
   const [userEmail, setUserEmail] = useState("owner@example.com");
   const [userRole, setUserRole] = useState("owner");
@@ -68,9 +69,12 @@ export default function DashboardPage() {
     const savedUserEmail = localStorage.getItem("qs_user_email");
     const savedUserRole = localStorage.getItem("qs_user_role");
 
-    if (savedToken && savedTenantId) {
+    const activeTenant = savedTenantId || DEFAULT_TENANT_ID;
+    setTenantId(activeTenant);
+    if (!savedTenantId) localStorage.setItem("qs_tenant_id", activeTenant);
+
+    if (savedToken) {
       setToken(savedToken);
-      setTenantId(savedTenantId);
       if (savedUserName) setUserName(savedUserName);
       if (savedUserEmail) setUserEmail(savedUserEmail);
       if (savedUserRole) setUserRole(savedUserRole);
@@ -79,19 +83,21 @@ export default function DashboardPage() {
   }, []);
 
   const handleLogin = (data: UserAuthData) => {
+    const activeTenant = data.tenantId || DEFAULT_TENANT_ID;
     setToken(data.token);
-    setTenantId(data.tenantId);
+    setTenantId(activeTenant);
     setUserName(data.userName);
     setUserEmail(data.userEmail);
     setUserRole(data.userRole);
 
     localStorage.setItem("qs_token", data.token);
-    localStorage.setItem("qs_tenant_id", data.tenantId);
+    localStorage.setItem("qs_tenant_id", activeTenant);
     localStorage.setItem("qs_user_name", data.userName);
     localStorage.setItem("qs_user_email", data.userEmail);
     localStorage.setItem("qs_user_role", data.userRole);
 
     setIsAuthenticated(true);
+    triggerRefresh();
   };
 
   const handleLogout = () => {
@@ -101,7 +107,7 @@ export default function DashboardPage() {
     localStorage.removeItem("qs_user_email");
     localStorage.removeItem("qs_user_role");
     setToken("");
-    setTenantId("");
+    setTenantId(DEFAULT_TENANT_ID);
     setIsAuthenticated(false);
   };
 
@@ -125,18 +131,19 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (!mounted || !isAuthenticated || !token || !tenantId) return;
+    if (!mounted || !token) return;
 
     let isMounted = true;
+    const activeTenant = tenantId || DEFAULT_TENANT_ID;
 
     async function loadDashboardData() {
       try {
         const [summaryRes, metricsRes] = await Promise.all([
           fetch(`${API_BASE}/api/v1/data/metrics/summary`, {
-            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": tenantId },
+            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
           fetch(`${API_BASE}/api/v1/data/metrics?limit=300`, {
-            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": tenantId },
+            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
         ]);
 
