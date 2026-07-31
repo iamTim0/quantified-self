@@ -68,3 +68,19 @@ CREATE TABLE tenant_shares (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     UNIQUE (grantor_tenant_id, grantee_tenant_id, scope)
 );
+
+-- Permanent Seeding for Primary Developer Workspace & Account
+INSERT INTO tenants (id, name)
+VALUES ('56fe04c2-b103-40f1-b5f4-2326d1c52830', 'Timo''s Workspace')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO users (id, tenant_id, email, password_hash, name, role)
+VALUES (
+    '56fe04c2-b103-40f1-b5f4-2326d1c52830',
+    '56fe04c2-b103-40f1-b5f4-2326d1c52830',
+    'owner@example.com',
+    '***REMOVED-PASSWORD-HASH***',
+    'Timo',
+    'owner'
+)
+ON CONFLICT (id) DO NOTHING;

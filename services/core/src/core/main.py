@@ -1,3 +1,27 @@
+async def ensure_default_tenant_seeded():
+    try:
+        from core.db.session import AsyncSessionLocal
+        async with AsyncSessionLocal() as session:
+            tenant_id = "56fe04c2-b103-40f1-b5f4-2326d1c52830"
+            t_stmt = select(Tenant).where(Tenant.id == tenant_id)
+            res = await session.execute(t_stmt)
+            if not res.scalar_one_or_none():
+                tenant = Tenant(id=tenant_id, name="Timo's Workspace")
+                user = User(
+                    id=tenant_id,
+                    tenant_id=tenant_id,
+                    email="owner@example.com",
+                    password_hash="***REMOVED-PASSWORD-HASH***",
+                    name="Timo",
+                    role="owner",
+                )
+                session.add(tenant)
+                session.add(user)
+                await session.commit()
+                logger.info("Successfully auto-seeded default developer tenant & user in PostgreSQL.")
+    except Exception as e:
+        logger.warning(f"Failed to auto-seed default workspace: {e}")
+
 # ruff: noqa: B008
 """Core Data Service FastAPI Entry Point.
 
@@ -68,6 +92,7 @@ async def lifespan(app: FastAPI):
         yield
         return
     try:
+        await ensure_default_tenant_seeded()
         nc = await start_consumer()
         app.state.nats_client = nc
         yield
