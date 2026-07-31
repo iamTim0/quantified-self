@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, Mail, User, ArrowRight, Activity } from "lucide-react";
+import { Lock, Mail, User, ArrowRight, Activity, AlertCircle } from "lucide-react";
 
 export interface UserAuthData {
   token: string;
@@ -42,7 +42,7 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
       if ("msg" in detail) return String((detail as { msg: unknown }).msg);
       return JSON.stringify(detail);
     }
-    return "Authentication failed";
+    return "Authentifizierung fehlgeschlagen";
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -105,6 +105,8 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
     }
   };
 
+  const isAlreadyRegistered = error.toLowerCase().includes("already registered") || error.toLowerCase().includes("bereits registriert");
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
       {/* Background Orbs */}
@@ -126,8 +128,23 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
           </h2>
           
           {error && (
-            <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
-              {error}
+            <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium space-y-1">
+              <div className="flex items-center gap-1.5 font-bold">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{error}</span>
+              </div>
+              {isAlreadyRegistered && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLogin(true);
+                    setError("");
+                  }}
+                  className="mt-1 text-xs font-bold text-[#0d5c3a] hover:underline block"
+                >
+                  ➜ Hier klicken, um dich direkt mit dieser E-Mail anzumelden.
+                </button>
+              )}
             </div>
           )}
 
