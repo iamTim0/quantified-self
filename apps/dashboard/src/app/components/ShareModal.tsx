@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { X, Share2, Shield, Trash2 } from "lucide-react";
+import { X, Share2, Shield, Trash2, CheckCircle2 } from "lucide-react";
 
 interface ShareItem {
   id: string;
@@ -68,10 +68,10 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.detail || "Failed to share data");
+        throw new Error(data.detail || "Freigabe fehlgeschlagen.");
       }
       
-      setSuccess(`Data successfully shared with ${email}`);
+      setSuccess(`Daten erfolgreich mit ${email} geteilt.`);
       setEmail("");
       
       const refreshRes = await fetch(`${apiBase}/api/v1/data/shares`, {
@@ -106,18 +106,18 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-all">
-      <div className="bg-neutral-900 border border-neutral-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        <div className="p-6 border-b border-neutral-800 flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md transition-all">
+      <div className="bg-white border border-slate-200/90 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
+            <div className="p-2 bg-emerald-50 rounded-2xl text-[#0d5c3a] border border-emerald-200">
               <Share2 className="w-5 h-5" />
             </div>
-            <h2 className="text-xl font-semibold text-white">Share Data</h2>
+            <h2 className="text-lg font-extrabold text-slate-900">Daten Teilen</h2>
           </div>
           <button 
             onClick={handleClose}
-            className="p-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -125,50 +125,50 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
 
         <div className="p-6 space-y-6">
           <form onSubmit={handleShare} className="space-y-4">
-            <p className="text-sm text-neutral-400">
-              Grant a friend, coach, or doctor secure read-only access to your health metrics.
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Gewähre Trainern, Ärzten oder Partnern sicheren Lesezugriff auf deine Gesundheitsdaten (Tenant Shared Read Access).
             </p>
             
-            {error && <p className="text-sm text-red-400">{error}</p>}
-            {success && <p className="text-sm text-green-400">{success}</p>}
+            {error && <p role="alert" className="text-xs font-semibold text-rose-700 bg-rose-50 p-3 rounded-2xl border border-rose-200">{error}</p>}
+            {success && <p className="text-xs font-semibold text-emerald-800 bg-emerald-50 p-3 rounded-2xl border border-emerald-200 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" />{success}</p>}
 
             <div>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="grantee@example.com"
+                placeholder="empfaenger@example.com"
                 required
-                className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 px-4 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 px-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
               />
             </div>
             
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-xl py-2.5 transition-colors disabled:opacity-50"
+              className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 text-xs transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
-              {loading ? "Sharing..." : "Send Invite"}
+              {loading ? "Wird freigegeben..." : "Einladung Senden"}
             </button>
           </form>
 
           {shares.length > 0 && (
-            <div className="pt-6 border-t border-neutral-800">
-              <h3 className="text-sm font-medium text-neutral-400 mb-3 uppercase tracking-wider">Active Grants</h3>
-              <div className="space-y-3">
+            <div className="pt-4 border-t border-slate-100">
+              <h3 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">Aktive Freigaben</h3>
+              <div className="space-y-2">
                 {shares.map(share => (
-                  <div key={share.id} className="flex items-center justify-between p-3 rounded-xl border border-neutral-800 bg-neutral-950/50">
+                  <div key={share.id} className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 bg-slate-50">
                     <div className="flex items-center gap-3">
-                      <Shield className="w-4 h-4 text-neutral-500" />
+                      <Shield className="w-4 h-4 text-[#0d5c3a]" />
                       <div>
-                        <p className="text-sm text-white font-mono">{share.grantee_tenant_id?.substring(0, 8)}...</p>
-                        <p className="text-xs text-neutral-500">{share.scope}</p>
+                        <p className="text-xs text-slate-900 font-bold font-mono">{share.grantee_tenant_id?.substring(0, 8)}...</p>
+                        <p className="text-[10px] text-slate-400">{share.scope}</p>
                       </div>
                     </div>
                     <button 
                       onClick={() => handleRevoke(share.id)}
-                      className="p-2 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      title="Revoke Access"
+                      className="p-1.5 text-rose-600 hover:bg-rose-100 rounded-xl transition-colors"
+                      title="Freigabe widerrufen"
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

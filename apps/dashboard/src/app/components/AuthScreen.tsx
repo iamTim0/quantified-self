@@ -106,27 +106,27 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 flex flex-col justify-center items-center p-4 relative overflow-hidden">
-      {/* Dynamic Background Elements */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-600/20 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-blue-600/20 rounded-full blur-[120px] pointer-events-none" />
+    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+      {/* Background Orbs */}
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="z-10 w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-neutral-900 border border-neutral-800 mb-4 shadow-xl">
-            <Activity className="w-8 h-8 text-purple-400" />
+          <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-[#0d5c3a] text-white mb-4 shadow-xl shadow-[#0d5c3a]/20">
+            <Activity className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Quantified Self</h1>
-          <p className="text-neutral-400 mt-2">Unlock your personal data insights.</p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Quantified Self</h1>
+          <p className="text-slate-500 text-xs mt-1.5 font-medium">Deine persönliche Gesundheits- & Analytics-Plattform.</p>
         </div>
 
-        <div className="bg-neutral-900/50 backdrop-blur-xl border border-neutral-800/50 rounded-2xl p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-white mb-6">
-            {isLogin ? "Welcome back" : "Create your account"}
+        <div className="glass-card bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xl">
+          <h2 className="text-xl font-extrabold text-slate-900 mb-6">
+            {isLogin ? "Willkommen zurück" : "Konto erstellen"}
           </h2>
           
           {error && (
-            <div className="mb-4 p-3 rounded-lg bg-red-900/30 border border-red-900/50 text-red-400 text-sm">
+            <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium">
               {error}
             </div>
           )}
@@ -134,15 +134,15 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div>
-                <label className="block text-sm font-medium text-neutral-400 mb-1">Name</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Name</label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3 w-5 h-5 text-neutral-500" />
+                  <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                   <input 
                     type="text" 
                     value={name}
                     onChange={e => setName(e.target.value)}
                     required 
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                     placeholder="Jane Doe"
                   />
                 </div>
@@ -150,30 +150,30 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
             )}
             
             <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Email</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">E-Mail</label>
               <div className="relative">
-                <Mail className="absolute left-3 top-3 w-5 h-5 text-neutral-500" />
+                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
                   type="email" 
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   required 
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                   placeholder="you@example.com"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-400 mb-1">Password</label>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Passwort</label>
               <div className="relative">
-                <Lock className="absolute left-3 top-3 w-5 h-5 text-neutral-500" />
+                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
                   type="password" 
                   value={password}
                   onChange={e => setPassword(e.target.value)}
                   required 
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-xl py-2.5 pl-10 pr-4 text-white placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                   placeholder="••••••••"
                 />
               </div>
@@ -182,22 +182,22 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
             <button 
               type="submit" 
               disabled={loading}
-              className="w-full bg-white hover:bg-neutral-200 text-black font-semibold rounded-xl py-2.5 px-4 mt-2 transition-all flex items-center justify-center gap-2 group disabled:opacity-50"
+              className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 transition-all flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
-              {loading ? "Please wait..." : isLogin ? "Sign In" : "Sign Up"}
+              {loading ? "Bitte warten..." : isLogin ? "Anmelden" : "Konto Registrieren"}
               {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
             </button>
           </form>
 
-          <div className="mt-6 text-center text-sm">
-            <span className="text-neutral-500">
-              {isLogin ? "Don't have an account?" : "Already have an account?"}
+          <div className="mt-6 text-center text-xs font-medium">
+            <span className="text-slate-500">
+              {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
             </span>
             <button 
               onClick={() => { setIsLogin(!isLogin); setError(""); }}
-              className="ml-2 text-purple-400 hover:text-purple-300 font-medium transition-colors"
+              className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
             >
-              {isLogin ? "Sign up" : "Sign in"}
+              {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
             </button>
           </div>
         </div>

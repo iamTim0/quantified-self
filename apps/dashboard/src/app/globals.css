@@ -1,22 +1,33 @@
 @import "tailwindcss";
 
 :root {
-  --bg-app: #f1f5f9;
-  --bg-shell: #f8fafc;
-  --card-bg: #ffffff;
-  --card-border: rgba(226, 232, 240, 0.8);
-  --accent-emerald: #0d5c3a;
-  --accent-emerald-hover: #08432a;
-  --accent-mint: #10b981;
-  --accent-mint-light: #d1fae5;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --text-muted: #94a3b8;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #0d5c3a;
+  --primary-hover: #08432a;
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #10b981;
+  --accent-light: #d1fae5;
+  --accent-foreground: #047857;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: #0d5c3a;
+  --radius: 1.25rem;
 }
 
 body {
-  background-color: var(--bg-app);
-  color: var(--text-primary);
+  background-color: var(--background);
+  color: var(--foreground);
   min-height: 100vh;
   font-family: var(--font-outfit), 'Outfit', system-ui, -apple-system, sans-serif;
 }
@@ -26,15 +37,15 @@ code, pre, .font-mono {
 }
 
 .glass-card {
-  background: #ffffff;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 20px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.03), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
 }
 
 .dark-emerald-card {
   background: linear-gradient(145deg, #0d5c3a 0%, #08432a 100%);
-  border-radius: 20px;
+  border-radius: var(--radius);
   color: #ffffff;
   box-shadow: 0 10px 25px -5px rgba(13, 92, 58, 0.25);
 }

@@ -1,18 +1,16 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Plug, RefreshCw, CheckCircle2, AlertCircle, ShieldCheck, Key, Trash2, Clock, Calendar, Settings } from "lucide-react";
+import { Plug, Plus, RefreshCw, CheckCircle2, ShieldCheck, Settings, AlertTriangle, Key } from "lucide-react";
 
 export interface ConnectorInfo {
   id: string;
   source_type: string;
-  status: string;
-  masked_token: string;
-  poll_interval_hours?: number;
-  lookback_days?: number;
+  status: "active" | "inactive" | "error";
+  poll_interval_hours: number;
+  lookback_days: number;
   last_sync_at?: string;
-  created_at?: string;
-  updated_at?: string;
+  has_token?: boolean;
 }
 
 interface ConnectorsPageProps {
@@ -31,9 +29,9 @@ export default function ConnectorsPage({
   const [connectors, setConnectors] = useState<ConnectorInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
-  const [syncStatus, setSyncStatus] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [syncMessage, setSyncMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  async function fetchConnectors() {
+  const fetchConnectors = async () => {
     setLoading(true);
     try {
       const res = await fetch(`${apiBase}/api/v1/data/sources`, {
@@ -51,163 +49,104 @@ export default function ConnectorsPage({
     } finally {
       setLoading(false);
     }
-  }
+  };
 
   useEffect(() => {
-    if (token && tenantId) {
-      fetchConnectors();
-    }
-  }, [apiBase, token, tenantId]);
-
-  const handleDeleteConnector = async (sourceType: string) => {
-    if (!confirm(`Möchtest Du die Zugangsdaten für ${sourceType.toUpperCase()} wirklich löschen?`)) {
-      return;
-    }
-    setSyncStatus(null);
-    try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Tenant-ID": tenantId,
-        },
-      });
-      if (res.ok) {
-        setSyncStatus({
-          type: "success",
-          message: `Zugangsdaten für ${sourceType.toUpperCase()} wurden gelöscht.`,
-        });
-        fetchConnectors();
-      } else {
-        const data = await res.json().catch(() => ({}));
-        setSyncStatus({
-          type: "error",
-          message: data.detail || `Fehler beim Löschen des Connectors ${sourceType.toUpperCase()}`,
-        });
-      }
-    } catch (err) {
-      setSyncStatus({
-        type: "error",
-        message: `Fehler beim Löschen des Connectors ${sourceType.toUpperCase()}`,
-      });
-    }
-  };
+    fetchConnectors();
+  }, [token, tenantId]);
 
   const handleTriggerSync = async (sourceType: string) => {
     setSyncingSource(sourceType);
-    setSyncStatus(null);
+    setSyncMessage(null);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}/sync`, {
+      const res = await fetch(`${apiBase}/api/v1/data/sources/sync`, {
         method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
+        body: JSON.stringify({ source_type: sourceType }),
       });
+      const data = await res.json();
       if (res.ok) {
-        setSyncStatus({
-          type: "success",
-          message: `Sync gestartet für ${sourceType.toUpperCase()}! Import läuft im Hintergrund.`,
-        });
+        setSyncMessage({ text: `Sync getriggert: ${data.message || "Erfolgreich gequeut"}`, type: "success" });
         fetchConnectors();
       } else {
-        const errData = await res.json().catch(() => ({}));
-        const detail = errData.detail || `Fehler beim Sync für ${sourceType.toUpperCase()}`;
-        setSyncStatus({
-          type: "error",
-          message: detail === "Connector not configured" ? `${sourceType.toUpperCase()} Connector ist noch nicht konfiguriert.` : detail,
-        });
+        setSyncMessage({ text: `Sync fehlgeschlagen: ${data.detail || "Unbekannter Fehler"}`, type: "error" });
       }
-    } catch (err) {
-      setSyncStatus({
-        type: "error",
-        message: `Fehler beim Auslösen des Syncs für ${sourceType.toUpperCase()}.`,
-      });
+    } catch (err: any) {
+      setSyncMessage({ text: `Netzwerkfehler beim Sync Start: ${err.message}`, type: "error" });
     } finally {
       setSyncingSource(null);
-    }
-  };
-
-  const formatLastSync = (isoString?: string) => {
-    if (!isoString) return "Noch nie synchronisiert";
-    try {
-      const d = new Date(isoString);
-      const now = new Date();
-      const diffMs = now.getTime() - d.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      if (diffMins < 1) return "Gerade eben";
-      if (diffMins < 60) return `Vor ${diffMins} Min (${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
-      const diffHours = Math.floor(diffMins / 60);
-      if (diffHours < 24) return `Vor ${diffHours} Std (${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`;
-      return d.toLocaleDateString([], { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    } catch {
-      return isoString;
+      setTimeout(() => setSyncMessage(null), 5000);
     }
   };
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      {/* Header Bar */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">Integrations & Connection Manager</h2>
-          <p className="text-xs text-neutral-400">
-            Übersicht und Konfiguration aller verknüpften Datenquellen, Sync-Zeiten und Abfrage-Frequenzen.
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Connectoren & Ingestion</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Verwalte verschlüsselte API-Tokens und NATS JetStream Event Importer.
           </p>
         </div>
         <button
           onClick={() => onOpenConfigureModal()}
-          className="flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg shadow-blue-600/20"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white text-xs font-bold transition-all shadow-md shadow-[#0d5c3a]/20"
         >
-          <Plug className="w-3.5 h-3.5" />
-          <span>Neue Verbindung hinzufügen</span>
+          <Plus className="w-4 h-4" />
+          <span>Neuen Connector Verknüpfen</span>
         </button>
       </div>
 
-      {syncStatus && (
+      {syncMessage && (
         <div
-          className={`rounded-xl border p-3 text-xs flex items-center gap-2 ${
-            syncStatus.type === "success"
-              ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-300"
-              : "border-red-500/20 bg-red-500/10 text-red-300"
+          className={`p-4 rounded-2xl border text-xs flex items-center gap-2 ${
+            syncMessage.type === "success"
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-rose-50 border-rose-200 text-rose-800"
           }`}
         >
-          {syncStatus.type === "success" ? (
-            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+          {syncMessage.type === "success" ? (
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           ) : (
-            <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
           )}
-          <span>{syncStatus.message}</span>
+          <span>{syncMessage.text}</span>
         </div>
       )}
 
-      {/* Overview Card for Yazio */}
+      {/* Yazio Overview Feature Card */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 flex flex-col justify-between space-y-4 backdrop-blur-md">
+        <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl flex flex-col justify-between space-y-4">
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">Nutrition Connector</span>
-              <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
-                <ShieldCheck className="w-3 h-3" /> Aktiv
+              <span className="text-xs font-bold uppercase tracking-wider text-amber-600">Nutrition Connector</span>
+              <span className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> Aktiv
               </span>
             </div>
-            <h3 className="text-lg font-bold text-white">Yazio Nutrition v15</h3>
-            <p className="text-xs text-neutral-400 leading-relaxed">
+            <h3 className="text-lg font-bold text-slate-900">Yazio Nutrition v15</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
               Automatischer Import von Mahlzeiten, Lebensmittelnamen, Kalorien und Makronährstoffen.
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 pt-2">
             <button
               onClick={() => handleTriggerSync("yazio")}
               disabled={syncingSource === "yazio"}
-              className="flex-1 flex items-center justify-center gap-2 py-2 text-xs font-semibold rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-colors disabled:opacity-50"
+              className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncingSource === "yazio" ? "animate-spin" : ""}`} />
               <span>{syncingSource === "yazio" ? "Import läuft..." : "Jetzt Synchronisieren"}</span>
             </button>
             <button
-              onClick={() => onOpenConfigureModal(connectors.find(c => c.source_type === "yazio"))}
-              className="p-2 text-xs font-semibold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors"
+              onClick={() => onOpenConfigureModal(connectors.find((c) => c.source_type === "yazio"))}
+              className="p-2.5 text-xs font-semibold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors"
               title="Einstellungen & Frequenz anpassen"
             >
               <Settings className="w-4 h-4" />
@@ -217,13 +156,13 @@ export default function ConnectorsPage({
       </div>
 
       {/* Main Connected Sources Table */}
-      <div className="rounded-2xl border border-neutral-800 bg-neutral-900/60 p-6 backdrop-blur-md space-y-4">
-        <h3 className="text-sm font-semibold text-neutral-200">Verknüpfte Connections & Sync-Status</h3>
+      <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
+        <h3 className="text-sm font-bold text-slate-900">Verknüpfte Connections & Sync-Status</h3>
         {connectors.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-neutral-800 text-neutral-400 uppercase tracking-wider font-semibold text-[11px]">
+                <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
                   <th className="pb-3 px-3">Connection / Quelle</th>
                   <th className="pb-3 px-3">Status</th>
                   <th className="pb-3 px-3">Letzter Sync</th>
@@ -231,60 +170,43 @@ export default function ConnectorsPage({
                   <th className="pb-3 px-3 text-right">Aktionen</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-neutral-800/60">
+              <tbody className="divide-y divide-slate-100">
                 {connectors.map((c) => (
-                  <tr key={c.id} className="hover:bg-neutral-800/40 transition-colors">
-                    <td className="py-3 px-3">
+                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="py-3.5 px-3">
                       <div className="flex items-center gap-2.5">
-                        <Key className="w-4 h-4 text-purple-400" />
+                        <Key className="w-4 h-4 text-[#0d5c3a]" />
                         <div>
-                          <span className="font-bold text-white uppercase">{c.source_type}</span>
-                          <span className="ml-2 font-mono text-neutral-500">({c.masked_token})</span>
+                          <div className="font-bold text-slate-900 capitalize">{c.source_type}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">Fernet AES-256 Encrypted</div>
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    <td className="py-3.5 px-3">
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-emerald-50 text-emerald-800 border border-emerald-200">
                         {c.status}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-neutral-300 font-medium">
-                      <div className="flex items-center gap-1.5">
-                        <Clock className="w-3.5 h-3.5 text-blue-400" />
-                        <span>{formatLastSync(c.last_sync_at)}</span>
-                      </div>
+                    <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                      {c.last_sync_at ? new Date(c.last_sync_at).toLocaleString() : "Ausstehend"}
                     </td>
-                    <td className="py-3 px-3 text-neutral-300">
-                      <div className="flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5 text-emerald-400" />
-                        <span>Alle {c.poll_interval_hours || 6} Std ({c.lookback_days || 30} Tage Lookback)</span>
-                      </div>
+                    <td className="py-3.5 px-3 text-slate-600">
+                      Alle {c.poll_interval_hours} Std. ({c.lookback_days} Tage Lookback)
                     </td>
-                    <td className="py-3 px-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => handleTriggerSync(c.source_type)}
-                          disabled={syncingSource === c.source_type}
-                          className="p-1.5 text-neutral-400 hover:text-white transition-colors"
-                          title="Jetzt Synchronisieren"
-                        >
-                          <RefreshCw className={`w-4 h-4 ${syncingSource === c.source_type ? "animate-spin" : ""}`} />
-                        </button>
-                        <button
-                          onClick={() => onOpenConfigureModal(c)}
-                          className="p-1.5 text-neutral-400 hover:text-blue-400 transition-colors"
-                          title="Frequenz & Intervall anpassen"
-                        >
-                          <Settings className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteConnector(c.source_type)}
-                          className="p-1.5 text-neutral-400 hover:text-red-400 transition-colors"
-                          title="Verbindung trennen"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
+                    <td className="py-3.5 px-3 text-right space-x-2">
+                      <button
+                        onClick={() => handleTriggerSync(c.source_type)}
+                        disabled={syncingSource === c.source_type}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50"
+                      >
+                        Sync
+                      </button>
+                      <button
+                        onClick={() => onOpenConfigureModal(c)}
+                        className="px-3 py-1.5 rounded-xl bg-[#0d5c3a] hover:bg-[#08432a] text-white font-semibold transition-colors shadow-xs"
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -292,7 +214,15 @@ export default function ConnectorsPage({
             </table>
           </div>
         ) : (
-          <p className="text-xs text-neutral-500">Noch keine aktiven Verbindungen eingerichtet.</p>
+          <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl">
+            <p className="text-xs text-slate-500 mb-3">Noch keine aktiven Connectoren in PostgreSQL konfiguriert.</p>
+            <button
+              onClick={() => onOpenConfigureModal()}
+              className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
+            >
+              Ersten Connector Hinzufügen
+            </button>
+          </div>
         )}
       </div>
     </div>
