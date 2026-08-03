@@ -1,3 +1,16 @@
+
+async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
+    headers = {"X-Tenant-ID": tenant_id}
+    payload = {
+        "sync_status": "error",
+        "last_sync_message": error_msg,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=headers, json=payload)
+        except Exception as e:
+            logger.warning(f"Could not report sync error to Core: {e}")
 """Request-driven WHOOP FastAPI importer and NATS task consumer."""
 
 import asyncio
@@ -66,7 +79,10 @@ async def process_task_message(msg: Any, nc: Any) -> None:
         token, source_id, config = await credentials(tenant_id, request_id)
         if token and source_id:
             await sync(nc, tenant_id, source_id, token, config, request_id)
-    except (WhoopUnauthorizedError, WhoopApiError) as exc:
+    except WhoopUnauthorizedError as exc:
+        logger.error("[req_id=%s] WHOOP sync failed 401: %s", request_id, exc)
+        await report_sync_error_to_core(tenant_id, "whoop", "HTTP 401 Unauthorized: Stored Whoop OAuth Token is invalid or expired.")
+    except WhoopApiError as exc:
         logger.error("[req_id=%s] WHOOP sync failed: %s", request_id, exc)
     finally:
         active_syncs.discard(tenant_id)

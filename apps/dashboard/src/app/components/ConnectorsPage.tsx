@@ -31,10 +31,10 @@ export interface ConnectorItem {
   updated_at?: string;
   sync_status?: string;
   last_sync_at?: string;
-  last_sync_message?: str;
-  last_request_id?: str;
-  nats_subject?: str;
-  nats_queue_group?: str;
+  last_sync_message?: string;
+  last_request_id?: string;
+  nats_subject?: string;
+  nats_queue_group?: string;
 }
 
 interface ConnectorsPageProps {
@@ -72,7 +72,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     name: "Whoop",
     description: "Herzfrequenzvariabilität (HRV), Schlafphasen & Strain Score Integration.",
     icon: Activity,
-    available: false,
+    available: true,
   },
   {
     id: "apple_health",

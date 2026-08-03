@@ -1,7 +1,7 @@
 FROM python:3.12-slim
 WORKDIR /app
 ENV PYTHONPATH=/app/src
-RUN pip install --no-cache-dir uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 COPY pyproject.toml README.md ./
 RUN uv pip install --system -r pyproject.toml
 COPY src ./src
