@@ -15,8 +15,7 @@ import {
   Radio,
   Layers,
   Activity,
-  Server,
-  Clock
+  Server
 } from "lucide-react";
 
 export interface ConnectorItem {
@@ -45,6 +44,16 @@ interface ConnectorsPageProps {
 }
 
 const AVAILABLE_CATALOG = [
+  {
+    id: "whoop",
+    name: "WHOOP",
+    category: "Recovery, Schlaf & Training",
+    description: "Importiert Cycles, Recovery, Schlaf, Workouts und Herz-Kreislauf-Metriken über WHOOP OAuth.",
+    icon: Activity,
+    iconColor: "text-cyan-700 bg-cyan-50 border-cyan-200",
+    natsSubject: "qs.task.sync.whoop",
+    queueGroup: "whoop_importer_task_group",
+  },
   {
     id: "yazio",
     name: "Yazio Nutrition v15",
