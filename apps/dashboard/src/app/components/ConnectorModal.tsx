@@ -108,6 +108,15 @@ export default function ConnectorModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const generateRandomApiKey = () => {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let key = "qs_sec_";
+    for (let i = 0; i < 32; i++) {
+      key += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setAccessToken(key);
+  };
+
   useEffect(() => {
     if (isOpen) {
       setPollIntervalHours(initialPollInterval);
@@ -183,13 +192,8 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
-      } else if (
-        selectedProvider.id !== "apple_health" &&
-        selectedProvider.id !== "streak" &&
-        !finalToken &&
-        !isEditing
-      ) {
-        setError("Bitte gib den API Access Token ein.");
+      } else if (!finalToken && !isEditing) {
+        setError(`Bitte gib einen gültigen API Key für ${selectedProvider.name} ein oder generiere einen.`);
         setLoading(false);
         return;
       }
@@ -447,17 +451,30 @@ export default function ConnectorModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                    <span>Optionaler Webhook API Key Header (X-Api-Key)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                      <span>Erforderlicher Webhook API Key (X-Api-Key)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={generateRandomApiKey}
+                      className="text-[11px] font-semibold text-[#0d5c3a] hover:underline"
+                    >
+                      🔐 Key Generieren
+                    </button>
+                  </div>
                   <input
-                    type="password"
-                    placeholder="Optionaler API Token zur Webhook Absicherung"
+                    type="text"
+                    placeholder="Generiere oder gib einen API Token zur Webhook-Absicherung ein"
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
+                    required={!isEditing}
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Trage diesen API Key in der Health Auto Export App unter Header <code>X-Api-Key</code> ein.
+                  </p>
                 </div>
               </div>
             )}
@@ -467,7 +484,7 @@ export default function ConnectorModal({
                 <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2">
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                     <Plug className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Streak 2.0 REST Export Endpoint</span>
+                    <span>Streak - Gym Log REST Export Endpoint</span>
                   </div>
                   <p className="text-xs text-slate-600">
                     Trage in der <strong>Streak 2.0 App</strong> (REST Export Kachel) diesen Endpoint URL ein:
@@ -477,17 +494,30 @@ export default function ConnectorModal({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
-                    <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                    <span>Optionaler API Key Header (X-Api-Key)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                      <span>Erforderlicher API Key (X-Api-Key)</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={generateRandomApiKey}
+                      className="text-[11px] font-semibold text-[#0d5c3a] hover:underline"
+                    >
+                      🔐 Key Generieren
+                    </button>
+                  </div>
                   <input
-                    type="password"
-                    placeholder="Optionaler API Token für Streak REST Export"
+                    type="text"
+                    placeholder="Generiere oder gib einen API Token für Streak REST Export ein"
                     value={accessToken}
                     onChange={(e) => setAccessToken(e.target.value)}
+                    required={!isEditing}
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Trage diesen API Key in Streak 2.0 unter Header <code>X-Api-Key</code> ein.
+                  </p>
                 </div>
               </div>
             )}
