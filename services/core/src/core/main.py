@@ -873,3 +873,28 @@ async def delete_explorer_view(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
+
+class UpdateConnectorStatusRequest(BaseModel):
+    sync_status: str
+    last_sync_message: str
+
+@app.post("/api/v1/internal/data/sources/{source_type}/status")
+async def update_connector_status_internal(
+    source_type: str,
+    req: UpdateConnectorStatusRequest,
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == source_type,
+    )
+    res = await session.execute(stmt)
+    ds = res.scalar_one_or_none()
+    if ds:
+        cfg = dict(ds.config or {})
+        cfg["sync_status"] = req.sync_status
+        cfg["last_sync_message"] = req.last_sync_message
+        ds.config = cfg
+        await session.commit()
+    return {"status": "ok"}

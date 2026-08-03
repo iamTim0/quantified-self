@@ -1,3 +1,16 @@
+
+async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
+    headers = {"X-Tenant-ID": tenant_id}
+    payload = {
+        "sync_status": "error",
+        "last_sync_message": error_msg,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=headers, json=payload)
+        except Exception as e:
+            logger.warning(f"Could not report sync error to Core: {e}")
 """Dawarich Importer Main Service Entry Point.
 
 Orchestrates task-driven polling of Dawarich API, transforms GPS points into standard
@@ -110,10 +123,9 @@ async def fetch_and_publish(
             f"Successfully published {published_count} location DataPoints to NATS subject 'qs.ingest.dawarich'."
         )
     except DawarichUnauthorizedError:
-        logger.error(
-            f"Dawarich API 401 Unauthorized for tenant {tenant_id}. "
-            "The stored API Key is invalid. Please check Dashboard UI connector settings."
-        )
+        err_msg = "HTTP 401 Unauthorized: Stored API Key is invalid or expired."
+        logger.error(f"Dawarich API 401 Unauthorized for tenant {tenant_id}.")
+        await report_sync_error_to_core(tenant_id, "dawarich", err_msg)
     except (DawarichRateLimitError, DawarichApiError) as e:
         logger.error(f"Failed to fetch Dawarich location points: {e}")
 

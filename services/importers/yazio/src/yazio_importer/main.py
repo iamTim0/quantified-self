@@ -1,3 +1,16 @@
+
+async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
+    headers = {"X-Tenant-ID": tenant_id}
+    payload = {
+        "sync_status": "error",
+        "last_sync_message": error_msg,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=headers, json=payload)
+        except Exception as e:
+            logger.warning(f"Could not report sync error to Core: {e}")
 """Yazio Importer Main Service Entry Point.
 
 Orchestrates task-driven polling of Yazio API, transforms raw consumed items into standard
@@ -189,11 +202,9 @@ async def fetch_and_publish(
                     items_data["summary"] = summary_data.get("summary") or summary_data.get("totals") or summary_data
                 daily_responses.append((day_str, items_data))
         except YazioUnauthorizedError:
-            logger.error(
-                f"Yazio API 401 Unauthorized for tenant {tenant_id}. "
-                "The stored access token is invalid or expired. "
-                "Please re-enter credentials or Bearer Token in Dashboard UI."
-            )
+            err_msg = "HTTP 401 Unauthorized: Stored Yazio token is invalid or expired."
+            logger.error(f"Yazio API 401 Unauthorized for tenant {tenant_id}.")
+            await report_sync_error_to_core(tenant_id, "yazio", err_msg)
             break
         except (YazioRateLimitError, YazioApiError) as e:
             logger.error(f"Failed to fetch Yazio consumed items for {day_str}: {e}")
