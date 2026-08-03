@@ -133,10 +133,21 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
-    command: tunnel --no-autoupdate --url http://api-gateway:8000
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$TUNNEL_TOKEN" ]; then
+          echo "Starting Named Cloudflare Tunnel using TUNNEL_TOKEN..."
+          exec cloudflared tunnel --no-autoupdate run --token "$$TUNNEL_TOKEN"
+        else
+          echo "Starting Cloudflare Quick Tunnel for local development..."
+          exec cloudflared tunnel --no-autoupdate --url http://api-gateway:8000
+        fi
     depends_on:
       - api-gateway
-    restart: unless-stopped
     networks:
       - qs-network
 

@@ -3,16 +3,18 @@
 import React, { useState } from "react";
 import { Activity, Lock, Mail, User, ArrowRight, AlertCircle } from "lucide-react";
 
+export interface UserAuthData {
+  token: string;
+  tenantId: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  tenantName: string;
+}
+
 interface AuthScreenProps {
   apiBase: string;
-  onLogin: (data: {
-    token: string;
-    tenantId: string;
-    userName: string;
-    userEmail: string;
-    userRole: string;
-    tenantName: string;
-  }) => void;
+  onLogin: (data: UserAuthData) => void;
 }
 
 export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {

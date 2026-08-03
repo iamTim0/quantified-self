@@ -27,6 +27,7 @@ interface ProfileTabProps {
   userEmail: string;
   userRole: string;
   tenantName: string;
+  onUpdateProfile?: (name: string, email: string) => void;
   onLogout: () => void;
 }
 

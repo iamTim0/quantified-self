@@ -363,7 +363,7 @@ export default function DashboardPage() {
               userEmail={userEmail}
               userRole={userRole}
               tenantName={tenantName}
-              onUpdateProfile={(name, email) => {
+              onUpdateProfile={(name: string, email: string) => {
                 setUserName(name);
                 setUserEmail(email);
                 localStorage.setItem("qs_user_name", name);

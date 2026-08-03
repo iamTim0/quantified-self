@@ -32,12 +32,22 @@ def get_container_logs() -> str:
 
 
 def main():
-    print("Checking Cloudflare Quick Tunnel status...")
+    print("Checking Cloudflare Tunnel status...")
     logs = get_container_logs()
+
+    if "Starting Named Cloudflare Tunnel" in logs or "Registered tunnel connection" in logs:
+        print("\n======================================================================")
+        print("  NAMED CLOUDFLARE TUNNEL IS ACTIVE (PRODUCTION / TUNNEL_TOKEN)!")
+        print("======================================================================")
+        print("  Using persistent Cloudflare Zero Trust Named Tunnel configured via TUNNEL_TOKEN.")
+        print("  Requests to your custom domain routing to Cloudflare will reach the API Gateway.")
+        print("======================================================================\n")
+        return
+
     url = find_tunnel_url(logs)
 
     if not url:
-        print("\n[WARN] Cloudflare Quick Tunnel URL not found in container logs.", file=sys.stderr)
+        print("\n[WARN] Cloudflare Tunnel URL or active status not found in container logs.", file=sys.stderr)
         print("Ensure the tunnel container is started by running:", file=sys.stderr)
         print("  task dev:tunnel", file=sys.stderr)
         print("  OR: docker compose -f infra/docker-compose.yml up -d cloudflared\n", file=sys.stderr)
