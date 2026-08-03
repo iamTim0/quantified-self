@@ -3,7 +3,7 @@
     "enabled": true,
     "PreToolUse": [
       {
-        "matcher": "run_command",
+        "matcher": "^(Bash|PowerShell|shell_command|run_command)$",
         "hooks": [
           {
             "type": "command",

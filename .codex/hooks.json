@@ -3,11 +3,11 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "^Bash$",
+        "matcher": "^(Bash|PowerShell|shell_command|run_command)$",
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/scripts/pre_command_guard.py\"",
+            "command": "python .agents/scripts/pre_command_guard.py",
             "timeout": 10,
             "statusMessage": "Checking command safety"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/scripts/validate_docs.py\"",
+          "command": "python .agents/scripts/validate_docs.py",
             "timeout": 15,
             "statusMessage": "Validating documentation"
           }
