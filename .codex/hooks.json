@@ -1,0 +1,30 @@
+{
+  "description": "Quantified Self repository safety and documentation hooks.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/scripts/pre_command_guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking command safety"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/.agents/scripts/validate_docs.py\"",
+            "timeout": 15,
+            "statusMessage": "Validating documentation"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,9 +1,10 @@
 # Quantified Self - Project Agent Rules & Workflows
 
-This workspace uses Antigravity Agentic Customizations configured under `.agents/`.
+This workspace uses shared agentic customizations under `.agents/`; Codex mirrors the
+same skills and lifecycle behavior through `.codex/`.
 
 ## 1. Absolute Rules & System Invariants
-- Refer to [agents.md](agents.md) for full architectural guidelines.
+- Refer to [AGENTS.md](AGENTS.md) for full architectural guidelines.
 - **Database Ownership**: Only `services/core/` can connect to or query PostgreSQL. No other service may import SQLAlchemy or asyncpg.
 - **Tenant Isolation**: All database queries MUST filter by `tenant_id`. API Gateway injects `X-Tenant-ID`.
 - **Tenant & User Separation**: Workspace (`tenants`) is separated from User identity (`users`). JWT claims contain `user_id`, `tenant_id`, and `role`.
@@ -18,7 +19,14 @@ This workspace uses Antigravity Agentic Customizations configured under `.agents
 - `review-graph`: Traces cross-service dependency graphs and structural breaking changes.
 - `spec-verifier`: Verifies implementation against Fizzbee specifications in `specs/`.
 - `ast-grep-refactor`: Structural search and AST-based refactoring.
+- `doc-sync`: Keeps repository documentation and implementation changes synchronized.
 - `caveman` / `cavecrew`: Token compression and subagent delegation (`cavecrew-builder`, `cavecrew-investigator`).
 
 ## 3. Active Hooks
-- PreToolUse command guard (`.agents/hooks.json` -> `.agents/scripts/pre_command_guard.py`) prevents dangerous destructive commands.
+- Gemini/Antigravity: `.agents/hooks.json` -> `.agents/scripts/pre_command_guard.py` and `validate_docs.py`.
+- Codex: `.codex/hooks.json` uses the same scripts with Codex-native hook contracts.
+- Codex requires reviewing and trusting project hooks through `/hooks` after first setup or changes.
+
+## 4. MCP
+- No project-scoped MCP servers are currently configured.
+- Keep MCP credentials and machine-specific servers in local client configuration, never in this repository.

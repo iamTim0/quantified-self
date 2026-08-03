@@ -83,7 +83,7 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ Synchronous HTTP calls from Importers to Core for data ingestion (MUST use NATS).
 - ❌ Hardcoded tenant IDs or API secrets in `.env` or source code.
 - ❌ Plaintext API tokens in NATS events or log outputs.
-- ❌ Un-correlated requests missing `X-Request-ID` headers or log prefixes.
+- ❌ Un-correlated requests missing `X-Request-ID` headers or log prefixes `[req_id=...]`.
 - ❌ Automatic generation of fake/seed data on service startup or fallback.
 - ❌ Tests that depend on pre-existing database state or pre-run seed commands.
 - ❌ Skipping Fizzbee specifications for new, complex distributed coordination.

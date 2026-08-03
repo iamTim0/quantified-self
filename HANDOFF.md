@@ -32,7 +32,7 @@ The **Quantified Self Platform** is a multi-tenant, microservice-based personal 
 - **Phase 7: Next.js 15 App Router Dashboard (`apps/dashboard`)**:
   - Full modern React 19 / Next.js 15 App Router frontend with Chart.js time-series graphs, live metric cards, connector modal, and sharing modal.
 - **Phase 8: Security Audit, Documentation & Invariant Rules Synchronization**:
-  - Fully synchronized [agents.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/agents.md), [HANDOFF.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/HANDOFF.md), and [GEMINI.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/GEMINI.md).
+  - Fully synchronized [AGENTS.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/AGENTS.md), [HANDOFF.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/HANDOFF.md), and [GEMINI.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/GEMINI.md).
   - All 34 automated unit, integration, and Fizzbee spec tests passing.
 - **Phase 9: Request-Driven Importers & Importer Standard**:
   - **Zero Background Polling**: Converted Yazio importer and defined platform blueprint for all future importers to run without periodic background polling loops.
@@ -116,4 +116,3 @@ Refer to [ROADMAP.md](file:///C:/Users/thoff/Documents/GitHub/quantified-self/RO
 
 ## 🔑 Environment Configuration
 Use [.env.example](file:///C:/Users/thoff/Documents/GitHub/quantified-self/.env.example) to configure environment variables. Never commit `.env` files with production secrets.
-

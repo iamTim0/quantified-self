@@ -17,7 +17,7 @@ Activate this skill whenever:
 
 ## 2. Verification Checklist
 - [ ] **`README.md`**: Update microservice table, architecture diagram, environment variables, and task commands.
-- [ ] **`GEMINI.md` / `agents.md`**: Ensure invariant rules match actual implementation details.
+- [ ] **`GEMINI.md` / `AGENTS.md`**: Ensure invariant rules match actual implementation details.
 - [ ] **Relative Markdown Links**: Verify all local markdown links (e.g., `[LICENSE](file:///LICENSE)`) resolve to existing files.
 - [ ] **Docstrings**: Ensure new public functions, classes, and tests have clear docstrings referencing spec invariants.
 
