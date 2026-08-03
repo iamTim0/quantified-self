@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload } from "lucide-react";
+
+export type ConnectorDirection = "active" | "passive";
 
 export interface ProviderCatalogItem {
   id: string;
@@ -12,6 +14,7 @@ export interface ProviderCatalogItem {
   iconColor: string;
   status: "available" | "coming_soon";
   supportedMetrics: string[];
+  direction: ConnectorDirection;
 }
 
 export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
@@ -19,53 +22,61 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     id: "yazio",
     name: "Yazio Nutrition v15",
     category: "Ernährung & Tagebuch",
-    description: "Importiert Mahlzeiten, Lebensmittelnamen, Kalorien, Protein, Kohlenhydrate und Fett aus deinem Yazio-Tagebuch.",
+    description: "Aktiv: Der Importer fragt Mahlzeiten, Kalorien und Nährwerte aus deinem Yazio-Tagebuch ab.",
     icon: Flame,
     iconColor: "text-amber-400",
     status: "available",
     supportedMetrics: ["Kalorien", "Protein", "Kohlenhydrate", "Fett", "Gegessene Produkte"],
+    direction: "active",
   },
   {
     id: "whoop",
     name: "Whoop",
     category: "Regeneration & Schlaf",
-    description: "Synchronisiert Recovery Score, HRV, Tiefschlaf-Phasen, Ruhepuls und Daily Strain.",
+    description: "Aktiv: Der Importer fragt Recovery Score, HRV, Schlafphasen, Ruhepuls und Strain ab.",
     icon: Activity,
     iconColor: "text-red-400",
     status: "available",
     supportedMetrics: ["Recovery %", "HRV (ms)", "Ruhepuls", "Daily Strain"],
+    direction: "active",
   },
   {
     id: "apple_health",
     name: "Apple Health",
     category: "Fitness & Vitaldaten",
-    description: "Importiert Schritte, HF-Verlauf, Aktivitäts-Energie, Schlafphasen & Workouts via Health Auto Export.",
+    description: "Passiv: Health Auto Export sendet Schritte, Herzfrequenz, Schlafphasen und Workouts an deinen Webhook.",
     icon: Heart,
     iconColor: "text-rose-400",
     status: "available",
     supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien", "Schlaf-Phasen", "Workouts"],
+    direction: "passive",
   },
   {
     id: "streak",
     name: "Streak - Gym Log",
     category: "Krafttraining & Gym Log",
-    description: "Empfängt automatische REST Exports deiner Workouts, Sätze, Reps und Gewichte von der Streak 2.0 App.",
+    description: "Passiv: Streak 2.0 sendet Workouts, Sätze, Reps und Gewichte an deinen REST-Webhook.",
     icon: Dumbbell,
     iconColor: "text-[#0d5c3a]",
     status: "available",
     supportedMetrics: ["Übungssätze", "Gewicht (kg)", "Wiederholungen", "Max Puls", "Set Volumen"],
+    direction: "passive",
   },
   {
     id: "dawarich",
     name: "Dawarich Location",
     category: "Location & GPS Tracking",
-    description: "Self-hosted Alternative zu Google Location History. Importiert Standorte, GPS-Punkte und Bewegungsstrecken.",
+    description: "Aktiv: Der Importer fragt Standorte, GPS-Punkte und Bewegungsstrecken von deinem Dawarich-Server ab.",
     icon: MapPin,
     iconColor: "text-emerald-500",
     status: "available",
     supportedMetrics: ["Standortpunkte", "Breitengrad", "Längengrad"],
+    direction: "active",
   },
 ];
+
+export const getConnectorDirection = (sourceType: string): ConnectorDirection =>
+  PROVIDER_CATALOG.find((provider) => provider.id === sourceType)?.direction ?? "active";
 
 interface ConnectorModalProps {
   isOpen: boolean;
@@ -209,6 +220,7 @@ export default function ConnectorModal({
           source_type: selectedProvider.id,
           access_token: finalToken || undefined,
           status: "active",
+          // The Core contract requires a positive value; passive importers ignore it and wait for webhook events.
           poll_interval_hours: Number(pollIntervalHours),
           lookback_days: Number(lookbackDays),
           config: payloadConfig,
@@ -234,6 +246,8 @@ export default function ConnectorModal({
       setLoading(false);
     }
   };
+
+  const isPassive = selectedProvider?.direction === "passive";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
@@ -273,7 +287,7 @@ export default function ConnectorModal({
         {step === "select_provider" ? (
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
-              Wähle einen Connector aus dem Katalog, um dein Konto zu verknüpfen und automatisches Syncing einzurichten:
+              Wähle einen Importer aus. Die Kennzeichnung zeigt, ob er einen Dienst selbst abfragt oder Daten von ihm empfängt:
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
               {PROVIDER_CATALOG.map((provider) => {
@@ -304,6 +318,11 @@ export default function ConnectorModal({
                         </span>
                       </div>
                       <h3 className="text-sm font-bold text-slate-900">{provider.name}</h3>
+                      <span className={provider.direction === "active"
+                        ? "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-sky-50 text-sky-800 border border-sky-200"
+                        : "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-violet-50 text-violet-800 border border-violet-200"}>
+                        {provider.direction === "active" ? "Aktiv · fragt ab" : "Passiv · empfängt"}
+                      </span>
                       <p className="text-[11px] text-slate-500 leading-snug">{provider.description}</p>
                     </div>
 
@@ -322,6 +341,26 @@ export default function ConnectorModal({
         ) : (
           /* Step 2: Configuration Form for Selected Provider */
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div className={isPassive
+              ? "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-violet-50 border-violet-200 text-violet-950"
+              : "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-sky-50 border-sky-200 text-sky-950"}>
+              {isPassive ? (
+                <Upload className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
+              ) : (
+                <Download className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+              )}
+              <div>
+                <span className="font-bold block">
+                  {isPassive ? "Passiver Importer · Daten werden zugestellt" : "Aktiver Importer · fragt den Dienst selbst ab"}
+                </span>
+                <span className="text-[11px] leading-relaxed block mt-0.5">
+                  {isPassive
+                    ? "Du hinterlegst die Webhook-Adresse und den Header-Schlüssel. Der externe Dienst sendet neue Daten ereignisbasiert; ein Sync-Intervall ist nicht erforderlich."
+                    : "Du hinterlegst Zugangsdaten. Der Importer ruft den externen Dienst nach dem konfigurierten Intervall und Zeitraum ab."}
+                </span>
+              </div>
+            </div>
+
             {isEditing && (
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
@@ -534,7 +573,8 @@ export default function ConnectorModal({
               </div>
             )}
 
-            {/* Sync Frequency & Period Configuration */}
+            {!isPassive && (
+            /* Sync Frequency & Period Configuration */
             <div className="pt-3 border-t border-slate-100 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum bearbeiten
@@ -576,6 +616,15 @@ export default function ConnectorModal({
                 </div>
               </div>
             </div>
+            )}
+
+            {isPassive && (
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-[11px] text-slate-500">
+                  <span className="font-bold text-violet-700">Passiver Datenfluss:</span> Nach dem Speichern sendet die konfigurierte App Daten an die oben angezeigte URL. Neue Daten werden ohne manuelles Abfragen verarbeitet.
+                </p>
+              </div>
+            )}
 
             {error && <p role="alert" className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>}
             {message && <p className="rounded-2xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-800 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" />{message}</p>}
