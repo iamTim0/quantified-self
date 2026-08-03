@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Filter } from "lucide-react";
+import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Layers } from "lucide-react";
 
 export interface GpsPoint {
   latitude: number;
@@ -24,11 +24,21 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
   const [loading, setLoading] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
+  const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
   const [dateFilter, setDateFilter] = useState<"today" | "all">("today");
 
-  // 1. Load Leaflet JS dynamically from CDN
+  // 1. Dynamically inject Leaflet CSS & Leaflet JS
   useEffect(() => {
     if (typeof window === "undefined") return;
+
+    // Inject Leaflet CSS if missing
+    if (!document.getElementById("leaflet-css")) {
+      const link = document.createElement("link");
+      link.id = "leaflet-css";
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+    }
 
     if ((window as any).L) {
       setLeafletLoaded(true);
@@ -36,6 +46,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     }
 
     const script = document.createElement("script");
+    script.id = "leaflet-js";
     script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
     script.async = true;
     script.onload = () => setLeafletLoaded(true);
@@ -107,9 +118,9 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     ? points.filter((p) => isToday(p.timestamp))
     : points;
 
-  // 3. Initialize & render Leaflet Map (Guaranteed DOM element via mapContainer state)
+  // 3. Initialize & render OpenStreetMap Leaflet Map
   useEffect(() => {
-    if (!leafletLoaded || !mapContainer || filteredPoints.length === 0 || viewMode !== "leaflet") return;
+    if (!leafletLoaded || !mapContainer || viewMode !== "leaflet") return;
     const L = (window as any).L;
     if (!L) return;
 
@@ -119,59 +130,81 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         mapInstanceRef.current = null;
       }
 
-      const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
-      const centerLat = latLons.reduce((acc, p) => acc + p[0], 0) / latLons.length;
-      const centerLon = latLons.reduce((acc, p) => acc + p[1], 0) / latLons.length;
+      const hasPoints = filteredPoints.length > 0;
+      const defaultCenter: [number, number] = [51.1657, 10.4515]; // Central Europe fallback
+      const defaultZoom = 6;
+
+      let centerLat = defaultCenter[0];
+      let centerLon = defaultCenter[1];
+
+      if (hasPoints) {
+        const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
+        centerLat = latLons.reduce((acc, p) => acc + p[0], 0) / latLons.length;
+        centerLon = latLons.reduce((acc, p) => acc + p[1], 0) / latLons.length;
+      }
 
       const map = L.map(mapContainer, {
         center: [centerLat, centerLon],
-        zoom: 13,
+        zoom: hasPoints ? 13 : defaultZoom,
         zoomControl: true,
       });
 
       mapInstanceRef.current = map;
 
-      // Standard OpenStreetMap Tile Layer
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      // Select Tile Layer
+      const tileUrl =
+        tileProvider === "carto"
+          ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+          : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+      const attribution =
+        tileProvider === "carto"
+          ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+          : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+
+      L.tileLayer(tileUrl, {
+        attribution,
         maxZoom: 19,
+        subdomains: tileProvider === "carto" ? "abcd" : "abc",
       }).addTo(map);
 
-      // Draw Polyline Route
-      if (latLons.length > 1) {
-        const polyline = L.polyline(latLons, {
-          color: "#0d5c3a",
-          weight: 4,
-          opacity: 0.85,
-          dashArray: "6, 8",
-        }).addTo(map);
-        map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+      // Draw Polyline Route & Markers if points exist
+      if (hasPoints) {
+        const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
+        if (latLons.length > 1) {
+          const polyline = L.polyline(latLons, {
+            color: "#0d5c3a",
+            weight: 4,
+            opacity: 0.85,
+            dashArray: "6, 8",
+          }).addTo(map);
+          map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+        }
+
+        filteredPoints.forEach((pt, idx) => {
+          const popupContent = `
+            <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
+              <div style="font-weight: bold; color: #0f172a; margin-bottom: 2px;">📍 Dawarich GPS Punkt #${idx + 1}</div>
+              <div style="color: #64748b; font-size: 11px;">${pt.timestamp ? new Date(pt.timestamp).toLocaleString("de-DE") : "N/A"}</div>
+              <div style="margin-top: 4px; font-family: monospace; font-size: 11px; color: #0d5c3a; font-weight: 600;">
+                ${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°
+              </div>
+            </div>
+          `;
+          L.circleMarker([pt.latitude, pt.longitude], {
+            radius: 8,
+            fillColor: "#0d5c3a",
+            color: "#ffffff",
+            weight: 3,
+            opacity: 1,
+            fillOpacity: 0.95,
+          })
+            .addTo(map)
+            .bindPopup(popupContent);
+        });
       }
 
-      // Add Native Circle Markers
-      filteredPoints.forEach((pt, idx) => {
-        const popupContent = `
-          <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
-            <div style="font-weight: bold; color: #0f172a; margin-bottom: 2px;">📍 Dawarich GPS Punkt #${idx + 1}</div>
-            <div style="color: #64748b; font-size: 11px;">${pt.timestamp ? new Date(pt.timestamp).toLocaleString("de-DE") : "N/A"}</div>
-            <div style="margin-top: 4px; font-family: monospace; font-size: 11px; color: #0d5c3a; font-weight: 600;">
-              ${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°
-            </div>
-          </div>
-        `;
-        L.circleMarker([pt.latitude, pt.longitude], {
-          radius: 8,
-          fillColor: "#0d5c3a",
-          color: "#ffffff",
-          weight: 3,
-          opacity: 1,
-          fillOpacity: 0.95,
-        })
-          .addTo(map)
-          .bindPopup(popupContent);
-      });
-
-      // Recalculate container bounds
+      // Force size recalculation to prevent gray tiles
       const timer1 = setTimeout(() => {
         if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
       }, 100);
@@ -186,7 +219,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     } catch (e) {
       console.error("Error initializing Leaflet map:", e);
     }
-  }, [leafletLoaded, filteredPoints, viewMode, mapContainer]);
+  }, [leafletLoaded, filteredPoints, viewMode, tileProvider, mapContainer]);
 
   if (loading) {
     return (
@@ -196,18 +229,18 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     );
   }
 
-  if (points.length === 0) {
-    return null;
-  }
-
-  const latestPoint = filteredPoints.length > 0 ? filteredPoints[filteredPoints.length - 1] : points[points.length - 1];
+  const latestPoint = filteredPoints.length > 0
+    ? filteredPoints[filteredPoints.length - 1]
+    : points.length > 0
+    ? points[points.length - 1]
+    : { latitude: 51.1657, longitude: 10.4515 };
 
   // SVG Path projection calculation for vector view mode
   const targetPoints = filteredPoints.length > 0 ? filteredPoints : points;
-  const minLat = Math.min(...targetPoints.map((p) => p.latitude));
-  const maxLat = Math.max(...targetPoints.map((p) => p.latitude));
-  const minLon = Math.min(...targetPoints.map((p) => p.longitude));
-  const maxLon = Math.max(...targetPoints.map((p) => p.longitude));
+  const minLat = targetPoints.length > 0 ? Math.min(...targetPoints.map((p) => p.latitude)) : 50.0;
+  const maxLat = targetPoints.length > 0 ? Math.max(...targetPoints.map((p) => p.latitude)) : 52.0;
+  const minLon = targetPoints.length > 0 ? Math.min(...targetPoints.map((p) => p.longitude)) : 9.0;
+  const maxLon = targetPoints.length > 0 ? Math.max(...targetPoints.map((p) => p.longitude)) : 11.0;
 
   const latSpan = maxLat - minLat || 0.01;
   const lonSpan = maxLon - minLon || 0.01;
@@ -229,12 +262,12 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
             <span>Dawarich GPS Standorte & Tagesstrecke</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Interaktive Visualisierung deiner heutigen Dawarich GPS-Koordinaten.
+            Interaktive Visualisierung deiner Dawarich OpenStreetMap GPS-Koordinaten.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Date Filter Toggle (Nur Heute vs Alle) */}
+          {/* Date Filter Toggle */}
           <div className="flex bg-emerald-50 border border-emerald-200/80 rounded-xl p-1 text-xs">
             <button
               onClick={() => setDateFilter("today")}
@@ -252,6 +285,29 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
               }`}
             >
               Alle ({points.length})
+            </button>
+          </div>
+
+          {/* Tile Provider Toggle */}
+          <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
+            <button
+              onClick={() => setTileProvider("osm")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
+                tileProvider === "osm" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Standard OpenStreetMap Tiles"
+            >
+              <Layers className="w-3 h-3" />
+              <span>OSM Standard</span>
+            </button>
+            <button
+              onClick={() => setTileProvider("carto")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
+                tileProvider === "carto" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+              title="Carto Voyager OSM Tiles"
+            >
+              OSM Voyager
             </button>
           </div>
 
@@ -284,34 +340,37 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
           </button>
           <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-full flex items-center gap-1.5">
             <Navigation className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-            <span>{filteredPoints.length} GPS Punkte heute</span>
+            <span>{filteredPoints.length} GPS Punkte</span>
           </span>
         </div>
       </div>
 
       {/* Map Container */}
       <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 z-0">
-        {filteredPoints.length === 0 ? (
-          <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 bg-slate-50 text-slate-500 space-y-3">
-            <MapPin className="w-8 h-8 text-slate-400" />
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Keine GPS-Punkte für heute vorhanden</p>
-              <p className="text-xs text-slate-400 mt-1">Für den heutigen Tag wurden noch keine Standortdaten erfasst.</p>
-            </div>
-            <button
-              onClick={() => setDateFilter("all")}
-              className="px-4 py-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white rounded-xl transition-all shadow-sm"
-            >
-              Alle historischen GPS-Punkte anzeigen ({points.length})
-            </button>
-          </div>
-        ) : viewMode === "leaflet" ? (
-          <div ref={setMapContainer} className="w-full h-full min-h-[400px] z-0" />
+        {viewMode === "leaflet" ? (
+          <>
+            <div ref={setMapContainer} className="w-full h-full min-h-[400px] z-0" />
+            {filteredPoints.length === 0 && (
+              <div className="absolute top-3 left-12 right-12 z-[1000] bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-xl shadow-md flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Keine GPS-Punkte für den gewählten Zeitraum erfasst. Standard-Kartenansicht aktiv.</span>
+                </div>
+                {points.length > 0 && (
+                  <button
+                    onClick={() => setDateFilter("all")}
+                    className="px-3 py-1 bg-[#0d5c3a] hover:bg-[#08432a] text-white rounded-lg font-bold text-[11px] shrink-0 transition-colors"
+                  >
+                    Alle ({points.length}) anzeigen
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         ) : (
           /* High-Precision Interactive SVG Vector Map View */
           <div className="w-full h-full p-4 flex flex-col justify-between bg-slate-900 text-white relative">
             <svg className="w-full h-full" viewBox="0 0 800 400">
-              {/* Background Grid */}
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
                   <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
@@ -319,10 +378,8 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
               </defs>
               <rect width="100%" height="100%" fill="url(#grid)" />
 
-              {/* Trajectory Route Path */}
               <path d={polylinePathStr} fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 6" />
 
-              {/* GPS Waypoints */}
               {svgPoints.map((pt, idx) => (
                 <g key={idx} className="cursor-pointer group">
                   <circle cx={pt.x} cy={pt.y} r="6" fill="#0d5c3a" stroke="#34d399" strokeWidth="2" />
