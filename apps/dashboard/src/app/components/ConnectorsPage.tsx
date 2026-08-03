@@ -16,7 +16,8 @@ import {
   MapPin,
   Heart,
   Smartphone,
-  AlertTriangle
+  AlertTriangle,
+  Trash2
 } from "lucide-react";
 
 export interface ConnectorItem {
@@ -92,6 +93,7 @@ export default function ConnectorsPage({
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
+  const [deletingSource, setDeletingSource] = useState<string | null>(null);
 
   const fetchConnectors = async () => {
     try {
@@ -146,6 +148,30 @@ export default function ConnectorsPage({
       console.error("Error triggering sync:", err);
     } finally {
       setTimeout(() => setSyncingSource(null), 1000);
+    }
+  };
+
+  // 1-Click Delete Specific Connector & Remove Credentials
+  const handleDeleteConnector = async (sourceType: string) => {
+    if (!confirm(`Möchtest du die Anbindung zu ${sourceType.toUpperCase()} und das gespeicherte Token wirklich löschen?`)) {
+      return;
+    }
+    setDeletingSource(sourceType);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      if (res.ok) {
+        fetchConnectors();
+      }
+    } catch (err) {
+      console.error("Error deleting connector:", err);
+    } finally {
+      setDeletingSource(null);
     }
   };
 
@@ -238,7 +264,7 @@ export default function ConnectorsPage({
                 )}
               </div>
 
-              <div className="flex gap-3 pt-2 border-t border-slate-100">
+              <div className="flex gap-2 pt-2 border-t border-slate-100">
                 {isConfigured && configured ? (
                   <>
                     <button
@@ -255,6 +281,14 @@ export default function ConnectorsPage({
                       title="Zugangsdaten bearbeiten"
                     >
                       <Settings className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteConnector(cat.id)}
+                      disabled={deletingSource === cat.id}
+                      className="p-2.5 text-xs font-semibold rounded-2xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 transition-colors disabled:opacity-50"
+                      title="1-Klick Connector Trennen & Löschen"
+                    >
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </>
                 ) : (
@@ -371,6 +405,15 @@ export default function ConnectorsPage({
                       >
                         <Settings className="w-3 h-3" />
                         <span>{c.sync_status === "error" ? "Token Erneuern" : "Bearbeiten"}</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteConnector(c.source_type)}
+                        disabled={deletingSource === c.source_type}
+                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                        title="1-Klick Connector Trennen & Löschen"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        <span>Löschen</span>
                       </button>
                     </td>
                   </tr>

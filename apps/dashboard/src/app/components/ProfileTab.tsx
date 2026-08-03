@@ -1,7 +1,23 @@
 "use client";
 
 import React, { useState } from "react";
-import { User, Mail, Shield, Key, Building, Check, Copy, CheckCircle2, Lock, HardDrive, Database, AlertCircle, LogOut } from "lucide-react";
+import { 
+  User, 
+  Mail, 
+  Lock, 
+  Building, 
+  ShieldCheck, 
+  Key, 
+  LogOut, 
+  Check, 
+  Copy, 
+  AlertCircle, 
+  CheckCircle2, 
+  Database,
+  Trash2,
+  AlertTriangle,
+  RefreshCw
+} from "lucide-react";
 
 interface ProfileTabProps {
   apiBase: string;
@@ -11,7 +27,6 @@ interface ProfileTabProps {
   userEmail: string;
   userRole: string;
   tenantName: string;
-  onUpdateProfile: (name: string, email: string) => void;
   onLogout: () => void;
 }
 
@@ -23,14 +38,8 @@ export default function ProfileTab({
   userEmail,
   userRole,
   tenantName,
-  onUpdateProfile,
   onLogout,
 }: ProfileTabProps) {
-  const [nameInput, setNameInput] = useState(userName);
-  const [emailInput, setEmailInput] = useState(userEmail);
-  const [saveSuccess, setSaveSuccess] = useState(false);
-
-  // Password Change State
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -41,27 +50,20 @@ export default function ProfileTab({
   const [copiedTenantId, setCopiedTenantId] = useState(false);
   const [copiedToken, setCopiedToken] = useState(false);
 
-  const getInitials = (name: string) => {
-    if (!name) return "QS";
-    const parts = name.trim().split(" ");
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
-    return name.slice(0, 2).toUpperCase();
-  };
+  // 1-Click Deletion States
+  const [wipeLoading, setWipeLoading] = useState(false);
+  const [wipeSuccess, setWipeSuccess] = useState("");
+  const [wipeError, setWipeError] = useState("");
+  const [showWipeModal, setShowWipeModal] = useState(false);
+  const [showAccountModal, setShowAccountModal] = useState(false);
 
-  const handleCopy = (text: string, setFn: (v: boolean) => void) => {
+  const handleCopy = (text: string, setFn: (val: boolean) => void) => {
     navigator.clipboard.writeText(text);
     setFn(true);
     setTimeout(() => setFn(false), 2000);
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateProfile(nameInput, emailInput);
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 3000);
-  };
-
-  const handleChangePassword = async (e: React.FormEvent) => {
+  const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
     setPasswordError("");
     setPasswordSuccess("");
@@ -71,15 +73,10 @@ export default function ProfileTab({
       return;
     }
 
-    if (newPassword.length < 6) {
-      setPasswordError("Das neue Passwort muss mindestens 6 Zeichen lang sein.");
-      return;
-    }
-
     setPasswordLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/v1/auth/change-password`, {
-        method: "POST",
+      const res = await fetch(`${apiBase}/api/v1/auth/me/password`, {
+        method: "PUT",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
@@ -96,22 +93,73 @@ export default function ProfileTab({
         throw new Error(data.detail || "Passwortänderung fehlgeschlagen.");
       }
 
-      setPasswordSuccess("Passwort wurde erfolgreich aktualisiert!");
+      setPasswordSuccess("Passwort erfolgreich geändert!");
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (err: any) {
-      setPasswordError(err.message || "Fehler beim Ändern des Passworts.");
+    } catch (err: unknown) {
+      setPasswordError(err instanceof Error ? err.message : String(err));
     } finally {
       setPasswordLoading(false);
     }
   };
 
-  const parseJwtPayload = (jwtToken: string) => {
+  // 1-Click Data Points Wipe (Wipes all data_points table entries for tenant)
+  const handleWipeDataPoints = async () => {
+    setWipeLoading(true);
+    setWipeError("");
+    setWipeSuccess("");
     try {
-      const parts = jwtToken.split(".");
-      if (parts.length < 2) return {};
-      const base64Url = parts[1];
+      const res = await fetch(`${apiBase}/api/v1/data/wipe`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || "Datenpunkt-Reset fehlgeschlagen.");
+      }
+      setWipeSuccess(`Erfolgreich ${data.deleted_count || 0} Datenpunkte im Workspace gelöscht!`);
+      setShowWipeModal(false);
+    } catch (err: unknown) {
+      setWipeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWipeLoading(false);
+    }
+  };
+
+  // 1-Click Full Account & Data Wipe (Wipes data_points, data_sources, tenant_shares)
+  const handleAccountWipe = async () => {
+    setWipeLoading(true);
+    setWipeError("");
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/account`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "X-Tenant-ID": tenantId,
+        },
+      });
+      if (res.ok) {
+        setShowAccountModal(false);
+        onLogout();
+      } else {
+        const data = await res.json();
+        throw new Error(data.detail || "Kontolöschung fehlgeschlagen.");
+      }
+    } catch (err: unknown) {
+      setWipeError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setWipeLoading(false);
+    }
+  };
+
+  // Decode JWT payload for claim inspector
+  const parseJwt = (tokenStr: string) => {
+    try {
+      const base64Url = tokenStr.split(".")[1];
       const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
       const jsonPayload = decodeURIComponent(
         atob(base64)
@@ -125,125 +173,131 @@ export default function ProfileTab({
     }
   };
 
-  const jwtPayload = parseJwtPayload(token);
+  const jwtPayload = parseJwt(token);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      {/* Header Banner (Emerald SaaS Theme) */}
-      <div className="dark-emerald-card p-8 rounded-3xl shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none">
-          <Shield className="w-64 h-64 text-emerald-100" />
+    <div className="space-y-8">
+      {/* Header Banner */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Konto- & Profileinstellungen</h1>
+          <p className="text-xs text-slate-500 mt-1">
+            Verwalte deine Benutzerdaten, Sicherheitseinstellungen und die 1-Klick-Datenlöschung.
+          </p>
         </div>
 
-        <div className="relative flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          {/* Avatar Circle */}
-          <div className="w-20 h-20 rounded-3xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-white text-2xl font-black shadow-inner shrink-0">
-            {getInitials(userName)}
-          </div>
-
-          <div className="space-y-2 text-center sm:text-left flex-1">
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-              <h2 className="text-2xl font-bold text-white">{userName}</h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-100 text-xs font-bold uppercase tracking-wider">
-                {userRole}
-              </span>
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-400/20 text-emerald-100 text-xs font-bold uppercase tracking-wider flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3 text-emerald-300" /> Tenant Isoliert
-              </span>
-            </div>
-
-            <p className="text-xs text-emerald-100/90 flex items-center justify-center sm:justify-start gap-1.5 font-mono">
-              <Mail className="w-3.5 h-3.5 text-emerald-300" />
-              <span>{userEmail}</span>
-            </p>
-
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-2 text-xs text-emerald-100">
-              <div className="flex items-center gap-1.5 bg-black/20 border border-white/10 rounded-xl px-3 py-1.5">
-                <Building className="w-3.5 h-3.5 text-emerald-300" />
-                <span className="text-white font-medium">{tenantName}</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-black/20 border border-white/10 rounded-xl px-3 py-1.5 font-mono text-[11px]">
-                <HardDrive className="w-3.5 h-3.5 text-emerald-300" />
-                <span>{tenantId.slice(0, 18)}...</span>
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-3.5 py-1.5 rounded-full flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+            <span>Multi-Tenant Isoliert</span>
+          </span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Column: Personal Information & Password Form */}
+        {/* Left 2 Columns: User Info, Password & 1-Click Delete */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Profile Card */}
+          {/* User Profile Info Card */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2">
-                <User className="w-5 h-5 text-[#0d5c3a]" />
-                <h3 className="text-base font-bold text-slate-900">Profil & Konto-Einstellungen</h3>
+            <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+              <div className="w-14 h-14 rounded-2xl bg-[#0d5c3a] text-white flex items-center justify-center font-extrabold text-xl shadow-lg shadow-[#0d5c3a]/20">
+                {userName ? userName[0].toUpperCase() : "U"}
               </div>
-              <span className="text-xs text-slate-400">Persönliche Informationen</span>
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900">{userName || "Benutzer"}</h2>
+                <p className="text-xs text-slate-500">{userEmail}</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200">
+                    Rolle: {userRole}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                    {tenantName}
+                  </span>
+                </div>
+              </div>
             </div>
 
-            <form onSubmit={handleSaveProfile} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Anzeigename / Name
-                  </label>
-                  <input
-                    type="text"
-                    value={nameInput}
-                    onChange={(e) => setNameInput(e.target.value)}
-                    required
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    E-Mail-Adresse
-                  </label>
-                  <input
-                    type="email"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    required
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
-                  />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Benutzername
+                </label>
+                <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 text-xs font-semibold">
+                  <User className="w-4 h-4 text-slate-400" />
+                  <span>{userName}</span>
                 </div>
               </div>
 
-              {saveSuccess && (
-                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Profil-Änderungen erfolgreich lokal gespeichert!</span>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  E-Mail Adresse
+                </label>
+                <div className="flex items-center gap-2 p-3 bg-slate-50 border border-slate-200 rounded-2xl text-slate-900 text-xs font-semibold">
+                  <Mail className="w-4 h-4 text-slate-400" />
+                  <span>{userEmail}</span>
                 </div>
-              )}
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
-                >
-                  Änderungen Speichern
-                </button>
               </div>
-            </form>
+            </div>
           </div>
 
-          {/* Password Change Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          {/* 1-Click Data Deletion & GDPR Art. 17 Card */}
+          <div className="glass-card p-6 bg-white border border-rose-200 rounded-3xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-rose-100 pb-3">
               <div className="flex items-center gap-2">
-                <Lock className="w-5 h-5 text-[#0d5c3a]" />
-                <h3 className="text-base font-bold text-slate-900">Passwort Ändern</h3>
+                <Trash2 className="w-5 h-5 text-rose-600" />
+                <h3 className="text-base font-extrabold text-slate-900">1-Klick Datenlöschung (DSGVO Art. 17)</h3>
               </div>
-              <span className="text-xs text-slate-400">Sicherheits-Aktualisierung</span>
+              <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
+                Löschrecht Aktiv
+              </span>
             </div>
 
-            <form onSubmit={handleChangePassword} className="space-y-4">
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Gemäß DSGVO Art. 17 (Recht auf Vergessenwerden) kannst du alle in der Plattform gespeicherten Datenpunkte oder dein Konto vollständig mit 1 Klick löschen.
+            </p>
+
+            {wipeSuccess && (
+              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{wipeSuccess}</span>
+              </div>
+            )}
+
+            {wipeError && (
+              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+                {wipeError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                onClick={() => setShowWipeModal(true)}
+                className="py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-all flex items-center justify-center gap-2"
+              >
+                <RefreshCw className="w-4 h-4 text-amber-700" />
+                <span>1-Klick Datenpunkt Reset</span>
+              </button>
+
+              <button
+                onClick={() => setShowAccountModal(true)}
+                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Konto & Alle Daten Löschen</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Change Password Card */}
+          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <Lock className="w-5 h-5 text-[#0d5c3a]" />
+              <h3 className="text-base font-bold text-slate-900">Passwort Ändern</h3>
+            </div>
+
+            <form onSubmit={handlePasswordChange} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
                   Aktuelles Passwort
                 </label>
                 <input
@@ -258,12 +312,12 @@ export default function ProfileTab({
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
                     Neues Passwort
                   </label>
                   <input
                     type="password"
-                    placeholder="Mindestens 6 Zeichen"
+                    placeholder="Mind. 6 Zeichen"
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
@@ -273,8 +327,8 @@ export default function ProfileTab({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Neues Passwort Wiederholen
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Bestätigen
                   </label>
                   <input
                     type="password"
@@ -289,13 +343,13 @@ export default function ProfileTab({
               </div>
 
               {passwordError && (
-                <div role="alert" className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700">
+                <div role="alert" className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
                   {passwordError}
                 </div>
               )}
 
               {passwordSuccess && (
-                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2 font-semibold">
                   <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>{passwordSuccess}</span>
                 </div>
@@ -312,22 +366,22 @@ export default function ProfileTab({
               </div>
             </form>
           </div>
+        </div>
 
-          {/* Workspace & Security Settings Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-6">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2">
-                <Building className="w-5 h-5 text-[#0d5c3a]" />
-                <h3 className="text-base font-bold text-slate-900">Workspace & Mandanten-Sicherheit</h3>
-              </div>
-              <span className="text-xs text-slate-400">Multi-Tenant Status</span>
+        {/* Right Column: Workspace & JWT Inspection */}
+        <div className="space-y-6">
+          {/* Workspace Security Info Card */}
+          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
+            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+              <Building className="w-5 h-5 text-[#0d5c3a]" />
+              <h3 className="text-sm font-bold text-slate-900">Workspace & Mandanten-ID</h3>
             </div>
 
-            <div className="space-y-4">
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+            <div className="space-y-3">
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">
-                    Workspace Tenant ID (UUID)
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                    Tenant ID (UUID)
                   </span>
                   <button
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
@@ -337,93 +391,29 @@ export default function ProfileTab({
                     <span>{copiedTenantId ? "Kopiert!" : "Kopieren"}</span>
                   </button>
                 </div>
-                <p className="text-xs text-slate-900 font-mono bg-white p-2.5 rounded-xl border border-slate-200 break-all select-all">
+                <p className="text-[11px] text-slate-900 font-mono bg-white p-2 rounded-xl border border-slate-200 break-all select-all">
                   {tenantId}
                 </p>
-                <p className="text-[11px] text-slate-500 leading-relaxed">
-                  Alle Datenbank-Abfragen im PostgreSQL Core Service werden strikt nach dieser <code className="text-[#0d5c3a]">tenant_id</code> gefiltered.
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
+                  <Lock className="w-4 h-4 text-[#0d5c3a]" />
+                  <span>AES-256 Encrypted Secrets</span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-snug">
+                  Connector-Tokens werden vor der Speicherung in PostgreSQL mit Fernet AES-256 verschlüsselt.
                 </p>
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-                    <Lock className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Fernet AES-256 Verschlüsselung</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-snug">
-                    Connector API-Token werden vor der Speicherung in PostgreSQL mit AES-256 symmetrisch verschlüsselt.
-                  </p>
-                </div>
-
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
-                  <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-                    <Database className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>TimescaleDB Ownership</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 leading-snug">
-                    Ausschließlich der Core Service besitzt Datenbank-Zugriff. Importer & Dashboard kommunizieren entkoppelt.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Right Column: JWT Token Inspector & Danger Zone */}
-        <div className="space-y-6">
-          {/* JWT Token Inspector Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-[#0d5c3a]" />
-                <h3 className="text-sm font-bold text-slate-900">JWT Session Claim Inspector</h3>
-              </div>
-              <button
-                onClick={() => handleCopy(token, setCopiedToken)}
-                className="text-slate-400 hover:text-slate-900 transition-colors"
-                title="Token kopieren"
-              >
-                {copiedToken ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-              </button>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5 font-mono text-[11px]">
-                <div className="flex justify-between text-slate-500">
-                  <span>sub (User ID):</span>
-                  <span className="text-slate-900 font-bold">{jwtPayload.sub || "user_owner"}</span>
-                </div>
-                <div className="flex justify-between text-slate-500">
-                  <span>tenant_id:</span>
-                  <span className="text-[#0d5c3a] font-bold">{tenantId.slice(0, 12)}...</span>
-                </div>
-                <div className="flex justify-between text-slate-500">
-                  <span>role:</span>
-                  <span className="text-emerald-700 font-bold">{userRole}</span>
-                </div>
-                <div className="flex justify-between text-slate-500">
-                  <span>Algorithm:</span>
-                  <span className="text-slate-700 font-bold">HS256</span>
-                </div>
-              </div>
-
-              <p className="text-[10px] text-slate-400 leading-tight pt-1">
-                Token wird bei jeder API-Anfrage im <code className="text-slate-600">Authorization: Bearer</code> Header mitgesendet.
-              </p>
             </div>
           </div>
 
-          {/* Account Actions & Danger Zone */}
+          {/* Session & Logout */}
           <div className="glass-card p-6 bg-white border border-rose-200 rounded-3xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <AlertCircle className="w-4 h-4 text-rose-500" />
               <h3 className="text-sm font-bold text-slate-900">Sitzung & Abmeldung</h3>
             </div>
-
-            <p className="text-xs text-slate-500 leading-snug">
-              Melde dich von diesem Gerät ab oder setze lokale Session-Daten zurück.
-            </p>
 
             <button
               onClick={onLogout}
@@ -435,6 +425,71 @@ export default function ProfileTab({
           </div>
         </div>
       </div>
+
+      {/* 1-Click Data Points Wipe Confirmation Modal */}
+      {showWipeModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-amber-600">
+              <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-900">1-Klick Datenpunkt-Reset?</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Möchtest du wirklich **alle importierten Datenpunkte** in deinem Workspace löschen? 
+              Deine verbundenen Datenquellen und Tokens bleiben dabei erhalten.
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowWipeModal(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleWipeDataPoints}
+                disabled={wipeLoading}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
+              >
+                {wipeLoading ? "Lösche Daten..." : "Ja, alle Datenpunkte löschen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Full Account & Data Wipe Confirmation Modal */}
+      {showAccountModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-rose-200 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-2.5 rounded-2xl bg-rose-50 border border-rose-200">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-extrabold text-slate-900">Vollständige Kontolöschung?</h3>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Dieser Vorgang löscht **alle Datenpunkte, Connector-Tokens und Freigaben** deines Kontos unwiderruflich aus PostgreSQL (DSGVO Art. 17).
+            </p>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setShowAccountModal(false)}
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                Abbrechen
+              </button>
+              <button
+                onClick={handleAccountWipe}
+                disabled={wipeLoading}
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-all disabled:opacity-50"
+              >
+                {wipeLoading ? "Lösche Konto..." : "Unwiderruflich Löschen"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

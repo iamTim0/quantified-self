@@ -898,3 +898,63 @@ async def update_connector_status_internal(
         ds.config = cfg
         await session.commit()
     return {"status": "ok"}
+
+@app.delete("/api/v1/data/sources/{source_type}")
+async def delete_data_source(
+    source_type: str,
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """1-Click deletion of a configured data source connector."""
+    stmt = delete(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.source_type == source_type,
+    )
+    result = await session.execute(stmt)
+    await session.commit()
+
+    if result.rowcount == 0:
+        raise HTTPException(status_code=404, detail=f"Data source '{source_type}' not found.")
+
+    return {
+        "status": "deleted",
+        "source_type": source_type,
+        "message": f"Connector '{source_type}' and encrypted credentials deleted.",
+    }
+
+
+@app.delete("/api/v1/data/wipe")
+async def wipe_tenant_data_points(
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """1-Click deletion of all ingested data points for current tenant."""
+    stmt = delete(DataPoint).where(DataPoint.tenant_id == tenant_id)
+    result = await session.execute(stmt)
+    await session.commit()
+
+    return {
+        "status": "wiped",
+        "deleted_count": result.rowcount,
+        "message": f"Successfully deleted {result.rowcount} data points for tenant.",
+    }
+
+
+@app.delete("/api/v1/data/account")
+async def delete_tenant_account(
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """1-Click full account wipe (data points, data sources, tenant shares)."""
+    dp_res = await session.execute(delete(DataPoint).where(DataPoint.tenant_id == tenant_id))
+    ds_res = await session.execute(delete(DataSource).where(DataSource.tenant_id == tenant_id))
+    ts_res = await session.execute(delete(TenantShare).where(TenantShare.tenant_id == tenant_id))
+    await session.commit()
+
+    return {
+        "status": "deleted",
+        "deleted_data_points": dp_res.rowcount,
+        "deleted_sources": ds_res.rowcount,
+        "deleted_shares": ts_res.rowcount,
+        "message": "Full account data wiped successfully.",
+    }
