@@ -438,23 +438,29 @@ export default function ConnectorModal({
 
             {selectedProvider?.id === "apple_health" && (
               <div className="space-y-3">
-                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2">
+                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2.5">
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                     <Plug className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Health Auto Export Webhook Endpoint</span>
+                    <span>Health Auto Export Webhook Konfiguration</span>
                   </div>
-                  <p className="text-xs text-slate-600">
-                    Trage in der <strong>Health Auto Export App</strong> (iOS/macOS) folgenden Webhook URL ein:
-                  </p>
-                  <div className="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
-                    {apiBase}/api/v1/ingest/apple-health
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-600">1. Webhook URL:</div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
+                      {apiBase}/api/v1/ingest/apple-health
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-600">2. Erforderlicher Header Name:</div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-slate-900 font-extrabold select-all shadow-sm inline-block">
+                      X-Api-Key
+                    </div>
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                       <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                      <span>Erforderlicher Webhook API Key (X-Api-Key)</span>
+                      <span>Erforderlicher API Key Wert (Header Value)</span>
                     </label>
                     <button
                       type="button"
@@ -473,7 +479,7 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Trage diesen API Key in der Health Auto Export App unter Header <code>X-Api-Key</code> ein.
+                    Trage diesen API Key in der Health Auto Export App unter Header Name <code>X-Api-Key</code> ein.
                   </p>
                 </div>
               </div>
@@ -481,23 +487,29 @@ export default function ConnectorModal({
 
             {selectedProvider?.id === "streak" && (
               <div className="space-y-3">
-                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2">
+                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2.5">
                   <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                     <Plug className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Streak - Gym Log REST Export Endpoint</span>
+                    <span>Streak - Gym Log REST Export Konfiguration</span>
                   </div>
-                  <p className="text-xs text-slate-600">
-                    Trage in der <strong>Streak 2.0 App</strong> (REST Export Kachel) diesen Endpoint URL ein:
-                  </p>
-                  <div className="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
-                    {apiBase}/api/v1/ingest/streak
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-600">1. REST Export URL:</div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
+                      {apiBase}/api/v1/ingest/streak
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <div className="text-[11px] font-bold text-slate-600">2. Erforderlicher Header Name:</div>
+                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-slate-900 font-extrabold select-all shadow-sm inline-block">
+                      X-Api-Key
+                    </div>
                   </div>
                 </div>
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
                       <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                      <span>Erforderlicher API Key (X-Api-Key)</span>
+                      <span>Erforderlicher API Key Wert (Header Value)</span>
                     </label>
                     <button
                       type="button"
@@ -516,7 +528,7 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Trage diesen API Key in Streak 2.0 unter Header <code>X-Api-Key</code> ein.
+                    Trage diesen API Key in Streak 2.0 unter Header Name <code>X-Api-Key</code> ein.
                   </p>
                 </div>
               </div>
