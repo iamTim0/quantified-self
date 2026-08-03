@@ -16,6 +16,17 @@ tasks:
     cmds:
       - docker compose -f infra/docker-compose.yml logs -f
 
+  dev:tunnel:
+    desc: "Start Cloudflare Quick Tunnel and display public HTTPS endpoint URL"
+    cmds:
+      - docker compose -f infra/docker-compose.yml up -d cloudflared
+      - uv run python -m tools.tunnel_status
+
+  tunnel:url:
+    desc: "Display the active Cloudflare Quick Tunnel public URL and endpoints"
+    cmds:
+      - uv run python -m tools.tunnel_status
+
   dev:db-reset:
     desc: "Reset the database and restart postgres"
     cmds:

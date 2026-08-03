@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "production"  # SECURITY: Default to production, not dev
     CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
     ANALYSIS_SERVICE_URL: str = "http://127.0.0.1:8002"
+    APPLE_HEALTH_IMPORTER_URL: str = "http://127.0.0.1:8005"
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated CORS origins

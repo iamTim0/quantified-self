@@ -32,14 +32,15 @@ app = FastAPI(title=settings.SERVICE_NAME)
 
 app.add_middleware(RequestTracingMiddleware)
 
-# SECURITY H1: Configure CORS with explicit allowed origins
+# SECURITY H1: Configure CORS with explicit allowed origins + trycloudflare dev tunnels
 _allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
+    allow_origin_regex=r"https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID"],
+    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID", "X-Api-Key"],
 )
 
 # SECURITY C3: Log warning if running in dev mode
@@ -127,6 +128,42 @@ async def proxy_auth_service(
             raise HTTPException(
                 status_code=503,
                 detail=f"Core Data Service unavailable: {e!s}",
+            )
+
+
+@app.api_route("/api/v1/ingest/apple-health", methods=["POST"])
+async def proxy_apple_health_ingest(request: Request):
+    """Proxy Apple Health Push / Webhook ingest requests to Apple Health Importer microservice."""
+    target_url = f"{settings.APPLE_HEALTH_IMPORTER_URL}/ingest"
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() in {"x-tenant-id", "x-api-key"}
+    }
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=forwarded_headers,
+                params=request.query_params,
+                content=await request.body(),
+            )
+            safe_response_headers = {
+                k: v for k, v in response.headers.items()
+                if k.lower() not in {"transfer-encoding", "connection", "server"}
+            }
+            safe_response_headers["X-Request-ID"] = get_current_request_id()
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=safe_response_headers,
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Apple Health Importer Service unavailable: {e!s}",
             )
 
 

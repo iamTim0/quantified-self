@@ -88,6 +88,21 @@ services:
     networks:
       - qs-network
 
+  apple-health-importer:
+    build:
+      context: ../services/importers/apple_health
+    ports:
+      - "8005:8005"
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - PORT=8005
+    networks:
+      - qs-network
+
   dashboard:
     build:
       context: ../apps/dashboard
@@ -99,6 +114,17 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     networks:
       - qs-network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: qs-cloudflared-tunnel
+    command: tunnel --no-autoupdate --url http://api-gateway:8000
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
+    networks:
+      - qs-network
+
 
 volumes:
   pgdata:
