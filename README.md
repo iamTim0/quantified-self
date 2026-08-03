@@ -22,6 +22,7 @@ flowchart TD
         Core[Core Data Service\nFastAPI]
         Analysis[Analysis Service\nFastAPI]
         YazioImporter[Yazio Importer\nPython Stateless Worker]
+        WhoopImporter[WHOOP Importer\nFastAPI + NATS Consumer]
         
         NATS[(NATS JetStream)]
         DB[(PostgreSQL\n+ TimescaleDB + pgvector)]
@@ -33,6 +34,8 @@ flowchart TD
     
     YazioImporter -->|Poll v15| YazioAPI
     YazioImporter -->|Publish Event| NATS
+    WhoopImporter -->|OAuth API| WHOOP[WHOOP API]
+    WhoopImporter -->|Publish Event| NATS
     NATS -->|Consume Event| Core
     Core -->|SQL| DB
     
@@ -47,6 +50,7 @@ flowchart TD
 | **Core** | 8001 | Owns DB. Consumes ingestion events. Serves gRPC queries | NATS (in), gRPC (out), PostgreSQL |
 | **Analysis** | 8002 | AI/Data Science, complex queries, embeddings | gRPC (to Core), HTTP (from Gateway) |
 | **Yazio Importer** | Container | Polls Yazio API v15 for meals, products & daily macros | NATS publisher (`qs.ingest.yazio`) |
+| **WHOOP Importer** | 8013 (internal) | Request-driven cycles, recovery, sleep and workout import | NATS task consumer/publisher (`qs.ingest.whoop`) |
 
 ## Tech Stack
 
