@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Layers } from "lucide-react";
+import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Filter } from "lucide-react";
 
 export interface GpsPoint {
   latitude: number;
@@ -24,6 +24,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
   const [loading, setLoading] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
+  const [dateFilter, setDateFilter] = useState<"today" | "all">("today");
 
   // 1. Load Leaflet JS dynamically from CDN
   useEffect(() => {
@@ -87,9 +88,28 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     }
   }, [apiBase, token, tenantId]);
 
+  const isToday = (isoString?: string) => {
+    if (!isoString) return false;
+    try {
+      const ptDate = new Date(isoString);
+      const today = new Date();
+      return (
+        ptDate.getFullYear() === today.getFullYear() &&
+        ptDate.getMonth() === today.getMonth() &&
+        ptDate.getDate() === today.getDate()
+      );
+    } catch {
+      return false;
+    }
+  };
+
+  const filteredPoints = dateFilter === "today" 
+    ? points.filter((p) => isToday(p.timestamp))
+    : points;
+
   // 3. Initialize & render Leaflet Map (Guaranteed DOM element via mapContainer state)
   useEffect(() => {
-    if (!leafletLoaded || !mapContainer || points.length === 0 || viewMode !== "leaflet") return;
+    if (!leafletLoaded || !mapContainer || filteredPoints.length === 0 || viewMode !== "leaflet") return;
     const L = (window as any).L;
     if (!L) return;
 
@@ -99,7 +119,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         mapInstanceRef.current = null;
       }
 
-      const latLons: [number, number][] = points.map((p) => [p.latitude, p.longitude]);
+      const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
       const centerLat = latLons.reduce((acc, p) => acc + p[0], 0) / latLons.length;
       const centerLon = latLons.reduce((acc, p) => acc + p[1], 0) / latLons.length;
 
@@ -129,7 +149,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
       }
 
       // Add Native Circle Markers
-      points.forEach((pt, idx) => {
+      filteredPoints.forEach((pt, idx) => {
         const popupContent = `
           <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
             <div style="font-weight: bold; color: #0f172a; margin-bottom: 2px;">📍 Dawarich GPS Punkt #${idx + 1}</div>
@@ -166,7 +186,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     } catch (e) {
       console.error("Error initializing Leaflet map:", e);
     }
-  }, [leafletLoaded, points, viewMode, mapContainer]);
+  }, [leafletLoaded, filteredPoints, viewMode, mapContainer]);
 
   if (loading) {
     return (
@@ -180,18 +200,19 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     return null;
   }
 
-  const latestPoint = points[points.length - 1];
+  const latestPoint = filteredPoints.length > 0 ? filteredPoints[filteredPoints.length - 1] : points[points.length - 1];
 
   // SVG Path projection calculation for vector view mode
-  const minLat = Math.min(...points.map((p) => p.latitude));
-  const maxLat = Math.max(...points.map((p) => p.latitude));
-  const minLon = Math.min(...points.map((p) => p.longitude));
-  const maxLon = Math.max(...points.map((p) => p.longitude));
+  const targetPoints = filteredPoints.length > 0 ? filteredPoints : points;
+  const minLat = Math.min(...targetPoints.map((p) => p.latitude));
+  const maxLat = Math.max(...targetPoints.map((p) => p.latitude));
+  const minLon = Math.min(...targetPoints.map((p) => p.longitude));
+  const maxLon = Math.max(...targetPoints.map((p) => p.longitude));
 
   const latSpan = maxLat - minLat || 0.01;
   const lonSpan = maxLon - minLon || 0.01;
 
-  const svgPoints = points.map((p) => {
+  const svgPoints = targetPoints.map((p) => {
     const x = 50 + ((p.longitude - minLon) / lonSpan) * 700;
     const y = 350 - ((p.latitude - minLat) / latSpan) * 300;
     return { ...p, x, y };
@@ -205,14 +226,35 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         <div>
           <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
             <MapPin className="w-5 h-5 text-[#0d5c3a]" />
-            <span>Dawarich GPS Standorte & Bewegungsstrecke</span>
+            <span>Dawarich GPS Standorte & Tagesstrecke</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Interaktive Visualisierung deiner über Dawarich importierten GPS-Punkte.
+            Interaktive Visualisierung deiner heutigen Dawarich GPS-Koordinaten.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Date Filter Toggle (Nur Heute vs Alle) */}
+          <div className="flex bg-emerald-50 border border-emerald-200/80 rounded-xl p-1 text-xs">
+            <button
+              onClick={() => setDateFilter("today")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
+                dateFilter === "today" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
+              }`}
+            >
+              <Calendar className="w-3 h-3" />
+              <span>Nur Heute</span>
+            </button>
+            <button
+              onClick={() => setDateFilter("all")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
+                dateFilter === "all" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
+              }`}
+            >
+              Alle ({points.length})
+            </button>
+          </div>
+
           {/* View Mode Toggle */}
           <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
             <button
@@ -242,14 +284,28 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
           </button>
           <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-full flex items-center gap-1.5">
             <Navigation className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-            <span>{points.length} GPS Punkte erfasst</span>
+            <span>{filteredPoints.length} GPS Punkte heute</span>
           </span>
         </div>
       </div>
 
       {/* Map Container */}
       <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 z-0">
-        {viewMode === "leaflet" ? (
+        {filteredPoints.length === 0 ? (
+          <div className="w-full h-full flex flex-col items-center justify-center text-center p-6 bg-slate-50 text-slate-500 space-y-3">
+            <MapPin className="w-8 h-8 text-slate-400" />
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Keine GPS-Punkte für heute vorhanden</p>
+              <p className="text-xs text-slate-400 mt-1">Für den heutigen Tag wurden noch keine Standortdaten erfasst.</p>
+            </div>
+            <button
+              onClick={() => setDateFilter("all")}
+              className="px-4 py-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white rounded-xl transition-all shadow-sm"
+            >
+              Alle historischen GPS-Punkte anzeigen ({points.length})
+            </button>
+          </div>
+        ) : viewMode === "leaflet" ? (
           <div ref={setMapContainer} className="w-full h-full min-h-[400px] z-0" />
         ) : (
           /* High-Precision Interactive SVG Vector Map View */
