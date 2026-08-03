@@ -1,23 +1,21 @@
 "use client";
 
 import React, { useState } from "react";
-import { Lock, Mail, User, ArrowRight, Activity, AlertCircle } from "lucide-react";
-
-export interface UserAuthData {
-  token: string;
-  tenantId: string;
-  userName: string;
-  userEmail: string;
-  userRole: string;
-  tenantName: string;
-}
+import { Activity, Lock, Mail, User, ArrowRight, AlertCircle } from "lucide-react";
 
 interface AuthScreenProps {
-  onLogin: (data: UserAuthData) => void;
   apiBase: string;
+  onLogin: (data: {
+    token: string;
+    tenantId: string;
+    userName: string;
+    userEmail: string;
+    userRole: string;
+    tenantName: string;
+  }) => void;
 }
 
-export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
+export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -77,7 +75,6 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
           tenantName: `${data.name || email.split("@")[0]}'s Workspace`,
         });
       } else {
-        // Automatically login after signup
         const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -206,16 +203,23 @@ export default function AuthScreen({ onLogin, apiBase }: AuthScreenProps) {
             </button>
           </form>
 
-          <div className="mt-6 text-center text-xs font-medium">
-            <span className="text-slate-500">
-              {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
-            </span>
-            <button 
-              onClick={() => { setIsLogin(!isLogin); setError(""); }}
-              className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
-            >
-              {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
-            </button>
+          <div className="mt-6 text-center text-xs font-medium space-y-2">
+            <div>
+              <span className="text-slate-500">
+                {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
+              </span>
+              <button 
+                onClick={() => { setIsLogin(!isLogin); setError(""); }}
+                className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
+              >
+                {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
+              </button>
+            </div>
+            <div>
+              <a href="/privacy" className="text-slate-400 hover:text-slate-600 transition-colors underline">
+                Datenschutzerklärung
+              </a>
+            </div>
           </div>
         </div>
       </div>
