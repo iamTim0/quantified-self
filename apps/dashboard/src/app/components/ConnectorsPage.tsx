@@ -17,7 +17,8 @@ import {
   Heart,
   Smartphone,
   AlertTriangle,
-  Trash2
+  Trash2,
+  Dumbbell
 } from "lucide-react";
 
 export interface ConnectorItem {
@@ -78,9 +79,16 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
   {
     id: "apple_health",
     name: "Apple Health",
-    description: "Schritte, Aktivitätsenergie, Ruheherzfrequenz & Blutsauerstoff.",
+    description: "Schritte, Aktivitätsenergie, Ruheherzfrequenz, Schlafphasen & Health Auto Export JSON.",
     icon: Smartphone,
-    available: false,
+    available: true,
+  },
+  {
+    id: "streak",
+    name: "Streak 2.0 Gym",
+    description: "Automatischer REST Export für Krafttraining, Übungssätze, Sätze, Reps & Gewicht aus Streak 2.0.",
+    icon: Dumbbell,
+    available: true,
   },
 ];
 

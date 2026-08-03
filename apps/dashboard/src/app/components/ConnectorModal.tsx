@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell } from "lucide-react";
 
 export interface ProviderCatalogItem {
   id: string;
@@ -32,18 +32,28 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     description: "Synchronisiert Recovery Score, HRV, Tiefschlaf-Phasen, Ruhepuls und Daily Strain.",
     icon: Activity,
     iconColor: "text-red-400",
-    status: "coming_soon",
+    status: "available",
     supportedMetrics: ["Recovery %", "HRV (ms)", "Ruhepuls", "Daily Strain"],
   },
   {
     id: "apple_health",
     name: "Apple Health",
     category: "Fitness & Vitaldaten",
-    description: "Importiert Schritte, HF-Verlauf, Aktivitäts-Energie und VO2 Max direkt vom iPhone / Apple Watch.",
+    description: "Importiert Schritte, HF-Verlauf, Aktivitäts-Energie, Schlafphasen & Workouts via Health Auto Export.",
     icon: Heart,
     iconColor: "text-rose-400",
-    status: "coming_soon",
-    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien"],
+    status: "available",
+    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien", "Schlaf-Phasen", "Workouts"],
+  },
+  {
+    id: "streak",
+    name: "Streak 2.0 Gym",
+    category: "Krafttraining & Gym Log",
+    description: "Empfängt automatische REST Exports deiner Workouts, Sätze, Reps und Gewichte von der Streak 2.0 App.",
+    icon: Dumbbell,
+    iconColor: "text-[#0d5c3a]",
+    status: "available",
+    supportedMetrics: ["Übungssätze", "Gewicht (kg)", "Wiederholungen", "Max Puls", "Set Volumen"],
   },
   {
     id: "dawarich",
@@ -173,7 +183,12 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
-      } else if (!finalToken && !isEditing) {
+      } else if (
+        selectedProvider.id !== "apple_health" &&
+        selectedProvider.id !== "streak" &&
+        !finalToken &&
+        !isEditing
+      ) {
         setError("Bitte gib den API Access Token ein.");
         setLoading(false);
         return;
@@ -411,6 +426,66 @@ export default function ConnectorModal({
                     value={dawarichApiKey}
                     onChange={(e) => setDawarichApiKey(e.target.value)}
                     required={!isEditing}
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {selectedProvider?.id === "apple_health" && (
+              <div className="space-y-3">
+                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2">
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Plug className="w-4 h-4 text-[#0d5c3a]" />
+                    <span>Health Auto Export Webhook Endpoint</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Trage in der <strong>Health Auto Export App</strong> (iOS/macOS) folgenden Webhook URL ein:
+                  </p>
+                  <div className="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
+                    {apiBase}/api/v1/ingest/apple-health
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                    <span>Optionaler Webhook API Key Header (X-Api-Key)</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Optionaler API Token zur Webhook Absicherung"
+                    value={accessToken}
+                    onChange={(e) => setAccessToken(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
+                  />
+                </div>
+              </div>
+            )}
+
+            {selectedProvider?.id === "streak" && (
+              <div className="space-y-3">
+                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2">
+                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <Plug className="w-4 h-4 text-[#0d5c3a]" />
+                    <span>Streak 2.0 REST Export Endpoint</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Trage in der <strong>Streak 2.0 App</strong> (REST Export Kachel) diesen Endpoint URL ein:
+                  </p>
+                  <div className="p-2.5 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
+                    {apiBase}/api/v1/ingest/streak
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                    <span>Optionaler API Key Header (X-Api-Key)</span>
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Optionaler API Token für Streak REST Export"
+                    value={accessToken}
+                    onChange={(e) => setAccessToken(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
                 </div>
