@@ -167,6 +167,42 @@ async def proxy_apple_health_ingest(request: Request):
             )
 
 
+@app.api_route("/api/v1/ingest/streak", methods=["HEAD", "GET", "POST"])
+async def proxy_streak_ingest(request: Request):
+    """Proxy Streak 2.0 REST Export ingest & server check requests to Streak Importer microservice."""
+    target_url = f"{settings.STREAK_IMPORTER_URL}/ingest"
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() in {"x-tenant-id", "x-api-key"}
+    }
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=target_url,
+                headers=forwarded_headers,
+                params=request.query_params,
+                content=await request.body(),
+            )
+            safe_response_headers = {
+                k: v for k, v in response.headers.items()
+                if k.lower() not in {"transfer-encoding", "connection", "server"}
+            }
+            safe_response_headers["X-Request-ID"] = get_current_request_id()
+            return Response(
+                content=response.content,
+                status_code=response.status_code,
+                headers=safe_response_headers,
+            )
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Streak Importer Service unavailable: {e!s}",
+            )
+
+
 @app.api_route("/api/v1/internal/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(

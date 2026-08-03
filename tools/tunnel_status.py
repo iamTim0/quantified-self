@@ -47,6 +47,7 @@ def main():
     print("  CLOUDFLARE QUICK TUNNEL IS ACTIVE!")
     print("======================================================================")
     print(f"  Public Base URL:         {url}")
+    print(f"  Streak 2.0 Webhook:      {url}/api/v1/ingest/streak")
     print(f"  Apple Health Webhook:    {url}/api/v1/ingest/apple-health")
     print(f"  API Gateway Health:      {url}/health")
     print(f"  Data Points API:         {url}/api/v1/data/points")

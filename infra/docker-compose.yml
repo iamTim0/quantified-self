@@ -103,6 +103,21 @@ services:
     networks:
       - qs-network
 
+  streak-importer:
+    build:
+      context: ../services/importers/streak
+    ports:
+      - "8006:8006"
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - PORT=8006
+    networks:
+      - qs-network
+
   dashboard:
     build:
       context: ../apps/dashboard

@@ -1,0 +1,87 @@
+"""Unit tests for Streak 2.0 gym log transformer.
+
+Maps to System Invariants:
+- Rule 4: Idempotency SHA256 hash formatting
+- Rule 2: Tenant isolation and event structure
+"""
+
+import hashlib
+from streak_importer.transformer import (
+    generate_idempotency_key,
+    transform_streak_export_json,
+)
+
+
+def test_generate_idempotency_key():
+    """Verifies Rule 4: SHA256 deterministic idempotency key format."""
+    tenant_id = "00000000-0000-0000-0000-000000000001"
+    source_id = "streak_src"
+    metric_type = "workout_set_weight_kg_1001"
+    timestamp = "2026-08-03T18:05:00+00:00"
+
+    expected = hashlib.sha256(
+        f"{tenant_id}:{source_id}:{metric_type}:{timestamp}".encode("utf-8")
+    ).hexdigest()
+
+    key = generate_idempotency_key(tenant_id, source_id, metric_type, timestamp)
+    assert key == expected
+    assert len(key) == 64
+
+
+def test_transform_streak_export_workouts():
+    """Verifies transformation of Streak 2.0 workouts, sets, and volume metrics."""
+    tenant_id = "00000000-0000-0000-0000-000000000001"
+    source_id = "streak_src"
+
+    payload = {
+        "schemaVersion": 1,
+        "source": "streak",
+        "exportedAt": "2026-08-03T23:00:00Z",
+        "workouts": [
+            {
+                "id": 101,
+                "title": "Push Day",
+                "category": "Chest",
+                "finished": True,
+                "createdAt": "2026-08-03T18:00:00Z",
+                "sets": [
+                    {
+                        "id": 1001,
+                        "setNumber": 1,
+                        "weight": 80.0,
+                        "reps": 10,
+                        "maxPulse": 145,
+                        "createdAt": "2026-08-03T18:05:00Z",
+                        "exercise": {
+                            "id": 10,
+                            "title": "Bench Press",
+                            "category": "Chest",
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+
+    events = transform_streak_export_json(payload, tenant_id, source_id)
+    # 1 set -> weight, reps, set_volume, maxPulse + 2 summary metrics (total_volume, total_sets) = 6 events
+    assert len(events) == 6
+
+    m_types = [e["metric_type"] for e in events]
+    assert "workout_set_weight_kg" in m_types
+    assert "workout_set_reps" in m_types
+    assert "workout_set_volume" in m_types
+    assert "workout_set_heart_rate_max" in m_types
+    assert "workout_total_volume" in m_types
+    assert "workout_total_sets" in m_types
+
+    # Check set volume calculation (80 * 10 = 800)
+    vol_event = next(e for e in events if e["metric_type"] == "workout_set_volume")
+    assert vol_event["value"] == 800.0
+    assert vol_event["metadata"]["exercise_title"] == "Bench Press"
+
+
+def test_transform_empty_payload():
+    """Verifies graceful handling of empty or malformed Streak payload."""
+    assert transform_streak_export_json({}, "tenant_1", "src_1") == []
+    assert transform_streak_export_json({"workouts": "bad"}, "tenant_1", "src_1") == []
