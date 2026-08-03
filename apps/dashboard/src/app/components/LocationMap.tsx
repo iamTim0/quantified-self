@@ -18,7 +18,7 @@ interface LocationMapProps {
 }
 
 export default function LocationMap({ apiBase, token, tenantId }: LocationMapProps) {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,9 +87,9 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     }
   }, [apiBase, token, tenantId]);
 
-  // 3. Initialize & render Leaflet Map
+  // 3. Initialize & render Leaflet Map (Guaranteed DOM element via mapContainer state)
   useEffect(() => {
-    if (!leafletLoaded || !mapContainerRef.current || points.length === 0 || viewMode !== "leaflet") return;
+    if (!leafletLoaded || !mapContainer || points.length === 0 || viewMode !== "leaflet") return;
     const L = (window as any).L;
     if (!L) return;
 
@@ -103,7 +103,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
       const centerLat = latLons.reduce((acc, p) => acc + p[0], 0) / latLons.length;
       const centerLon = latLons.reduce((acc, p) => acc + p[1], 0) / latLons.length;
 
-      const map = L.map(mapContainerRef.current, {
+      const map = L.map(mapContainer, {
         center: [centerLat, centerLon],
         zoom: 13,
         zoomControl: true,
@@ -117,14 +117,6 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         maxZoom: 19,
       }).addTo(map);
 
-      // Custom Emerald Circle Marker Icon
-      const customIcon = L.divIcon({
-        className: "custom-leaflet-marker",
-        html: `<div style="background-color: #0d5c3a; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 8px rgba(0,0,0,0.3);"></div>`,
-        iconSize: [16, 16],
-        iconAnchor: [8, 8],
-      });
-
       // Draw Polyline Route
       if (latLons.length > 1) {
         const polyline = L.polyline(latLons, {
@@ -136,7 +128,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
       }
 
-      // Add Markers
+      // Add Native Circle Markers
       points.forEach((pt, idx) => {
         const popupContent = `
           <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
@@ -147,14 +139,25 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
             </div>
           </div>
         `;
-        L.marker([pt.latitude, pt.longitude], { icon: customIcon })
+        L.circleMarker([pt.latitude, pt.longitude], {
+          radius: 8,
+          fillColor: "#0d5c3a",
+          color: "#ffffff",
+          weight: 3,
+          opacity: 1,
+          fillOpacity: 0.95,
+        })
           .addTo(map)
           .bindPopup(popupContent);
       });
 
-      // Force Leaflet recalculation after DOM attach
-      const timer1 = setTimeout(() => map.invalidateSize(), 100);
-      const timer2 = setTimeout(() => map.invalidateSize(), 500);
+      // Recalculate container bounds
+      const timer1 = setTimeout(() => {
+        if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+      }, 100);
+      const timer2 = setTimeout(() => {
+        if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
+      }, 500);
 
       return () => {
         clearTimeout(timer1);
@@ -163,7 +166,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     } catch (e) {
       console.error("Error initializing Leaflet map:", e);
     }
-  }, [leafletLoaded, points, viewMode]);
+  }, [leafletLoaded, points, viewMode, mapContainer]);
 
   if (loading) {
     return (
@@ -247,7 +250,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
       {/* Map Container */}
       <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 z-0">
         {viewMode === "leaflet" ? (
-          <div ref={mapContainerRef} className="w-full h-full min-h-[400px] z-0" />
+          <div ref={setMapContainer} className="w-full h-full min-h-[400px] z-0" />
         ) : (
           /* High-Precision Interactive SVG Vector Map View */
           <div className="w-full h-full p-4 flex flex-col justify-between bg-slate-900 text-white relative">
