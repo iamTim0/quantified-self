@@ -85,7 +85,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
   },
   {
     id: "streak",
-    name: "Streak 2.0 Gym",
+    name: "Streak - Gym Log",
     description: "Automatischer REST Export für Krafttraining, Übungssätze, Sätze, Reps & Gewicht aus Streak 2.0.",
     icon: Dumbbell,
     available: true,

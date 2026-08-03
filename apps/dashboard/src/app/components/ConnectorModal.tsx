@@ -47,7 +47,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   },
   {
     id: "streak",
-    name: "Streak 2.0 Gym",
+    name: "Streak - Gym Log",
     category: "Krafttraining & Gym Log",
     description: "Empfängt automatische REST Exports deiner Workouts, Sätze, Reps und Gewichte von der Streak 2.0 App.",
     icon: Dumbbell,
