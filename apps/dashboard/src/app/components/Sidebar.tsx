@@ -1,9 +1,9 @@
 "use client";
 
 import React from "react";
-import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight } from "lucide-react";
+import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight, ScanSearch } from "lucide-react";
 
-export type TabType = "overview" | "explorer" | "connectors" | "profile";
+export type TabType = "overview" | "explorer" | "quality" | "connectors" | "profile";
 
 interface SidebarProps {
   activeTab: TabType;
@@ -16,6 +16,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
   const menuItems = [
     { id: "overview" as TabType, label: "Dashboard", icon: LayoutDashboard },
     { id: "explorer" as TabType, label: "Data Explorer", icon: LineChart },
+    { id: "quality" as TabType, label: "Data Quality", icon: ScanSearch },
     { id: "connectors" as TabType, label: "Connectors", icon: Plug },
   ];
 
