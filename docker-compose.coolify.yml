@@ -48,6 +48,7 @@ services:
       - NATS_URL=nats://nats:4222
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-quantified-self-2026}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     networks:
       - qs-network
 
@@ -82,6 +83,7 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gateway.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"

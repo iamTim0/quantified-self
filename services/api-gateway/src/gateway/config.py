@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated CORS origins
     PUBLIC_BASE_URL: str = "http://127.0.0.1:8000"
     DASHBOARD_URL: str = "http://dashboard:3000"
+    ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
 
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 

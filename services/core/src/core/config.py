@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
+    ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
 
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 

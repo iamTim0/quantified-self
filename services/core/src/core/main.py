@@ -136,6 +136,11 @@ async def signup(
     req: UserSignupRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    if not settings.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=403,
+            detail="Registration is currently disabled by system administrator."
+        )
     stmt = select(User).where(User.email == req.email)
     res = await session.execute(stmt)
     if res.scalar_one_or_none():

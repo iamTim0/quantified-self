@@ -90,12 +90,24 @@ async def get_dev_token(tenant_id: str = Query("00000000-0000-0000-0000-00000000
     return {"access_token": token, "token_type": "bearer", "tenant_id": tenant_id}
 
 
+@app.get("/api/v1/auth/config")
+async def get_auth_config():
+    """Return auth configuration flags such as allow_registration."""
+    return {"allow_registration": settings.ALLOW_REGISTRATION}
+
+
 @app.api_route("/api/v1/auth/{path:path}", methods=["POST"])
 async def proxy_auth_service(
     path: str,
     request: Request,
 ):
     """Proxy HTTP requests to Core Auth Service."""
+    if path == "signup" and not settings.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=403,
+            detail="Registration is currently disabled by system administrator.",
+        )
+
     if path == "dev-token":
         return await get_dev_token()
 

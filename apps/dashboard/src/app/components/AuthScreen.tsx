@@ -19,11 +19,26 @@ interface AuthScreenProps {
 
 export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
+  const [allowRegistration, setAllowRegistration] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  React.useEffect(() => {
+    fetch(`${apiBase}/api/v1/auth/config`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (typeof data.allow_registration === "boolean") {
+          setAllowRegistration(data.allow_registration);
+          if (!data.allow_registration) {
+            setIsLogin(true);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [apiBase]);
 
   const formatErrorMessage = (detail: unknown): string => {
     if (typeof detail === "string") return detail;
@@ -206,17 +221,23 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           </form>
 
           <div className="mt-6 text-center text-xs font-medium space-y-2">
-            <div>
-              <span className="text-slate-500">
-                {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
-              </span>
-              <button 
-                onClick={() => { setIsLogin(!isLogin); setError(""); }}
-                className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
-              >
-                {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
-              </button>
-            </div>
+            {allowRegistration ? (
+              <div>
+                <span className="text-slate-500">
+                  {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
+                </span>
+                <button 
+                  onClick={() => { setIsLogin(!isLogin); setError(""); }}
+                  className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
+                >
+                  {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
+                </button>
+              </div>
+            ) : (
+              <div className="text-slate-400 text-xs italic">
+                Neuregistrierung vom Administrator deaktiviert.
+              </div>
+            )}
             <div>
               <a href="/privacy" className="text-slate-400 hover:text-slate-600 transition-colors underline">
                 Datenschutzerklärung

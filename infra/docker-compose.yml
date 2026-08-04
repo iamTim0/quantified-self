@@ -35,6 +35,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
       - NATS_URL=nats://nats:4222
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     networks:
       - qs-network
 
@@ -66,6 +67,7 @@ services:
     environment:
       - CORE_SERVICE_URL=http://core:8001
       - ENVIRONMENT=dev
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.gateway.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
