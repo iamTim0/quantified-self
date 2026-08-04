@@ -10,10 +10,12 @@ Maps to Fizzbee Invariants:
 - RequestCorrelationTracing
 """
 
+import asyncio
 import logging
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+import websockets
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -261,6 +263,90 @@ async def proxy_core_service(
                 status_code=503,
                 detail=f"Core Data Service unavailable: {e!s}",
             )
+
+
+@app.websocket("/_next/{path:path}")
+async def proxy_next_websocket(websocket: WebSocket, path: str):
+    """Proxy Next.js dev server WebSockets (HMR) to Dashboard UI."""
+    await websocket.accept()
+    candidate_bases = ["ws://dashboard:3000", "ws://host.docker.internal:3000", "ws://127.0.0.1:3000"]
+    query_str = f"?{websocket.query_params}" if websocket.query_params else ""
+
+    for base in candidate_bases:
+        target_ws_url = f"{base}/_next/{path}{query_str}"
+        try:
+            async with websockets.connect(target_ws_url) as client_ws:
+                async def forward_to_client():
+                    try:
+                        async for msg in client_ws:
+                            await websocket.send_text(msg)
+                    except Exception:
+                        pass
+
+                async def forward_to_target():
+                    try:
+                        while True:
+                            msg = await websocket.receive_text()
+                            await client_ws.send(msg)
+                    except Exception:
+                        pass
+
+                await asyncio.gather(forward_to_client(), forward_to_target())
+                return
+        except Exception:
+            continue
+
+    await websocket.close()
+
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def proxy_dashboard_ui(path: str, request: Request):
+    """Proxy non-API web traffic (e.g. /, /connectors, /_next/*) to Next.js Dashboard UI."""
+    subpath = f"/{path}" if path else "/"
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() not in {"connection", "content-length"}
+    }
+    if "host" in request.headers:
+        forwarded_headers["x-forwarded-host"] = request.headers["host"]
+        forwarded_headers["x-forwarded-proto"] = request.headers.get("x-forwarded-proto", "https")
+
+    body = await request.body()
+
+    candidate_bases = [settings.DASHBOARD_URL]
+    for fallback in ["http://dashboard:3000", "http://host.docker.internal:3000", "http://127.0.0.1:3000"]:
+        if fallback not in candidate_bases:
+            candidate_bases.append(fallback)
+
+    last_error = None
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for base in candidate_bases:
+            target_url = f"{base.rstrip('/')}{subpath}"
+            try:
+                response = await client.request(
+                    method=request.method,
+                    url=target_url,
+                    headers=forwarded_headers,
+                    params=request.query_params,
+                    content=body,
+                )
+                safe_response_headers = {
+                    k: v for k, v in response.headers.items()
+                    if k.lower() not in {"transfer-encoding", "connection", "server", "content-encoding", "content-length"}
+                }
+                return Response(
+                    content=response.content,
+                    status_code=response.status_code,
+                    headers=safe_response_headers,
+                )
+            except httpx.RequestError as e:
+                last_error = e
+                continue
+
+    raise HTTPException(
+        status_code=503,
+        detail=f"Dashboard UI unavailable: {last_error!s}",
+    )
 
 
 if __name__ == "__main__":

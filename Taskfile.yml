@@ -17,9 +17,9 @@ tasks:
       - docker compose -f infra/docker-compose.yml logs -f
 
   dev:tunnel:
-    desc: "Start Cloudflare Quick Tunnel and display public HTTPS endpoint URL"
+    desc: "Start Cloudflare Tunnel and display public HTTPS endpoint URL"
     cmds:
-      - docker compose -f infra/docker-compose.yml up -d cloudflared
+      - docker compose --env-file .env -f infra/docker-compose.yml up -d cloudflared
       - uv run python -m tools.tunnel_status
 
   tunnel:url:
@@ -105,31 +105,102 @@ tasks:
     cmds:
       - uv run --directory services/importers/yazio python -m yazio_importer.main
 
+  run:importer:apple-health:
+    desc: "Run the Apple Health importer microservice"
+    cmds:
+      - uv run --directory services/importers/apple_health python -m apple_health_importer.main
+
+  run:importer:apple_health:
+    desc: "Alias for run:importer:apple-health"
+    cmds:
+      - task: run:importer:apple-health
+
+  run:importer:calendar:
+    desc: "Run the Calendar importer microservice"
+    cmds:
+      - uv run --directory services/importers/calendar python -m calendar_importer.main
+
+  run:importer:dawarich:
+    desc: "Run the Dawarich location importer microservice"
+    cmds:
+      - uv run --directory services/importers/dawarich python -m dawarich_importer.main
+
+  run:importer:home-assistant:
+    desc: "Run the Home Assistant importer microservice"
+    cmds:
+      - uv run --directory services/importers/home_assistant python -m home_assistant_importer.main
+
+  run:importer:home_assistant:
+    desc: "Alias for run:importer:home-assistant"
+    cmds:
+      - task: run:importer:home-assistant
+
+  run:importer:streak:
+    desc: "Run the Streak habits importer microservice"
+    cmds:
+      - uv run --directory services/importers/streak python -m streak_importer.main
+
+  run:importer:weather:
+    desc: "Run the Weather importer microservice"
+    cmds:
+      - uv run --directory services/importers/weather python -m weather_importer.main
+
+  run:importer:whoop:
+    desc: "Run the Whoop fitness importer microservice"
+    cmds:
+      - uv run --directory services/importers/whoop python -m whoop_importer.main
+
+  run:importers:all:
+    desc: "Concurrently launch all importer microservices"
+    env:
+      PYTHONUTF8: "1"
+    cmds:
+      - >-
+        npx --yes concurrently
+        --names "yazio,apple-health,calendar,dawarich,home-assistant,streak,weather,whoop"
+        --prefix-colors "yellow,cyan,red,blue,green,yellow,cyan,red"
+        --handle-input
+        "uv run --directory services/importers/yazio python -m yazio_importer.main"
+        "uv run --directory services/importers/apple_health python -m apple_health_importer.main"
+        "uv run --directory services/importers/calendar python -m calendar_importer.main"
+        "uv run --directory services/importers/dawarich python -m dawarich_importer.main"
+        "uv run --directory services/importers/home_assistant python -m home_assistant_importer.main"
+        "uv run --directory services/importers/streak python -m streak_importer.main"
+        "uv run --directory services/importers/weather python -m weather_importer.main"
+        "uv run --directory services/importers/whoop python -m whoop_importer.main"
+
   dashboard:
     desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
     cmds:
       - npx pnpm --prefix apps/dashboard dev
 
   dev:local:
-    desc: "Start Postgres + NATS containers, run DB migrations, and launch all local microservices concurrently"
+    desc: "Start Postgres, NATS, and Traefik containers, run DB migrations, and launch all local microservices concurrently"
     cmds:
-      - docker compose -f infra/docker-compose.yml up -d postgres nats
+      - docker compose --env-file .env -f infra/docker-compose.yml up -d postgres nats traefik
       - uv run --directory services/core alembic upgrade head
       - task: start:local:services
 
   start:local:services:
-    desc: "Concurrently launch Core, Gateway, Yazio Importer, and Dashboard. Ctrl+C kills all cleanly."
+    desc: "Concurrently launch Core, Gateway, all Importers, and Dashboard. Ctrl+C kills all cleanly."
     env:
       PYTHONUTF8: "1"
     cmds:
       - >-
         npx --yes concurrently
-        --names "core,gateway,yazio,dash"
-        --prefix-colors "blue,green,yellow,magenta"
+        --names "core,gateway,yazio,apple-health,calendar,dawarich,home-assistant,streak,weather,whoop,dash"
+        --prefix-colors "blue,green,yellow,cyan,red,blue,green,yellow,cyan,red,magenta"
         --handle-input
         "uv run --directory services/core python -m core.main"
         "uv run --directory services/api-gateway python -m gateway.main"
         "uv run --directory services/importers/yazio python -m yazio_importer.main"
+        "uv run --directory services/importers/apple_health python -m apple_health_importer.main"
+        "uv run --directory services/importers/calendar python -m calendar_importer.main"
+        "uv run --directory services/importers/dawarich python -m dawarich_importer.main"
+        "uv run --directory services/importers/home_assistant python -m home_assistant_importer.main"
+        "uv run --directory services/importers/streak python -m streak_importer.main"
+        "uv run --directory services/importers/weather python -m weather_importer.main"
+        "uv run --directory services/importers/whoop python -m whoop_importer.main"
         "npx pnpm --prefix apps/dashboard dev"
 
 

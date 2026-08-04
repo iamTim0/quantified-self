@@ -115,7 +115,7 @@ export default function ConnectorModal({
   onSaved,
   tenantId,
   token,
-  apiBase = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000",
+  apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000"),
   initialSourceType,
   initialPollInterval = 6,
   initialLookbackDays = 30,

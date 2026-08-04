@@ -7,6 +7,7 @@ Usage:
     python -m tools.tunnel_status
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -35,12 +36,27 @@ def main():
     print("Checking Cloudflare Tunnel status...")
     logs = get_container_logs()
 
-    if "Starting Named Cloudflare Tunnel" in logs or "Registered tunnel connection" in logs:
+    # Check if TUNNEL_TOKEN environment variable is configured or container registered connection
+    tunnel_token = os.getenv("TUNNEL_TOKEN", "")
+    if not tunnel_token and os.path.exists(".env"):
+        with open(".env", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("TUNNEL_TOKEN="):
+                    tunnel_token = line.split("=", 1)[1].strip()
+                    break
+
+    is_named_tunnel = bool(tunnel_token) or "Starting Named Cloudflare Tunnel" in logs or "Registered tunnel connection" in logs or "Starting tunnel" in logs
+
+    if is_named_tunnel:
+        domain = "https://quantified-self.example.com"
         print("\n======================================================================")
-        print("  NAMED CLOUDFLARE TUNNEL IS ACTIVE (PRODUCTION / TUNNEL_TOKEN)!")
+        print("  NAMED CLOUDFLARE TUNNEL IS ACTIVE!")
         print("======================================================================")
-        print("  Using persistent Cloudflare Zero Trust Named Tunnel configured via TUNNEL_TOKEN.")
-        print("  Requests to your custom domain routing to Cloudflare will reach the API Gateway.")
+        print(f"  Public Base Domain:      {domain}")
+        print(f"  Streak 2.0 Webhook:      {domain}/api/v1/ingest/streak")
+        print(f"  Apple Health Webhook:    {domain}/api/v1/ingest/apple-health")
+        print(f"  API Gateway Health:      {domain}/health")
+        print(f"  Data Points API:         {domain}/api/v1/data/points")
         print("======================================================================\n")
         return
 

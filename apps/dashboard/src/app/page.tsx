@@ -14,10 +14,18 @@ import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import { SummaryMetrics } from "./components/MetricCards";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+const getApiBase = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+  return "http://127.0.0.1:8000";
+};
+
 const DEFAULT_TENANT_ID = "56fe04c2-b103-40f1-b5f4-2326d1c52830";
 
 export default function DashboardPage() {
+  const API_BASE = getApiBase();
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
   const router = useRouter();

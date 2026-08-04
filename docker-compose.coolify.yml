@@ -1,0 +1,250 @@
+version: '3.8'
+
+# Quantified Self Platform — Production / Coolify Deployment Docker Compose
+# Deploy directly in Coolify as a Docker Compose application pointing to repo root.
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-qs_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qs_dev} -d ${POSTGRES_DB:-quantified_self}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - qs-network
+
+  nats:
+    image: nats:2.10-alpine
+    restart: always
+    command: --jetstream --store_dir /data
+    volumes:
+      - natsdata:/data
+    networks:
+      - qs-network
+
+  core:
+    build:
+      context: ./services/core
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
+      - NATS_URL=nats://nats:4222
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-quantified-self-2026}
+    networks:
+      - qs-network
+
+  traefik:
+    image: traefik:v3.1
+    container_name: qs-traefik
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:8080" # Traefik Dashboard (admin UI)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - qs-network
+
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8000:8000"
+    depends_on:
+      - core
+      - nats
+    environment:
+      - CORE_SERVICE_URL=http://core:8001
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.gateway.entrypoints=web"
+      - "traefik.http.routers.gateway.priority=10"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+    networks:
+      - qs-network
+
+  dashboard:
+    build:
+      context: ./apps/dashboard
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api-gateway
+    environment:
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api-gateway:8000}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.routers.dashboard.priority=1"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+    networks:
+      - qs-network
+
+  yazio-importer:
+    build:
+      context: ./services/importers/yazio
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  dawarich-importer:
+    build:
+      context: ./services/importers/dawarich
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  whoop-importer:
+    build:
+      context: ./services/importers/whoop
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  apple-health-importer:
+    build:
+      context: ./services/importers/apple_health
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8005:8005"
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - PORT=8005
+    networks:
+      - qs-network
+
+  streak-importer:
+    build:
+      context: ./services/importers/streak
+      dockerfile: Dockerfile
+    restart: always
+    ports:
+      - "8006:8006"
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - PORT=8006
+    networks:
+      - qs-network
+
+  home-assistant-importer:
+    build:
+      context: ./services/importers/home_assistant
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  weather-importer:
+    build:
+      context: ./services/importers/weather
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  calendar-importer:
+    build:
+      context: ./services/importers/calendar
+      dockerfile: Dockerfile
+    restart: always
+    depends_on:
+      - nats
+      - core
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+    networks:
+      - qs-network
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: qs-cloudflared-tunnel
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    depends_on:
+      - api-gateway
+    networks:
+      - qs-network
+
+volumes:
+  pgdata:
+  natsdata:
+
+networks:
+  qs-network:
+    driver: bridge

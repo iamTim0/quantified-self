@@ -14,6 +14,7 @@
 - [x] **Protobuf & gRPC Setup**: Code generation script (`packages/proto/generate.py`) for Python stubs.
 - [x] **Formal Verification**: Fizzbee specifications (`specs/distributed_ingestion.fizz`, `specs/tenant_isolation.fizz`) + passing invariant and integration tests.
 - [x] **Alembic Migrations**: Setup with mandatory `downgrade()` rollback functions (`alembic/versions/001_initial_schema.py` through `005_add_postgis_location_support.py`).
+- [x] **Docs-as-Code Standard**: Implemented industry-standard "Docs-as-Code" methodology—maintaining all system documentation, API specifications, and agent guidelines (`AGENTS.md`, `README.md`, `ROADMAP.md`, `GEMINI.md`) version-controlled directly alongside code and synchronized via `doc-sync`.
 
 ---
 

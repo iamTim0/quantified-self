@@ -3,7 +3,7 @@
 A SaaS-ready, microservice-based personal data analytics platform.
 
 ![CI](https://img.shields.io/badge/CI-Passing-success)
-![License](https://img.shields.io/badge/License-PolyForm_Noncommercial_1.0.0-red)
+![License](https://img.shields.io/badge/License-MIT-green)
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
 
 ## Architecture Overview
@@ -117,11 +117,12 @@ docker compose -f infra/docker-compose.yml up -d
 ```
 
 ### Run Services Locally
-You can run individual services locally using Taskfile commands:
+You can run individual services or all importers locally using Taskfile commands:
 ```bash
 task run:core
 task run:gateway
-task run:importer:yazio
+task run:importers:all           # Concurrently run all importer microservices
+task run:importer:yazio          # Or run individual importers (apple-health, calendar, dawarich, etc.)
 task dashboard
 ```
 
