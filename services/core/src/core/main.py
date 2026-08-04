@@ -955,10 +955,6 @@ async def delete_explorer_view(
     }
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001)
-
 class UpdateConnectorStatusRequest(BaseModel):
     sync_status: str
     last_sync_message: str
@@ -1050,3 +1046,9 @@ async def delete_tenant_account(
         "deleted_shares": ts_res.rowcount,
         "message": "Full account data wiped successfully.",
     }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8001)
+
