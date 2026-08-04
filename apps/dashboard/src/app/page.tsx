@@ -12,6 +12,7 @@ import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
 import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
+import AnalysisTab from "./components/AnalysisTab";
 import { SummaryMetrics } from "./components/MetricCards";
 
 const getApiBase = (): string => {
@@ -34,6 +35,7 @@ export default function DashboardPage() {
     if (path.startsWith("/explorer")) return "explorer";
     if (path.startsWith("/connectors")) return "connectors";
     if (path.startsWith("/quality")) return "quality";
+    if (path.startsWith("/analysis")) return "analysis";
     if (path.startsWith("/profile") || path.startsWith("/settings")) return "profile";
     return "overview";
   };
@@ -44,6 +46,7 @@ export default function DashboardPage() {
     if (tab === "explorer") router.push("/explorer");
     else if (tab === "connectors") router.push("/connectors");
     else if (tab === "quality") router.push("/quality");
+    else if (tab === "analysis") router.push("/analysis");
     else if (tab === "profile") router.push("/profile");
     else router.push("/");
   };
@@ -385,6 +388,10 @@ export default function DashboardPage() {
 
           {activeTab === "quality" && (
             <DataQualityTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+          )}
+
+          {activeTab === "analysis" && (
+            <AnalysisTab apiBase={API_BASE} token={token} tenantId={tenantId} />
           )}
 
           {activeTab === "profile" && (
