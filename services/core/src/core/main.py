@@ -45,7 +45,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
-from sqlalchemy import distinct, func, select
+from sqlalchemy import distinct, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -948,7 +948,14 @@ async def delete_tenant_account(
     """1-Click full account wipe (data points, data sources, tenant shares)."""
     dp_res = await session.execute(delete(DataPoint).where(DataPoint.tenant_id == tenant_id))
     ds_res = await session.execute(delete(DataSource).where(DataSource.tenant_id == tenant_id))
-    ts_res = await session.execute(delete(TenantShare).where(TenantShare.tenant_id == tenant_id))
+    ts_res = await session.execute(
+        delete(TenantShare).where(
+            or_(
+                TenantShare.grantor_tenant_id == tenant_id,
+                TenantShare.grantee_tenant_id == tenant_id,
+            )
+        )
+    )
     await session.commit()
 
     return {

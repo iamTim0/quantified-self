@@ -15,9 +15,10 @@ interface LocationMapProps {
   apiBase: string;
   token: string;
   tenantId: string;
+  refreshTrigger: number;
 }
 
-export default function LocationMap({ apiBase, token, tenantId }: LocationMapProps) {
+export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }: LocationMapProps) {
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<any>(null);
   const [points, setPoints] = useState<GpsPoint[]>([]);
@@ -25,7 +26,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
   const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
-  const [dateFilter, setDateFilter] = useState<"today" | "all">("today");
+  const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
 
   // 1. Dynamically inject Leaflet CSS & Leaflet JS
   useEffect(() => {
@@ -57,7 +58,18 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
   const fetchLocationData = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/metrics?metric_type=location_point&limit=500`, {
+      const now = new Date();
+      const start = new Date(now);
+      if (dateFilter === "today") start.setHours(0, 0, 0, 0);
+      else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
+      const query = new URLSearchParams({
+        metric_type: "location_point",
+        start_time: start.toISOString(),
+        end_time: now.toISOString(),
+        limit: "1000",
+      });
+      const res = await fetch(`${apiBase}/api/v1/data/metrics?${query}`, {
+        cache: "no-store",
         headers: {
           Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
@@ -97,7 +109,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     if (token && tenantId) {
       fetchLocationData();
     }
-  }, [apiBase, token, tenantId]);
+  }, [apiBase, token, tenantId, dateFilter, refreshTrigger]);
 
   const isToday = (isoString?: string) => {
     if (!isoString) return false;
@@ -114,9 +126,7 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
     }
   };
 
-  const filteredPoints = dateFilter === "today" 
-    ? points.filter((p) => isToday(p.timestamp))
-    : points;
+  const filteredPoints = dateFilter === "today" ? points.filter((p) => isToday(p.timestamp)) : points;
 
   // 3. Initialize & render OpenStreetMap Leaflet Map
   useEffect(() => {
@@ -259,10 +269,10 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
         <div>
           <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
             <MapPin className="w-5 h-5 text-[#0d5c3a]" />
-            <span>Dawarich GPS Standorte & Tagesstrecke</span>
+            <span>GPS-Standorte & Strecke</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Interaktive Visualisierung deiner Dawarich OpenStreetMap GPS-Koordinaten.
+            Quellenunabhängige Darstellung der GPS-Metrik auf OpenStreetMap (kein API-Key erforderlich).
           </p>
         </div>
 
@@ -276,15 +286,23 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
               }`}
             >
               <Calendar className="w-3 h-3" />
-              <span>Nur Heute</span>
+              <span>Heute</span>
             </button>
             <button
-              onClick={() => setDateFilter("all")}
+              onClick={() => setDateFilter("7d")}
               className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                dateFilter === "all" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
+                dateFilter === "7d" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
               }`}
             >
-              Alle ({points.length})
+              7 Tage
+            </button>
+            <button
+              onClick={() => setDateFilter("30d")}
+              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
+                dateFilter === "30d" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
+              }`}
+            >
+              30 Tage
             </button>
           </div>
 
@@ -356,14 +374,6 @@ export default function LocationMap({ apiBase, token, tenantId }: LocationMapPro
                   <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
                   <span>Keine GPS-Punkte für den gewählten Zeitraum erfasst. Standard-Kartenansicht aktiv.</span>
                 </div>
-                {points.length > 0 && (
-                  <button
-                    onClick={() => setDateFilter("all")}
-                    className="px-3 py-1 bg-[#0d5c3a] hover:bg-[#08432a] text-white rounded-lg font-bold text-[11px] shrink-0 transition-colors"
-                  >
-                    Alle ({points.length}) anzeigen
-                  </button>
-                )}
               </div>
             )}
           </>

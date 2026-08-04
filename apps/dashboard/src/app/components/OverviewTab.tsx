@@ -35,6 +35,7 @@ interface OverviewTabProps {
   apiBase: string;
   token: string;
   tenantId: string;
+  refreshTrigger: number;
   onRefresh: () => void;
   onNavigateToConnectors: () => void;
 }
@@ -51,6 +52,7 @@ export default function OverviewTab({
   apiBase,
   token,
   tenantId,
+  refreshTrigger,
   onRefresh,
   onNavigateToConnectors,
 }: OverviewTabProps) {
@@ -119,7 +121,7 @@ export default function OverviewTab({
       </div>
 
       {/* Dawarich Interactive GPS Location Map */}
-      <LocationMap apiBase={apiBase} token={token} tenantId={tenantId} />
+      <LocationMap apiBase={apiBase} token={token} tenantId={tenantId} refreshTrigger={refreshTrigger} />
     </div>
   );
 }

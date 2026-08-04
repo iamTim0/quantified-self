@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { TabType } from "./components/Sidebar";
 import TopHeader from "./components/TopHeader";
@@ -59,7 +59,20 @@ export default function DashboardPage() {
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const triggerRefresh = () => setRefreshTrigger((prev) => prev + 1);
+  const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const interval = window.setInterval(triggerRefresh, 30_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") triggerRefresh();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [isAuthenticated, triggerRefresh]);
 
   useEffect(() => {
     setMounted(true);
@@ -151,9 +164,11 @@ export default function DashboardPage() {
       try {
         const [summaryRes, metricsRes] = await Promise.all([
           fetch(`${API_BASE}/api/v1/data/metrics/summary`, {
+            cache: "no-store",
             headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
           fetch(`${API_BASE}/api/v1/data/metrics?limit=300`, {
+            cache: "no-store",
             headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
         ]);
@@ -321,6 +336,7 @@ export default function DashboardPage() {
             onOpenConfigureModal={() => handleOpenConfigureModal()}
             onShare={() => setIsShareModalOpen(true)}
             onNavigateToProfile={() => handleTabChange("profile")}
+            onRefresh={triggerRefresh}
           />
 
           {activeTab === "overview" && (
@@ -336,17 +352,19 @@ export default function DashboardPage() {
               apiBase={API_BASE}
               token={token}
               tenantId={tenantId}
+              refreshTrigger={refreshTrigger}
               onRefresh={triggerRefresh}
               onNavigateToConnectors={() => handleTabChange("connectors")}
             />
           )}
 
           {activeTab === "explorer" && (
-            <ExplorerTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+            <ExplorerTab key={refreshTrigger} apiBase={API_BASE} token={token} tenantId={tenantId} />
           )}
 
           {activeTab === "connectors" && (
             <ConnectorsPage
+              key={refreshTrigger}
               apiBase={API_BASE}
               token={token}
               tenantId={tenantId}

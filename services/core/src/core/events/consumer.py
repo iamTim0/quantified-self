@@ -66,7 +66,10 @@ async def process_message(msg):
                 from sqlalchemy import select
                 from datetime import timezone
                 if source_id:
-                    s_stmt = select(DataSource).where(DataSource.id == source_id)
+                    s_stmt = select(DataSource).where(
+                        DataSource.tenant_id == tenant_id,
+                        DataSource.id == source_id,
+                    )
                 else:
                     s_stmt = select(DataSource).where(DataSource.tenant_id == tenant_id, DataSource.source_type == source_type)
                 res = await session.execute(s_stmt)
