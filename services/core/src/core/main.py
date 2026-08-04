@@ -342,6 +342,7 @@ async def query_metrics(
     start_time: str | None = Query(None, description="ISO start timestamp"),
     end_time: str | None = Query(None, description="ISO end timestamp"),
     limit: int = Query(100, ge=1, le=1000, description="Max data points to return"),
+    sort: Literal["asc", "desc"] = Query("asc", description="Sort by timestamp"),
     session: AsyncSession = Depends(get_session),
 ):
     """Query time-series metric data points for the authenticated tenant."""
@@ -365,7 +366,9 @@ async def query_metrics(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid end_time ISO format") from None
 
-    stmt = stmt.order_by(DataPoint.timestamp.asc()).limit(limit)
+    stmt = stmt.order_by(
+        DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
+    ).limit(limit)
     res = await session.execute(stmt)
     points = res.scalars().all()
 

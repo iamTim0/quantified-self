@@ -181,7 +181,9 @@ export default function DashboardPage() {
             cache: "no-store",
             headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
-          fetch(`${API_BASE}/api/v1/data/metrics?limit=300`, {
+          // Fetch the newest points first so large histories do not hide current data
+          // behind the endpoint's result limit. The chart is rendered chronologically below.
+          fetch(`${API_BASE}/api/v1/data/metrics?limit=1000&sort=desc`, {
             cache: "no-store",
             headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
@@ -194,7 +196,7 @@ export default function DashboardPage() {
 
         if (metricsRes.ok && isMounted) {
           const mData = await metricsRes.json();
-          const points = mData.data_points || [];
+          const points = [...(mData.data_points || [])].reverse();
 
           const formatDate = (isoString?: string) => {
             if (!isoString) return "";
