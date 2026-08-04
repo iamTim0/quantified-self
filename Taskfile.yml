@@ -49,16 +49,32 @@ tasks:
       - uv run --with grpcio-tools python packages/proto/generate.py
 
   test:all:
-    desc: "Run tests across all services and specs"
+    desc: "Run complete test suite (E2E, Specs, Core, and Importers)"
     cmds:
-      - uv run --with pytest --with cryptography pytest specs/tests
-      - uv run --directory services/core --with pytest --with pytest-asyncio --with httpx --with cryptography --with passlib --with argon2-cffi --with pyjwt python -m pytest tests
-      - uv run --directory services/api-gateway --with pytest --with pytest-asyncio --with httpx --with pyjwt python -m pytest tests
+      - task: test:specs
+      - task: test:e2e
+      - task: test:importers
+
+  test:e2e:
+    desc: "Run end-to-end integration tests for all importers, dashboard API, and UI flows"
+    cmds:
+      - PYTHONPATH=. uv run --with pytest --with pytest-asyncio --with httpx --with cryptography --with passlib --with pyjwt --with asyncpg --with aiosqlite --with geoalchemy2 pytest tests/e2e
+
+  test:importers:
+    desc: "Run unit tests across all importer microservices"
+    cmds:
+      - for dir in services/importers/*/; do (cd "$dir" && uv run --with pytest --with pytest-asyncio --with httpx pytest tests); done
+
+  test:specs:
+    desc: "Run Fizzbee model spec invariant tests"
+    cmds:
+      - cd specs && uv run --with pytest --with cryptography --with httpx --with pydantic pytest tests
 
   test:service:
     desc: "Run tests for a specific service"
     cmds:
       - echo "Running tests for {{.SERVICE}}"
+      - uv run --directory services/{{.SERVICE}} pytest tests
     requires:
       vars: [SERVICE]
 
