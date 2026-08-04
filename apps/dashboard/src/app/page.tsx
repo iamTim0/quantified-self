@@ -11,6 +11,7 @@ import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ShareModal from "./components/ShareModal";
 import ProfileTab from "./components/ProfileTab";
+import DataQualityTab from "./components/DataQualityTab";
 import { SummaryMetrics } from "./components/MetricCards";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
@@ -24,6 +25,7 @@ export default function DashboardPage() {
   const getTabFromPathname = (path: string): TabType => {
     if (path.startsWith("/explorer")) return "explorer";
     if (path.startsWith("/connectors")) return "connectors";
+    if (path.startsWith("/quality")) return "quality";
     if (path.startsWith("/profile") || path.startsWith("/settings")) return "profile";
     return "overview";
   };
@@ -33,6 +35,7 @@ export default function DashboardPage() {
   const handleTabChange = (tab: TabType) => {
     if (tab === "explorer") router.push("/explorer");
     else if (tab === "connectors") router.push("/connectors");
+    else if (tab === "quality") router.push("/quality");
     else if (tab === "profile") router.push("/profile");
     else router.push("/");
   };
@@ -370,6 +373,10 @@ export default function DashboardPage() {
               tenantId={tenantId}
               onOpenConfigureModal={(c, st) => handleOpenConfigureModal(c, st)}
             />
+          )}
+
+          {activeTab === "quality" && (
+            <DataQualityTab apiBase={API_BASE} token={token} tenantId={tenantId} />
           )}
 
           {activeTab === "profile" && (

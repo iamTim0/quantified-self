@@ -1,27 +1,3 @@
-async def ensure_default_tenant_seeded():
-    try:
-        from core.db.session import async_session_maker as AsyncSessionLocal
-        async with AsyncSessionLocal() as session:
-            tenant_id = "56fe04c2-b103-40f1-b5f4-2326d1c52830"
-            t_stmt = select(Tenant).where(Tenant.id == tenant_id)
-            res = await session.execute(t_stmt)
-            if not res.scalar_one_or_none():
-                tenant = Tenant(id=tenant_id, name="Timo's Workspace")
-                user = User(
-                    id=tenant_id,
-                    tenant_id=tenant_id,
-                    email="owner@example.com",
-                    password_hash="***REMOVED-PASSWORD-HASH***",
-                    name="Timo",
-                    role="owner",
-                )
-                session.add(tenant)
-                session.add(user)
-                await session.commit()
-                logger.info("Successfully auto-seeded default developer tenant & user in PostgreSQL.")
-    except Exception as e:
-        logger.warning(f"Failed to auto-seed default workspace: {e}")
-
 # ruff: noqa: B008
 """Core Data Service FastAPI Entry Point.
 
@@ -36,7 +12,7 @@ import logging
 import os
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 
 import httpx
@@ -51,6 +27,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.analytics import detect_daily_gaps, find_cross_source_conflicts, pearson_pairs
 from core.db.models import DataPoint, DataSource, ExplorerView, Tenant, TenantShare, User
 from core.db.session import get_session
 from core.db.tenant import TenantMiddleware, get_current_tenant_id
@@ -65,8 +42,27 @@ from core.security.crypto import (
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # SECURITY H3: Constrain source_type to known connectors
-ValidSourceType = Literal["oura", "whoop", "apple_health", "fitbit", "yazio", "dawarich", "streak"]
+ValidSourceType = Literal[
+    "oura", "whoop", "apple_health", "fitbit", "garmin", "strava", "yazio",
+    "dawarich", "streak", "home_assistant", "weather", "calendar",
+]
 ValidStatus = Literal["active", "inactive"]
+
+
+class ManualDataPointRequest(BaseModel):
+    """Validated manual or visually mapped import row."""
+
+    source_id: str
+    metric_type: str = Field(..., min_length=1, max_length=128)
+    timestamp: datetime
+    value: float | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class BatchImportRequest(BaseModel):
+    """A bounded batch produced by the dashboard CSV/DB visual mapper."""
+
+    rows: list[ManualDataPointRequest] = Field(..., min_length=1, max_length=5000)
 
 
 
@@ -92,7 +88,6 @@ async def lifespan(app: FastAPI):
         yield
         return
     try:
-        await ensure_default_tenant_seeded()
         nc = await start_consumer()
         app.state.nats_client = nc
         yield
@@ -443,6 +438,96 @@ async def get_metrics_summary(
         "tenant_id": tenant_id,
         "metrics": summary,
     }
+
+
+@app.get("/api/v1/data/quality/gaps")
+async def get_data_gaps(
+    start_date: date = Query(...),
+    end_date: date = Query(...),
+    session: AsyncSession = Depends(get_session),
+):
+    """Detect missing tracking days using only the authenticated tenant's timeline."""
+    tenant_id = get_current_tenant_id()
+    if end_date < start_date or (end_date - start_date).days > 366:
+        raise HTTPException(status_code=400, detail="Date range must contain at most 367 ordered days")
+    result = await session.execute(
+        select(DataPoint.metric_type, DataPoint.timestamp).where(
+            DataPoint.tenant_id == tenant_id,
+            DataPoint.timestamp >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc),
+            DataPoint.timestamp < datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc),
+        )
+    )
+    gaps = detect_daily_gaps(result.all(), start_date, end_date)
+    return {"tenant_id": tenant_id, "gaps": gaps, "missing_count": sum(len(g["missing_dates"]) for g in gaps)}
+
+
+@app.post("/api/v1/data/import", status_code=202)
+async def import_mapped_rows(
+    request: BatchImportRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Persist visually mapped rows with exact-once tenant-scoped semantics."""
+    tenant_id = get_current_tenant_id()
+    source_ids = {row.source_id for row in request.rows}
+    known = await session.execute(
+        select(DataSource.id).where(DataSource.tenant_id == tenant_id, DataSource.id.in_(source_ids))
+    )
+    if set(known.scalars()) != source_ids:
+        raise HTTPException(status_code=400, detail="Every source_id must belong to the authenticated tenant")
+    accepted = 0
+    for row in request.rows:
+        normalized_timestamp = row.timestamp.astimezone(timezone.utc)
+        key = __import__("hashlib").sha256(
+            f"{tenant_id}:{row.source_id}:{row.metric_type}:{normalized_timestamp.isoformat()}".encode()
+        ).hexdigest()
+        statement = insert(DataPoint).values(
+            id=str(uuid.uuid4()), tenant_id=tenant_id, source_id=row.source_id,
+            metric_type=row.metric_type, timestamp=normalized_timestamp, value=row.value,
+            metadata_=row.metadata, idempotency_key=key,
+        ).on_conflict_do_nothing(
+            index_elements=["tenant_id", "idempotency_key", "timestamp"]
+        )
+        result = await session.execute(statement)
+        accepted += result.rowcount or 0
+    await session.commit()
+    return {"tenant_id": tenant_id, "submitted": len(request.rows), "accepted": accepted}
+
+
+@app.get("/api/v1/data/quality/conflicts")
+async def get_cross_source_conflicts(
+    tolerance: float = Query(0.05, ge=0, le=1),
+    session: AsyncSession = Depends(get_session),
+):
+    """Return ambiguous same-day values across tenant-owned sources for user review."""
+    tenant_id = get_current_tenant_id()
+    rows = await session.execute(
+        select(DataPoint).where(DataPoint.tenant_id == tenant_id).order_by(DataPoint.timestamp.desc()).limit(5000)
+    )
+    points = [
+        {"id": point.id, "source_id": point.source_id, "metric_type": point.metric_type,
+         "timestamp": point.timestamp, "value": point.value}
+        for point in rows.scalars()
+    ]
+    conflicts = find_cross_source_conflicts(points, tolerance)
+    for conflict in conflicts:
+        for candidate in conflict["candidates"]:
+            candidate["timestamp"] = candidate["timestamp"].isoformat()
+    return {"tenant_id": tenant_id, "conflicts": conflicts}
+
+
+@app.get("/api/v1/data/analysis/correlations")
+async def get_correlations(session: AsyncSession = Depends(get_session)):
+    """Build daily metric correlations for the tenant; Analysis can consume this through Core."""
+    tenant_id = get_current_tenant_id()
+    rows = await session.execute(
+        select(DataPoint.metric_type, DataPoint.timestamp, DataPoint.value).where(
+            DataPoint.tenant_id == tenant_id, DataPoint.value.is_not(None)
+        ).order_by(DataPoint.timestamp.desc()).limit(10000)
+    )
+    series: dict[str, dict[str, float]] = {}
+    for metric, timestamp, value in rows.all():
+        series.setdefault(metric, {})[timestamp.date().isoformat()] = float(value)
+    return {"tenant_id": tenant_id, "correlations": pearson_pairs(series)}
 
 
 # ─── Connector Configuration Endpoints ──────────────────────

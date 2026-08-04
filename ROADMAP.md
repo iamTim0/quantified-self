@@ -1,6 +1,6 @@
 # 🗺️ Quantified Self Platform — Project Roadmap
 
-**Current Status**: **MILESTONE 5 COMPLETED** 🎉 (Production Microservices + Yazio ETL Importer + Dawarich GPS Importer + Universal Data Explorer & Saved Views + Next.js Dashboard).
+**Current Status**: **MILESTONE 6 IN PROGRESS** (Roadmap foundation: environmental importers, tenant-scoped data quality, mapped batch imports, correlations and conflict discovery).
 
 ---
 
@@ -65,11 +65,11 @@
 
 - [ ] **🏋️ Streak / Gym Log App Importer**:
   - Importer service for Streak gym logging app to record workout sessions, sets, reps, weight lifted, and exercise progression history.
-- [ ] **🏠 Home Assistant Importer**:
+- [x] **🏠 Home Assistant Importer**:
   - Importer service integrating with Home Assistant API to collect smart home environmental metrics (bedroom temperature, humidity, noise levels, light exposure) for sleep & recovery correlation.
-- [ ] **⛅ Wetter Importer (Weather Data)**:
+- [x] **⛅ Wetter Importer (Weather Data)**:
   - Open-Meteo / Weather API importer bringing historical and real-time local weather metrics (temperature, barometric pressure, precipitation, UV index) to correlate weather patterns with mood, HRV, and physical performance.
-- [ ] **📅 Kalender Importer (Calendar Data)**:
+- [x] **📅 Kalender Importer (Calendar Data)**:
   - iCal / Google Calendar / Outlook integration importing daily schedules, meeting durations, and busy hours to analyze cognitive stress, routine consistency, and sleep impact.
 - [ ] **⌚ Additional Health Wearables**:
   - Whoop, Apple Health, Garmin, Strava, and Oura ETL microservices.
@@ -78,13 +78,15 @@
 
 ## 🔵 Phase 6: Core Data Platform & UI Features (Upcoming)
 
-- [ ] **🔍 Datenlücken-Erkennung (Data Gap Detection)**:
+- [x] **🔍 Datenlücken-Erkennung (Data Gap Detection)**:
   - Intelligent engine in Core / Analysis service detecting missing tracking days or timeline gaps across all connected sources.
   - Highlights data gaps visually in the Dashboard UI with 1-click backfill and manual entry triggers.
 - [ ] **📁 Universal CSV & DB Importer mit Visuellem Editor**:
   - Generic CSV & SQL/SQLite export importer featuring a drag-and-drop web upload interface.
   - **Visual Column Mapper & Data Editor**: Interactive UI allowing users to map arbitrary CSV columns to Quantified Self metrics, preview data tables, correct missing values or formatting errors visually, and execute batch imports.
-- [ ] **🤖 Analysis Service AI & Insight Features**:
+- [x] **📈 Deterministic Insight Foundation**:
+  - Tenant-scoped daily Pearson correlation analysis with a Dashboard Data Quality Center.
+- [ ] **🤖 Generative AI & Vector Insight Features**:
   - gRPC reader querying Core → vector embeddings with `pgvector` → LLM health insights, trend anomaly alerts, and cross-metric correlation analysis.
 - [ ] **🤝 Cross-Tenant Data Sharing**:
   - UI & API for managing `tenant_shares` consent grants with friends, family, or health coaches.

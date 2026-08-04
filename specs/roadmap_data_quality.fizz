@@ -1,0 +1,19 @@
+# Roadmap data-quality interactions: tenant-safe gap backfills and conflict decisions.
+
+action Init:
+  tenant = "tenant-a"
+  requested_tenant = ""
+  resolved = False
+
+action RequestBackfill:
+  requested_tenant = tenant
+
+action ResolveConflict:
+  if requested_tenant == tenant:
+    resolved = True
+
+invariant BackfillNeverCrossesTenant:
+  requested_tenant == "" or requested_tenant == tenant
+
+invariant ConflictDecisionIsTenantScoped:
+  not resolved or requested_tenant == tenant

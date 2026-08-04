@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug } from "lucide-react";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -73,6 +73,24 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     supportedMetrics: ["Standortpunkte", "Breitengrad", "Längengrad"],
     direction: "active",
   },
+  {
+    id: "home_assistant", name: "Home Assistant", category: "Smart Home",
+    description: "Aktiv: Liest Temperatur, Luftfeuchte, Licht und weitere freigegebene Sensorzustände.",
+    icon: HousePlug, iconColor: "text-sky-500", status: "available",
+    supportedMetrics: ["Temperatur", "Luftfeuchte", "Licht", "Lärm"], direction: "active",
+  },
+  {
+    id: "weather", name: "Wetter", category: "Umwelt",
+    description: "Aktiv: Importiert lokale Wetterzeitreihen über eine Open-Meteo-kompatible API.",
+    icon: CloudSun, iconColor: "text-amber-500", status: "available",
+    supportedMetrics: ["Temperatur", "Luftdruck", "Niederschlag", "UV-Index"], direction: "active",
+  },
+  {
+    id: "calendar", name: "Kalender", category: "Routine & Stress",
+    description: "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
+    icon: Calendar, iconColor: "text-violet-500", status: "available",
+    supportedMetrics: ["Termine", "Meetingdauer", "Busy Hours"], direction: "active",
+  },
 ];
 
 export const getConnectorDirection = (sourceType: string): ConnectorDirection =>
@@ -112,6 +130,7 @@ export default function ConnectorModal({
   const [yazioPassword, setYazioPassword] = useState("");
   const [dawarichUrl, setDawarichUrl] = useState("http://localhost:3000");
   const [dawarichApiKey, setDawarichApiKey] = useState("");
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
 
   const [pollIntervalHours, setPollIntervalHours] = useState(initialPollInterval);
   const [lookbackDays, setLookbackDays] = useState(initialLookbackDays);
@@ -200,6 +219,18 @@ export default function ConnectorModal({
         };
         if (!finalToken && !isEditing) {
           setError("Bitte gib den Dawarich API Key ein.");
+          setLoading(false);
+          return;
+        }
+      } else if (["home_assistant", "weather", "calendar"].includes(selectedProvider.id)) {
+        if (!providerBaseUrl.trim()) {
+          setError("Bitte gib die HTTPS-Basis-URL der Provider-API ein.");
+          setLoading(false);
+          return;
+        }
+        payloadConfig = { base_url: providerBaseUrl.trim() };
+        if (!finalToken && !isEditing) {
+          setError(`Bitte gib einen gültigen API Key für ${selectedProvider.name} ein.`);
           setLoading(false);
           return;
         }
@@ -472,6 +503,13 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
                 </div>
+              </div>
+            )}
+
+            {selectedProvider && ["home_assistant", "weather", "calendar"].includes(selectedProvider.id) && (
+              <div className="space-y-3">
+                <input type="url" required value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)} placeholder="https://api.example.com" className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none" />
+                <input type="password" required={!isEditing} value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder={isEditing ? "•••••••• (API Key beibehalten)" : "Bearer Token / API Key"} className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none" />
               </div>
             )}
 

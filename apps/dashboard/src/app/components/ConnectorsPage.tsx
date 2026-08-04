@@ -20,6 +20,7 @@ import {
   AlertTriangle,
   Trash2,
   Dumbbell
+  , CloudSun, HousePlug, CalendarDays
 } from "lucide-react";
 
 export interface ConnectorItem {
@@ -91,6 +92,9 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     icon: Dumbbell,
     available: true,
   },
+  { id: "home_assistant", name: "Home Assistant", description: "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.", icon: HousePlug, available: true },
+  { id: "weather", name: "Wetter", description: "Temperatur, Luftdruck, Niederschlag und UV-Index.", icon: CloudSun, available: true },
+  { id: "calendar", name: "Kalender", description: "Termine, Meetingdauer und tägliche Busy Hours.", icon: CalendarDays, available: true },
 ];
 
 export default function ConnectorsPage({

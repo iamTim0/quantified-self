@@ -23,6 +23,7 @@ flowchart TD
         Analysis[Analysis Service\nFastAPI]
         YazioImporter[Yazio Importer\nPython Stateless Worker]
         WhoopImporter[WHOOP Importer\nFastAPI + NATS Consumer]
+        EnvironmentImporters[Home Assistant / Weather / Calendar\nStateless Workers]
         
         NATS[(NATS JetStream)]
         DB[(PostgreSQL\n+ TimescaleDB + pgvector)]
@@ -36,6 +37,7 @@ flowchart TD
     YazioImporter -->|Publish Event| NATS
     WhoopImporter -->|OAuth API| WHOOP[WHOOP API]
     WhoopImporter -->|Publish Event| NATS
+    EnvironmentImporters -->|Publish tenant-scoped events| NATS
     NATS -->|Consume Event| Core
     Core -->|SQL| DB
     
@@ -51,6 +53,9 @@ flowchart TD
 | **Analysis** | 8002 | AI/Data Science, complex queries, embeddings | gRPC (to Core), HTTP (from Gateway) |
 | **Yazio Importer** | Container | Polls Yazio API v15 for meals, products & daily macros | NATS publisher (`qs.ingest.yazio`) |
 | **WHOOP Importer** | 8013 (internal) | Request-driven cycles, recovery, sleep and workout import | NATS task consumer/publisher (`qs.ingest.whoop`) |
+| **Home Assistant Importer** | Container | Polls authorized environmental sensor states | NATS (`qs.ingest.home_assistant`) |
+| **Weather Importer** | Container | Polls Open-Meteo-compatible weather timelines | NATS (`qs.ingest.weather`) |
+| **Calendar Importer** | Container | Polls authorized calendar event summaries | NATS (`qs.ingest.calendar`) |
 
 ## Tech Stack
 
@@ -143,6 +148,14 @@ The database utilizes PostgreSQL extended with **TimescaleDB** for hypertable-ba
 Deduplication happens at the database level using a 64-character SHA256 `idempotency_key`:
 $$\text{SHA256}(\text{tenant\_id} + ":" + \text{source\_id} + ":" + \text{metric\_type} + ":" + \text{timestamp})$$
 The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
+
+## Data Quality and Analysis
+
+The tenant-scoped Data Quality Center exposes daily gap detection, cross-source conflict
+detection and deterministic Pearson correlations. The visual import API accepts at most
+5,000 mapped rows per request, verifies ownership of every source and applies the same
+exact-once constraint as broker ingestion. The Dashboard route `/quality` presents the
+quality indicators without exposing data from other workspaces.
 
 ## Multi-Tenancy & Data Sharing
 

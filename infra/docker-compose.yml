@@ -118,6 +118,24 @@ services:
     networks:
       - qs-network
 
+  home-assistant-importer:
+    build: { context: ../services/importers/home_assistant }
+    depends_on: [nats, core]
+    environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
+    networks: [qs-network]
+
+  weather-importer:
+    build: { context: ../services/importers/weather }
+    depends_on: [nats, core]
+    environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
+    networks: [qs-network]
+
+  calendar-importer:
+    build: { context: ../services/importers/calendar }
+    depends_on: [nats, core]
+    environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
+    networks: [qs-network]
+
   dashboard:
     build:
       context: ../apps/dashboard
