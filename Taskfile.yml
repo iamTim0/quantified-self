@@ -58,17 +58,17 @@ tasks:
   test:e2e:
     desc: "Run end-to-end integration tests for all importers, dashboard API, and UI flows"
     cmds:
-      - PYTHONPATH=. uv run --with pytest --with pytest-asyncio --with httpx --with cryptography --with passlib --with pyjwt --with asyncpg --with aiosqlite --with geoalchemy2 pytest tests/e2e
+      - PYTHONPATH=. services/importers/yazio/.venv/bin/pytest tests/e2e
 
   test:importers:
     desc: "Run unit tests across all importer microservices"
     cmds:
-      - for dir in services/importers/*/; do (cd "$dir" && uv run --with pytest --with pytest-asyncio --with httpx pytest tests); done
+      - for dir in services/importers/*/; do (cd "$dir" && .venv/bin/pytest tests); done
 
   test:specs:
     desc: "Run Fizzbee model spec invariant tests"
     cmds:
-      - cd specs && uv run --with pytest --with cryptography --with httpx --with pydantic pytest tests
+      - cd specs && ../services/importers/yazio/.venv/bin/pytest tests
 
   test:service:
     desc: "Run tests for a specific service"
