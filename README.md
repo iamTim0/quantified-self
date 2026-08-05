@@ -55,7 +55,8 @@ flowchart TD
 | **WHOOP Importer** | 8013 (internal) | Request-driven cycles, recovery, sleep and workout import | NATS task consumer/publisher (`qs.ingest.whoop`) |
 | **Home Assistant Importer** | Container | Polls authorized environmental sensor states | NATS (`qs.ingest.home_assistant`) |
 | **Weather Importer** | Container | Polls Open-Meteo-compatible weather timelines | NATS (`qs.ingest.weather`) |
-| **Calendar Importer** | Container | Polls authorized calendar event summaries | NATS (`qs.ingest.calendar`) |
+| **Calendar Importer** | Container | Polls ICS/iCalendar event summaries | NATS (`qs.ingest.calendar`) |
+| **Docs** | 8003 (`/docs`) | Material for MkDocs static documentation | Traefik route (`/docs`) |
 
 ## Tech Stack
 
@@ -69,6 +70,7 @@ flowchart TD
 | **Dependency Mgmt** | `uv` | Fast Python package management |
 | **Orchestration** | Docker Compose | Local development and testing |
 | **Task Runner** | Taskfile | Cross-language script execution |
+| **Documentation** | MkDocs + Material for MkDocs | Markdown code-to-documentation site under `/docs` |
 | **Formal Verification**| Fizzbee | Designing and verifying distributed systems |
 
 ## Project Structure
@@ -124,6 +126,7 @@ task run:gateway
 task run:importers:all           # Concurrently run all importer microservices
 task run:importer:yazio          # Or run individual importers (apple-health, calendar, dawarich, etc.)
 task dashboard
+task docs:serve                  # Documentation at http://localhost:8003
 ```
 
 ### Environment Variables
@@ -150,13 +153,13 @@ Deduplication happens at the database level using a 64-character SHA256 `idempot
 $$\text{SHA256}(\text{tenant\_id} + ":" + \text{source\_id} + ":" + \text{metric\_type} + ":" + \text{timestamp})$$
 The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
 
+## Documentation Site
+
+Importer and feature documentation is maintained as Markdown under `docs/` and built with MkDocs + Material for MkDocs. In Docker Compose, Traefik routes the docs service under `/docs`, separate from the product dashboard. Use `task docs:serve` for local authoring and `task docs:build` for strict static-site validation.
+
 ## Data Quality and Analysis
 
-The tenant-scoped Data Quality Center exposes daily gap detection, cross-source conflict
-detection and deterministic Pearson correlations. The visual import API accepts at most
-5,000 mapped rows per request, verifies ownership of every source and applies the same
-exact-once constraint as broker ingestion. The Dashboard route `/quality` presents the
-quality indicators without exposing data from other workspaces.
+The tenant-scoped Data Quality Center exposes daily gap detection, cross-source conflict detection and deterministic Pearson correlations. The Dashboard explains what each quality signal means, shows recommendations for missing data or source conflicts, and places correlations in the `/analysis` area with simple strength labels. The visual import API accepts at most 5,000 mapped rows per request, verifies ownership of every source and applies the same exact-once constraint as broker ingestion. The Dashboard route `/quality` presents the quality indicators without exposing data from other workspaces.
 
 ## Multi-Tenancy & Data Sharing
 

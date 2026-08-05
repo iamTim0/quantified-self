@@ -24,7 +24,7 @@ export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
-  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
+  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("svg");
   const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
 
@@ -272,7 +272,7 @@ export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }
             <span>GPS-Standorte & Strecke</span>
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
-            Quellenunabhängige Darstellung der GPS-Metrik auf OpenStreetMap (kein API-Key erforderlich).
+            Standardmäßig robuste Vector-Route; OpenStreetMap bleibt optional, falls externe Tiles erreichbar sind.
           </p>
         </div>
 

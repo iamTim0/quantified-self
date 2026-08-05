@@ -179,6 +179,23 @@ services:
     networks:
       - qs-network
 
+  docs:
+    image: squidfunk/mkdocs-material:latest
+    working_dir: /docs-workspace
+    command: serve --dev-addr=0.0.0.0:8003
+    volumes:
+      - ..:/docs-workspace:ro
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.docs.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.entrypoints=web"
+      - "traefik.http.routers.docs.priority=20"
+      - "traefik.http.services.docs.loadbalancer.server.port=8003"
+      - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
+      - "traefik.http.routers.docs.middlewares=docs-stripprefix"
+    networks:
+      - qs-network
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel

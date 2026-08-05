@@ -169,6 +169,16 @@ tasks:
         "uv run --directory services/importers/weather python -m weather_importer.main"
         "uv run --directory services/importers/whoop python -m whoop_importer.main"
 
+  docs:serve:
+    desc: "Serve MkDocs documentation locally on port 8003"
+    cmds:
+      - uv run --with mkdocs --with mkdocs-material mkdocs serve --dev-addr 0.0.0.0:8003
+
+  docs:build:
+    desc: "Build the static MkDocs documentation site"
+    cmds:
+      - uv run --with mkdocs --with mkdocs-material mkdocs build --strict
+
   dashboard:
     desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
     cmds:

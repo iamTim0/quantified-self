@@ -7,20 +7,19 @@ import {
   RefreshCw, 
   Settings, 
   ArrowUpRight, 
-  ShieldCheck, 
   Activity, 
   CheckCircle, 
   Plus, 
   Radio, 
-  Database,
   Flame,
   MapPin,
-  Heart,
   Smartphone,
-  AlertTriangle,
   Trash2,
-  Dumbbell
-  , CloudSun, HousePlug, CalendarDays
+  Dumbbell,
+  CloudSun,
+  HousePlug,
+  CalendarDays,
+  BookOpen
 } from "lucide-react";
 
 export interface ConnectorItem {
@@ -54,47 +53,18 @@ interface CatalogConnector {
   description: string;
   icon: React.ElementType;
   available: boolean;
+  docsPath: string;
 }
 
 const CONNECTOR_CATALOG: CatalogConnector[] = [
-  {
-    id: "yazio",
-    name: "Yazio",
-    description: "Kalorien, Makronährstoffe (Protein, Kohlenhydrate, Fett) & Mahlzeitentagebuch.",
-    icon: Flame,
-    available: true,
-  },
-  {
-    id: "dawarich",
-    name: "Dawarich",
-    description: "GPS-Standortdaten, Bewegungsstrecken & Geofencing über PostGIS Spatial Index.",
-    icon: MapPin,
-    available: true,
-  },
-  {
-    id: "whoop",
-    name: "Whoop",
-    description: "Herzfrequenzvariabilität (HRV), Schlafphasen & Strain Score Integration.",
-    icon: Activity,
-    available: true,
-  },
-  {
-    id: "apple_health",
-    name: "Apple Health",
-    description: "Schritte, Aktivitätsenergie, Ruheherzfrequenz, Schlafphasen & Health Auto Export JSON.",
-    icon: Smartphone,
-    available: true,
-  },
-  {
-    id: "streak",
-    name: "Streak - Gym Log",
-    description: "Automatischer REST Export für Krafttraining, Übungssätze, Sätze, Reps & Gewicht aus Streak 2.0.",
-    icon: Dumbbell,
-    available: true,
-  },
-  { id: "home_assistant", name: "Home Assistant", description: "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.", icon: HousePlug, available: true },
-  { id: "weather", name: "Wetter", description: "Temperatur, Luftdruck, Niederschlag und UV-Index.", icon: CloudSun, available: true },
-  { id: "calendar", name: "Kalender", description: "Termine, Meetingdauer und tägliche Busy Hours.", icon: CalendarDays, available: true },
+  { id: "yazio", name: "Yazio", description: "Kalorien, Makronährstoffe (Protein, Kohlenhydrate, Fett) & Mahlzeitentagebuch.", icon: Flame, available: true, docsPath: "/docs/importers/yazio/" },
+  { id: "dawarich", name: "Dawarich", description: "GPS-Standortdaten, Bewegungsstrecken & Geofencing über PostGIS Spatial Index.", icon: MapPin, available: true, docsPath: "/docs/importers/dawarich/" },
+  { id: "whoop", name: "Whoop", description: "Herzfrequenzvariabilität (HRV), Schlafphasen & Strain Score Integration.", icon: Activity, available: true, docsPath: "/docs/importers/whoop/" },
+  { id: "apple_health", name: "Apple Health", description: "Schritte, Aktivitätsenergie, Ruheherzfrequenz, Schlafphasen & Health Auto Export JSON.", icon: Smartphone, available: true, docsPath: "/docs/importers/apple-health/" },
+  { id: "streak", name: "Streak - Gym Log", description: "Automatischer REST Export für Krafttraining, Übungssätze, Sätze, Reps & Gewicht aus Streak 2.0.", icon: Dumbbell, available: true, docsPath: "/docs/importers/streak/" },
+  { id: "home_assistant", name: "Home Assistant", description: "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.", icon: HousePlug, available: true, docsPath: "/docs/importers/home-assistant/" },
+  { id: "weather", name: "Wetter", description: "Temperatur, Luftdruck, Niederschlag und UV-Index.", icon: CloudSun, available: true, docsPath: "/docs/importers/weather/" },
+  { id: "calendar", name: "Kalender", description: "ICS-Feeds, Termine, Meetingdauer und tägliche Busy Hours.", icon: CalendarDays, available: true, docsPath: "/docs/importers/calendar/" },
 ];
 
 export default function ConnectorsPage({
@@ -285,6 +255,16 @@ export default function ConnectorsPage({
               </div>
 
               <div className="flex gap-2 pt-2 border-t border-slate-100">
+                <a
+                  href={cat.docsPath}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 transition-colors"
+                  title={`Dokumentation zu ${cat.name} öffnen`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Docs</span>
+                </a>
                 {isConfigured && configured ? (
                   <>
                     {!isPassive && (
@@ -424,6 +404,15 @@ export default function ConnectorsPage({
                         <span>{c.sync_status === "queued" ? "Queued" : "Sync"}</span>
                       </button>
                       )}
+                      <a
+                        href={CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)?.docsPath ?? "/docs/importers/"}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors inline-flex items-center gap-1"
+                      >
+                        <BookOpen className="w-3 h-3" />
+                        <span>Docs</span>
+                      </a>
                       <button
                         onClick={() => onOpenConfigureModal(c)}
                         className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 ${
