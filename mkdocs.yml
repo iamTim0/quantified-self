@@ -1,0 +1,52 @@
+site_name: Quantified Self Platform Docs
+site_description: Importer, data quality, and analysis documentation for the Quantified Self Platform.
+site_url: http://localhost/docs/
+docs_dir: docs
+site_dir: site
+repo_url: https://github.com/iamTim0/quantified-self
+theme:
+  name: material
+  language: de
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+nav:
+  - Start: index.md
+  - Importer:
+      - Standard: importer-standard.md
+      - Überblick: importers/index.md
+      - Yazio: importers/yazio.md
+      - WHOOP: importers/whoop.md
+      - Apple Health: importers/apple-health.md
+      - Dawarich: importers/dawarich.md
+      - Streak: importers/streak.md
+      - Home Assistant: importers/home-assistant.md
+      - Wetter: importers/weather.md
+      - Kalender: importers/calendar.md
+  - Features:
+      - Datenqualität: features/data-quality.md
+      - Korrelationen & einfache Analysen: features/correlations.md
+      - GPS-Visualisierung: features/gps-visualization.md
+  - Superpowers:
+      - Plans:
+          - Dashboard Explorer Connectors: superpowers/plans/2026-07-26-dashboard-explorer-connectors.md
+          - Log Aggregation: superpowers/plans/2026-07-26-log-aggregation.md
+          - Request Driven Importers: superpowers/plans/2026-07-26-request-driven-importers.md
+          - Yazio Importer: superpowers/plans/2026-07-26-yazio-importer.md
+      - Specs:
+          - Dashboard Data Explorer Connectors: superpowers/specs/2026-07-26-dashboard-data-explorer-connectors-design.md
+          - Log Aggregation: superpowers/specs/2026-07-26-log-aggregation-design.md
+          - Request Driven Importers: superpowers/specs/2026-07-26-request-driven-importers-design.md
+          - Yazio Importer: superpowers/specs/2026-07-26-yazio-importer-design.md
+markdown_extensions:
+  - admonition
+  - toc:
+      permalink: true
+  - tables
+  - pymdownx.details
+  - pymdownx.superfences
+plugins:
+  - search

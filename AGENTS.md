@@ -88,3 +88,15 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ Tests that depend on pre-existing database state or pre-run seed commands.
 - ❌ Skipping Fizzbee specifications for new, complex distributed coordination.
 - ❌ Sharing mutable state between microservices.
+
+## Documentation Requirements for New Features
+
+Every new user-facing or operational feature MUST include code-to-documentation updates in the MkDocs site under `docs/`. Feature documentation must explain:
+
+1. What the feature does and why it exists.
+2. How data flows through the platform while preserving service boundaries.
+3. How users or operators configure and use it.
+4. How imported or derived data can be retrieved through tenant-scoped Core/Gateway APIs.
+5. Expected recommendations, interpretation guidance, and known limitations.
+
+Importer changes MUST update `docs/importers/` and link to external API setup references when relevant. Analysis, data-quality, and visualization features MUST update `docs/features/`. The documentation site is built with MkDocs/Material and served separately from the product UI under `/docs`.
