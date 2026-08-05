@@ -56,3 +56,21 @@ async def test_tenant_context_async_concurrency_isolation():
     assert results["tenant-A"] == "tenant-A"
     assert results["tenant-B"] == "tenant-B"
     assert results["tenant-C"] == "tenant-C"
+
+@pytest.mark.asyncio
+async def test_tenant_middleware_rejects_missing_header():
+    """Verifies Fizzbee Invariant: TenantIdAlwaysPresent."""
+    from starlette.requests import Request
+    from starlette.responses import Response
+
+    from core.db.tenant import TenantMiddleware
+
+    async def call_next(_request: Request) -> Response:
+        return Response("ok")
+
+    scope = {"type": "http", "method": "GET", "path": "/api/v1/data/metrics", "headers": []}
+    request = Request(scope, receive=lambda: None)
+    middleware = TenantMiddleware(app=call_next)
+    response = await middleware.dispatch(request, call_next)
+
+    assert response.status_code == 401

@@ -78,3 +78,30 @@ async def test_jwt_validation_invalid_token():
     assert response.status_code == 401
     # SECURITY M3: Error message is now sanitized — no internal details leaked
     assert "Invalid" in response.json()["detail"]
+
+@pytest.mark.asyncio
+async def test_data_proxy_requires_bearer_even_with_tenant_header():
+    """Verifies Fizzbee Invariant: UnauthenticatedRequestsBlocked."""
+    from gateway.main import app
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        response = await ac.get("/api/v1/data/metrics", headers={"X-Tenant-ID": "tenant-bypass"})
+
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_data_proxy_rejects_tenant_header_claim_mismatch():
+    """Verifies Fizzbee Invariant: TenantHeaderAlwaysInjected."""
+    from gateway.auth import create_dev_jwt
+    from gateway.main import app
+
+    token = create_dev_jwt(tenant_id="tenant-from-jwt")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        response = await ac.get(
+            "/api/v1/data/metrics",
+            headers={"Authorization": f"Bearer {token}", "X-Tenant-ID": "tenant-spoof"},
+        )
+
+    assert response.status_code == 403

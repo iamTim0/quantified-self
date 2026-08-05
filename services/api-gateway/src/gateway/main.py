@@ -15,7 +15,7 @@ import logging
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -227,19 +227,19 @@ async def proxy_core_service(
     tenant_id = request.headers.get("X-Tenant-ID")
     auth_header = request.headers.get("Authorization")
 
-    if not tenant_id:
-        if not auth_header or not auth_header.startswith("Bearer "):
-            if settings.ENVIRONMENT.lower() == "dev":
-                tenant_id = "00000000-0000-0000-0000-000000000001"
-            else:
-                return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
-        else:
-            token = auth_header.split(" ", 1)[1]
-            try:
-                claims = decode_jwt(token)
-                tenant_id = claims["tenant_id"]
-            except HTTPException as e:
-                return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
+
+    token = auth_header.split(" ", 1)[1]
+    try:
+        claims = decode_jwt(token)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+    claim_tenant_id = claims["tenant_id"]
+    if tenant_id and tenant_id != claim_tenant_id:
+        return JSONResponse(status_code=403, content={"detail": "X-Tenant-ID does not match authenticated tenant"})
+    tenant_id = claim_tenant_id
 
     prefix = "internal/data" if request.url.path.startswith("/api/v1/internal/data") else "data"
     target_url = f"{settings.CORE_SERVICE_URL}/api/v1/{prefix}/{path}"

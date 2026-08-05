@@ -32,7 +32,9 @@ def create_dev_jwt(
 
     payload = {
         "sub": "dev_user_1",
+        "user_id": "dev_user_1",
         "tenant_id": tenant_id,
+        "role": "owner",
         "exp": expire,
         "iat": datetime.now(timezone.utc),
     }
@@ -49,6 +51,10 @@ def decode_jwt(token: str) -> dict[str, Any]:
         )
         if "tenant_id" not in payload:
             raise HTTPException(status_code=401, detail="Token missing tenant_id claim")
+        if "user_id" not in payload and "sub" in payload:
+            payload["user_id"] = payload["sub"]
+        if "user_id" not in payload or "role" not in payload:
+            raise HTTPException(status_code=401, detail="Token missing required user claims")
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="JWT token has expired")
@@ -61,7 +67,7 @@ def get_tenant_id_from_token(
 ) -> str:
     """FastAPI Dependency: Extract and validate tenant_id from Bearer token."""
     if not credentials or not credentials.credentials:
-        return "00000000-0000-0000-0000-000000000001"
+        raise HTTPException(status_code=401, detail="Missing Authorization Bearer header")
 
     payload = decode_jwt(credentials.credentials)
     return payload["tenant_id"]
