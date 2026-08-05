@@ -223,7 +223,19 @@ export default function ConnectorsPage({
                   )}
                 </div>
 
-                <h3 className="text-lg font-extrabold text-slate-900 mb-1">{cat.name}</h3>
+                <div className="flex items-center gap-2 mb-1">
+                  <h3 className="text-lg font-extrabold text-slate-900">{cat.name}</h3>
+                  <a
+                    href={cat.docsPath}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 transition-colors"
+                    title={`Dokumentation zu ${cat.name} öffnen`}
+                  >
+                    <BookOpen className="w-3 h-3" />
+                    <span>Docs</span>
+                  </a>
+                </div>
                 <span className={isPassive
                   ? "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-violet-50 text-violet-800 border border-violet-200"
                   : "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-sky-50 text-sky-800 border border-sky-200"}>
@@ -255,16 +267,6 @@ export default function ConnectorsPage({
               </div>
 
               <div className="flex gap-2 pt-2 border-t border-slate-100">
-                <a
-                  href={cat.docsPath}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-center gap-1.5 px-3 py-2.5 text-xs font-bold rounded-2xl bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 transition-colors"
-                  title={`Dokumentation zu ${cat.name} öffnen`}
-                >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>Docs</span>
-                </a>
                 {isConfigured && configured ? (
                   <>
                     {!isPassive && (
@@ -344,7 +346,19 @@ export default function ConnectorsPage({
                       <div className="flex items-center gap-2.5">
                         <Key className="w-4 h-4 text-[#0d5c3a]" />
                         <div>
-                          <div className="font-bold text-slate-900 uppercase tracking-wide">{c.source_type}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-bold text-slate-900 uppercase tracking-wide">{c.source_type}</div>
+                            <a
+                              href={CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)?.docsPath ?? "/docs/importers/"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors"
+                              title="Dokumentation öffnen"
+                            >
+                              <BookOpen className="w-3 h-3" />
+                              <span className="text-[10px]">Docs</span>
+                            </a>
+                          </div>
                           <div className={getConnectorDirection(c.source_type) === "passive" ? "text-[10px] font-bold uppercase tracking-wider text-violet-700" : "text-[10px] font-bold uppercase tracking-wider text-sky-700"}>
                             {getConnectorDirection(c.source_type) === "passive" ? "Passiv · empfängt Daten" : "Aktiv · fragt Dienst ab"}
                           </div>
@@ -404,15 +418,6 @@ export default function ConnectorsPage({
                         <span>{c.sync_status === "queued" ? "Queued" : "Sync"}</span>
                       </button>
                       )}
-                      <a
-                        href={CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)?.docsPath ?? "/docs/importers/"}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors inline-flex items-center gap-1"
-                      >
-                        <BookOpen className="w-3 h-3" />
-                        <span>Docs</span>
-                      </a>
                       <button
                         onClick={() => onOpenConfigureModal(c)}
                         className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 ${

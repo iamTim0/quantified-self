@@ -4,7 +4,7 @@ tasks:
   dev:up:
     desc: "Start all services in the background using docker compose"
     cmds:
-      - docker compose -f infra/docker-compose.yml up -d
+      - docker compose --env-file .env -f infra/docker-compose.yml up -d
 
   dev:down:
     desc: "Stop and remove all running services"
@@ -31,7 +31,7 @@ tasks:
     desc: "Reset the database and restart postgres"
     cmds:
       - docker compose -f infra/docker-compose.yml down -v
-      - docker compose -f infra/docker-compose.yml up -d postgres
+      - docker compose --env-file .env -f infra/docker-compose.yml up -d postgres
 
   db:migrate:
     desc: "Run pending Alembic database migrations"

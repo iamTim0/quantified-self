@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug } from "lucide-react";
+import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug, BookOpen } from "lucide-react";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -304,6 +304,18 @@ export default function ConnectorModal({
                   ? `${selectedProvider?.name} bearbeiten`
                   : `${selectedProvider?.name} verbinden`}
               </h2>
+              {selectedProvider && step === "configure_provider" && (
+                <a
+                  href={`/docs/importers/${selectedProvider.id === "apple_health" ? "apple-health" : selectedProvider.id === "home_assistant" ? "home-assistant" : selectedProvider.id}/`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors"
+                  title={`Anleitung zu ${selectedProvider.name} öffnen`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
+                  <span>Anleitung</span>
+                </a>
+              )}
             </div>
           </div>
           <button

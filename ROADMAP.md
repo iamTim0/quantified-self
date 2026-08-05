@@ -94,3 +94,32 @@
 - [ ] **🔀 Smart Duplicate & Cross-Source Conflict Resolution**:
   - Core Service fuzzy duplicate detector for cross-source metrics (e.g. Yazio vs. Apple Health).
   - Dashboard UI "Conflict Resolver" modal for user approval/rejection of ambiguous duplicate entries.
+
+---
+
+## 🔵 Phase 7: Adaptive Ingestion, Importer Reliability & Authentication (Planned)
+
+- [ ] **Adaptive Import Windows & Gap Backfill**: derive connector-specific overlap windows, detect missing data, and recommend exact tenant-scoped backfill periods in the data UI.
+- [ ] **Smart Time-Range Duplicate Detection**: use coarse blocks and interval/binary search by default, with safe fallback for non-contiguous duplicates and a user-confirmed Force Import mode.
+- [ ] **Importer Audit & Integration Coverage**: review every importer, including credentials, API/feed semantics, pagination, rate limits, time zones, incremental sync, retries, NATS, Gateway/Core, Docker and health checks.
+- [ ] **Calendar ICS Correctness**: valid Outlook/Office ICS URLs must not require an unrelated API key; distinguish public/private ICS feeds from OAuth/API integrations.
+- [ ] **Importer Tests**: add self-contained unit, integration and end-to-end coverage using Docker-backed test services where appropriate.
+- [ ] **Tenant-Bound Authentication**: map bearer tokens and generated inbound API keys to exactly one tenant using only `Authorization: Bearer <token>`; hash, rotate, revoke and least-privilege keys.
+- [ ] **Logout & OIDC**: invalidate all session material on logout and add Google plus generic OIDC using Authorization Code + PKCE, state/nonce validation and safe account linking.
+- [ ] **Analysis Dashboard Expansion**: organize correlations, trends, anomalies, data quality, period comparisons, routines and baselines with interactive, statistically cautious visualizations.
+- [ ] **Vector-First Geodata UI**: make vectors the default, lazy-load optional map providers, evaluate free alternatives, and always provide a vector fallback.
+
+## 🔵 Phase 8: Documentation & Legal Pages (Planned)
+
+- [ ] **Hosted MkDocs Material Documentation**: build and host a standalone `squidfunk/mkdocs-material` site with navigation, search, mobile layout, CI build and link validation.
+- [ ] Document architecture, data flows, analyses, importers, data gaps, Smart/Force import, APIs, operations, security, limitations and troubleshooting.
+- [ ] Add contextual links from dashboard, import configuration, gap detection, duplicate detection, settings, login, registration and footer.
+- [ ] **German Privacy Policy & Imprint**: add plain, responsive text pages without cards or decorative UI; use realistic implementation-based templates, explicit placeholders, and a legal-review warning.
+
+## 🔵 Phase 9: Verification & Governance (Required)
+
+- [ ] Maintain `AGENT_PROGRESS.md` with status, decisions, risks, blockers, changed files and test results.
+- [ ] Use Sub-Agents for independent importer, integration, test and documentation reviews when available; critically validate their results.
+- [ ] Verify Core-only database ownership, gRPC Analysis access, NATS importer flow, tenant filters, idempotency, `X-Request-ID`, secret handling and no shared mutable state.
+- [ ] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
+- [ ] Run linting, type checking, unit/integration/E2E tests and the MkDocs build; record unavailable external services, failures, risks and follow-up work.

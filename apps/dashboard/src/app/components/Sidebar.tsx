@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight, ScanSearch, BrainCircuit } from "lucide-react";
+import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight, ScanSearch, BrainCircuit, BookOpen } from "lucide-react";
 
 export type TabType = "overview" | "explorer" | "quality" | "analysis" | "connectors" | "profile";
 
@@ -85,6 +85,20 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
             GENERAL
           </span>
           <nav className="space-y-1">
+            <a
+              href="https://quantified-self.example.com/docs/"
+              target="_blank"
+              rel="noreferrer"
+              className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"
+              title="Zentrale Plattform-Dokumentation öffnen"
+            >
+              <div className="flex items-center gap-3">
+                <BookOpen className="w-4 h-4 text-slate-400" />
+                <span>Dokumentation</span>
+              </div>
+              <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
+            </a>
+
             <button
               onClick={() => onTabChange("profile")}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all ${

@@ -66,6 +66,7 @@ services:
       - nats
     environment:
       - CORE_SERVICE_URL=http://core:8001
+      - STREAK_IMPORTER_URL=http://streak-importer:8006
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     labels:
@@ -140,9 +141,14 @@ services:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - PORT=8006
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.streak-ingest.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
+      - "traefik.http.routers.streak-ingest.entrypoints=web"
+      - "traefik.http.routers.streak-ingest.priority=100"
+      - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
     networks:
       - qs-network
-
   home-assistant-importer:
     build: { context: ../services/importers/home_assistant }
     depends_on: [nats, core]

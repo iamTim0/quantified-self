@@ -24,7 +24,7 @@ export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
-  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("svg");
+  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
   const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
 

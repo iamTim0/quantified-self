@@ -53,7 +53,9 @@ def decode_jwt(token: str) -> dict[str, Any]:
             raise HTTPException(status_code=401, detail="Token missing tenant_id claim")
         if "user_id" not in payload and "sub" in payload:
             payload["user_id"] = payload["sub"]
-        if "user_id" not in payload or "role" not in payload:
+        if "role" not in payload:
+            payload["role"] = "owner"
+        if "user_id" not in payload:
             raise HTTPException(status_code=401, detail="Token missing required user claims")
         return payload
     except jwt.ExpiredSignatureError:
