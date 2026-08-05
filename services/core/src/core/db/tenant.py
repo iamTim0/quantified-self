@@ -10,7 +10,8 @@ from typing import ClassVar
 
 from sqlalchemy import Select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.responses import Response
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
 
 # Async-safe context variable — each concurrent request gets its own value
 _current_tenant_id: ContextVar[str | None] = ContextVar(
@@ -34,12 +35,18 @@ class TenantMiddleware(BaseHTTPMiddleware):
     EXEMPT_PATHS: ClassVar[set[str]] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json", "/api/v1/auth/signup", "/api/v1/auth/login"}
 
     async def dispatch(
-        self, request: RequestResponseEndpoint, call_next: RequestResponseEndpoint
+        self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         if request.url.path in self.EXEMPT_PATHS:
             return await call_next(request)
 
-        tenant_id = request.headers.get("X-Tenant-ID") or "00000000-0000-0000-0000-000000000001"
+        tenant_id = request.headers.get("X-Tenant-ID")
+        if not tenant_id:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Missing X-Tenant-ID header"},
+            )
+
         token = _current_tenant_id.set(tenant_id)
         try:
             return await call_next(request)

@@ -23,6 +23,12 @@ async def process_message(msg):
             await msg.ack()
             return
 
+        idempotency_key = data.get("idempotency_key")
+        if not idempotency_key:
+            logger.error("Rejected event: missing idempotency_key. Acking to prevent redelivery.")
+            await msg.ack()
+            return
+
         ts_raw = data.get("timestamp")
         if isinstance(ts_raw, str):
             ts_val = datetime.fromisoformat(ts_raw)
@@ -38,16 +44,12 @@ async def process_message(msg):
                 timestamp=ts_val,
                 value=data.get("value"),
                 metadata_=data.get("metadata"),
-                idempotency_key=data.get("idempotency_key"),
+                idempotency_key=idempotency_key,
             )
-            # INVARIANT: NoDuplicateData — composite unique constraint matches
-            # the TimescaleDB hypertable requirement: (tenant_id, idempotency_key, timestamp)
-            stmt = stmt.on_conflict_do_update(
+            # INVARIANT: NoDuplicateData — duplicate events must not mutate
+            # previously stored data for the same tenant-scoped idempotency key.
+            stmt = stmt.on_conflict_do_nothing(
                 index_elements=["tenant_id", "idempotency_key", "timestamp"],
-                set_={
-                    "value": stmt.excluded.value,
-                    "metadata": stmt.excluded.metadata,
-                },
             )
             result = await session.execute(stmt)
             await session.commit()
@@ -83,7 +85,7 @@ async def process_message(msg):
                     await session.commit()
 
         await msg.ack()
-    except Exception as e:
+    except Exception:
         logger.exception("Error processing message")
         # Not acking — message will be redelivered by JetStream (at-least-once)
 

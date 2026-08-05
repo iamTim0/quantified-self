@@ -38,6 +38,10 @@ from core.security.crypto import (
     encrypt_secret,
     mask_secret,
 )
+from core.tracing import (
+    RequestTracingMiddleware,
+    setup_tracing_logger,
+)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -96,10 +100,6 @@ async def lifespan(app: FastAPI):
         yield
 
 
-from core.tracing import (
-    RequestTracingMiddleware,
-    setup_tracing_logger,
-)
 
 setup_tracing_logger("qs-core")
 logger = logging.getLogger(__name__)
@@ -865,7 +865,11 @@ async def get_connector_token(
             "source_type": source_type,
             "access_token": decrypted_token,
             "status": source.config.get("status", "active"),
-            "config": source.config or {},
+            "config": {
+                k: v
+                for k, v in (source.config or {}).items()
+                if k not in {"encrypted_token", "masked_token"}
+            },
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
@@ -987,29 +991,6 @@ async def update_connector_status_internal(
         ds.config = cfg
         await session.commit()
     return {"status": "ok"}
-
-@app.delete("/api/v1/data/sources/{source_type}")
-async def delete_data_source(
-    source_type: str,
-    tenant_id: str = Depends(get_current_tenant_id),
-    session: AsyncSession = Depends(get_session),
-):
-    """1-Click deletion of a configured data source connector."""
-    stmt = delete(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == source_type,
-    )
-    result = await session.execute(stmt)
-    await session.commit()
-
-    if result.rowcount == 0:
-        raise HTTPException(status_code=404, detail=f"Data source '{source_type}' not found.")
-
-    return {
-        "status": "deleted",
-        "source_type": source_type,
-        "message": f"Connector '{source_type}' and encrypted credentials deleted.",
-    }
 
 
 @app.delete("/api/v1/data/wipe")
