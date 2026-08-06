@@ -8,9 +8,9 @@ Verifies:
 """
 
 from unittest.mock import AsyncMock, patch
+
 import httpx
 import pytest
-
 from yazio_importer.client import (
     YazioClient,
     YazioRateLimitError,

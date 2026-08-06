@@ -19,7 +19,7 @@ from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from gateway.auth import create_dev_jwt, decode_jwt
+from gateway.auth import decode_jwt
 from gateway.config import settings
 from gateway.tracing import (
     RequestTracingMiddleware,
@@ -75,28 +75,13 @@ async def health_check():
     return {"status": "ok", "service": settings.SERVICE_NAME}
 
 
-@app.get("/api/v1/auth/dev-token")
-async def get_dev_token(tenant_id: str = Query("00000000-0000-0000-0000-000000000001")):
-    """Dev utility endpoint to generate signed JWT tokens for dev tenants.
-
-    SECURITY L1: Only available in dev mode.
-    """
-    if settings.ENVIRONMENT.lower() != "dev":
-        raise HTTPException(
-            status_code=403,
-            detail="Dev token endpoint is disabled in production.",
-        )
-    token = create_dev_jwt(tenant_id=tenant_id)
-    return {"access_token": token, "token_type": "bearer", "tenant_id": tenant_id}
-
-
 @app.get("/api/v1/auth/config")
 async def get_auth_config():
     """Return auth configuration flags such as allow_registration."""
     return {"allow_registration": settings.ALLOW_REGISTRATION}
 
 
-@app.api_route("/api/v1/auth/{path:path}", methods=["POST"])
+@app.api_route("/api/v1/auth/{path:path}", methods=["GET", "POST", "PUT"])
 async def proxy_auth_service(
     path: str,
     request: Request,
@@ -108,15 +93,16 @@ async def proxy_auth_service(
             detail="Registration is currently disabled by system administrator.",
         )
 
-    if path == "dev-token":
-        return await get_dev_token()
-
     target_url = f"{settings.CORE_SERVICE_URL}/api/v1/auth/{path}"
 
     forwarded_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
+    # /logout, /me and /change-password authenticate against the caller's own
+    # token, so Core needs to see it.
+    if auth_header := request.headers.get("Authorization"):
+        forwarded_headers["Authorization"] = auth_header
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 
     async with httpx.AsyncClient(timeout=30.0) as client:
@@ -217,13 +203,18 @@ async def proxy_streak_ingest(request: Request):
             )
 
 
-@app.api_route("/api/v1/internal/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,
     request: Request,
 ):
-    """Proxy HTTP requests to Core Data Service with X-Tenant-ID & X-Request-ID injection."""
+    """Proxy HTTP requests to Core Data Service with X-Tenant-ID & X-Request-ID injection.
+
+    ``/api/v1/internal/*`` is deliberately **not** proxied. Those endpoints hand out
+    decrypted connector credentials and resolve API keys; exposing them through the
+    public edge let any logged-in user read their provider secrets in cleartext.
+    Importers reach Core directly over the internal network with a service credential.
+    """
     tenant_id = request.headers.get("X-Tenant-ID")
     auth_header = request.headers.get("Authorization")
 
@@ -241,13 +232,14 @@ async def proxy_core_service(
         return JSONResponse(status_code=403, content={"detail": "X-Tenant-ID does not match authenticated tenant"})
     tenant_id = claim_tenant_id
 
-    prefix = "internal/data" if request.url.path.startswith("/api/v1/internal/data") else "data"
-    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/{prefix}/{path}"
+    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/data/{path}"
 
     forwarded_headers = {
         k: v for k, v in request.headers.items()
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
+    # Core re-validates the token itself; the Gateway is no longer the only guard.
+    forwarded_headers["Authorization"] = auth_header
     forwarded_headers["X-Tenant-ID"] = tenant_id
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 

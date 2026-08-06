@@ -1,7 +1,7 @@
 
 async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = internal_headers("req_importer_status", tenant_id)
     payload = {
         "sync_status": "error",
         "last_sync_message": error_msg,
@@ -35,6 +35,7 @@ from dawarich_importer.client import (
     DawarichUnauthorizedError,
 )
 from dawarich_importer.config import settings
+from dawarich_importer.internal_auth import internal_headers
 from dawarich_importer.transformer import transform_dawarich_points
 
 
@@ -76,7 +77,7 @@ async def get_connector_credentials_from_core(
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Fetch decrypted API key & source_id for Dawarich connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/dawarich/token"
-    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
+    headers = internal_headers(req_id, tenant_id)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:

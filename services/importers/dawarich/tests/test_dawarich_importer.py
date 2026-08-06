@@ -2,10 +2,11 @@
 
 import pytest
 from dawarich_importer.transformer import (
+    _normalize_iso_timestamp,
     generate_idempotency_key,
     transform_dawarich_points,
-    _normalize_iso_timestamp,
 )
+
 
 def test_generate_idempotency_key():
     """Verifies Fizzbee Invariant: IdempotencyKeyDeterministic."""

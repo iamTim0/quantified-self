@@ -2,7 +2,12 @@ import pytest
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 
-from tests.db_helpers import cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import (
+    auth_headers,
+    cleanup_test_tenant,
+    create_test_tenant,
+    service_headers,
+)
 
 app.state.testing = True
 
@@ -22,7 +27,7 @@ def mock_nats():
 @pytest.mark.asyncio
 async def test_manual_sync_trigger_returns_202(mock_nats):
     tenant_id = await create_test_tenant()
-    auth_headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         # First configure so it exists
@@ -32,9 +37,9 @@ async def test_manual_sync_trigger_returns_202(mock_nats):
                 "status": "active",
                 "config": {"lookback_days": 30}
             }
-            await ac.post("/api/v1/data/sources/configure", json=payload, headers=auth_headers)
+            await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
 
-            res = await ac.post("/api/v1/data/sources/oura/sync", headers=auth_headers)
+            res = await ac.post("/api/v1/data/sources/oura/sync", headers=headers)
             assert res.status_code == 202
             data = res.json()
             assert data["status"] == "sync_queued"
@@ -50,7 +55,7 @@ async def test_manual_sync_trigger_returns_202(mock_nats):
 @pytest.mark.asyncio
 async def test_configure_source_stores_custom_config_and_publishes_task(mock_nats):
     tenant_id = await create_test_tenant()
-    auth_headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {
@@ -59,7 +64,7 @@ async def test_configure_source_stores_custom_config_and_publishes_task(mock_nat
                 "status": "active",
                 "config": {"lookback_days": 30}
             }
-            res = await ac.post("/api/v1/data/sources/configure", json=payload, headers=auth_headers)
+            res = await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
             assert res.status_code == 200
             
             # Check task published
@@ -72,7 +77,7 @@ async def test_configure_source_stores_custom_config_and_publishes_task(mock_nat
 @pytest.mark.asyncio
 async def test_internal_token_endpoint_returns_token_and_config():
     tenant_id = await create_test_tenant()
-    auth_headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
     try:
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {
@@ -81,9 +86,13 @@ async def test_internal_token_endpoint_returns_token_and_config():
                 "status": "active",
                 "config": {"lookback_days": 30}
             }
-            await ac.post("/api/v1/data/sources/configure", json=payload, headers=auth_headers)
+            await ac.post("/api/v1/data/sources/configure", json=payload, headers=headers)
 
-            res = await ac.get("/api/v1/internal/data/sources/oura/token", headers=auth_headers)
+            # Internal endpoints require a *service* credential, not a user token.
+            res = await ac.get(
+                "/api/v1/internal/data/sources/oura/token",
+                headers=service_headers(tenant_id),
+            )
             assert res.status_code == 200
             data = res.json()
             assert data["status"] == "active"

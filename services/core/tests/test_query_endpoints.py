@@ -19,7 +19,7 @@ from core.db.session import async_session_maker
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 
-from tests.db_helpers import cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
 
@@ -69,7 +69,7 @@ async def test_query_metrics_endpoint():
     transport = ASGITransport(app=app)
     try:
         await ensure_seeded_data(tenant_id)
-        headers = {"X-Tenant-ID": tenant_id}
+        headers = auth_headers(tenant_id)
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             response = await ac.get("/api/v1/data/metrics?metric_type=sleep_score", headers=headers)
     finally:
@@ -88,7 +88,7 @@ async def test_list_metric_types_endpoint():
     transport = ASGITransport(app=app)
     try:
         await ensure_seeded_data(tenant_id)
-        headers = {"X-Tenant-ID": tenant_id}
+        headers = auth_headers(tenant_id)
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             response = await ac.get("/api/v1/data/metrics/types", headers=headers)
     finally:
@@ -107,7 +107,7 @@ async def test_metrics_summary_endpoint():
     transport = ASGITransport(app=app)
     try:
         await ensure_seeded_data(tenant_id)
-        headers = {"X-Tenant-ID": tenant_id}
+        headers = auth_headers(tenant_id)
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             response = await ac.get("/api/v1/data/metrics/summary", headers=headers)
     finally:

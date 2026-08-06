@@ -6,6 +6,7 @@ Maps to System Invariants:
 """
 
 import hashlib
+
 from apple_health_importer.transformer import (
     generate_idempotency_key,
     transform_health_auto_export_json,

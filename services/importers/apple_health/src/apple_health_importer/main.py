@@ -4,18 +4,17 @@ FastAPI Webhook Server & NATS JetStream Publisher for Health Auto Export JSON.
 Submits transformed IngestEvents to NATS subject 'qs.ingest.apple_health'.
 """
 
-import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
-from typing import Any
 
 import nats
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from apple_health_importer.client import get_connector_credentials_from_core
+from apple_health_importer.auth import extract_presented_key, resolve_api_key
 from apple_health_importer.config import settings
 from apple_health_importer.transformer import transform_health_auto_export_json
 
@@ -65,26 +64,35 @@ async def health_check():
 @app.post("/api/v1/ingest/apple-health")
 async def ingest_health_auto_export_payload(
     request: Request,
-    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
+    authorization: str | None = Header(None, alias="Authorization"),
     x_api_key: str | None = Header(None, alias="X-Api-Key"),
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     x_request_id: str = Header("req_apple_health_ingest", alias="X-Request-ID"),
 ):
-    """Receive Health Auto Export JSON push payload, transform, and publish to NATS."""
-    tenant_id = x_tenant_id or settings.DEFAULT_TENANT_ID
+    """Receive Health Auto Export JSON push payload, transform, and publish to NATS.
 
-    token, source_id, config = await get_connector_credentials_from_core(
-        tenant_id, req_id=x_request_id
+    The tenant is derived from the API key alone. ``X-Tenant-ID`` is accepted only
+    to be checked for contradiction — a caller that names a different tenant than
+    its key owns is rejected rather than silently corrected.
+    """
+    identity = await resolve_api_key(
+        extract_presented_key(authorization, x_api_key), req_id=x_request_id
     )
-    config = config or {}
-    expected_key = token or config.get("api_key") or config.get("secret")
+    tenant_id = identity.tenant_id
 
-    # SECURITY: Validate API key if dynamic credentials exist for the tenant connector
-    if expected_key and x_api_key != expected_key:
-        logger.warning(f"[req_id={x_request_id}] Unauthorized API key attempt for tenant {tenant_id}.")
-        raise HTTPException(status_code=401, detail="Invalid API Key or unauthorized tenant connector.")
+    if x_tenant_id and x_tenant_id != tenant_id:
+        logger.warning(
+            "[req_id=%s] Rejected ingest: X-Tenant-ID contradicts API key %s.",
+            x_request_id,
+            identity.key_prefix,
+        )
+        raise HTTPException(
+            status_code=403, detail="X-Tenant-ID does not match the authenticated API key."
+        )
 
-    if not source_id:
-        source_id = f"apple_health_{tenant_id[:8]}"
+    source_id = identity.source_id or str(
+        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
+    )
 
     try:
         payload = await request.json()
@@ -110,6 +118,8 @@ async def ingest_health_auto_export_payload(
     if nc_client and nc_client.is_connected:
         js = nc_client.jetstream()
         for event in events:
+            # AGENTS.md rule 13: correlation id travels with the event, not just the log.
+            event["request_id"] = x_request_id
             raw_data = json.dumps(event).encode("utf-8")
             await js.publish("qs.ingest.apple_health", raw_data)
             published_count += 1
@@ -118,7 +128,12 @@ async def ingest_health_auto_export_payload(
         published_count = len(events)
 
     logger.info(
-        f"[req_id={x_request_id}] Tenant {tenant_id}: Transformed {len(events)} events, published {published_count} to NATS."
+        "[req_id=%s] Tenant %s (key %s): transformed %d events, published %d to NATS.",
+        x_request_id,
+        tenant_id,
+        identity.key_prefix,
+        len(events),
+        published_count,
     )
 
     return JSONResponse(

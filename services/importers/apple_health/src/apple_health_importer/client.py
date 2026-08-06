@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from apple_health_importer.auth import internal_headers
 from apple_health_importer.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ async def get_connector_credentials_from_core(
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Fetch decrypted token & source_id for Apple Health connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{settings.SOURCE_TYPE}/token"
-    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
+    headers = internal_headers(req_id, tenant_id)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:

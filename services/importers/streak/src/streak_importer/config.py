@@ -9,7 +9,11 @@ class Settings(BaseSettings):
     CORE_SERVICE_URL: str = "http://localhost:8001"
     PORT: int = 8006
     SOURCE_TYPE: str = "streak"
-    DEFAULT_TENANT_ID: str = "00000000-0000-0000-0000-000000000001"
+    # Bearer credential presented to Core's internal API. Must match Core's
+    # INTERNAL_SERVICE_SECRET; empty derives the shared dev default.
+    INTERNAL_SERVICE_SECRET: str = ""
+    # NOTE: DEFAULT_TENANT_ID was removed deliberately. It let an unauthenticated
+    # caller ingest into a well-known tenant whenever no header was supplied.
 
     model_config = SettingsConfigDict(
         env_file=".env",

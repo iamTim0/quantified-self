@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     POLL_INTERVAL_HOURS: int = 24
     POLL_LOOKBACK_DAYS: int = 30
 
+    # Bearer credential presented to Core's internal API. Must match Core's
+    # INTERNAL_SERVICE_SECRET; empty derives the shared dev default.
+    INTERNAL_SERVICE_SECRET: str = ""
+
     model_config = SettingsConfigDict(extra="ignore")
 
 

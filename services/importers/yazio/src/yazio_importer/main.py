@@ -1,16 +1,3 @@
-
-async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
-    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
-    headers = {"X-Tenant-ID": tenant_id}
-    payload = {
-        "sync_status": "error",
-        "last_sync_message": error_msg,
-    }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.post(url, headers=headers, json=payload)
-        except Exception as e:
-            logger.warning(f"Could not report sync error to Core: {e}")
 """Yazio Importer Main Service Entry Point.
 
 Orchestrates task-driven polling of Yazio API, transforms raw consumed items into standard
@@ -20,6 +7,7 @@ DataPoints with SHA256 idempotency_keys, and publishes to NATS subject 'qs.inges
 import asyncio
 import json
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -35,6 +23,7 @@ from yazio_importer.client import (
     YazioUnauthorizedError,
 )
 from yazio_importer.config import settings
+from yazio_importer.internal_auth import internal_headers
 from yazio_importer.transformer import transform_consumed_items
 
 
@@ -81,7 +70,19 @@ logger = logging.getLogger(__name__)
 active_syncs: set[str] = set()
 
 
-import uuid
+async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
+    """Tell Core that this sync failed, so the dashboard can surface it."""
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
+    headers = internal_headers("req_importer_status", tenant_id)
+    payload = {
+        "sync_status": "error",
+        "last_sync_message": error_msg,
+    }
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=headers, json=payload)
+        except Exception as e:
+            logger.warning(f"Could not report sync error to Core: {e}")
 
 
 async def get_connector_token_from_core(
@@ -89,7 +90,7 @@ async def get_connector_token_from_core(
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Fetch decrypted access token & source_id for Yazio connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/yazio/token"
-    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
+    headers = internal_headers(req_id, tenant_id)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:

@@ -1,4 +1,6 @@
 from home_assistant_importer.transformer import transform
+
+
 def test_transform() -> None:
     """Verifies Fizzbee Invariant: NoDuplicateRecords."""
     row={"state": 21.5, "last_updated": "2026-08-03T00:00:00+00:00"}
