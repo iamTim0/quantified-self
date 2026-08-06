@@ -44,6 +44,13 @@ from core.db.models import (
 from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.ingest_planning import (
+    BucketCount,
+    TimeRange,
+    analyse_coverage,
+    compute_sync_window,
+    plan_import,
+)
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
@@ -822,6 +829,236 @@ async def get_correlations(session: AsyncSession = Depends(get_session)):
     return {"tenant_id": tenant_id, "correlations": pearson_pairs(series)}
 
 
+# ─── Coverage, Gaps and Import Planning ─────────────────────
+
+
+def _bucket_fetcher(
+    session: AsyncSession,
+    tenant_id: str,
+    *,
+    source_id: str | None = None,
+    metric_type: str | None = None,
+):
+    """Build a tenant-scoped bucket counter for the ingest planner.
+
+    One aggregate query per call, bucketed in SQL. The planner calls this a handful
+    of times (once coarse, then a few times while bisecting a boundary) instead of
+    reading individual points, which is the whole point of the coarse-to-fine
+    approach.
+    """
+
+    async def fetch(start: datetime, end: datetime, bucket_seconds: int):
+        seconds = max(1, int(bucket_seconds))
+        bucket_expr = func.to_timestamp(
+            func.floor(func.extract("epoch", DataPoint.timestamp) / seconds) * seconds
+        ).label("bucket")
+
+        stmt = (
+            select(bucket_expr, func.count().label("n"))
+            .where(
+                DataPoint.tenant_id == tenant_id,
+                DataPoint.timestamp >= start,
+                DataPoint.timestamp < end,
+            )
+            .group_by(bucket_expr)
+            .order_by(bucket_expr)
+        )
+        if source_id:
+            stmt = stmt.where(DataPoint.source_id == source_id)
+        if metric_type:
+            stmt = stmt.where(DataPoint.metric_type == metric_type)
+
+        rows = (await session.execute(stmt)).all()
+        counts: dict[datetime, int] = {}
+        for bucket_start, n in rows:
+            if bucket_start.tzinfo is None:
+                bucket_start = bucket_start.replace(tzinfo=timezone.utc)
+            counts[bucket_start] = int(n)
+
+        # Emit a dense series so the planner sees empty buckets as empty rather
+        # than as absent.
+        buckets: list[BucketCount] = []
+        cursor = start
+        step = timedelta(seconds=seconds)
+        while cursor < end:
+            bucket_end = min(cursor + step, end)
+            total = sum(v for k, v in counts.items() if cursor <= k < bucket_end)
+            buckets.append(BucketCount(start=cursor, end=bucket_end, count=total))
+            cursor = bucket_end
+        return buckets
+
+    return fetch
+
+
+async def _resolve_source(
+    session: AsyncSession, tenant_id: str, source_type: str
+) -> DataSource | None:
+    res = await session.execute(
+        select(DataSource).where(
+            DataSource.tenant_id == tenant_id, DataSource.source_type == source_type
+        )
+    )
+    return res.scalars().first()
+
+
+async def _last_successful_sync_end(
+    session: AsyncSession, tenant_id: str, source_type: str
+) -> datetime | None:
+    """When the last successful run's window ended, for adaptive resumption."""
+    res = await session.execute(
+        select(SyncRun.window_end)
+        .where(
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.source_type == source_type,
+            SyncRun.status == "success",
+            SyncRun.window_end.is_not(None),
+        )
+        .order_by(SyncRun.window_end.desc())
+        .limit(1)
+    )
+    value = res.scalar_one_or_none()
+    if value is not None and value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value
+
+
+@app.get("/api/v1/data/coverage")
+async def get_coverage(
+    start: datetime = Query(..., description="Window start (ISO 8601)"),
+    end: datetime = Query(..., description="Window end (ISO 8601)"),
+    source_type: str | None = Query(None),
+    metric_type: str | None = Query(None),
+    session: AsyncSession = Depends(get_session),
+):
+    """Report which parts of a window the tenant already has data for."""
+    tenant_id = get_current_tenant_id()
+    window = _validated_window(start, end)
+
+    source_id = None
+    if source_type:
+        source = await _resolve_source(session, tenant_id, source_type)
+        if not source:
+            raise HTTPException(status_code=404, detail="Connector not configured")
+        source_id = source.id
+
+    fetch = _bucket_fetcher(
+        session, tenant_id, source_id=source_id, metric_type=metric_type
+    )
+    covered, missing, confidence, expectation, total = await analyse_coverage(fetch, window)
+
+    return {
+        "tenant_id": tenant_id,
+        "source_type": source_type,
+        "metric_type": metric_type,
+        "window": window.to_dict(),
+        "covered_ranges": [r.to_dict() for r in covered],
+        "missing_ranges": [r.to_dict() for r in missing],
+        "confidence": confidence,
+        "expected_points_per_bucket": expectation or None,
+        "total_points": total,
+    }
+
+
+class ImportPlanRequest(BaseModel):
+    start: datetime | None = Field(None, description="Requested window start")
+    end: datetime | None = Field(None, description="Requested window end")
+    mode: Literal["smart", "force"] = Field("smart", description="Smart skips known-complete ranges")
+
+
+@app.post("/api/v1/data/sources/{source_type}/import-plan")
+async def get_import_plan(
+    source_type: str,
+    req: ImportPlanRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Explain what a sync would actually do, without running it.
+
+    The dashboard calls this to prefill the import dialog and to show the user which
+    ranges will be skipped and why.
+    """
+    tenant_id = get_current_tenant_id()
+    source = await _resolve_source(session, tenant_id, source_type)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    config = source.config or {}
+    now = datetime.now(timezone.utc)
+
+    if req.start and req.end:
+        window = _validated_window(req.start, req.end)
+        window_reason = "Vom Nutzer gewählter Zeitraum."
+    else:
+        window, window_reason = compute_sync_window(
+            now=now,
+            poll_interval_hours=float(config.get("poll_interval_hours", 6)),
+            lookback_days=int(config.get("lookback_days", 30)),
+            last_success_end=await _last_successful_sync_end(session, tenant_id, source_type),
+        )
+
+    fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
+    plan = await plan_import(fetch, window, mode=req.mode)
+
+    payload = plan.to_dict()
+    payload["window_reason"] = window_reason
+    payload["tenant_id"] = tenant_id
+    payload["source_type"] = source_type
+    payload["docs_url"] = "/docs/features/smart-import/"
+    return payload
+
+
+@app.get("/api/v1/data/sources/{source_type}/sync-runs")
+async def list_sync_runs(
+    source_type: str,
+    limit: int = Query(20, ge=1, le=200),
+    session: AsyncSession = Depends(get_session),
+):
+    """Import history for a connector, newest first."""
+    tenant_id = get_current_tenant_id()
+    res = await session.execute(
+        select(SyncRun)
+        .where(SyncRun.tenant_id == tenant_id, SyncRun.source_type == source_type)
+        .order_by(SyncRun.started_at.desc())
+        .limit(limit)
+    )
+    return {
+        "tenant_id": tenant_id,
+        "source_type": source_type,
+        "runs": [
+            {
+                "id": run.id,
+                "request_id": run.request_id,
+                "mode": run.mode,
+                "trigger": run.trigger,
+                "status": run.status,
+                "window_start": run.window_start.isoformat() if run.window_start else None,
+                "window_end": run.window_end.isoformat() if run.window_end else None,
+                "window_reason": run.window_reason,
+                "points_received": run.points_received,
+                "points_accepted": run.points_accepted,
+                "points_duplicate": run.points_duplicate,
+                "skipped_ranges": run.skipped_ranges,
+                "message": run.message,
+                "started_at": run.started_at.isoformat() if run.started_at else None,
+                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+            }
+            for run in res.scalars().all()
+        ],
+    }
+
+
+def _validated_window(start: datetime, end: datetime) -> TimeRange:
+    """Reject inverted or absurdly large windows before touching the database."""
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=timezone.utc)
+    if end <= start:
+        raise HTTPException(status_code=400, detail="end must be after start")
+    if (end - start).days > 3660:
+        raise HTTPException(status_code=400, detail="Window must span at most 10 years")
+    return TimeRange(start, end)
+
+
 # ─── Connector Configuration Endpoints ──────────────────────
 
 class ConfigureConnectorRequest(BaseModel):
@@ -971,6 +1208,11 @@ async def configure_connector(
 
 class TriggerSyncRequest(BaseModel):
     source_type: str = Field(..., description="Connector provider name (e.g. yazio, dawarich)")
+    start: datetime | None = Field(None, description="Explicit window start; omit to derive one")
+    end: datetime | None = Field(None, description="Explicit window end; omit to use now")
+    mode: Literal["smart", "force"] = Field(
+        "smart", description="smart skips known-complete ranges; force re-processes everything"
+    )
 
 
 @app.post("/api/v1/data/sources/sync", status_code=202)
@@ -978,38 +1220,103 @@ async def trigger_sync_post(
     req: TriggerSyncRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    return await trigger_sync(source_type=req.source_type, session=session)
+    return await trigger_sync(
+        source_type=req.source_type,
+        session=session,
+        start=req.start,
+        end=req.end,
+        mode=req.mode,
+    )
 
 
 @app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
 async def trigger_sync(
     source_type: str,
     session: AsyncSession = Depends(get_session),
+    start: datetime | None = Query(None),
+    end: datetime | None = Query(None),
+    mode: Literal["smart", "force"] = Query("smart"),
 ):
-    """Trigger an on-demand sync for a connector."""
+    """Trigger an on-demand sync for a connector.
+
+    Core decides the window rather than the importer: it owns the sync history the
+    decision depends on. In smart mode the window is narrowed to what is actually
+    missing; in force mode the full range is sent and the extra work is recorded on
+    the run so the audit trail shows it was deliberate.
+    """
     tenant_id = get_current_tenant_id()
 
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == source_type,
-    )
-    res = await session.execute(stmt)
-    source = res.scalars().first()
+    source = await _resolve_source(session, tenant_id, source_type)
     if not source:
         raise HTTPException(status_code=404, detail="Connector not configured")
 
+    config = source.config or {}
+    now = datetime.now(timezone.utc)
     req_id = str(uuid.uuid4())
-    new_config = dict(source.config or {})
-    new_config["last_sync_at"] = datetime.now(timezone.utc).isoformat()
-    new_config["sync_status"] = "queued"
+
+    if start and end:
+        window = _validated_window(start, end)
+        window_reason = "Vom Nutzer gewählter Zeitraum."
+    else:
+        window, window_reason = compute_sync_window(
+            now=now,
+            poll_interval_hours=float(config.get("poll_interval_hours", 6)),
+            lookback_days=int(config.get("lookback_days", 30)),
+            last_success_end=await _last_successful_sync_end(session, tenant_id, source_type),
+        )
+
+    fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
+    plan = await plan_import(fetch, window, mode=mode)
+
+    effective = plan.recommended or window
+    nothing_to_do = plan.recommended is None and mode == "smart"
+
+    run = SyncRun(
+        tenant_id=tenant_id,
+        source_id=source.id,
+        source_type=source_type,
+        request_id=req_id,
+        mode=mode,
+        trigger="manual",
+        window_start=effective.start,
+        window_end=effective.end,
+        window_reason=f"{window_reason} {plan.reason}".strip()[:255],
+        status="skipped" if nothing_to_do else "queued",
+        skipped_ranges=[r.to_dict() for r in plan.covered],
+        message=plan.reason[:512],
+        finished_at=now if nothing_to_do else None,
+    )
+    session.add(run)
+
+    new_config = dict(config)
+    new_config["last_sync_at"] = now.isoformat()
+    new_config["sync_status"] = "idle" if nothing_to_do else "queued"
     new_config["last_request_id"] = req_id
-    new_config["last_sync_message"] = f"NATS Sync Event an 'qs.task.sync.{source_type}' übergeben."
+    new_config["last_sync_message"] = plan.reason[:512]
     source.config = new_config
     await session.commit()
+
+    if nothing_to_do:
+        logger.info(
+            "[req_id=%s] Sync for %s skipped: range already complete.", req_id, source_type
+        )
+        return {
+            "status": "skipped",
+            "source_type": source_type,
+            "tenant_id": tenant_id,
+            "request_id": req_id,
+            "mode": mode,
+            "plan": plan.to_dict(),
+        }
+
     payload = json.dumps({
         "tenant_id": tenant_id,
         "source_type": source_type,
-        "request_id": req_id
+        "request_id": req_id,
+        "sync_run_id": run.id,
+        "mode": mode,
+        "window_start": effective.start.isoformat(),
+        "window_end": effective.end.isoformat(),
     }).encode("utf-8")
     
     nc = getattr(app.state, "nats_client", None)
@@ -1483,6 +1790,9 @@ async def delete_explorer_view(
 class UpdateConnectorStatusRequest(BaseModel):
     sync_status: str
     last_sync_message: str
+    sync_run_id: str | None = Field(None, description="Run to close out, if known")
+    points_received: int | None = Field(None, ge=0)
+
 
 @app.post("/api/v1/internal/data/sources/{source_type}/status")
 async def update_connector_status_internal(
@@ -1491,6 +1801,11 @@ async def update_connector_status_internal(
     tenant_id: str = Depends(get_current_tenant_id),
     session: AsyncSession = Depends(get_session),
 ):
+    """Importers report the outcome of a sync here.
+
+    Closing out the ``SyncRun`` is what makes the next window adaptive: only a run
+    that reached ``success`` is allowed to move the resume point forward.
+    """
     stmt = select(DataSource).where(
         DataSource.tenant_id == tenant_id,
         DataSource.source_type == source_type,
@@ -1502,7 +1817,24 @@ async def update_connector_status_internal(
         cfg["sync_status"] = req.sync_status
         cfg["last_sync_message"] = req.last_sync_message
         ds.config = cfg
-        await session.commit()
+
+    if req.sync_run_id:
+        run_res = await session.execute(
+            select(SyncRun).where(
+                SyncRun.id == req.sync_run_id, SyncRun.tenant_id == tenant_id
+            )
+        )
+        run = run_res.scalars().first()
+        if run:
+            run.status = (
+                "success" if req.sync_status in {"idle", "success", "ok"} else req.sync_status
+            )
+            run.message = req.last_sync_message[:512]
+            run.finished_at = datetime.now(timezone.utc)
+            if req.points_received is not None:
+                run.points_received = req.points_received
+
+    await session.commit()
     return {"status": "ok"}
 
 
