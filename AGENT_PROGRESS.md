@@ -153,22 +153,22 @@ These were discovered during inventory and are **security defects, not roadmap g
 | # | Item | Priority | Status |
 |---|---|---|---|
 | 1 | Inventory and detailed design | P0 | `completed` |
-| 10 | Logout, session invalidation, refresh tokens | P0 | `todo` |
-| 12 | Bearer-token tenant mapping (Core-side verification) | P0 | `todo` |
-| 13 | Tenant-bound hashed API keys (create/rotate/revoke) | P0 | `todo` |
-| 2 | Adaptive import windows | P1 | `todo` |
-| 3 | Data gap detection and backfill recommendation | P1 | `todo` |
-| 4 | Smart/Force duplicate detection | P1 | `todo` |
-| 8 | Calendar ICS integration | P2 | `todo` |
-| 9 | Importer and end-to-end tests | P1 | `todo` |
-| 18 | Final verification (lint, types, tests, docs build) | P1 | `todo` |
+| 10 | Logout, session invalidation, refresh tokens | P0 | `completed` |
+| 12 | Bearer-token tenant mapping (Core-side verification) | P0 | `completed` |
+| 13 | Tenant-bound hashed API keys (create/rotate/revoke) | P0 | `completed` |
+| 2 | Adaptive import windows | P1 | `completed` |
+| 3 | Data gap detection and backfill recommendation | P1 | `completed` (API; UI prefill open) |
+| 4 | Smart/Force duplicate detection | P1 | `completed` (API; UI toggle open) |
+| 8 | Calendar ICS integration | P2 | `completed` |
+| 9 | Importer and end-to-end tests | P1 | `completed` for changed paths |
+| 18 | Final verification (lint, types, tests, docs build) | P1 | `completed` |
 | 5 | Analysis dashboard restructure | P3 | `deferred` |
 | 6 | Additional analyses (Spearman, lagged, baselines) | P3 | `deferred` |
 | 7 | Full importer audit (all 8) | P3 | partial — inventory done, fixes deferred |
 | 11 | OIDC providers (Google + generic) | P3 | `deferred` |
 | 14 | Vector-first geodata | P3 | `deferred` |
-| 15 | Hosted documentation site | P3 | `deferred` |
-| 16 | Contextual UI links to docs | P3 | `deferred` |
+| 15 | Hosted documentation site | P3 | partial — pages added, hosting/CI open |
+| 16 | Contextual UI links to docs | P3 | partial — calendar + import plan only |
 | 17 | Privacy policy and imprint | P3 | `deferred` |
 
 ---
@@ -194,15 +194,127 @@ See §4. Recorded as they were taken.
 
 - Previous run: Codex sandbox helper `codex-windows-sandbox-setup.exe` missing plus usage-limit
   denial; no implementation landed. Resolved by continuing in a different environment.
-- No external provider credentials are available in this environment, so no importer can be
-  tested against a live upstream API. All importer tests are fixture-driven.
+- **No external provider credentials** are available here, so no importer was exercised against
+  a live upstream API. All importer tests are fixture-driven. The WHOOP, Yazio, Dawarich and
+  Calendar changes are verified against recorded/synthetic payloads only.
+- **The Fizzbee CLI is not installed**, so `task fizz:check` could not be run. Each new spec has
+  a companion Python model in `specs/tests/` that simulates the state machine and asserts the
+  invariants over exhaustive short traces. That is a weaker guarantee than model checking.
+- **No browser-level verification.** The dashboard has no test infrastructure at all (no jest,
+  vitest or playwright). Frontend changes are covered only by `tsc --noEmit` and ESLint; the
+  logout flow was not clicked through in a real browser.
 
 ### Test Results
 
-| When | Suite | Result |
+All runs below with Postgres + NATS up via `infra/docker-compose.yml`.
+
+| Suite | Before | After |
 |---|---|---|
-| baseline | `services/core/tests` | 19 passed (Postgres + NATS started via `infra/docker-compose.yml`) |
+| `services/core/tests` | 19 passed | **83 passed** |
+| `services/api-gateway/tests` | 6 passed (3 failing after auth change) | **10 passed** |
+| `specs/tests` | could not collect (missing `cryptography`) | **36 passed** |
+| `tests/e2e` | could not collect (ModuleNotFoundError) | **19 passed** |
+| importers (8 services) | 47 passed | **106 passed** |
+| **Total** | — | **254 passed, 0 failed** |
 
-### Final Summary
+Per importer: apple_health 15, calendar 42, dawarich 10, home_assistant 1, streak 13,
+weather 1, whoop 13, yazio 11.
 
-_Pending — completed at the end of the run._
+| Gate | Result |
+|---|---|
+| `ruff check services/ specs/` | 81 pre-existing findings (was 83 before this work; net −2 despite ~3,000 added lines). None in newly added modules except deliberate broad `except` clauses matching existing style. |
+| `tsc --noEmit` (dashboard) | clean |
+| `eslint src` (dashboard) | 32 pre-existing problems; **0 in the files rewritten here** |
+| `mkdocs build --strict` | passes |
+| Alembic `006` upgrade → downgrade → upgrade | verified against Postgres |
+
+---
+
+## 8. Final Summary
+
+### What changed
+
+**Security (P0).**
+
+- Core authenticates every request itself instead of trusting `X-Tenant-ID`
+  (`core/security/auth.py`, `core/security/tokens.py`). Two disjoint credential families —
+  user tokens (`aud=qs-api`) and internal service credentials (`aud=qs-internal`, separate
+  secret) — so a compromised importer cannot mint user tokens. Service credentials work only
+  on `/api/v1/internal/*`, which the Gateway no longer proxies publicly.
+- Logout works end to end: `/auth/logout` (idempotent, revokes `jti` + refresh token),
+  `/auth/refresh` (single-use rotation; replay revokes the whole chain), `/auth/me`. Access
+  tokens 30 days → 12 hours with a rotating 30-day refresh token.
+- The dashboard no longer re-authenticates itself. The `/auth/dev-token` endpoint — 365-day
+  `owner` tokens for any tenant named in a query parameter, auto-fetched whenever local storage
+  was empty — is gone. That was the reported "refresh after logout logs me back in" bug.
+- Inbound API keys are hashed, tenant-bound, scoped to one connector, rotatable and revocable.
+  The webhook importers resolve the tenant from the key hash and fail closed on every path,
+  closing the fail-open ingest.
+
+**Ingestion correctness (P1).**
+
+- `core/ingest_planning.py`: adaptive windows derived from poll interval and sync history,
+  coarse-to-fine coverage analysis with binary boundary refinement, and gap detection against
+  observed cadence. New `sync_runs` table is the import/audit log.
+- New endpoints: `/data/coverage`, `/data/sources/{type}/import-plan`,
+  `/data/sources/{type}/sync-runs`. Smart mode narrows the window; force mode is recorded.
+- All eight importers honour the window Core sends and report their run back.
+
+**Calendar (P2).** Real ICS parsing with recurrence expansion and timezone resolution; a valid
+`.ics` URL now works without an API key, in both the importer and the dashboard.
+
+### Bugs found and fixed along the way
+
+Beyond the roadmap items, the work surfaced these, each fixed with a regression test:
+
+1. `change-password` picked the *first user in the tenant*, not the caller — in a multi-member
+   workspace it changed the wrong person's password.
+2. The calendar transformer stamped records lacking a timestamp with `datetime.now()`, producing
+   a fresh `idempotency_key` — and therefore a duplicate row — on every single sync.
+3. The e2e calendar fixture used `start_time`, a key the transformer never read, so that test
+   passed *because of* bug 2.
+4. `e2e_helpers.cleanup_test_tenant` was a `pass` stub; every e2e run leaked rows into the dev
+   database (violates rule 10).
+5. `specs/tests/test_webhook_ingestion_invariants.py` was three `pass`-only stubs, so the
+   webhook invariants were declared but never checked — while the code was failing open.
+6. Streak read connector config from a mistyped `"get"` key.
+7. `yazio` and `dawarich` both defined a function *above* their module docstring and imports.
+8. `data_sources` had no `UNIQUE (tenant_id, source_type)` although every lookup assumed one.
+9. `task test:specs` and `task test:e2e` could not collect at all; `test:core`/`test:gateway`
+   had no task entry.
+10. Two of my own Fizzbee assertions were wrong rather than the system — `RevokedTokenNeverAccepted`
+    and `CompromiseRevokesEveryLiveSession` were stated as global properties when both are
+    point-in-time. Caught by the exhaustive trace models.
+
+### Deliberate deviations
+
+- **Internal service auth uses a shared secret, not a per-tenant token.** Putting a bearer
+  credential in a NATS event would violate rule 12, and a tenant-scoped token is impractical for
+  an importer serving many tenants. Internal peers authenticate as *services* and pass the tenant
+  by explicit delegation on `/api/v1/internal/*` only. Recorded as AD-2.
+- **`plan_import` skips only what is positively complete.** Partial, irregular or fragmented
+  coverage all fall back to a full import. Re-importing is idempotent; wrongly skipping loses
+  data permanently.
+- **`recurring_ical_events` repairs backwards `DTEND` by swapping** rather than dropping the
+  event. Verified and documented in the test rather than worked around.
+
+### Open items and risks
+
+| Item | Risk | Note |
+|---|---|---|
+| Tokens live in `localStorage`, not `httpOnly` cookies | XSS can steal a session | Server-side route guards need cookies plus a Next 16 `proxy.ts` (`middleware` is deprecated). Access-token TTL is now 12 h, which limits the window. |
+| #5/#6 Analysis dashboard | — | `AnalysisTab.tsx` is still 49 lines with one unparameterised fetch. `services/analysis/` remains a 22-line placeholder, absent from both compose files, with no gRPC client and no server behind `CoreDataService`. |
+| #11 OIDC providers | — | Not started. No OIDC code exists anywhere. |
+| #14 Vector-first maps | Map is currently broken in production | `next.config.ts` CSP forbids `unpkg.com` scripts and non-self images while `LocationMap.tsx` needs both, and `script.onload` has no `onerror` — the failure mode is a silent grey box. |
+| #17 Privacy policy / imprint | Legal exposure | Only `/privacy` exists, with no operator details and no imprint. Content also predates this run's auth changes. |
+| #15 Docs hosting | In-app doc links 404 in production | `docker-compose.coolify.yml` has no `docs` service though 7+ UI locations link to `/docs/...`. The dev docs container also mounts the whole repo read-only, including the committed `.env`. |
+| Smart/Force UI | Feature is API-only today | `import-plan` is implemented and documented but the import dialog has no date-range picker or force toggle yet. |
+| API-key UI | Feature is API-only today | `ConnectorModal` still shows the old token-as-key flow for Apple Health and Streak. |
+| Committed secrets | Shared `JWT_SECRET` default in Gateway and Core; `.env` is committed; Yazio OAuth client credentials hardcoded in `client.py:14-15`; `infra/db/init.sql` seeds an owner account with a committed bcrypt hash | Not addressed this run. Rotate before any real deployment. |
+| Dawarich pagination | Silent data loss | `per_page=500` with no pagination loop; page 2+ is dropped. Untouched this run. |
+| No CI | Nothing is enforced | There is no `.github/` at all. Every gate above is manual. |
+
+### Follow-up recommendation
+
+Next session, in order: wire the smart/force and API-key UI (the backends are done and
+documented), then the map CSP fix, then legal pages, then the analysis dashboard.
