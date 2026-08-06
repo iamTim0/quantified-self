@@ -1,0 +1,113 @@
+# Fizzbee specification for the Smart Import Planning Pattern
+# Models how a requested import range is narrowed before work is enqueued.
+#
+# The property that matters is asymmetric: re-importing data that already exists
+# is harmless because ingestion is idempotent, but skipping a range that is not
+# actually complete loses that data permanently. Every uncertain case must
+# therefore resolve to "import it".
+
+# A range is modelled as a set of discrete buckets 0..4.
+ALL_BUCKETS = [0, 1, 2, 3, 4]
+
+# Which buckets are fully present, partially present, or absent.
+full_buckets = set([])
+partial_buckets = set([])
+
+# Planner output
+planned_import = set([])
+skipped = set([])
+plan_confidence = "high"
+mode = "smart"
+planned = False
+
+atomic action SeedCoverage:
+    # Choose an arbitrary coverage shape before planning.
+    require not planned
+    for b in ALL_BUCKETS:
+        kind = any(["full", "partial", "empty"])
+        if kind == "full":
+            full_buckets.add(b)
+        elif kind == "partial":
+            partial_buckets.add(b)
+
+atomic action ChooseMode:
+    require not planned
+    mode = any(["smart", "force"])
+
+atomic action Plan:
+    require not planned
+    planned = True
+
+    if mode == "force":
+        # Force skips nothing, by definition.
+        for b in ALL_BUCKETS:
+            planned_import.add(b)
+        return
+
+    # Fragmentation makes block-level reasoning unsafe: fall back to everything.
+    block_count = 0
+    previous_full = False
+    for b in ALL_BUCKETS:
+        is_full = b in full_buckets
+        if is_full and not previous_full:
+            block_count = block_count + 1
+        previous_full = is_full
+
+    if block_count > 2:
+        plan_confidence = "low"
+        for b in ALL_BUCKETS:
+            planned_import.add(b)
+        return
+
+    # Only a positively-complete bucket may be skipped. Partial counts as missing.
+    for b in ALL_BUCKETS:
+        if b in full_buckets:
+            skipped.add(b)
+        else:
+            planned_import.add(b)
+
+always assertion NeverSkipIncompleteData:
+    # A partial or empty bucket must always end up in the import plan.
+    if not planned:
+        return True
+    for b in ALL_BUCKETS:
+        if b not in full_buckets:
+            if b in skipped:
+                return False
+            if b not in planned_import:
+                return False
+    return True
+
+always assertion ForceModeSkipsNothing:
+    if not planned:
+        return True
+    if mode == "force":
+        if len(skipped) > 0:
+            return False
+        for b in ALL_BUCKETS:
+            if b not in planned_import:
+                return False
+    return True
+
+always assertion LowConfidenceImportsEverything:
+    # When the planner cannot trust its own analysis it must do the safe thing.
+    if not planned:
+        return True
+    if plan_confidence == "low":
+        if len(skipped) > 0:
+            return False
+    return True
+
+always assertion PlanCoversTheWholeRange:
+    # Every bucket is accounted for exactly once: imported or skipped, never both,
+    # never neither. A bucket falling through both branches would be silent loss.
+    if not planned:
+        return True
+    for b in ALL_BUCKETS:
+        in_import = b in planned_import
+        in_skip = b in skipped
+        if in_import and in_skip:
+            return False
+        if not in_import and not in_skip:
+            return False
+    return True

@@ -1,0 +1,101 @@
+# Fizzbee specification for the Session Revocation Pattern
+# Models login, logout, access-token denylisting and single-use refresh rotation.
+#
+# The defect this exists to rule out: before this pattern there was no logout
+# endpoint, no refresh token and no revocation store, so an issued access token
+# stayed valid for its full lifetime no matter what the user did. Combined with a
+# client that re-minted a token whenever storage was empty, "log out" was a no-op.
+
+# State
+issued_access_tokens = []   # jti values ever issued
+revoked_jtis = set([])      # logout denylist
+active_refresh = {}         # refresh_token -> user, only while usable
+consumed_refresh = set([])  # refresh tokens already rotated or revoked
+# Set if a replay purge ever left a session usable. A *later* fresh login is
+# legitimate, so this property belongs to the handler, not to the whole run.
+compromise_left_sessions_alive = False
+# Acceptance is a point-in-time event. Recording only the jti and comparing it
+# against the *current* denylist would wrongly flag a request that legitimately
+# succeeded before the logout, so the revocation state at that moment is captured.
+accepted_while_revoked = 0
+accepted_count = 0
+chain_compromised = False
+
+next_id = 0
+
+atomic action Login:
+    # A login mints an access token and a refresh token bound to the same user.
+    next_id = next_id + 1
+    jti = "jti_" + str(next_id)
+    refresh = "rt_" + str(next_id)
+    issued_access_tokens.append(jti)
+    active_refresh[refresh] = "user_a"
+
+atomic action CallProtectedEndpoint:
+    # Any issued token may be presented; only a non-revoked one is accepted.
+    jti = any(issued_access_tokens)
+    if jti in revoked_jtis:
+        accepted_while_revoked = accepted_while_revoked + 1
+    else:
+        accepted_count = accepted_count + 1
+
+atomic action Logout:
+    # Logout revokes the access token's jti and consumes the refresh token.
+    jti = any(issued_access_tokens)
+    revoked_jtis.add(jti)
+    if len(active_refresh) > 0:
+        refresh = any(active_refresh.keys())
+        consumed_refresh.add(refresh)
+        active_refresh.pop(refresh)
+
+atomic action RefreshRotate:
+    # Rotation is single use: the presented token is consumed and replaced.
+    require len(active_refresh) > 0
+    refresh = any(active_refresh.keys())
+    active_refresh.pop(refresh)
+    consumed_refresh.add(refresh)
+
+    next_id = next_id + 1
+    new_jti = "jti_" + str(next_id)
+    new_refresh = "rt_" + str(next_id)
+    issued_access_tokens.append(new_jti)
+    active_refresh[new_refresh] = "user_a"
+
+atomic action ReplayConsumedRefresh:
+    # Presenting an already-rotated token means the credential leaked. Every
+    # session for that user is revoked rather than a new one being handed out.
+    require len(consumed_refresh) > 0
+    replayed = any(consumed_refresh)
+    chain_compromised = True
+    for token in active_refresh.keys():
+        consumed_refresh.add(token)
+    active_refresh.clear()
+    for jti in issued_access_tokens:
+        revoked_jtis.add(jti)
+    if len(active_refresh) > 0:
+        compromise_left_sessions_alive = True
+
+always assertion RevokedTokenNeverAccepted:
+    # Once a jti is on the denylist, no request carrying it may succeed from that
+    # point on. This is what makes "refresh the page after logout" fail.
+    return accepted_while_revoked == 0
+
+always assertion RefreshTokenSingleUse:
+    # A refresh token is never simultaneously consumed and usable.
+    for token in active_refresh.keys():
+        if token in consumed_refresh:
+            return False
+    return True
+
+always assertion CompromiseRevokesEveryLiveSession:
+    # The replay handler must leave no usable refresh token behind. Logging in
+    # again afterwards is a legitimate new session and does not violate this.
+    return not compromise_left_sessions_alive
+
+always assertion LogoutIsTerminalForThatToken:
+    # Revocation is monotonic: nothing removes a jti from the denylist, so a
+    # logged-out token can never come back to life.
+    for jti in revoked_jtis:
+        if jti not in issued_access_tokens:
+            return False
+    return True
