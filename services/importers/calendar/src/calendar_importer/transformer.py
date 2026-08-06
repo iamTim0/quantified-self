@@ -2,6 +2,8 @@
 import hashlib
 from datetime import datetime, timezone
 from typing import Any
+
+
 def transform(records: list[dict[str, Any]], tenant_id: str, source_id: str) -> list[dict[str, Any]]:
     events=[]
     for record in records:

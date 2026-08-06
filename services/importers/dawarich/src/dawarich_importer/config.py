@@ -11,6 +11,10 @@ class Settings(BaseSettings):
     DAWARICH_API_BASE_URL: str = "http://localhost:3000"
     POLL_LOOKBACK_DAYS: int = 30
 
+    # Bearer credential presented to Core's internal API. Must match Core's
+    # INTERNAL_SERVICE_SECRET; empty derives the shared dev default.
+    INTERNAL_SERVICE_SECRET: str = ""
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -4,9 +4,9 @@ FastAPI REST Export Server & NATS JetStream Publisher for Streak 2.0 Gym Logs.
 Submits transformed IngestEvents to NATS subject 'qs.ingest.streak'.
 """
 
-import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 
 import nats
@@ -14,7 +14,7 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from streak_importer.client import get_connector_credentials_from_core
+from streak_importer.auth import extract_presented_key, resolve_api_key
 from streak_importer.config import settings
 from streak_importer.transformer import transform_streak_export_json
 
@@ -78,26 +78,35 @@ async def check_server_get():
 @app.post("/api/v1/ingest/streak")
 async def ingest_streak_payload(
     request: Request,
-    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
+    authorization: str | None = Header(None, alias="Authorization"),
     x_api_key: str | None = Header(None, alias="X-Api-Key"),
+    x_tenant_id: str | None = Header(None, alias="X-Tenant-ID"),
     x_request_id: str = Header("req_streak_ingest", alias="X-Request-ID"),
 ):
-    """Receive Streak 2.0 REST export JSON payload, transform, and publish to NATS."""
-    tenant_id = x_tenant_id or settings.DEFAULT_TENANT_ID
+    """Receive Streak 2.0 REST export JSON payload, transform, and publish to NATS.
 
-    token, source_id, config = await get_connector_credentials_from_core(
-        tenant_id, req_id=x_request_id
+    The tenant is derived from the API key alone. ``X-Tenant-ID`` is accepted only
+    to be checked for contradiction — a caller that names a different tenant than
+    its key owns is rejected rather than silently corrected.
+    """
+    identity = await resolve_api_key(
+        extract_presented_key(authorization, x_api_key), req_id=x_request_id
     )
-    config = config or {}
-    expected_key = token or config.get("api_key") or config.get("secret")
+    tenant_id = identity.tenant_id
 
-    # SECURITY: Validate API key if dynamic credentials exist for tenant
-    if expected_key and x_api_key != expected_key:
-        logger.warning(f"[req_id={x_request_id}] Unauthorized API key attempt for tenant {tenant_id}.")
-        raise HTTPException(status_code=401, detail="Invalid API Key or unauthorized tenant connector.")
+    if x_tenant_id and x_tenant_id != tenant_id:
+        logger.warning(
+            "[req_id=%s] Rejected ingest: X-Tenant-ID contradicts API key %s.",
+            x_request_id,
+            identity.key_prefix,
+        )
+        raise HTTPException(
+            status_code=403, detail="X-Tenant-ID does not match the authenticated API key."
+        )
 
-    if not source_id:
-        source_id = f"streak_{tenant_id[:8]}"
+    source_id = identity.source_id or str(
+        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
+    )
 
     try:
         payload = await request.json()
@@ -123,6 +132,8 @@ async def ingest_streak_payload(
     if nc_client and nc_client.is_connected:
         js = nc_client.jetstream()
         for event in events:
+            # AGENTS.md rule 13: correlation id travels with the event, not just the log.
+            event["request_id"] = x_request_id
             raw_data = json.dumps(event).encode("utf-8")
             await js.publish("qs.ingest.streak", raw_data)
             published_count += 1
@@ -130,7 +141,13 @@ async def ingest_streak_payload(
         published_count = len(events)
 
     logger.info(
-        f"[req_id={x_request_id}] Tenant {tenant_id}: Transformed {len(events)} events ({workout_count} workouts), published {published_count} to NATS."
+        "[req_id=%s] Tenant %s (key %s): transformed %d events (%d workouts), published %d to NATS.",
+        x_request_id,
+        tenant_id,
+        identity.key_prefix,
+        len(events),
+        workout_count,
+        published_count,
     )
 
     # Return response format matching Streak 2.0 app expectations

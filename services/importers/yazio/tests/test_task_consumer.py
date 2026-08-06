@@ -8,8 +8,8 @@ Verifies:
 
 import json
 from unittest.mock import AsyncMock, patch
-import pytest
 
+import pytest
 from yazio_importer.main import active_syncs, process_task_message
 
 

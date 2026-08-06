@@ -1,8 +1,10 @@
 import unittest
+
 from whoop_importer.transformer import (
     generate_idempotency_key,
     transform_whoop_records,
 )
+
 
 class TestWhoopTransformer(unittest.TestCase):
     def test_generate_idempotency_key(self):

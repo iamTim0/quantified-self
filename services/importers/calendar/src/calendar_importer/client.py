@@ -1,6 +1,9 @@
 """Async client for the calendar provider API."""
 from typing import Any
+
 import httpx
+
+
 class ProviderClient:
     def __init__(self, base_url: str, token: str) -> None:
         self.base_url, self.token = base_url.rstrip("/"), token

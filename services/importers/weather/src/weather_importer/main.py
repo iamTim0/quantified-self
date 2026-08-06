@@ -3,10 +3,13 @@ import asyncio
 import json
 import logging
 from typing import Any
+
 import httpx
 import nats
+
 from weather_importer.client import ProviderClient
 from weather_importer.config import settings
+from weather_importer.internal_auth import internal_headers
 from weather_importer.transformer import transform
 
 logging.basicConfig(
@@ -17,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 async def credentials(tenant_id: str, request_id: str) -> dict[str, Any] | None:
-    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": request_id}
+    headers = internal_headers(request_id, tenant_id)
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             response = await client.get(

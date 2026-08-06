@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from streak_importer.auth import internal_headers
 from streak_importer.config import settings
 
 logger = logging.getLogger(__name__)
@@ -20,7 +21,7 @@ async def get_connector_credentials_from_core(
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Fetch decrypted token & source_id for Streak connector from Core Data Service DB."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{settings.SOURCE_TYPE}/token"
-    headers = {"X-Tenant-ID": tenant_id, "X-Request-ID": req_id}
+    headers = internal_headers(req_id, tenant_id)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -32,7 +33,9 @@ async def get_connector_credentials_from_core(
                     source_id = data.get("source_id") or str(
                         uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
                     )
-                    return token, source_id, data.get("get", {}) or data.get("config", {})
+                    # "get" was a typo for "config" that silently shadowed the real
+                    # connector configuration whenever Core emitted that key.
+                    return token, source_id, data.get("config", {})
             return None, None, None
         except Exception as e:
             logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
