@@ -16,27 +16,53 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 
 import httpx
-import jwt
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, distinct, func, or_, select
+from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.analytics import detect_daily_gaps, find_cross_source_conflicts, pearson_pairs
-from core.db.models import DataPoint, DataSource, ExplorerView, Tenant, TenantShare, User
+from core.db.models import (
+    ApiKey,
+    DataPoint,
+    DataSource,
+    ExplorerView,
+    RefreshToken,
+    RevokedAccessToken,
+    SyncRun,
+    Tenant,
+    TenantShare,
+    User,
+)
 from core.db.session import get_session
-from core.db.tenant import TenantMiddleware, get_current_tenant_id
+from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.security.auth import (
+    AuthenticationMiddleware,
+    Principal,
+    get_current_principal,
+    require_role,
+)
 from core.security.crypto import (
     DecryptionError,
     decrypt_secret,
     encrypt_secret,
     mask_secret,
+)
+from core.security.tokens import (
+    TokenError,
+    create_access_token,
+    create_api_key,
+    create_refresh_token,
+    decode_access_token,
+    hash_token,
 )
 from core.tracing import (
     RequestTracingMiddleware,
@@ -116,10 +142,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[],  # No browser origins allowed — Gateway proxies server-side
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
-    allow_headers=["X-Tenant-ID", "X-Request-ID", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allow_headers=["Authorization", "X-Tenant-ID", "X-Request-ID", "Content-Type"],
 )
-app.add_middleware(TenantMiddleware)
+app.add_middleware(AuthenticationMiddleware)
 
 
 @app.get("/health")
@@ -129,7 +155,64 @@ async def health_check():
 
 # ─── Auth Endpoints ──────────────────────────────────────────
 
-# ─── Auth Endpoints ──────────────────────────────────────────
+
+async def _issue_session(
+    session: AsyncSession,
+    *,
+    user_id: str,
+    tenant_id: str,
+    email: str,
+    role: str,
+) -> dict[str, Any]:
+    """Mint an access/refresh pair and persist the refresh token's hash.
+
+    Only the hash is stored, so a database disclosure cannot be replayed against
+    the API.
+    """
+    access_token, _jti, access_expires = create_access_token(
+        user_id=user_id, tenant_id=tenant_id, email=email, role=role
+    )
+    raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
+
+    session.add(
+        RefreshToken(
+            tenant_id=tenant_id,
+            user_id=user_id,
+            token_hash=refresh_hash,
+            expires_at=refresh_expires,
+        )
+    )
+    await session.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer",
+        "expires_at": access_expires.isoformat(),
+        "expires_in": int((access_expires - datetime.now(timezone.utc)).total_seconds()),
+    }
+
+
+async def _revoke_all_sessions(
+    session: AsyncSession, *, tenant_id: str, user_id: str, reason: str
+) -> None:
+    """Invalidate every refresh token for a user (password change, key compromise)."""
+    await session.execute(
+        sa_update(RefreshToken)
+        .where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.tenant_id == tenant_id,
+            RefreshToken.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+    logger.info(
+        "Revoked all refresh tokens for user=%s tenant=%s reason=%s",
+        user_id,
+        tenant_id,
+        reason,
+    )
+
 
 @app.post("/api/v1/auth/signup")
 async def signup(
@@ -163,20 +246,13 @@ async def signup(
     session.add(user)
     await session.commit()
 
-    token_payload = {
-        "sub": user_id,
-        "tenant_id": tenant_id,
-        "email": req.email,
-        "role": "owner",
-        "exp": datetime.now(timezone.utc) + timedelta(days=30),
-        "iat": datetime.now(timezone.utc),
-    }
-    jwt_secret = getattr(settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026")
-    token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
+    tokens = await _issue_session(
+        session, user_id=user_id, tenant_id=tenant_id, email=req.email, role="owner"
+    )
 
     return {
         "status": "success",
-        "access_token": token,
+        **tokens,
         "user_id": user_id,
         "tenant_id": tenant_id,
         "email": req.email,
@@ -197,20 +273,198 @@ async def login(
     if not user or not pwd_context.verify(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    token_payload = {
-        "sub": user.id,
-        "tenant_id": user.tenant_id,
-        "email": user.email,
-        "role": user.role,
-        "exp": datetime.now(timezone.utc) + timedelta(days=30),
-        "iat": datetime.now(timezone.utc),
-    }
-    jwt_secret = getattr(settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026")
-    token = jwt.encode(token_payload, jwt_secret, algorithm="HS256")
+    tokens = await _issue_session(
+        session,
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        email=user.email,
+        role=user.role,
+    )
 
     return {
         "status": "success",
-        "access_token": token,
+        **tokens,
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+    }
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=16, max_length=512)
+
+
+@app.post("/api/v1/auth/refresh")
+async def refresh_session(
+    req: RefreshRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Exchange a refresh token for a fresh access/refresh pair.
+
+    Rotation is single-use. Presenting a token that has already been rotated is
+    treated as replay: the entire chain for that user is revoked rather than
+    silently issuing another session.
+    """
+    presented_hash = hash_token(req.refresh_token)
+    res = await session.execute(
+        select(RefreshToken).where(RefreshToken.token_hash == presented_hash)
+    )
+    stored = res.scalars().first()
+
+    if not stored:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    now = datetime.now(timezone.utc)
+
+    if stored.rotated_to_id is not None or stored.revoked_at is not None:
+        # Replay of a superseded or revoked token — assume compromise.
+        await _revoke_all_sessions(
+            session,
+            tenant_id=stored.tenant_id,
+            user_id=stored.user_id,
+            reason="refresh_token_replay",
+        )
+        await session.commit()
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    expires_at = stored.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= now:
+        raise HTTPException(status_code=401, detail="Refresh token has expired")
+
+    user_res = await session.execute(select(User).where(User.id == stored.user_id))
+    user = user_res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
+    replacement = RefreshToken(
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        token_hash=refresh_hash,
+        expires_at=refresh_expires,
+    )
+    session.add(replacement)
+    await session.flush()
+
+    stored.rotated_to_id = replacement.id
+    stored.revoked_at = now
+
+    access_token, _jti, access_expires = create_access_token(
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        email=user.email,
+        role=user.role,
+    )
+    await session.commit()
+
+    return {
+        "status": "success",
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer",
+        "expires_at": access_expires.isoformat(),
+        "expires_in": int((access_expires - now).total_seconds()),
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+    }
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str | None = Field(
+        None, description="Refresh token to revoke alongside the access token"
+    )
+    all_sessions: bool = Field(
+        False, description="Revoke every refresh token for this user, not just this one"
+    )
+
+
+@app.post("/api/v1/auth/logout", status_code=204)
+async def logout(
+    request: Request,
+    req: LogoutRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Invalidate the presented session server-side.
+
+    Deliberately idempotent and always ``204``: a client that has already lost or
+    expired its token must still be able to complete a logout, and the response
+    must not reveal whether the presented credential was real.
+    """
+    auth_header = request.headers.get("Authorization") or ""
+    now = datetime.now(timezone.utc)
+
+    tenant_id: str | None = None
+    user_id: str | None = None
+
+    if auth_header.startswith("Bearer "):
+        try:
+            claims = decode_access_token(auth_header[7:].strip())
+        except TokenError:
+            claims = None
+        if claims:
+            tenant_id = claims["tenant_id"]
+            user_id = claims["user_id"]
+            expires_at = datetime.fromtimestamp(claims["exp"], tz=timezone.utc)
+            await session.execute(
+                pg_insert(RevokedAccessToken)
+                .values(
+                    jti=claims["jti"],
+                    tenant_id=tenant_id,
+                    user_id=user_id,
+                    expires_at=expires_at,
+                    reason="logout",
+                    revoked_at=now,
+                )
+                .on_conflict_do_nothing(index_elements=["jti"])
+            )
+
+    body = req or LogoutRequest()
+
+    if body.refresh_token:
+        await session.execute(
+            sa_update(RefreshToken)
+            .where(
+                RefreshToken.token_hash == hash_token(body.refresh_token),
+                RefreshToken.revoked_at.is_(None),
+            )
+            .values(revoked_at=now)
+        )
+
+    if body.all_sessions and tenant_id and user_id:
+        await _revoke_all_sessions(
+            session, tenant_id=tenant_id, user_id=user_id, reason="logout_all"
+        )
+
+    # Opportunistic housekeeping: a denylist entry is pointless once the token it
+    # names would fail signature validation anyway.
+    await session.execute(
+        delete(RevokedAccessToken).where(RevokedAccessToken.expires_at < now)
+    )
+    await session.commit()
+    return Response(status_code=204)
+
+
+@app.get("/api/v1/auth/me")
+async def get_current_user(session: AsyncSession = Depends(get_session)):
+    """Return the authenticated identity. Used by the dashboard to validate a session."""
+    principal = get_current_principal()
+    res = await session.execute(
+        select(User).where(
+            User.id == principal.user_id, User.tenant_id == principal.tenant_id
+        )
+    )
+    user = res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=401, detail="Account no longer exists")
+
+    return {
         "user_id": user.id,
         "tenant_id": user.tenant_id,
         "email": user.email,
@@ -229,10 +483,17 @@ async def change_password(
     req: ChangePasswordRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Safely update account password for authenticated user."""
-    tenant_id = get_current_tenant_id()
+    """Safely update account password for the authenticated user.
 
-    stmt = select(User).where(User.tenant_id == tenant_id)
+    Resolves the account by ``user_id`` from the verified token. The previous
+    implementation selected the first user in the tenant, which changed the wrong
+    person's password in any workspace with more than one member.
+    """
+    principal = get_current_principal()
+
+    stmt = select(User).where(
+        User.id == principal.user_id, User.tenant_id == principal.tenant_id
+    )
     res = await session.execute(stmt)
     user = res.scalars().first()
 
@@ -243,11 +504,34 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch.")
 
     user.password_hash = pwd_context.hash(req.new_password)
+
+    # A password change must not leave older sessions alive.
+    await _revoke_all_sessions(
+        session,
+        tenant_id=user.tenant_id,
+        user_id=user.id,
+        reason="password_change",
+    )
+    if principal.jti:
+        await session.execute(
+            pg_insert(RevokedAccessToken)
+            .values(
+                jti=principal.jti,
+                tenant_id=user.tenant_id,
+                user_id=user.id,
+                expires_at=datetime.now(timezone.utc) + timedelta(
+                    minutes=settings.ACCESS_TOKEN_TTL_MINUTES
+                ),
+                reason="password_change",
+            )
+            .on_conflict_do_nothing(index_elements=["jti"])
+        )
     await session.commit()
 
     return {
         "status": "success",
-        "message": "Passwort wurde erfolgreich geändert."
+        "message": "Passwort wurde erfolgreich geändert. Bitte melde dich erneut an.",
+        "sessions_revoked": True,
     }
 
 
@@ -873,6 +1157,235 @@ async def get_connector_token(
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
+
+
+# ─── Tenant-bound Inbound API Keys ──────────────────────────
+
+# Only connectors that receive pushed data need an inbound key.
+PUSH_SOURCE_TYPES = {"apple_health", "streak"}
+
+
+class CreateApiKeyRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=128)
+    source_type: str = Field(..., description="Connector this key may push to")
+    expires_in_days: int | None = Field(
+        None, ge=1, le=3650, description="Optional expiry; omit for a non-expiring key"
+    )
+    scopes: list[str] = Field(default_factory=lambda: ["ingest"], max_length=8)
+
+
+def _serialize_api_key(key: ApiKey) -> dict[str, Any]:
+    """Public representation of a key. Never includes the key itself."""
+    return {
+        "id": key.id,
+        "name": key.name,
+        "key_prefix": key.key_prefix,
+        "source_type": key.source_type,
+        "scopes": key.scopes,
+        "status": key.status,
+        "expires_at": key.expires_at.isoformat() if key.expires_at else None,
+        "last_used_at": key.last_used_at.isoformat() if key.last_used_at else None,
+        "revoked_at": key.revoked_at.isoformat() if key.revoked_at else None,
+        "rotated_from_id": key.rotated_from_id,
+        "created_at": key.created_at.isoformat() if key.created_at else None,
+    }
+
+
+@app.post("/api/v1/data/api-keys", status_code=201)
+async def create_api_key_endpoint(
+    req: CreateApiKeyRequest,
+    principal: Principal = Depends(require_role("owner", "admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """Create an inbound API key bound to the authenticated tenant.
+
+    The plaintext key is returned in this response and never again — not in the
+    list endpoint, not in logs, not in errors.
+    """
+    if req.source_type not in PUSH_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"source_type must be one of: {', '.join(sorted(PUSH_SOURCE_TYPES))}",
+        )
+
+    raw_key, key_prefix, key_hash = create_api_key()
+    expires_at = (
+        datetime.now(timezone.utc) + timedelta(days=req.expires_in_days)
+        if req.expires_in_days
+        else None
+    )
+
+    record = ApiKey(
+        tenant_id=principal.tenant_id,
+        created_by_user_id=principal.user_id,
+        name=req.name,
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+        source_type=req.source_type,
+        scopes=req.scopes,
+        expires_at=expires_at,
+    )
+    session.add(record)
+    await session.commit()
+
+    logger.info(
+        "Created API key prefix=%s source_type=%s tenant=%s",
+        key_prefix,
+        req.source_type,
+        principal.tenant_id,
+    )
+
+    return {
+        "status": "success",
+        "api_key": raw_key,
+        "warning": "Dieser Schlüssel wird nur einmal angezeigt. Bitte sicher speichern.",
+        **_serialize_api_key(record),
+    }
+
+
+@app.get("/api/v1/data/api-keys")
+async def list_api_keys(
+    session: AsyncSession = Depends(get_session),
+):
+    """List the tenant's API keys, without ever disclosing key material."""
+    tenant_id = get_current_tenant_id()
+    res = await session.execute(
+        select(ApiKey)
+        .where(ApiKey.tenant_id == tenant_id)
+        .order_by(ApiKey.created_at.desc())
+    )
+    return {
+        "tenant_id": tenant_id,
+        "api_keys": [_serialize_api_key(k) for k in res.scalars().all()],
+    }
+
+
+@app.post("/api/v1/data/api-keys/{key_id}/revoke")
+async def revoke_api_key(
+    key_id: str,
+    principal: Principal = Depends(require_role("owner", "admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """Revoke a key immediately. Ingest with a revoked key fails closed."""
+    res = await session.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.tenant_id == principal.tenant_id)
+    )
+    key = res.scalars().first()
+    if not key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    key.status = "revoked"
+    key.revoked_at = datetime.now(timezone.utc)
+    await session.commit()
+
+    return {"status": "revoked", **_serialize_api_key(key)}
+
+
+@app.post("/api/v1/data/api-keys/{key_id}/rotate")
+async def rotate_api_key(
+    key_id: str,
+    principal: Principal = Depends(require_role("owner", "admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """Issue a replacement key, leaving the old one active for a grace period.
+
+    Both keys work until the old one is explicitly revoked, so an external pusher
+    can be reconfigured without an ingest gap. Multiple active keys per tenant are
+    intentional.
+    """
+    res = await session.execute(
+        select(ApiKey).where(ApiKey.id == key_id, ApiKey.tenant_id == principal.tenant_id)
+    )
+    old_key = res.scalars().first()
+    if not old_key:
+        raise HTTPException(status_code=404, detail="API key not found")
+    if old_key.status != "active":
+        raise HTTPException(status_code=400, detail="Only active keys can be rotated")
+
+    raw_key, key_prefix, key_hash = create_api_key()
+    replacement = ApiKey(
+        tenant_id=principal.tenant_id,
+        created_by_user_id=principal.user_id,
+        name=f"{old_key.name} (rotated)",
+        key_prefix=key_prefix,
+        key_hash=key_hash,
+        source_type=old_key.source_type,
+        scopes=old_key.scopes,
+        expires_at=old_key.expires_at,
+        rotated_from_id=old_key.id,
+    )
+    session.add(replacement)
+    await session.commit()
+
+    logger.info(
+        "Rotated API key old_prefix=%s new_prefix=%s tenant=%s",
+        old_key.key_prefix,
+        key_prefix,
+        principal.tenant_id,
+    )
+
+    return {
+        "status": "rotated",
+        "api_key": raw_key,
+        "warning": "Der alte Schlüssel bleibt aktiv, bis er widerrufen wird.",
+        "previous_key_id": old_key.id,
+        **_serialize_api_key(replacement),
+    }
+
+
+class ResolveApiKeyRequest(BaseModel):
+    key_hash: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    source_type: str = Field(..., max_length=64)
+
+
+@app.post("/api/v1/internal/auth/api-keys/resolve")
+async def resolve_api_key(
+    req: ResolveApiKeyRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Resolve a presented API key hash to its owning tenant.
+
+    Edge services hash the key locally and send only the digest, so the raw key
+    never travels between services. A rejected key yields ``401`` with no detail
+    about *why* — expired, revoked and unknown are indistinguishable to the caller.
+    """
+    res = await session.execute(select(ApiKey).where(ApiKey.key_hash == req.key_hash))
+    key = res.scalars().first()
+
+    now = datetime.now(timezone.utc)
+    if not key or key.status != "active":
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    if key.expires_at is not None:
+        expires_at = key.expires_at
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=timezone.utc)
+        if expires_at <= now:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+
+    if key.source_type != req.source_type:
+        # A key minted for one connector must not be replayable against another.
+        raise HTTPException(status_code=403, detail="API key not valid for this source")
+
+    key.last_used_at = now
+
+    source_res = await session.execute(
+        select(DataSource).where(
+            DataSource.tenant_id == key.tenant_id,
+            DataSource.source_type == key.source_type,
+        )
+    )
+    source = source_res.scalars().first()
+    await session.commit()
+
+    return {
+        "tenant_id": key.tenant_id,
+        "source_id": source.id if source else None,
+        "source_type": key.source_type,
+        "key_id": key.id,
+        "key_prefix": key.key_prefix,
+        "scopes": key.scopes,
+    }
 
 
 # ─── Explorer Saved Views Endpoints ─────────────────────────

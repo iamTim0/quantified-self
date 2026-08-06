@@ -13,7 +13,7 @@ import pytest
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 
-from tests.db_helpers import cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
 
@@ -21,7 +21,7 @@ app.state.testing = True
 async def test_configure_and_list_connectors():
     transport = ASGITransport(app=app)
     tenant_id = await create_test_tenant()
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     # Step 1: Configure Oura Ring connector
     payload = {
@@ -61,7 +61,7 @@ async def test_configure_and_list_connectors():
 async def test_configure_yazio_and_delete_connector(monkeypatch):
     transport = ASGITransport(app=app)
     tenant_id = await create_test_tenant()
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     # Step 1: Configure Yazio with direct Bearer Token
     payload = {

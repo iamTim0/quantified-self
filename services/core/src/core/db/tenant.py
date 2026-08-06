@@ -3,15 +3,16 @@
 Uses Python's contextvars for async-safe per-request tenant scoping.
 This is the enforcement layer for the Fizzbee TenantIsolation invariant:
 every query MUST be scoped to a tenant_id.
+
+The tenant is bound by ``core.security.auth.AuthenticationMiddleware`` *after* the
+caller's credentials have been verified. Nothing in this module reads a request
+header — trusting ``X-Tenant-ID`` on its own is exactly the defect the auth
+middleware exists to remove.
 """
 
 from contextvars import ContextVar
-from typing import ClassVar
 
 from sqlalchemy import Select
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
-from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
 
 # Async-safe context variable — each concurrent request gets its own value
 _current_tenant_id: ContextVar[str | None] = ContextVar(
@@ -28,30 +29,6 @@ def get_current_tenant_id() -> str:
 def set_current_tenant_id(tenant_id: str) -> None:
     """Set the tenant_id for the current async context."""
     _current_tenant_id.set(tenant_id)
-
-class TenantMiddleware(BaseHTTPMiddleware):
-    """Extract tenant_id from X-Tenant-ID header and bind to async context."""
-
-    EXEMPT_PATHS: ClassVar[set[str]] = {"/health", "/healthz", "/readyz", "/docs", "/openapi.json", "/api/v1/auth/signup", "/api/v1/auth/login"}
-
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
-        if request.url.path in self.EXEMPT_PATHS:
-            return await call_next(request)
-
-        tenant_id = request.headers.get("X-Tenant-ID")
-        if not tenant_id:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Missing X-Tenant-ID header"},
-            )
-
-        token = _current_tenant_id.set(tenant_id)
-        try:
-            return await call_next(request)
-        finally:
-            _current_tenant_id.reset(token)
 
 def apply_tenant_filter(stmt: Select, tenant_id_column) -> Select:
     """Apply WHERE tenant_id = :tid to a SQLAlchemy Select statement."""

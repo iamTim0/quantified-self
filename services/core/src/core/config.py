@@ -25,6 +25,14 @@ class Settings(BaseSettings):
     GRPC_PORT: int = 50051
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
+    # Access tokens are short-lived because they cannot be revoked mid-flight
+    # except through the denylist; refresh tokens carry the long session.
+    ACCESS_TOKEN_TTL_MINUTES: int = 720  # 12 hours
+    REFRESH_TOKEN_TTL_DAYS: int = 30
+    # Signing key for internal service credentials. Deliberately separate from
+    # JWT_SECRET so a compromised importer cannot mint user tokens. Empty means
+    # "derive a deterministic dev value" — see core.security.tokens.
+    INTERNAL_SERVICE_SECRET: str = ""
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
     ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
 

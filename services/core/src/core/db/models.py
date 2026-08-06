@@ -10,7 +10,16 @@ from typing import Any
 
 from geoalchemy2 import Geometry
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import JSON, Boolean, DateTime, Float, ForeignKey, String, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -131,6 +140,120 @@ class TenantShare(Base):
             "grantor_tenant_id", "grantee_tenant_id", "scope", name="uq_tenant_shares_grant"
         ),
     )
+
+
+class RefreshToken(Base):
+    """A long-lived session credential, stored only as a SHA-256 hash.
+
+    Rotation is tracked through ``rotated_to_id`` so that replaying a superseded
+    refresh token is detectable: if a token that has already been rotated is
+    presented again, the whole chain is treated as compromised and revoked.
+    """
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_to_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class RevokedAccessToken(Base):
+    """Denylist of access-token ``jti`` values invalidated before their expiry.
+
+    Rows may be pruned once ``expires_at`` has passed — after that the token is
+    rejected by signature validation anyway.
+    """
+    __tablename__ = "revoked_access_tokens"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False, index=True)
+    user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(String(64), nullable=False, default="logout")
+    revoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class ApiKey(Base):
+    """A tenant-bound inbound API key for external push sources.
+
+    The full key is shown exactly once, at creation. Only ``key_hash`` is stored,
+    so the tenant is resolved *from the key itself* — no ``X-Tenant-ID`` header is
+    involved and none is trusted. ``key_prefix`` exists purely so that a key can be
+    named in the UI and in logs without disclosing it.
+    """
+    __tablename__ = "api_keys"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    created_by_user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    key_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    # Which connector this key may push to; a key scoped to apple_health cannot
+    # be replayed against the streak endpoint.
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=lambda: ["ingest"])
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active | revoked
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    rotated_from_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class SyncRun(Base):
+    """One import attempt for one connector — the import/audit log.
+
+    This is what makes adaptive windows possible: the next window is derived from
+    the last run that actually succeeded, not from wall-clock guesswork. It is also
+    where ``force`` imports are recorded, as the brief requires.
+    """
+    __tablename__ = "sync_runs"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False, default="smart")  # smart | force
+    trigger: Mapped[str] = mapped_column(String(24), nullable=False, default="manual")
+    window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    window_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    points_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    points_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_ranges: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ExplorerView(Base):

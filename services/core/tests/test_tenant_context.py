@@ -57,20 +57,103 @@ async def test_tenant_context_async_concurrency_isolation():
     assert results["tenant-B"] == "tenant-B"
     assert results["tenant-C"] == "tenant-C"
 
-@pytest.mark.asyncio
-async def test_tenant_middleware_rejects_missing_header():
-    """Verifies Fizzbee Invariant: TenantIdAlwaysPresent."""
+async def _dispatch(path: str, headers: list[tuple[bytes, bytes]]):
+    """Run AuthenticationMiddleware over a synthetic request and return the response."""
     from starlette.requests import Request
     from starlette.responses import Response
 
-    from core.db.tenant import TenantMiddleware
+    from core.security.auth import AuthenticationMiddleware
 
     async def call_next(_request: Request) -> Response:
         return Response("ok")
 
-    scope = {"type": "http", "method": "GET", "path": "/api/v1/data/metrics", "headers": []}
+    scope = {"type": "http", "method": "GET", "path": path, "headers": headers}
     request = Request(scope, receive=lambda: None)
-    middleware = TenantMiddleware(app=call_next)
-    response = await middleware.dispatch(request, call_next)
+    middleware = AuthenticationMiddleware(app=call_next)
+    return await middleware.dispatch(request, call_next)
 
+
+@pytest.mark.asyncio
+async def test_auth_middleware_rejects_missing_credential():
+    """Verifies Fizzbee Invariant: UnauthenticatedRequestsBlocked."""
+    response = await _dispatch("/api/v1/data/metrics", [])
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_rejects_bare_tenant_header():
+    """A bare X-Tenant-ID must never authenticate anybody.
+
+    This is the regression guard for the defect where Core derived the tenant from
+    an unauthenticated header and verified nothing.
+
+    Verifies Fizzbee Invariant: UnauthenticatedRequestsBlocked
+    """
+    response = await _dispatch(
+        "/api/v1/data/metrics",
+        [(b"x-tenant-id", b"11111111-1111-1111-1111-111111111111")],
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_auth_middleware_rejects_tenant_header_mismatch():
+    """A header may agree with the token, never override it.
+
+    Verifies Fizzbee Invariant: TenantIdAlwaysPresent
+    """
+    from core.security.tokens import create_access_token
+
+    token, _jti, _exp = create_access_token(
+        user_id="22222222-2222-2222-2222-222222222222",
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        email="user@example.test",
+        role="owner",
+    )
+    response = await _dispatch(
+        "/api/v1/data/metrics",
+        [
+            (b"authorization", f"Bearer {token}".encode()),
+            (b"x-tenant-id", b"99999999-9999-9999-9999-999999999999"),
+        ],
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_user_token_rejected_on_internal_path():
+    """A user token must not reach internal service endpoints.
+
+    Verifies Fizzbee Invariant: ServiceTokenScopedToInternalPaths
+    """
+    from core.security.tokens import create_access_token
+
+    token, _jti, _exp = create_access_token(
+        user_id="22222222-2222-2222-2222-222222222222",
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        email="user@example.test",
+        role="owner",
+    )
+    response = await _dispatch(
+        "/api/v1/internal/data/sources/oura/token",
+        [
+            (b"authorization", f"Bearer {token}".encode()),
+            (b"x-tenant-id", b"11111111-1111-1111-1111-111111111111"),
+        ],
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_service_token_rejected_on_user_path():
+    """A service credential must not stand in for a user session.
+
+    Verifies Fizzbee Invariant: ServiceTokenScopedToInternalPaths
+    """
+    from core.security.tokens import create_service_token
+
+    response = await _dispatch(
+        "/api/v1/data/metrics",
+        [(b"authorization", f"Bearer {create_service_token()}".encode())],
+    )
     assert response.status_code == 401
