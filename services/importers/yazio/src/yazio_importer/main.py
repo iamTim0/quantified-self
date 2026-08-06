@@ -24,6 +24,7 @@ from yazio_importer.client import (
 )
 from yazio_importer.config import settings
 from yazio_importer.internal_auth import internal_headers
+from yazio_importer.sync_task import SyncTask, parse_sync_task, resolve_window
 from yazio_importer.transformer import transform_consumed_items
 
 
@@ -70,19 +71,36 @@ logger = logging.getLogger(__name__)
 active_syncs: set[str] = set()
 
 
-async def report_sync_error_to_core(tenant_id: str, source_type: str, error_msg: str):
-    """Tell Core that this sync failed, so the dashboard can surface it."""
-    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_type}/status"
-    headers = internal_headers("req_importer_status", tenant_id)
-    payload = {
-        "sync_status": "error",
-        "last_sync_message": error_msg,
+async def report_sync_result_to_core(
+    task: SyncTask,
+    *,
+    status: str,
+    message: str,
+    points_received: int | None = None,
+):
+    """Close out the sync run in Core.
+
+    Only a run Core sees reach success moves the adaptive-window resume point
+    forward, so reporting the outcome is what keeps the next window correct.
+    """
+    url = (
+        f"{settings.CORE_SERVICE_URL}"
+        f"/api/v1/internal/data/sources/{task.source_type}/status"
+    )
+    headers = internal_headers(task.request_id, task.tenant_id)
+    payload: dict[str, Any] = {
+        "sync_status": status,
+        "last_sync_message": message,
+        "sync_run_id": task.sync_run_id,
     }
+    if points_received is not None:
+        payload["points_received"] = points_received
+
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=headers, json=payload)
         except Exception as e:
-            logger.warning(f"Could not report sync error to Core: {e}")
+            logger.warning(f"Could not report sync result to Core: {e}")
 
 
 async def get_connector_token_from_core(
@@ -182,19 +200,44 @@ async def resolve_recipe_name(client: YazioClient, recipe_id: str) -> str:
     return fallback
 
 
+def days_in_window(start: datetime, end: datetime) -> list[str]:
+    """The calendar days a window touches, as ``YYYY-MM-DD``.
+
+    Yazio's diary API is day-addressed, so a window has to be expanded into the
+    days it covers. Narrower windows therefore mean directly fewer HTTP calls:
+    a two-hour incremental window is one or two days instead of the previous
+    unconditional 31.
+    """
+    first = start.date()
+    last = end.date()
+    span = (last - first).days
+    return [(first + timedelta(days=offset)).isoformat() for offset in range(span + 1)]
+
+
 async def fetch_and_publish(
-    nc: nats.NATS, tenant_id: str, source_id: str, token: str, lookback_days: int
+    nc: nats.NATS, task: SyncTask, source_id: str, token: str, config: dict[str, Any]
 ):
-    """Poll Yazio API for diary consumed items and publish to NATS."""
-    logger.info(f"Polling Yazio API v15 for diary metrics (tenant={tenant_id})...")
+    """Poll the Yazio diary over the window Core chose and publish to NATS."""
+    tenant_id = task.tenant_id
+    window_start, window_end = resolve_window(task, config)
+    day_strings = days_in_window(window_start, window_end)
+
+    logger.info(
+        "[req_id=%s] Polling Yazio for tenant=%s over %d day(s) (%s..%s) mode=%s",
+        task.request_id,
+        tenant_id,
+        len(day_strings),
+        window_start.date().isoformat(),
+        window_end.date().isoformat(),
+        task.mode,
+    )
+
     client = YazioClient(access_token=token)
     js = nc.jetstream()
 
     daily_responses = []
-    now = datetime.now(timezone.utc)
 
-    for d in range(lookback_days + 1):
-        day_str = (now - timedelta(days=d)).strftime("%Y-%m-%d")
+    for day_str in day_strings:
         try:
             items_data = await client.get_consumed_items(date=day_str)
             summary_data = await client.get_daily_summary(date=day_str)
@@ -204,11 +247,16 @@ async def fetch_and_publish(
                 daily_responses.append((day_str, items_data))
         except YazioUnauthorizedError:
             err_msg = "HTTP 401 Unauthorized: Stored Yazio token is invalid or expired."
-            logger.error(f"Yazio API 401 Unauthorized for tenant {tenant_id}.")
-            await report_sync_error_to_core(tenant_id, "yazio", err_msg)
-            break
+            logger.error("[req_id=%s] Yazio API 401 for tenant %s.", task.request_id, tenant_id)
+            await report_sync_result_to_core(task, status="error", message=err_msg)
+            return
         except (YazioRateLimitError, YazioApiError) as e:
-            logger.error(f"Failed to fetch Yazio consumed items for {day_str}: {e}")
+            logger.error(
+                "[req_id=%s] Failed to fetch Yazio items for %s: %s",
+                task.request_id,
+                day_str,
+                e,
+            )
 
     # Collect unique product_ids and recipe_ids to resolve food names and nutrients
     product_ids_to_resolve = set()
@@ -249,24 +297,34 @@ async def fetch_and_publish(
 
     published_count = 0
     for dp in data_points:
-        payload = json.dumps(dp).encode("utf-8")
-        await js.publish("qs.ingest.yazio", payload)
+        dp["request_id"] = task.request_id
+        if task.sync_run_id:
+            dp["sync_run_id"] = task.sync_run_id
+        await js.publish("qs.ingest.yazio", json.dumps(dp).encode("utf-8"))
         published_count += 1
 
     logger.info(
-        f"Successfully published {published_count} data points to NATS subject 'qs.ingest.yazio'."
+        "[req_id=%s] Published %d data points to 'qs.ingest.yazio'.",
+        task.request_id,
+        published_count,
+    )
+    await report_sync_result_to_core(
+        task,
+        status="idle",
+        message=f"{published_count} Datenpunkte aus Yazio übertragen.",
+        points_received=published_count,
     )
 
 
 async def process_task_message(msg, nc: nats.NATS):
     try:
-        payload = json.loads(msg.data.decode("utf-8"))
-        tenant_id = payload.get("tenant_id")
-        if not tenant_id:
-            logger.warning("Missing tenant_id in task payload")
+        task = parse_sync_task(json.loads(msg.data.decode("utf-8")))
+        if task is None:
+            logger.warning("Missing tenant_id in task payload; dropping.")
             await msg.ack()
             return
 
+        tenant_id = task.tenant_id
         if tenant_id in active_syncs:
             logger.info("Sync already in progress for tenant, skipping duplicate task")
             await msg.ack()
@@ -274,7 +332,9 @@ async def process_task_message(msg, nc: nats.NATS):
 
         active_syncs.add(tenant_id)
         try:
-            token, source_id, config = await get_connector_token_from_core(tenant_id)
+            token, source_id, config = await get_connector_token_from_core(
+                tenant_id, req_id=task.request_id
+            )
             if not token or not source_id:
                 logger.info(
                     f"No active Yazio connector configured in Dashboard UI for tenant '{tenant_id}'. "
@@ -282,9 +342,7 @@ async def process_task_message(msg, nc: nats.NATS):
                 )
                 return
 
-            config = config or {}
-            lookback_days = config.get("lookback_days", settings.POLL_LOOKBACK_DAYS)
-            await fetch_and_publish(nc, tenant_id, source_id, token, lookback_days)
+            await fetch_and_publish(nc, task, source_id, token, config or {})
         finally:
             active_syncs.discard(tenant_id)
             await msg.ack()

@@ -31,13 +31,16 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import ClassVar, Literal
 
+from core.db.tenant import _current_tenant_id
+from core.security.tokens import (
+    TokenError,
+    decode_access_token,
+    verify_service_credential,
+)
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-from core.db.tenant import _current_tenant_id
-from core.security.tokens import TokenError, decode_access_token, verify_service_credential
 
 logger = logging.getLogger(__name__)
 

@@ -27,6 +27,7 @@ import math
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from itertools import pairwise
 from statistics import median
 
 # Overlap sizing. The brief's worked example is "hourly polling → about two hours
@@ -401,7 +402,7 @@ def detect_expected_interval(timestamps: Sequence[datetime]) -> float | None:
     ordered = sorted(_as_utc(t) for t in timestamps)
     deltas = [
         (b - a).total_seconds()
-        for a, b in zip(ordered, ordered[1:])
+        for a, b in pairwise(ordered)
         if (b - a).total_seconds() > 0
     ]
     if not deltas:
@@ -439,7 +440,7 @@ def find_gaps(
     if ordered[0] - window.start > threshold:
         gaps.append(TimeRange(window.start, ordered[0]))
 
-    for previous, current in zip(ordered, ordered[1:]):
+    for previous, current in pairwise(ordered):
         if current - previous > threshold:
             gaps.append(TimeRange(previous, current))
 

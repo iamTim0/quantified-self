@@ -35,7 +35,6 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 import jwt
-
 from core.config import settings
 
 ISSUER = "qs-core"
