@@ -222,7 +222,32 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
-      } else if (["home_assistant", "weather", "calendar"].includes(selectedProvider.id)) {
+      } else if (selectedProvider.id === "calendar") {
+        const url = providerBaseUrl.trim();
+        if (!url) {
+          setError("Bitte gib die URL deines Kalender-Feeds (.ics) ein.");
+          setLoading(false);
+          return;
+        }
+        if (!/^https?:\/\//i.test(url)) {
+          setError("Die Kalender-URL muss mit http:// oder https:// beginnen.");
+          setLoading(false);
+          return;
+        }
+        // A public or tokenised .ics URL is complete on its own. Demanding an API
+        // key for an Outlook/Office feed was the reported bug, so only ask for one
+        // when the URL clearly is not a calendar feed.
+        const isIcsUrl = url.split("?")[0].toLowerCase().endsWith(".ics");
+        payloadConfig = { ics_url: url, base_url: url };
+        if (!isIcsUrl && !finalToken && !isEditing) {
+          setError(
+            "Diese URL sieht nicht nach einem .ics-Feed aus. Gib entweder eine gültige " +
+              "ICS-URL oder zusätzlich einen API Key an.",
+          );
+          setLoading(false);
+          return;
+        }
+      } else if (["home_assistant", "weather"].includes(selectedProvider.id)) {
         if (!providerBaseUrl.trim()) {
           setError("Bitte gib die HTTPS-Basis-URL der Provider-API ein.");
           setLoading(false);
@@ -518,7 +543,45 @@ export default function ConnectorModal({
               </div>
             )}
 
-            {selectedProvider && ["home_assistant", "weather", "calendar"].includes(selectedProvider.id) && (
+            {selectedProvider?.id === "calendar" && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    Kalender-Feed URL (.ics)
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={providerBaseUrl}
+                    onChange={(event) => setProviderBaseUrl(event.target.value)}
+                    placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                  />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                    Öffentliche und private ICS-Feeds (Outlook, Google, Nextcloud) funktionieren
+                    ohne API Key. Die URL einer privaten Feed-Adresse ist selbst das Geheimnis und
+                    wird verschlüsselt gespeichert sowie nie protokolliert.{" "}
+                    <a href="/docs/importers/calendar/" className="text-[#0d5c3a] underline" target="_blank" rel="noreferrer">
+                      Einrichtungsanleitung
+                    </a>
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    API Key <span className="text-slate-400 font-normal text-[11px] lowercase">(optional, nur für API-Kalender)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    placeholder="Nur nötig, wenn dein Anbieter keinen ICS-Feed anbietet"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                  />
+                </div>
+              </div>
+            )}
+
+            {selectedProvider && ["home_assistant", "weather"].includes(selectedProvider.id) && (
               <div className="space-y-3">
                 <input type="url" required value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)} placeholder="https://api.example.com" className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none" />
                 <input type="password" required={!isEditing} value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder={isEditing ? "•••••••• (API Key beibehalten)" : "Bearer Token / API Key"} className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none" />

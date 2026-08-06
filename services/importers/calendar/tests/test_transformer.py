@@ -1,8 +1,136 @@
-from calendar_importer.transformer import transform
+"""Tests for calendar event transformation into ingestion events.
+
+Maps to Fizzbee Invariants:
+- NoDuplicateRecords
+- IdempotencyKeyDeterministic
+"""
+
+from datetime import datetime, timedelta, timezone
+
+from calendar_importer.ics import CalendarEvent
+from calendar_importer.transformer import transform, transform_events
+
+TENANT = "tenant-1"
+SOURCE = "source-1"
 
 
-def test_transform() -> None:
-    """Verifies Fizzbee Invariant: NoDuplicateRecords."""
-    row={"duration_minutes": 21.5, "start": "2026-08-03T00:00:00+00:00"}
-    first=transform([row],"tenant","source")[0]; second=transform([row],"tenant","source")[0]
-    assert first["tenant_id"] == "tenant" and first["idempotency_key"] == second["idempotency_key"]
+def _event(uid: str, hour: int, minutes: int = 60, **kwargs) -> CalendarEvent:
+    start = datetime(2026, 8, 5, hour, 0, tzinfo=timezone.utc)
+    return CalendarEvent(
+        uid=uid,
+        summary=kwargs.pop("summary", uid),
+        start=start,
+        end=start + timedelta(minutes=minutes),
+        all_day=kwargs.pop("all_day", False),
+        **kwargs,
+    )
+
+
+def test_emits_the_documented_metric_names():
+    """docs/importers/calendar.md promises these three; the old code emitted one."""
+    points = transform_events([_event("a", 9), _event("b", 14, 30)], TENANT, SOURCE)
+    metrics = {p["metric_type"] for p in points}
+
+    assert metrics == {
+        "calendar_meeting_duration_minutes",
+        "calendar_event_count",
+        "calendar_busy_minutes",
+        "calendar_busy_hours",
+    }
+
+
+def test_daily_aggregates_are_correct():
+    points = transform_events([_event("a", 9, 60), _event("b", 14, 30)], TENANT, SOURCE)
+    by_metric = {p["metric_type"]: p for p in points if p["metric_type"] != "calendar_meeting_duration_minutes"}
+
+    assert by_metric["calendar_event_count"]["value"] == 2
+    assert by_metric["calendar_busy_minutes"]["value"] == 90
+    assert by_metric["calendar_busy_hours"]["value"] == 1.5
+
+
+def test_transparent_events_count_but_do_not_occupy_time():
+    points = transform_events(
+        [_event("busy", 9, 60), _event("free", 11, 60, transparent=True)], TENANT, SOURCE
+    )
+    by_metric = {
+        p["metric_type"]: p
+        for p in points
+        if p["metric_type"] != "calendar_meeting_duration_minutes"
+    }
+
+    assert by_metric["calendar_event_count"]["value"] == 2
+    assert by_metric["calendar_busy_minutes"]["value"] == 60
+
+
+def test_idempotency_keys_are_deterministic():
+    """Verifies Fizzbee Invariant: IdempotencyKeyDeterministic."""
+    first = transform_events([_event("a", 9)], TENANT, SOURCE)
+    second = transform_events([_event("a", 9)], TENANT, SOURCE)
+
+    assert [p["idempotency_key"] for p in first] == [
+        p["idempotency_key"] for p in second
+    ]
+
+
+def test_two_meetings_at_the_same_instant_do_not_collide():
+    """A timestamp-only key would merge these into one row."""
+    points = transform_events([_event("a", 9), _event("b", 9)], TENANT, SOURCE)
+    occurrence_keys = [
+        p["idempotency_key"]
+        for p in points
+        if p["metric_type"] == "calendar_meeting_duration_minutes"
+    ]
+
+    assert len(occurrence_keys) == 2
+    assert len(set(occurrence_keys)) == 2
+
+
+def test_recurring_instances_get_distinct_keys():
+    """Every occurrence of a series must be its own row."""
+    base = datetime(2026, 8, 3, 8, 0, tzinfo=timezone.utc)
+    events = [
+        CalendarEvent(
+            uid="standup@example.test",
+            summary="Standup",
+            start=base + timedelta(weeks=w),
+            end=base + timedelta(weeks=w, minutes=15),
+            all_day=False,
+        )
+        for w in range(4)
+    ]
+
+    points = transform_events(events, TENANT, SOURCE)
+    keys = [
+        p["idempotency_key"]
+        for p in points
+        if p["metric_type"] == "calendar_meeting_duration_minutes"
+    ]
+
+    assert len(set(keys)) == 4
+
+
+def test_tenant_isolation_in_keys():
+    """Verifies Fizzbee Invariant: TenantIsolation."""
+    a = transform_events([_event("a", 9)], "tenant-a", SOURCE)
+    b = transform_events([_event("a", 9)], "tenant-b", SOURCE)
+
+    assert a[0]["idempotency_key"] != b[0]["idempotency_key"]
+    assert a[0]["tenant_id"] == "tenant-a"
+
+
+def test_events_carry_top_level_source_type():
+    """shared_schemas.IngestEvent requires it; the old transformer omitted it."""
+    points = transform_events([_event("a", 9)], TENANT, SOURCE)
+    assert all(p["source_type"] == "calendar" for p in points)
+
+
+def test_legacy_json_transform_skips_rows_without_a_timestamp():
+    """The old code substituted now(), producing a new key on every sync."""
+    rows = [
+        {"start": "2026-08-03T00:00:00+00:00", "duration_minutes": 21.5},
+        {"duration_minutes": 10.0},  # no start
+    ]
+    events = transform(rows, TENANT, SOURCE)
+
+    assert len(events) == 1
+    assert events[0]["idempotency_key"] == transform(rows, TENANT, SOURCE)[0]["idempotency_key"]
