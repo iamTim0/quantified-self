@@ -1,6 +1,6 @@
 ---
 name: doc-sync
-description: Validates and synchronizes documentation, README.md, GEMINI.md, API specs, and docstrings whenever code features or microservice architectures change.
+description: Validates and synchronizes documentation, README.md, GEMINI.md, CLAUDE.md, API specs, and docstrings whenever code features or microservice architectures change.
 ---
 
 # Documentation & README Sync Skill
@@ -17,9 +17,9 @@ Activate this skill whenever:
 
 ## 2. Verification Checklist
 - [ ] **`README.md`**: Update microservice table, architecture diagram, environment variables, and task commands.
-- [ ] **`GEMINI.md` / `AGENTS.md`**: Ensure invariant rules match actual implementation details.
+- [ ] **`GEMINI.md` / `CLAUDE.md` / `AGENTS.md`**: Ensure invariant rules match actual implementation details.
 - [ ] **Relative Markdown Links**: Verify all local markdown links (e.g., `[LICENSE](file:///LICENSE)`) resolve to existing files.
 - [ ] **Docstrings**: Ensure new public functions, classes, and tests have clear docstrings referencing spec invariants.
 
 ## 3. Automation
-The workspace uses a `Stop` hook in `.agents/hooks.json` running `python .agents/scripts/validate_docs.py` to block completion if broken markdown links or un-documented microservice changes exist.
+The workspace uses a `Stop` hook running `python .agents/scripts/validate_docs.py` to block completion if broken markdown links or un-documented microservice changes exist. It is registered per client in `.agents/hooks.json` (Gemini/Antigravity), `.codex/hooks.json` (Codex), and `.claude/settings.json` (Claude Code).

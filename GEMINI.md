@@ -1,7 +1,8 @@
 # Quantified Self - Project Agent Rules & Workflows
 
 This workspace uses shared agentic customizations under `.agents/`; Codex mirrors the
-same skills and lifecycle behavior through `.codex/`.
+same skills and lifecycle behavior through `.codex/`, and Claude Code through `.claude/`
+plus [CLAUDE.md](CLAUDE.md).
 
 ## 1. Absolute Rules & System Invariants
 - Refer to [AGENTS.md](AGENTS.md) for full architectural guidelines.
@@ -16,6 +17,8 @@ same skills and lifecycle behavior through `.codex/`.
 - **No Auto-Seed Data**: Microservices and importers MUST NEVER automatically generate mock seed data on startup or missing config.
 
 ## 2. Enabled Skills
+Canonical definitions live in `.agents/skills/`; Claude Code registers them via stubs in `.claude/skills/`.
+
 - `review-graph`: Traces cross-service dependency graphs and structural breaking changes.
 - `spec-verifier`: Verifies implementation against Fizzbee specifications in `specs/`.
 - `ast-grep-refactor`: Structural search and AST-based refactoring.
@@ -25,8 +28,10 @@ same skills and lifecycle behavior through `.codex/`.
 ## 3. Active Hooks
 - Gemini/Antigravity: `.agents/hooks.json` -> `.agents/scripts/pre_command_guard.py` and `validate_docs.py`.
 - Codex: `.codex/hooks.json` uses the same scripts with Codex-native hook contracts.
-- Codex requires reviewing and trusting project hooks through `/hooks` after first setup or changes.
+- Claude Code: `.claude/settings.json` uses the same scripts (`PreToolUse` on `Bash`/`PowerShell`, `Stop`).
+- Codex requires reviewing and trusting project hooks through `/hooks` after first setup or changes; Claude Code reloads hook changes only after `/hooks` or a restart.
 
 ## 4. MCP
 - No project-scoped MCP servers are currently configured.
 - Keep MCP credentials and machine-specific servers in local client configuration, never in this repository.
+- The `notebooklm` server is configured per-user in each client (Gemini `~/.gemini/settings.json`, Claude Code user scope).

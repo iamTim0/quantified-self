@@ -68,7 +68,7 @@ def main() -> None:
     issues = []
 
     # 1. Check broken links in key documentation files
-    for doc in ["README.md", "GEMINI.md", "AGENTS.md"]:
+    for doc in ["README.md", "GEMINI.md", "CLAUDE.md", "AGENTS.md"]:
         if os.path.exists(doc):
             broken = validate_markdown_links(doc)
             if broken:
@@ -79,7 +79,7 @@ def main() -> None:
         # If new importer or service added, require README update
         new_services = [f for f in code_changes if "importers/" in f or "services/" in f]
         if new_services:
-            issues.append(f"Code changes detected in microservices ({len(new_services)} files), but README.md or GEMINI.md were not updated.")
+            issues.append(f"Code changes detected in microservices ({len(new_services)} files), but README.md, CLAUDE.md or GEMINI.md were not updated.")
 
     # Response for Stop hook or PostToolUse
     if issues:

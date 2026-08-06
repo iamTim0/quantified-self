@@ -33,6 +33,9 @@ yarn-error.log*
 # Docker
 .docker/
 
+# Agent clients (local overrides only; shared config is committed)
+.claude/settings.local.json
+
 # IDE / Editor
 .idea/
 .vscode/

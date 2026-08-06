@@ -1,0 +1,29 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(Bash|PowerShell)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .agents/scripts/pre_command_guard.py",
+            "timeout": 10,
+            "statusMessage": "Checking command safety"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cd \"$CLAUDE_PROJECT_DIR\" && python .agents/scripts/validate_docs.py",
+            "timeout": 15,
+            "statusMessage": "Validating documentation"
+          }
+        ]
+      }
+    ]
+  }
+}
