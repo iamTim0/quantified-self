@@ -51,3 +51,6 @@ yarn-error.log*
 
 # Protobuf / generated
 **/generated/
+
+# MkDocs build output (`task docs:build` writes here; site_dir in mkdocs.yml)
+/site/

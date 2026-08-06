@@ -49,16 +49,37 @@ tasks:
       - uv run --with grpcio-tools python packages/proto/generate.py
 
   test:all:
-    desc: "Run complete test suite (E2E, Specs, Core, and Importers)"
+    desc: "Run complete test suite (Specs, Core, Gateway, E2E, and Importers)"
     cmds:
       - task: test:specs
+      - task: test:core
+      - task: test:gateway
       - task: test:e2e
       - task: test:importers
 
+  test:core:
+    desc: "Run Core Data Service tests (requires Postgres on :5433)"
+    cmds:
+      - uv run --directory services/core --with pytest --with pytest-asyncio pytest tests
+
+  test:gateway:
+    desc: "Run API Gateway tests"
+    cmds:
+      - uv run --directory services/api-gateway --with pytest --with pytest-asyncio pytest tests
+
   test:e2e:
     desc: "Run end-to-end integration tests for all importers, dashboard API, and UI flows"
+    # Runs in Core's environment because the dashboard tests import core.main, and
+    # pulls in the extra runtime deps the importer transformers need. tests/e2e/conftest.py
+    # puts every service's src/ on sys.path. Requires Postgres on :5433.
+    env:
+      PYTHONPATH: "{{.ROOT_DIR}}"
     cmds:
-      - PYTHONPATH=. services/importers/yazio/.venv/bin/pytest tests/e2e
+      - >-
+        uv run --directory services/core
+        --with pytest --with pytest-asyncio --with nats-py
+        --with icalendar --with recurring-ical-events
+        pytest {{.ROOT_DIR}}/tests/e2e --rootdir {{.ROOT_DIR}}
 
   test:importers:
     desc: "Run unit tests across all importer microservices"

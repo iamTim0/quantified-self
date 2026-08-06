@@ -22,6 +22,7 @@ from core.main import app, get_session
 from core.db.models import Tenant, DataSource, DataPoint, ExplorerView, TenantShare, User
 
 from tests.e2e.e2e_helpers import (
+    auth_headers,
     init_e2e_db,
     override_get_session,
     create_test_tenant,
@@ -48,7 +49,7 @@ def api_client():
 async def test_dashboard_connectors_flow_e2e(api_client):
     """E2E Test: Dashboard 'Connectors' Tab - Add, List, Sync, and Delete Connector."""
     tenant_id = await create_test_tenant()
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     # 1. Configure a new connector (e.g. Yazio)
     config_payload = {
@@ -89,7 +90,7 @@ async def test_dashboard_connectors_flow_e2e(api_client):
 async def test_dashboard_explorer_tab_e2e(api_client):
     """E2E Test: Dashboard 'Explorer' Tab - Save Views, List, and Delete View."""
     tenant_id = await create_test_tenant()
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     # 1. Save a new Explorer View
     view_payload = {
@@ -121,7 +122,7 @@ async def test_dashboard_explorer_tab_e2e(api_client):
 async def test_dashboard_quality_tab_e2e(api_client):
     """E2E Test: Dashboard 'Quality' Tab - Gaps, Conflicts, & Correlations."""
     tenant_id = await create_test_tenant()
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     # 1. Check Gaps endpoint
     today = date.today()
@@ -146,7 +147,7 @@ async def test_dashboard_visual_import_and_wipe_e2e(api_client):
     """E2E Test: Visual CSV Import, Data Wipe, and Full Account Wipe."""
     tenant_id = await create_test_tenant()
     source_id = str(uuid.uuid4())
-    headers = {"X-Tenant-ID": tenant_id}
+    headers = auth_headers(tenant_id)
 
     async with e2e_session_maker() as session:
         ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="manual_csv")
@@ -204,7 +205,7 @@ async def test_dashboard_tenant_sharing_e2e(api_client):
         session.add(user)
         await session.commit()
 
-    grantor_headers = {"X-Tenant-ID": grantor_id}
+    grantor_headers = auth_headers(grantor_id)
 
     # 1. Grant Share
     share_payload = {"grantee_email": grantee_email, "scope": "read_all"}

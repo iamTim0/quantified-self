@@ -203,15 +203,32 @@ def test_streak_importer_e2e_mock_import(mock_tenant_context):
 
 
 def test_calendar_importer_e2e_mock_import(mock_tenant_context):
-    """Test Calendar importer transformer with mock calendar events."""
+    """Test Calendar importer transformer with mock calendar events.
+
+    The fixture previously used `start_time`, a key the transformer never read, so
+    it fell through to `datetime.now()` and produced a different idempotency_key on
+    every run — a guaranteed duplicate row per sync. The correct key is `start`.
+    """
     tenant_id, source_id = mock_tenant_context
     records = [
-        {"start_time": "2026-08-04T10:00:00+00:00", "duration_minutes": 60, "summary": "Deep Work"}
+        {"start": "2026-08-04T10:00:00+00:00", "duration_minutes": 60, "summary": "Deep Work"}
     ]
     dps = transform_calendar(records, tenant_id, source_id)
     assert len(dps) == 1
     assert dps[0]["tenant_id"] == tenant_id
     assert dps[0]["value"] == 60.0
+
+    # Re-running must yield the identical key (Rule 4), which the now() fallback
+    # made impossible.
+    again = transform_calendar(records, tenant_id, source_id)
+    assert again[0]["idempotency_key"] == dps[0]["idempotency_key"]
+
+
+def test_calendar_importer_skips_records_without_a_timestamp(mock_tenant_context):
+    """A record with no usable timestamp is dropped, not stamped with now()."""
+    tenant_id, source_id = mock_tenant_context
+    dps = transform_calendar([{"duration_minutes": 60}], tenant_id, source_id)
+    assert dps == []
 
 
 def test_home_assistant_importer_e2e_mock_import(mock_tenant_context):
