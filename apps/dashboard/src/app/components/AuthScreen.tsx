@@ -5,6 +5,8 @@ import { Activity, Lock, Mail, User, ArrowRight, AlertCircle } from "lucide-reac
 
 export interface UserAuthData {
   token: string;
+  /** Opaque rotating refresh token; absent only if the server did not issue one. */
+  refreshToken: string | null;
   tenantId: string;
   userName: string;
   userEmail: string;
@@ -85,6 +87,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       if (isLogin) {
         onLogin({
           token: data.access_token,
+          refreshToken: data.refresh_token ?? null,
           tenantId: data.tenant_id,
           userName: data.name || email.split("@")[0],
           userEmail: data.email || email,
@@ -104,6 +107,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
 
         onLogin({
           token: loginData.access_token,
+          refreshToken: loginData.refresh_token ?? null,
           tenantId: loginData.tenant_id,
           userName: loginData.name || name,
           userEmail: loginData.email || email,

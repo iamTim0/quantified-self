@@ -14,6 +14,15 @@ import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
 import { SummaryMetrics } from "./components/MetricCards";
+import {
+  STORAGE_KEYS,
+  StoredSession,
+  clearSession,
+  endSession,
+  readStoredSession,
+  refreshSession,
+  saveSession,
+} from "./lib/session";
 
 const getApiBase = (): string => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
@@ -23,7 +32,8 @@ const getApiBase = (): string => {
   return "http://127.0.0.1:8000";
 };
 
-const DEFAULT_TENANT_ID = "56fe04c2-b103-40f1-b5f4-2326d1c52830";
+// There is deliberately no default tenant. A hardcoded seed tenant here is what
+// gave the dev-token bootstrap something to silently sign into.
 
 export default function DashboardPage() {
   const API_BASE = getApiBase();
@@ -52,11 +62,12 @@ export default function DashboardPage() {
   };
 
   const [token, setToken] = useState("");
-  const [tenantId, setTenantId] = useState(DEFAULT_TENANT_ID);
-  const [userName, setUserName] = useState("Timo");
-  const [userEmail, setUserEmail] = useState("owner@example.com");
-  const [userRole, setUserRole] = useState("owner");
-  const [tenantName, setTenantName] = useState("Timo's Workspace");
+  const [tenantId, setTenantId] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userRole, setUserRole] = useState("member");
+  // Derived from the signed-in user; the workspace name has no separate endpoint yet.
+  const tenantName = userName ? `${userName}'s Workspace` : "";
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const [summary, setSummary] = useState<SummaryMetrics>({});
@@ -88,66 +99,99 @@ export default function DashboardPage() {
     };
   }, [isAuthenticated, triggerRefresh]);
 
+  const applySession = useCallback((session: StoredSession) => {
+    setToken(session.token);
+    setTenantId(session.tenantId);
+    if (session.userName) setUserName(session.userName);
+    if (session.userEmail) setUserEmail(session.userEmail);
+    if (session.userRole) setUserRole(session.userRole);
+    setIsAuthenticated(true);
+  }, []);
+
+  const resetToSignedOut = useCallback(() => {
+    clearSession();
+    setToken("");
+    setTenantId("");
+    setUserName("");
+    setUserEmail("");
+    setUserRole("member");
+    setIsAuthenticated(false);
+  }, []);
+
+  // Bootstrap: restore a *valid* stored session, try one refresh if the access
+  // token has expired, and otherwise stay signed out. Nothing here mints a token.
   useEffect(() => {
-    setMounted(true);
-    const savedToken = localStorage.getItem("qs_token");
-    const savedTenantId = localStorage.getItem("qs_tenant_id");
-    const savedUserName = localStorage.getItem("qs_user_name");
-    const savedUserEmail = localStorage.getItem("qs_user_email");
-    const savedUserRole = localStorage.getItem("qs_user_role");
+    let cancelled = false;
 
-    const activeTenant = savedTenantId || DEFAULT_TENANT_ID;
-    setTenantId(activeTenant);
-    if (!savedTenantId) localStorage.setItem("qs_tenant_id", activeTenant);
+    (async () => {
+      const { session, expired } = readStoredSession();
 
-    if (savedToken) {
-      setToken(savedToken);
-      if (savedUserName) setUserName(savedUserName);
-      if (savedUserEmail) setUserEmail(savedUserEmail);
-      if (savedUserRole) setUserRole(savedUserRole);
-      setIsAuthenticated(true);
-    } else {
-      fetch(`${API_BASE}/api/v1/auth/dev-token?tenant_id=${activeTenant}`)
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.access_token) {
-            setToken(data.access_token);
-            localStorage.setItem("qs_token", data.access_token);
-            setIsAuthenticated(true);
-          }
-        })
-        .catch((err) => console.error("Error fetching dev token:", err));
-    }
+      if (session) {
+        if (!cancelled) {
+          applySession(session);
+          setMounted(true);
+        }
+        return;
+      }
+
+      if (expired) {
+        const refreshed = await refreshSession(API_BASE);
+        if (!cancelled && refreshed) {
+          applySession(refreshed);
+          setMounted(true);
+          return;
+        }
+      }
+
+      if (!cancelled) {
+        resetToSignedOut();
+        setMounted(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [API_BASE, applySession, resetToSignedOut]);
+
+  // Logging out in one tab must sign the others out too, rather than leaving a
+  // live session behind whichever tab the user did not click in.
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === STORAGE_KEYS.token && !event.newValue) {
+        setToken("");
+        setIsAuthenticated(false);
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
   }, []);
 
   const handleLogin = (data: UserAuthData) => {
-    const activeTenant = data.tenantId || DEFAULT_TENANT_ID;
-    setToken(data.token);
-    setTenantId(activeTenant);
-    setUserName(data.userName);
-    setUserEmail(data.userEmail);
-    setUserRole(data.userRole);
-
-    localStorage.setItem("qs_token", data.token);
-    localStorage.setItem("qs_tenant_id", activeTenant);
-    localStorage.setItem("qs_user_name", data.userName);
-    localStorage.setItem("qs_user_email", data.userEmail);
-    localStorage.setItem("qs_user_role", data.userRole);
-
-    setIsAuthenticated(true);
+    const session: StoredSession = {
+      token: data.token,
+      refreshToken: data.refreshToken ?? null,
+      tenantId: data.tenantId,
+      userName: data.userName,
+      userEmail: data.userEmail,
+      userRole: data.userRole,
+    };
+    saveSession(session);
+    applySession(session);
     triggerRefresh();
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem("qs_token");
-    localStorage.removeItem("qs_tenant_id");
-    localStorage.removeItem("qs_user_name");
-    localStorage.removeItem("qs_user_email");
-    localStorage.removeItem("qs_user_role");
-    setToken("");
-    setTenantId(DEFAULT_TENANT_ID);
-    setIsAuthenticated(false);
-  };
+  const handleLogout = useCallback(async () => {
+    // Sign out locally first so the UI cannot keep rendering protected content
+    // while the network call is still in flight.
+    const signOut = resetToSignedOut;
+    try {
+      await endSession(API_BASE);
+    } finally {
+      signOut();
+      router.push("/");
+    }
+  }, [API_BASE, resetToSignedOut, router]);
 
   const handleOpenConfigureModal = (connector?: ConnectorItem, sourceType?: string) => {
     if (connector) {
@@ -172,7 +216,7 @@ export default function DashboardPage() {
     if (!mounted || !token) return;
 
     let isMounted = true;
-    const activeTenant = tenantId || DEFAULT_TENANT_ID;
+    const activeTenant = tenantId;
 
     async function loadDashboardData() {
       try {
@@ -188,6 +232,12 @@ export default function DashboardPage() {
             headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
           }),
         ]);
+
+        // A rejected token means the session is over — do not keep polling with it.
+        if ((summaryRes.status === 401 || metricsRes.status === 401) && isMounted) {
+          resetToSignedOut();
+          return;
+        }
 
         if (summaryRes.ok && isMounted) {
           const sumData = await summaryRes.json();
@@ -321,7 +371,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [mounted, isAuthenticated, token, tenantId, refreshTrigger]);
+  }, [mounted, isAuthenticated, token, tenantId, refreshTrigger, API_BASE, resetToSignedOut]);
 
   if (!mounted) {
     return <div className="min-h-screen bg-slate-200/60" />;
