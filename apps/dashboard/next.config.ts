@@ -29,6 +29,22 @@ const connectSrcDomains = allowedOriginsList
   .flatMap((domain) => [`https://${domain}`, `http://${domain}`, `wss://${domain}`, `ws://${domain}`])
   .join(" ");
 
+/**
+ * Raster tile hosts, allowed in `img-src` only.
+ *
+ * The map is vector-first and fetches nothing until the user explicitly loads it,
+ * but when they do, the browser needs to be able to render the tiles. Previously
+ * `img-src 'self' data: blob:` silently blocked every tile, so the map was a grey
+ * box in any environment where these headers applied.
+ *
+ * Deliberately scoped to images: Leaflet itself is bundled, so no third-party
+ * script origin is permitted. Set MAP_TILE_HOSTS to restrict or extend the list.
+ */
+const tileImageHosts = (
+  process.env.MAP_TILE_HOSTS ??
+  "https://tile.openstreetmap.org https://*.basemaps.cartocdn.com"
+).trim();
+
 const nextConfig: NextConfig = {
   allowedDevOrigins: allowedOriginsList,
   // SECURITY L3: Add security headers
@@ -48,7 +64,7 @@ const nextConfig: NextConfig = {
             "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
             "font-src 'self' https://fonts.gstatic.com",
             `connect-src 'self' ${connectSrcDomains} http://127.0.0.1:8000 http://localhost:8000 http://localhost:* http://127.0.0.1:* ws: wss:`,
-            "img-src 'self' data: blob:",
+            `img-src 'self' data: blob: ${tileImageHosts}`,
           ].join("; "),
         },
       ],

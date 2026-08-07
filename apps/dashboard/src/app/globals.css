@@ -1,4 +1,7 @@
 @import "tailwindcss";
+/* Self-hosted so the map needs no third-party script or stylesheet. The former
+   unpkg.com CDN load was blocked by our own CSP, which left the map a grey box. */
+@import "leaflet/dist/leaflet.css";
 
 :root {
   --background: #f8fafc;

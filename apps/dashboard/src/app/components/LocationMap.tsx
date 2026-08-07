@@ -1,7 +1,26 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
-import { MapPin, Navigation, Calendar, ShieldCheck, RefreshCw, Layers } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { Map as LeafletMap } from "leaflet";
+import { Calendar, Globe2, Layers, MapPin, Navigation, RefreshCw, ShieldCheck } from "lucide-react";
+
+/**
+ * GPS route rendering, vector-first.
+ *
+ * Previously this injected Leaflet from unpkg.com on mount and immediately loaded
+ * OpenStreetMap raster tiles. Three problems: the app's own CSP forbids both the
+ * third-party script and non-self images, so in any environment where the headers
+ * applied the map was a permanently grey box; the `script.onload` had no `onerror`,
+ * so that failure was silent; and every visit hit a third-party tile server with
+ * the user's location data before they had asked for a map.
+ *
+ * Now:
+ *   * The default view is a pure SVG vector route — no external request of any kind.
+ *   * Raster tiles are strictly opt-in, behind a button that states what it does.
+ *   * Leaflet is bundled locally, so no third-party script is ever fetched.
+ *   * Any failure falls back to the vector view with a visible message.
+ *   * Large tracks are simplified before rendering rather than drawing every point.
+ */
 
 export interface GpsPoint {
   latitude: number;
@@ -18,50 +37,87 @@ interface LocationMapProps {
   refreshTrigger: number;
 }
 
-export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }: LocationMapProps) {
+type TileProvider = "osm" | "carto";
+
+const TILE_PROVIDERS: Record<TileProvider, { label: string; url: string; attribution: string; subdomains: string }> = {
+  osm: {
+    label: "OpenStreetMap",
+    url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    subdomains: "abc",
+  },
+  carto: {
+    label: "CARTO Voyager",
+    url: "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+    subdomains: "abcd",
+  },
+};
+
+/** Configurable, but never used unless the user explicitly loads the map. */
+const DEFAULT_PROVIDER: TileProvider =
+  (process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER as TileProvider) in TILE_PROVIDERS
+    ? (process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER as TileProvider)
+    : "osm";
+
+const MAX_RENDERED_POINTS = 400;
+
+/**
+ * Reduce a track to at most `limit` points, keeping the ones that carry the shape.
+ *
+ * Perpendicular distance to the local segment is a good proxy for "this point is a
+ * corner"; straight stretches collapse, turns survive. Endpoints are always kept so
+ * the route still starts and ends where it did.
+ */
+export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): GpsPoint[] {
+  if (points.length <= limit) return points;
+
+  const significance = points.map((p, i) => {
+    if (i === 0 || i === points.length - 1) return Number.POSITIVE_INFINITY;
+    const prev = points[i - 1];
+    const next = points[i + 1];
+    // Twice the triangle area = deviation from the straight line prev→next.
+    return Math.abs(
+      (next.longitude - prev.longitude) * (prev.latitude - p.latitude) -
+        (prev.longitude - p.longitude) * (next.latitude - prev.latitude),
+    );
+  });
+
+  const threshold = [...significance]
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)[limit - 2] ?? 0;
+
+  const kept = points.filter((_, i) => significance[i] >= threshold);
+  // Ties at the threshold can overshoot the limit; trim evenly rather than truncating
+  // the tail, which would silently drop the most recent positions.
+  if (kept.length > limit) {
+    const stride = kept.length / limit;
+    return Array.from({ length: limit }, (_, i) => kept[Math.floor(i * stride)]);
+  }
+  return kept;
+}
+
+export default function LocationMap({ apiBase, token, refreshTrigger }: LocationMapProps) {
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<any>(null);
+  const mapInstanceRef = useRef<LeafletMap | null>(null);
   const [points, setPoints] = useState<GpsPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [leafletLoaded, setLeafletLoaded] = useState(false);
-  const [viewMode, setViewMode] = useState<"leaflet" | "svg">("leaflet");
-  const [tileProvider, setTileProvider] = useState<"osm" | "carto">("osm");
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
 
-  // 1. Dynamically inject Leaflet CSS & Leaflet JS
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  // Vector is the default. Tiles are only ever loaded on an explicit request.
+  const [showTiles, setShowTiles] = useState(false);
+  const [tileProvider, setTileProvider] = useState<TileProvider>(DEFAULT_PROVIDER);
+  const [tileError, setTileError] = useState("");
 
-    // Inject Leaflet CSS if missing
-    if (!document.getElementById("leaflet-css")) {
-      const link = document.createElement("link");
-      link.id = "leaflet-css";
-      link.rel = "stylesheet";
-      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-      document.head.appendChild(link);
-    }
-
-    if ((window as any).L) {
-      setLeafletLoaded(true);
-      return;
-    }
-
-    const script = document.createElement("script");
-    script.id = "leaflet-js";
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    script.async = true;
-    script.onload = () => setLeafletLoaded(true);
-    document.body.appendChild(script);
-  }, []);
-
-  // 2. Fetch Dawarich GPS location points from Core Data Service
-  const fetchLocationData = async () => {
+  const fetchLocationData = useCallback(async () => {
     setLoading(true);
     try {
       const now = new Date();
       const start = new Date(now);
       if (dateFilter === "today") start.setHours(0, 0, 0, 0);
       else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
+
       const query = new URLSearchParams({
         metric_type: "location_point",
         start_time: start.toISOString(),
@@ -70,371 +126,313 @@ export default function LocationMap({ apiBase, token, tenantId, refreshTrigger }
       });
       const res = await fetch(`${apiBase}/api/v1/data/metrics?${query}`, {
         cache: "no-store",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "X-Tenant-ID": tenantId,
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (res.ok) {
-        const data = await res.json();
-        const dps = data.data_points || [];
-        const parsedPoints: GpsPoint[] = dps
-          .map((dp: any) => {
-            const meta = dp.metadata || {};
-            const lat = meta.latitude ?? dp.value;
-            const lon = meta.longitude;
-            if (lat != null && lon != null && !isNaN(Number(lat)) && !isNaN(Number(lon))) {
-              return {
-                latitude: Number(lat),
-                longitude: Number(lon),
-                timestamp: dp.timestamp,
-                speed: meta.speed,
-                altitude: meta.altitude,
-              };
-            }
-            return null;
-          })
-          .filter(Boolean);
+      if (!res.ok) return;
 
-        setPoints(parsedPoints);
-      }
+      const data = await res.json();
+      const parsed: GpsPoint[] = (data.data_points || [])
+        .map((dp: { metadata?: Record<string, unknown>; value?: number; timestamp?: string }) => {
+          const meta = dp.metadata || {};
+          const lat = (meta.latitude as number) ?? dp.value;
+          const lon = meta.longitude as number;
+          if (lat == null || lon == null || isNaN(Number(lat)) || isNaN(Number(lon))) return null;
+          return {
+            latitude: Number(lat),
+            longitude: Number(lon),
+            timestamp: dp.timestamp,
+            speed: meta.speed as number | undefined,
+            altitude: meta.altitude as number | undefined,
+          };
+        })
+        .filter(Boolean) as GpsPoint[];
+
+      setPoints(parsed);
     } catch (err) {
-      console.error("Error fetching Dawarich GPS points:", err);
+      console.error("Error fetching GPS points:", err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [apiBase, token, dateFilter]);
 
   useEffect(() => {
-    if (token && tenantId) {
-      fetchLocationData();
-    }
-  }, [apiBase, token, tenantId, dateFilter, refreshTrigger]);
+    if (!token) return;
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (!cancelled) await fetchLocationData();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, fetchLocationData, refreshTrigger]);
 
   const isToday = (isoString?: string) => {
     if (!isoString) return false;
-    try {
-      const ptDate = new Date(isoString);
-      const today = new Date();
-      return (
-        ptDate.getFullYear() === today.getFullYear() &&
-        ptDate.getMonth() === today.getMonth() &&
-        ptDate.getDate() === today.getDate()
-      );
-    } catch {
-      return false;
-    }
+    const d = new Date(isoString);
+    const today = new Date();
+    return (
+      d.getFullYear() === today.getFullYear() &&
+      d.getMonth() === today.getMonth() &&
+      d.getDate() === today.getDate()
+    );
   };
 
-  const filteredPoints = dateFilter === "today" ? points.filter((p) => isToday(p.timestamp)) : points;
+  const filteredPoints = useMemo(
+    () => (dateFilter === "today" ? points.filter((p) => isToday(p.timestamp)) : points),
+    [points, dateFilter],
+  );
 
-  // 3. Initialize & render OpenStreetMap Leaflet Map
+  const renderPoints = useMemo(() => simplifyTrack(filteredPoints), [filteredPoints]);
+
+  // Tiles: bundled Leaflet, loaded on demand only.
   useEffect(() => {
-    if (!leafletLoaded || !mapContainer || viewMode !== "leaflet") return;
-    const L = (window as any).L;
-    if (!L) return;
+    if (!showTiles || !mapContainer) return;
+    let cancelled = false;
 
-    try {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
+    void (async () => {
+      try {
+        const L = await import("leaflet");
+        if (cancelled || !mapContainer) return;
 
-      const hasPoints = filteredPoints.length > 0;
-      const defaultCenter: [number, number] = [51.1657, 10.4515]; // Central Europe fallback
-      const defaultZoom = 6;
+        mapInstanceRef.current?.remove();
 
-      let centerLat = defaultCenter[0];
-      let centerLon = defaultCenter[1];
+        const hasPoints = renderPoints.length > 0;
+        const center: [number, number] = hasPoints
+          ? [
+              renderPoints.reduce((a, p) => a + p.latitude, 0) / renderPoints.length,
+              renderPoints.reduce((a, p) => a + p.longitude, 0) / renderPoints.length,
+            ]
+          : [51.1657, 10.4515];
 
-      if (hasPoints) {
-        const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
-        centerLat = latLons.reduce((acc, p) => acc + p[0], 0) / latLons.length;
-        centerLon = latLons.reduce((acc, p) => acc + p[1], 0) / latLons.length;
-      }
+        const map = L.map(mapContainer, { center, zoom: hasPoints ? 13 : 6 });
+        mapInstanceRef.current = map;
 
-      const map = L.map(mapContainer, {
-        center: [centerLat, centerLon],
-        zoom: hasPoints ? 13 : defaultZoom,
-        zoomControl: true,
-      });
+        const provider = TILE_PROVIDERS[tileProvider];
+        L.tileLayer(provider.url, {
+          attribution: provider.attribution,
+          maxZoom: 19,
+          subdomains: provider.subdomains,
+        }).addTo(map);
 
-      mapInstanceRef.current = map;
-
-      // Select Tile Layer
-      const tileUrl =
-        tileProvider === "carto"
-          ? "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
-          : "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-
-      const attribution =
-        tileProvider === "carto"
-          ? '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          : '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-
-      L.tileLayer(tileUrl, {
-        attribution,
-        maxZoom: 19,
-        subdomains: tileProvider === "carto" ? "abcd" : "abc",
-      }).addTo(map);
-
-      // Draw Polyline Route & Markers if points exist
-      if (hasPoints) {
-        const latLons: [number, number][] = filteredPoints.map((p) => [p.latitude, p.longitude]);
-        if (latLons.length > 1) {
-          const polyline = L.polyline(latLons, {
-            color: "#0d5c3a",
-            weight: 4,
-            opacity: 0.85,
-            dashArray: "6, 8",
-          }).addTo(map);
-          map.fitBounds(polyline.getBounds(), { padding: [40, 40] });
+        if (hasPoints) {
+          const latLons: [number, number][] = renderPoints.map((p) => [p.latitude, p.longitude]);
+          if (latLons.length > 1) {
+            const line = L.polyline(latLons, { color: "#0d5c3a", weight: 4, opacity: 0.85 }).addTo(map);
+            map.fitBounds(line.getBounds(), { padding: [40, 40] });
+          }
+          renderPoints.forEach((pt) => {
+            L.circleMarker([pt.latitude, pt.longitude], {
+              radius: 6,
+              fillColor: "#0d5c3a",
+              color: "#ffffff",
+              weight: 2,
+              fillOpacity: 0.95,
+            })
+              .addTo(map)
+              .bindPopup(
+                `<div style="font-family:sans-serif;font-size:12px">` +
+                  `<strong>${pt.timestamp ? new Date(pt.timestamp).toLocaleString("de-DE") : ""}</strong><br/>` +
+                  `<span style="font-family:monospace">${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°</span>` +
+                  `</div>`,
+              );
+          });
         }
-
-        filteredPoints.forEach((pt, idx) => {
-          const popupContent = `
-            <div style="font-family: sans-serif; font-size: 12px; padding: 4px;">
-              <div style="font-weight: bold; color: #0f172a; margin-bottom: 2px;">📍 Dawarich GPS Punkt #${idx + 1}</div>
-              <div style="color: #64748b; font-size: 11px;">${pt.timestamp ? new Date(pt.timestamp).toLocaleString("de-DE") : "N/A"}</div>
-              <div style="margin-top: 4px; font-family: monospace; font-size: 11px; color: #0d5c3a; font-weight: 600;">
-                ${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°
-              </div>
-            </div>
-          `;
-          L.circleMarker([pt.latitude, pt.longitude], {
-            radius: 8,
-            fillColor: "#0d5c3a",
-            color: "#ffffff",
-            weight: 3,
-            opacity: 1,
-            fillOpacity: 0.95,
-          })
-            .addTo(map)
-            .bindPopup(popupContent);
-        });
+        setTimeout(() => mapInstanceRef.current?.invalidateSize(), 120);
+      } catch (err) {
+        // Never leave a silent grey box: say what happened and go back to vectors.
+        console.error("Map failed to load:", err);
+        if (!cancelled) {
+          setTileError(
+            "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
+          );
+          setShowTiles(false);
+        }
       }
+    })();
 
-      // Force size recalculation to prevent gray tiles
-      const timer1 = setTimeout(() => {
-        if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
-      }, 100);
-      const timer2 = setTimeout(() => {
-        if (mapInstanceRef.current) mapInstanceRef.current.invalidateSize();
-      }, 500);
+    return () => {
+      cancelled = true;
+      mapInstanceRef.current?.remove();
+      mapInstanceRef.current = null;
+    };
+  }, [showTiles, mapContainer, renderPoints, tileProvider]);
 
-      return () => {
-        clearTimeout(timer1);
-        clearTimeout(timer2);
-      };
-    } catch (e) {
-      console.error("Error initializing Leaflet map:", e);
-    }
-  }, [leafletLoaded, filteredPoints, viewMode, tileProvider, mapContainer]);
+  // Vector projection (equirectangular; adequate at city scale).
+  const svg = useMemo(() => {
+    if (renderPoints.length === 0) return null;
+    const lats = renderPoints.map((p) => p.latitude);
+    const lons = renderPoints.map((p) => p.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+    const latSpan = maxLat - minLat || 0.01;
+    const lonSpan = maxLon - minLon || 0.01;
+
+    const projected = renderPoints.map((p) => ({
+      ...p,
+      x: 50 + ((p.longitude - minLon) / lonSpan) * 700,
+      y: 350 - ((p.latitude - minLat) / latSpan) * 300,
+    }));
+
+    return {
+      projected,
+      path: projected.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
+    };
+  }, [renderPoints]);
 
   if (loading) {
     return (
-      <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl h-[420px] flex items-center justify-center text-xs text-slate-400">
-        Lade Dawarich GPS Daten...
+      <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-slate-200/80 bg-white p-6 text-xs text-slate-400">
+        Lade GPS-Daten…
       </div>
     );
   }
 
-  const latestPoint = filteredPoints.length > 0
-    ? filteredPoints[filteredPoints.length - 1]
-    : points.length > 0
-    ? points[points.length - 1]
-    : { latitude: 51.1657, longitude: 10.4515 };
-
-  // SVG Path projection calculation for vector view mode
-  const targetPoints = filteredPoints.length > 0 ? filteredPoints : points;
-  const minLat = targetPoints.length > 0 ? Math.min(...targetPoints.map((p) => p.latitude)) : 50.0;
-  const maxLat = targetPoints.length > 0 ? Math.max(...targetPoints.map((p) => p.latitude)) : 52.0;
-  const minLon = targetPoints.length > 0 ? Math.min(...targetPoints.map((p) => p.longitude)) : 9.0;
-  const maxLon = targetPoints.length > 0 ? Math.max(...targetPoints.map((p) => p.longitude)) : 11.0;
-
-  const latSpan = maxLat - minLat || 0.01;
-  const lonSpan = maxLon - minLon || 0.01;
-
-  const svgPoints = targetPoints.map((p) => {
-    const x = 50 + ((p.longitude - minLon) / lonSpan) * 700;
-    const y = 350 - ((p.latitude - minLat) / latSpan) * 300;
-    return { ...p, x, y };
-  });
-
-  const polylinePathStr = svgPoints.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  const simplified = filteredPoints.length > renderPoints.length;
 
   return (
-    <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4 shadow-sm">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 pb-4">
+    <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
+      <div className="flex flex-col items-start justify-between gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
         <div>
-          <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
-            <MapPin className="w-5 h-5 text-[#0d5c3a]" />
-            <span>GPS-Standorte & Strecke</span>
+          <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+            <MapPin className="h-5 w-5 text-[#0d5c3a]" />
+            <span>GPS-Standorte &amp; Strecke</span>
           </h3>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Standardmäßig robuste Vector-Route; OpenStreetMap bleibt optional, falls externe Tiles erreichbar sind.
+          <p className="mt-0.5 text-xs text-slate-500">
+            Standard ist eine reine Vektor-Route ohne externe Anfragen. Eine Kartenkachel
+            wird erst geladen, wenn du es ausdrücklich möchtest.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Date Filter Toggle */}
-          <div className="flex bg-emerald-50 border border-emerald-200/80 rounded-xl p-1 text-xs">
-            <button
-              onClick={() => setDateFilter("today")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
-                dateFilter === "today" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
-              }`}
-            >
-              <Calendar className="w-3 h-3" />
-              <span>Heute</span>
-            </button>
-            <button
-              onClick={() => setDateFilter("7d")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                dateFilter === "7d" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
-              }`}
-            >
-              7 Tage
-            </button>
-            <button
-              onClick={() => setDateFilter("30d")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                dateFilter === "30d" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-emerald-800 hover:text-emerald-950"
-              }`}
-            >
-              30 Tage
-            </button>
-          </div>
-
-          {/* Tile Provider Toggle */}
-          <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
-            <button
-              onClick={() => setTileProvider("osm")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all flex items-center gap-1 ${
-                tileProvider === "osm" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="Standard OpenStreetMap Tiles"
-            >
-              <Layers className="w-3 h-3" />
-              <span>OSM Standard</span>
-            </button>
-            <button
-              onClick={() => setTileProvider("carto")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                tileProvider === "carto" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
-              }`}
-              title="Carto Voyager OSM Tiles"
-            >
-              OSM Voyager
-            </button>
-          </div>
-
-          {/* View Mode Toggle */}
-          <div className="flex bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs">
-            <button
-              onClick={() => setViewMode("leaflet")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                viewMode === "leaflet" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              OpenStreetMap
-            </button>
-            <button
-              onClick={() => setViewMode("svg")}
-              className={`px-3 py-1 rounded-lg font-semibold transition-all ${
-                viewMode === "svg" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
-              }`}
-            >
-              Vector Route
-            </button>
+          <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
+            {(["today", "7d", "30d"] as const).map((f) => (
+              <button
+                key={f}
+                onClick={() => setDateFilter(f)}
+                className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold transition-all ${
+                  dateFilter === f
+                    ? "bg-[#0d5c3a] text-white shadow-sm"
+                    : "text-emerald-800 hover:text-emerald-950"
+                }`}
+              >
+                {f === "today" && <Calendar className="h-3 w-3" />}
+                {f === "today" ? "Heute" : f === "7d" ? "7 Tage" : "30 Tage"}
+              </button>
+            ))}
           </div>
 
           <button
-            onClick={fetchLocationData}
-            className="p-2 text-xs font-semibold rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-            title="Karte aktualisieren"
+            onClick={() => {
+              setTileError("");
+              setShowTiles((v) => !v);
+            }}
+            className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
+              showTiles
+                ? "border-[#0d5c3a] bg-[#0d5c3a] text-white"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+            title={
+              showTiles
+                ? "Zurück zur Vektor-Darstellung"
+                : "Lädt Kartenkacheln von einem externen Anbieter"
+            }
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            <Globe2 className="h-3.5 w-3.5" />
+            {showTiles ? "Karte ausblenden" : "Karte laden"}
           </button>
-          <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-full flex items-center gap-1.5">
-            <Navigation className="w-3.5 h-3.5 text-emerald-600 animate-pulse" />
-            <span>{filteredPoints.length} GPS Punkte</span>
-          </span>
+
+          {showTiles && (
+            <select
+              value={tileProvider}
+              onChange={(e) => setTileProvider(e.target.value as TileProvider)}
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none"
+            >
+              {Object.entries(TILE_PROVIDERS).map(([id, p]) => (
+                <option key={id} value={id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
-      {/* Map Container */}
-      <div className="relative w-full h-[400px] min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 z-0">
-        {viewMode === "leaflet" ? (
-          <>
-            <div ref={setMapContainer} className="w-full h-full min-h-[400px] z-0" />
-            {filteredPoints.length === 0 && (
-              <div className="absolute top-3 left-12 right-12 z-[1000] bg-white/95 backdrop-blur border border-slate-200 p-3 rounded-xl shadow-md flex items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 text-slate-700">
-                  <MapPin className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Keine GPS-Punkte für den gewählten Zeitraum erfasst. Standard-Kartenansicht aktiv.</span>
-                </div>
-              </div>
-            )}
-          </>
-        ) : (
-          /* High-Precision Interactive SVG Vector Map View */
-          <div className="w-full h-full p-4 flex flex-col justify-between bg-slate-900 text-white relative">
-            <svg className="w-full h-full" viewBox="0 0 800 400">
+      {!showTiles && (
+        <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d5c3a]" />
+          <span>
+            Es werden keine Standortdaten an Kartenanbieter übertragen. Beim Laden der
+            Karte fordert dein Browser Kacheln direkt beim Anbieter an; dabei wird der
+            betrachtete Kartenausschnitt für den Anbieter sichtbar.
+          </span>
+        </p>
+      )}
+
+      {tileError && (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+          {tileError}
+        </p>
+      )}
+
+      {showTiles ? (
+        <div
+          ref={setMapContainer}
+          className="h-[380px] w-full overflow-hidden rounded-2xl border border-slate-200"
+        />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+          {svg ? (
+            <svg viewBox="0 0 800 400" className="h-[380px] w-full" role="img" aria-label="GPS-Route">
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="1" />
+                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
                 </pattern>
               </defs>
-              <rect width="100%" height="100%" fill="url(#grid)" />
-
-              <path d={polylinePathStr} fill="none" stroke="#10b981" strokeWidth="3" strokeDasharray="6 6" />
-
-              {svgPoints.map((pt, idx) => (
-                <g key={idx} className="cursor-pointer group">
-                  <circle cx={pt.x} cy={pt.y} r="6" fill="#0d5c3a" stroke="#34d399" strokeWidth="2" />
-                  <title>{`📍 Punkt #${idx + 1}: ${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°`}</title>
-                </g>
+              <rect width="800" height="400" fill="url(#grid)" />
+              <path d={svg.path} fill="none" stroke="#0d5c3a" strokeWidth="3" strokeLinejoin="round" />
+              {svg.projected.map((p, i) => (
+                <circle
+                  key={`${p.timestamp}-${i}`}
+                  cx={p.x}
+                  cy={p.y}
+                  r={i === svg.projected.length - 1 ? 6 : 3}
+                  fill={i === svg.projected.length - 1 ? "#0d5c3a" : "#10b981"}
+                  stroke="#ffffff"
+                  strokeWidth="1.5"
+                >
+                  <title>
+                    {p.timestamp ? new Date(p.timestamp).toLocaleString("de-DE") : ""} —{" "}
+                    {p.latitude.toFixed(5)}°, {p.longitude.toFixed(5)}°
+                  </title>
+                </circle>
               ))}
             </svg>
-            <div className="absolute bottom-3 left-3 bg-slate-800/90 border border-slate-700 px-3 py-1.5 rounded-xl text-[11px] font-mono text-emerald-400">
-              Bounding Box: [{minLat.toFixed(3)}°, {minLon.toFixed(3)}°] ➔ [{maxLat.toFixed(3)}°, {maxLon.toFixed(3)}°]
+          ) : (
+            <div className="flex h-[380px] items-center justify-center text-xs text-slate-400">
+              Keine GPS-Punkte im gewählten Zeitraum.
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Footer Info Details */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs">
-        <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-2xl flex items-center gap-2.5">
-          <MapPin className="w-4 h-4 text-[#0d5c3a]" />
-          <div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase">Letzte Koordinaten</div>
-            <div className="font-mono font-bold text-slate-800 text-[11px]">
-              {latestPoint.latitude.toFixed(4)}°, {latestPoint.longitude.toFixed(4)}°
-            </div>
-          </div>
+          )}
         </div>
+      )}
 
-        <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-2xl flex items-center gap-2.5">
-          <Calendar className="w-4 h-4 text-emerald-600" />
-          <div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase">Letzter GPS Import</div>
-            <div className="font-mono text-slate-700 text-[11px]">
-              {latestPoint.timestamp ? new Date(latestPoint.timestamp).toLocaleString("de-DE") : "Jetzt"}
-            </div>
-          </div>
-        </div>
-
-        <div className="p-3 bg-slate-50 border border-slate-200/60 rounded-2xl flex items-center gap-2.5">
-          <ShieldCheck className="w-4 h-4 text-amber-500" />
-          <div>
-            <div className="text-[10px] text-slate-400 font-bold uppercase">PostGIS Spatial Index</div>
-            <div className="font-semibold text-slate-700 text-[11px]">
-              geometry(Point, 4326) Aktiv
-            </div>
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+        <span className="flex items-center gap-1.5">
+          <Navigation className="h-3.5 w-3.5 text-[#0d5c3a]" />
+          {filteredPoints.length} Punkte
+          {simplified && (
+            <span className="flex items-center gap-1 text-slate-400">
+              <Layers className="h-3 w-3" />
+              auf {renderPoints.length} vereinfacht
+            </span>
+          )}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <RefreshCw className="h-3 w-3" />
+          {showTiles ? TILE_PROVIDERS[tileProvider].label : "Vektor-Darstellung"}
+        </span>
       </div>
     </div>
   );
