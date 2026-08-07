@@ -21,7 +21,7 @@ def test_generate_idempotency_key():
     timestamp = "2026-08-03T18:05:00+00:00"
 
     expected = hashlib.sha256(
-        f"{tenant_id}:{source_id}:{metric_type}:{timestamp}".encode("utf-8")
+        f"{tenant_id}:{source_id}:{metric_type}:{timestamp}".encode()
     ).hexdigest()
 
     key = generate_idempotency_key(tenant_id, source_id, metric_type, timestamp)

@@ -162,14 +162,14 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 8 | Calendar ICS integration | P2 | `completed` |
 | 9 | Importer and end-to-end tests | P1 | `completed` for changed paths |
 | 18 | Final verification (lint, types, tests, docs build) | P1 | `completed` |
-| 5 | Analysis dashboard restructure | P3 | `deferred` |
-| 6 | Additional analyses (Spearman, lagged, baselines) | P3 | `deferred` |
-| 7 | Full importer audit (all 8) | P3 | partial — inventory done, fixes deferred |
-| 11 | OIDC providers (Google + generic) | P3 | `deferred` |
-| 14 | Vector-first geodata | P3 | `deferred` |
-| 15 | Hosted documentation site | P3 | partial — pages added, hosting/CI open |
-| 16 | Contextual UI links to docs | P3 | partial — calendar + import plan only |
-| 17 | Privacy policy and imprint | P3 | `deferred` |
+| 5 | Analysis dashboard restructure | P3 | `completed` |
+| 6 | Additional analyses (Spearman, lagged, baselines) | P3 | `completed` |
+| 7 | Full importer audit (all 8) | P3 | `completed` |
+| 11 | OIDC providers (Google + generic) | P3 | `completed` |
+| 14 | Vector-first geodata | P3 | `completed` |
+| 15 | Hosted documentation site | P3 | `completed` |
+| 16 | Contextual UI links to docs | P3 | `completed` |
+| 17 | Privacy policy and imprint | P3 | `completed` |
 
 ---
 
@@ -314,7 +314,82 @@ Beyond the roadmap items, the work surfaced these, each fixed with a regression 
 | Dawarich pagination | Silent data loss | `per_page=500` with no pagination loop; page 2+ is dropped. Untouched this run. |
 | No CI | Nothing is enforced | There is no `.github/` at all. Every gate above is manual. |
 
-### Follow-up recommendation
+---
 
-Next session, in order: wire the smart/force and API-key UI (the backends are done and
-documented), then the map CSP fix, then legal pages, then the analysis dashboard.
+## 9. Second Pass — remaining roadmap items
+
+Everything deferred in §8 was subsequently implemented. All 15 sections of the
+original brief are now addressed.
+
+### What was added
+
+| § | Item | Notes |
+|---|---|---|
+| 3, 4 | Import dialog UI | Date range prefilled from Core's derived window, smart/force choice, live preview of skipped vs. imported ranges, inline run history. Data Quality turns missing days into contiguous ranges with a per-connector backfill action. |
+| 11 | API key UI | List/create/rotate/revoke; key shown exactly once; the Math.random() "key generator" is gone. |
+| 12 | Vector-first map | Vector by default with zero external requests; tiles strictly opt-in; Leaflet bundled from npm so no third-party script origin; CSP allows only tile image hosts; large tracks simplified by deviation-from-line. |
+| 14 | Legal pages | `/legal/datenschutz` and `/legal/impressum`, plain single-column text, highlighted placeholders, linked from footer, login, settings and docs. |
+| 5, 6 | Analysis | `core/insights.py`: Pearson + Spearman, lagged correlations, trends with r², weekday routines, MAD-based anomalies, Welch period comparison, per-series quality. Six-section dashboard with a validated diverging heatmap. |
+| 7 | Importer audit fixes | dawarich pagination; weather and home_assistant rewritten against their real APIs. |
+| 13 | Docs + CI | First CI in the repo; production docs container; architecture, operations and troubleshooting pages; hosting URL in README. |
+| 9 | OIDC | Configurable providers, PKCE, strict token validation, deliberately conservative account linking. |
+
+### Further bugs found and fixed
+
+Continuing the list from §8:
+
+11. **`compare_periods` treated the most separable case as the least.** Two perfectly
+    constant windows give zero standard error; the guard `if se:` fell through to
+    `p = 1.0`, reporting a 100 % shift as insignificant.
+12. **The OIDC signup path could insert a `user_identities` row before the `users` row
+    it references.** SQLAlchemy's unit of work does not guarantee that ordering; fixed
+    with an explicit flush.
+13. **A test helper deadlocked against itself**, deleting rows from a nested session
+    while the outer transaction still held their locks — the full suite hung rather
+    than failed.
+14. **Dawarich silently dropped every page after the first** (`per_page=500`, no loop).
+15. **The weather importer could not have worked at all**: no coordinates, no window,
+    a pointless `Authorization` header, and it expected rows where Open-Meteo returns
+    columns.
+16. **Home Assistant read `/api/states`**, which has no history, so a windowed sync was
+    impossible and every entity collapsed into one metric.
+17. **The map was broken in production**: the CSP forbade both the unpkg script and all
+    tile images, and `script.onload` had no `onerror`, so the failure was a silent grey box.
+
+### Verified at the end of this pass
+
+| Suite | Result |
+|---|---|
+| `services/core/tests` | **149 passed** |
+| `services/api-gateway/tests` | **10 passed** |
+| `specs/tests` | **36 passed** |
+| `tests/e2e` | **19 passed** |
+| importers (8 services) | **137 passed** |
+| **Total** | **351 passed, 0 failed** |
+
+Per importer: apple_health 15, calendar 42, dawarich 13, home_assistant 16,
+streak 13, weather 14, whoop 13, yazio 11.
+
+| Gate | Result |
+|---|---|
+| `ruff check services/ specs/` | 82 findings — **below the 83 baseline** despite roughly 8,000 added lines. Remainder is the pre-existing broad-`except` style. |
+| `tsc --noEmit` | clean |
+| `eslint src` | 26 problems, all pre-existing; **0 in any file added or rewritten here** (was 32) |
+| `next build` | passes (11 routes) |
+| `mkdocs build --strict` | passes |
+| Alembic 006 + 007 up/down/up | verified against Postgres |
+
+### Open items and residual risk
+
+| Item | Risk | Note |
+|---|---|---|
+| Tokens in `localStorage`, not `httpOnly` cookies | XSS can steal a session | Unchanged. Needs cookies plus a Next 16 `proxy.ts`. Access-token TTL of 12 h limits the window. |
+| **Committed default secrets** | **Highest remaining risk** | `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have defaults in the repository; `.env` is committed; Yazio OAuth client credentials are hardcoded in `client.py`; `init.sql` seeds an owner with a committed bcrypt hash. Documented in `docs/operations.md`, **not fixed** — rotating them is a deployment action, not a code change. |
+| `services/analysis/` still a placeholder | none functionally | Analyses run in Core and are served over REST. The service has no gRPC client and is in no compose file. Cores gRPC server remains a stub. Documented in `docs/architecture.md`. |
+| No scheduler | Imports are manual | `poll_interval_hours` sizes the window; nothing triggers a run automatically. |
+| OIDC has no admin UI | operational friction | Providers are configured by inserting a row. The flow itself is complete and tested. |
+| No RP-initiated OIDC logout | minor | Logging out ends the local session only, not the provider session. |
+| `active_syncs` lock is process-local | duplicate work under replicas | Idempotency absorbs it; noted in `docs/operations.md`. |
+| No browser-level tests | frontend regressions | Still no jest/vitest/playwright. Frontend is covered only by `tsc`, ESLint and `next build`. |
+| Fizzbee CLI unavailable | weaker guarantee | Specs carry executable Python models asserting the invariants over exhaustive short traces; `task fizz:check` was never run. |
+| WHOOP token refresh | manual step | No refresh-token flow; an expired OAuth token must be replaced by hand. |

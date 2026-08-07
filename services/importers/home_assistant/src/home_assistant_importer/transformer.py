@@ -29,7 +29,7 @@ def generate_idempotency_key(
 ) -> str:
     """SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4."""
     return hashlib.sha256(
-        f"{tenant_id}:{source_id}:{metric_type}:{timestamp}".encode("utf-8")
+        f"{tenant_id}:{source_id}:{metric_type}:{timestamp}".encode()
     ).hexdigest()
 
 
