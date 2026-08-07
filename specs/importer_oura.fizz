@@ -108,7 +108,9 @@ always assertion TokenRefreshEnforced:
 
 always assertion UniqueKeyMapping:
     # In published_keys, each idempotency key maps to a unique payload structure
-    for key, event in published_keys.items():
+    # Fizzbee allows exactly one loop variable, so no `.items()` unpacking.
+    for key in published_keys:
+        event = published_keys[key]
         if event["idempotency_key"] != key:
             return False
     return True

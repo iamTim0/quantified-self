@@ -37,7 +37,13 @@ atomic action NetworkRecover:
     require broker_available == False
     broker_available = True
 
-fair action CoreConsume:
+# Atomic on purpose. Without it the action yields between the `require` and
+# the `pop`, so two concurrent consumers both pass the guard and the second
+# pops an empty list. That is not a system defect being caught -- NATS
+# JetStream hands a message to exactly one consumer in a queue group, so the
+# take is atomic there too. The grammar is `(ATOMIC)? fairness? ACTION`, so
+# `fair` is kept for the liveness assertion below.
+atomic fair action CoreConsume:
     require len(broker_queue) > 0 and broker_available == True
     msg = broker_queue[0]
     # Remove from queue (ack)
@@ -77,7 +83,9 @@ always assertion DataIntegrity:
 
 always assertion IdempotencyKeyUnique:
     # No two distinct records share the same idempotency_key
-    for key, value in core_db.items():
+    # Fizzbee allows exactly one loop variable, so no `.items()` unpacking.
+    for key in core_db:
+        value = core_db[key]
         if value.get("idempotency_key") != key:
             return False
     return True

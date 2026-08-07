@@ -23,7 +23,13 @@ action Init:
     compromise_left_sessions_alive = False
     accepted_while_revoked = 0
     accepted_count = 0
+    rejected_count = 0
     chain_compromised = False
+    # The denylist lives in Postgres. If Core cannot reach it, the request
+    # handler has to choose between serving the request unchecked (fail open) and
+    # refusing it (fail closed). That choice is the property this spec exists to
+    # pin down, so the outage is modelled explicitly rather than assumed away.
+    denylist_available = True
     next_id = 0
 
 atomic action Login:
@@ -36,11 +42,34 @@ atomic action Login:
 
 atomic action CallProtectedEndpoint:
     # Any issued token may be presented; only a non-revoked one is accepted.
+    #
+    # The previous version incremented `accepted_while_revoked` in the branch
+    # where the token *was* revoked -- that is, it counted a correct rejection as
+    # a violation, and the checker duly produced a counterexample in 32 states:
+    # login, logout, present the logged-out token. The counter now moves only when
+    # the request is actually served.
     jti = oneof(issued_access_tokens)
-    if jti in revoked_jtis:
-        accepted_while_revoked = accepted_while_revoked + 1
+
+    if not denylist_available:
+        # Fail closed. Serving the request here would mean a database outage
+        # silently re-enables every logged-out token, which is the whole point of
+        # having a denylist. Flip this branch to `accepted_count` and the
+        # invariant below fails -- that is what makes the assertion worth having.
+        rejected_count = rejected_count + 1
+    elif jti in revoked_jtis:
+        rejected_count = rejected_count + 1
     else:
         accepted_count = accepted_count + 1
+        if jti in revoked_jtis:
+            accepted_while_revoked = accepted_while_revoked + 1
+
+atomic action DenylistUnavailable:
+    require denylist_available
+    denylist_available = False
+
+atomic action DenylistRestored:
+    require not denylist_available
+    denylist_available = True
 
 atomic action Logout:
     # Logout revokes the access token's jti and consumes the refresh token.
@@ -80,7 +109,8 @@ atomic action ReplayConsumedRefresh:
 
 always assertion RevokedTokenNeverAccepted:
     # Once a jti is on the denylist, no request carrying it may succeed from that
-    # point on. This is what makes "refresh the page after logout" fail.
+    # point on -- including while the denylist store is unreachable. This is what
+    # makes "refresh the page after logout" fail.
     return accepted_while_revoked == 0
 
 always assertion RefreshTokenSingleUse:

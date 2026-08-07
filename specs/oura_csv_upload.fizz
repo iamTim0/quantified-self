@@ -23,7 +23,10 @@ atomic action RetryCsvUpload:
     require len(uploads) > 0
     uploads.append(uploads[0])
 
-fair action CorePersistCsvPoint:
+# Atomic for the same reason as CoreConsume in distributed_ingestion: a
+# non-atomic action yields between the guard and the pop, letting two
+# consumers race and the second pop an empty list.
+atomic fair action CorePersistCsvPoint:
     require len(uploads) > 0
     point = uploads[0]
     uploads.pop(0)

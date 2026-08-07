@@ -1,19 +1,70 @@
 # Roadmap data-quality interactions: tenant-safe gap backfills and conflict decisions.
+#
+# Two problems with the previous version of this file. It used `invariant NAME:`,
+# which is not Fizzbee syntax -- the checker never got past parsing, so nothing
+# here had ever been verified. And the model was vacuous: `RequestBackfill` did
+# `requested_tenant = tenant`, assigning the correct tenant to itself, so
+# `BackfillNeverCrossesTenant` could not fail whatever the implementation did.
+#
+# The property worth checking is the one AGENTS.md rule 2 and the Bearer-token
+# rule state: a backfill acts on the tenant resolved from the *authenticated
+# session*, never on one named by the request. So the model has to let a request
+# name a different tenant and then assert the system ignores it.
+
+TENANTS = ["tenant_a", "tenant_b"]
 
 action Init:
-  tenant = "tenant-a"
-  requested_tenant = ""
-  resolved = False
+    # Who the caller actually is, established by the validated token.
+    session_tenant = ""
+    # What the request asked for. A hostile client sets this freely.
+    claimed_tenant = ""
+    # Where a backfill was actually executed, and whose conflict was resolved.
+    backfilled_tenant = ""
+    conflict_resolved_for = ""
+    rejected = False
 
-action RequestBackfill:
-  requested_tenant = tenant
+atomic action Authenticate:
+    require session_tenant == ""
+    session_tenant = oneof(TENANTS)
 
-action ResolveConflict:
-  if requested_tenant == tenant:
-    resolved = True
+atomic action RequestBackfill:
+    require session_tenant != ""
+    require backfilled_tenant == ""
+    # The request may name any tenant at all, including somebody else's.
+    claimed_tenant = oneof(TENANTS)
 
-invariant BackfillNeverCrossesTenant:
-  requested_tenant == "" or requested_tenant == tenant
+    if claimed_tenant != session_tenant:
+        # Contradicting the session is refused outright rather than quietly
+        # coerced, so the caller cannot probe which tenants exist.
+        rejected = True
+    else:
+        backfilled_tenant = session_tenant
 
-invariant ConflictDecisionIsTenantScoped:
-  not resolved or requested_tenant == tenant
+atomic action ResolveConflict:
+    require session_tenant != ""
+    require conflict_resolved_for == ""
+    target = oneof(TENANTS)
+    if target == session_tenant:
+        conflict_resolved_for = session_tenant
+    else:
+        rejected = True
+
+always assertion BackfillNeverCrossesTenant:
+    # A backfill only ever runs against the authenticated tenant. If this could
+    # be satisfied by construction it would be worth nothing -- RequestBackfill
+    # above deliberately allows `claimed_tenant` to differ, so the assertion has
+    # something to catch.
+    if backfilled_tenant == "":
+        return True
+    return backfilled_tenant == session_tenant
+
+always assertion ConflictDecisionIsTenantScoped:
+    if conflict_resolved_for == "":
+        return True
+    return conflict_resolved_for == session_tenant
+
+always assertion NothingHappensBeforeAuthentication:
+    # No work is attributed to anybody until a session exists.
+    if session_tenant != "":
+        return True
+    return backfilled_tenant == "" and conflict_resolved_for == ""

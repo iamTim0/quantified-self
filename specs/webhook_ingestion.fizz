@@ -1,38 +1,46 @@
 # Fizzbee specification for Webhook Push Interaction Pattern
 # Models the interaction between a third-party webhook provider, the webhook importer, and the internal NATS broker.
 
-# State
 TENANT_API_KEYS = {"key_a": "tenant_a", "key_b": "tenant_b"}
 VALID_KEYS = set(["key_a", "key_b"])
 
-
+# Bound. `ingested_data` and `webhook_responses` grow with every action, so
+# without a cap the state space is limited only by maxActions and the run took
+# 158s of its 180s budget. Three deliveries are enough to interleave an accepted
+# one, a rejected one and a broker outage.
+MAX_WEBHOOKS = 3
 
 action Init:
     broker_is_up = True
-    ingested_data = [] # List of {"tenant_id": t, "data": d}
-    webhook_responses = [] # List of HTTP status codes returned to the provider
+    # Each entry records the status returned *and* whether the broker was up at
+    # that moment, so the "never ack what we did not publish" property below can
+    # be checked against what actually happened rather than assumed.
+    webhook_responses = []
+    ingested_data = []  # List of {"tenant_id": t, "data": d}
 
 atomic action ToggleBrokerState:
     # Simulate NATS broker going down or coming back up
     broker_is_up = not broker_is_up
 
 atomic action ReceiveWebhook:
+    require len(webhook_responses) < MAX_WEBHOOKS
+
     api_key = oneof(["key_a", "key_b", "invalid_key", ""])
-    payload_data = oneof([1, 2, 3])
-    
+    payload_data = oneof([1, 2])
+
     if api_key not in VALID_KEYS:
         # Invalid or missing API key must be rejected
-        webhook_responses.append(401)
+        webhook_responses.append({"status": 401, "broker_up": broker_is_up})
     else:
         # Valid API key
         if broker_is_up:
             # Broker is available, publish the event
             mapped_tenant = TENANT_API_KEYS[api_key]
             ingested_data.append({"tenant_id": mapped_tenant, "data": payload_data})
-            webhook_responses.append(200)
+            webhook_responses.append({"status": 200, "broker_up": True})
         else:
             # Broker is down, must return 500 to ensure third-party retries
-            webhook_responses.append(500)
+            webhook_responses.append({"status": 500, "broker_up": False})
 
 always assertion WebhookMappedToCorrectTenant:
     # All ingested data must belong to a known tenant based on the API key mapping
@@ -42,27 +50,24 @@ always assertion WebhookMappedToCorrectTenant:
     return True
 
 always assertion UnauthenticatedWebhookRejected:
-    # If the only webhooks received were unauthenticated, no data should be ingested
-    has_unauthenticated_response = False
-    has_success_response = False
-    
+    # No request that failed authentication may have contributed data. Counting
+    # is what makes this checkable: every 200 corresponds to exactly one ingested
+    # record, so a 401 that had also ingested would show up as a mismatch.
+    success_count = 0
     for resp in webhook_responses:
-        if resp == 401:
-            has_unauthenticated_response = True
-        if resp == 200:
-            has_success_response = True
-            
-    # If we only ever returned 401s, there should absolutely be no ingested data
-    if has_unauthenticated_response and not has_success_response:
-        if len(ingested_data) > 0:
-            return False
-            
-    return True
+        if resp["status"] == 200:
+            success_count = success_count + 1
+    return success_count == len(ingested_data)
 
 always assertion WebhookDataNotLostOnBrokerFailure:
-    # If the broker is down, we must NOT return a 200 OK success response.
-    # Returning 200 when the broker is down would cause the third party to consider
-    # the webhook delivered, leading to silent data loss.
-    # This assertion ensures that if the broker is down and we receive a valid webhook,
-    # the system correctly surfaces the error (e.g. 500).
-    return True # Implicitly verified by the state transitions in ReceiveWebhook
+    # Never acknowledge what was not published. A 200 tells the third party the
+    # delivery is done and it will not retry, so returning one while the broker
+    # was down loses the event silently.
+    #
+    # This assertion previously read `return True`, with a comment claiming it was
+    # "implicitly verified by the state transitions". A tautology verifies
+    # nothing; recording `broker_up` alongside each status is what gives it teeth.
+    for resp in webhook_responses:
+        if resp["status"] == 200 and not resp["broker_up"]:
+            return False
+    return True
