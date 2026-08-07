@@ -28,7 +28,12 @@ import pytest
 from core.db.models import RefreshToken, User
 from core.db.session import async_session_maker
 from core.main import app
-from core.security.cookies import ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, REFRESH_COOKIE
+from core.security.cookies import (
+    ACCESS_COOKIE,
+    CSRF_COOKIE,
+    CSRF_HEADER,
+    REFRESH_COOKIE,
+)
 from core.security.tokens import hash_token
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select

@@ -51,6 +51,19 @@ A's rows".
 > developer's Postgres and NATS containers down with it. `verify_specs.py`
 > therefore caps container memory.
 
+### Deadlock detection is off
+
+`fizz.yaml` sets `deadlock_detection: false`. Most specs here model a workflow
+that finishes — plan an import, log in and log out, upload a CSV — and once the
+terminal state is reached no action is enabled. Fizzbee reports that as
+`DEADLOCK detected`; for a terminating model it is the intended end.
+
+The cost is that the check is also off for the genuinely concurrent models, where
+a state with no enabled action *would* be a defect. Fizzbee reads one `fizz.yaml`
+per directory, so the setting cannot be narrowed to a single spec. A spec that
+needs the check back should move into its own subdirectory with its own
+`fizz.yaml`.
+
 ## Spec to Test Mapping
 
 We use Fizzbee to model the logic, and we map these invariants to real integration tests in our test suite.

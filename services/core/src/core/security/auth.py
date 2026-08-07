@@ -184,14 +184,14 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # CSRF only concerns the cookie path. A browser never attaches an
         # Authorization header on its own, so header-authenticated callers cannot
         # be made to act by a hostile page.
-        if from_cookie and request.method not in SAFE_METHODS:
-            if not csrf_token_matches(
-                request.cookies.get(CSRF_COOKIE), request.headers.get(CSRF_HEADER)
-            ):
-                return JSONResponse(
-                    status_code=403,
-                    content={"detail": "Missing or invalid CSRF token"},
-                )
+        needs_csrf = from_cookie and request.method not in SAFE_METHODS
+        if needs_csrf and not csrf_token_matches(
+            request.cookies.get(CSRF_COOKIE), request.headers.get(CSRF_HEADER)
+        ):
+            return JSONResponse(
+                status_code=403,
+                content={"detail": "Missing or invalid CSRF token"},
+            )
 
         header_tenant = request.headers.get("X-Tenant-ID")
         is_internal = path.startswith(INTERNAL_PATH_PREFIX)
