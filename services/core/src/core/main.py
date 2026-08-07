@@ -44,6 +44,17 @@ from core.db.models import (
 from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.insights import (
+    Provenance,
+    build_daily_series,
+    compare_periods,
+    correlation_pairs,
+    detect_anomalies,
+    lagged_correlations,
+    series_quality,
+    trend_for_metric,
+    weekday_pattern,
+)
 from core.ingest_planning import (
     BucketCount,
     TimeRange,
@@ -832,6 +843,111 @@ async def get_correlations(session: AsyncSession = Depends(get_session)):
     for metric, timestamp, value in rows.all():
         series.setdefault(metric, {})[timestamp.date().isoformat()] = float(value)
     return {"tenant_id": tenant_id, "correlations": pearson_pairs(series)}
+
+
+@app.get("/api/v1/data/analysis/insights")
+async def get_insights(
+    days: int = Query(90, ge=14, le=365, description="Analysis window in days"),
+    metric_type: str | None = Query(None, description="Restrict trends/anomalies to one metric"),
+    min_strength: float = Query(0.0, ge=0.0, le=1.0, description="Minimum |coefficient|"),
+    compare_to_previous: bool = Query(
+        False, description="Also compare the window with the equally long window before it"
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Full analysis bundle for the dashboard, with provenance on every result.
+
+    One endpoint rather than several because the analyses share the same aligned
+    daily series; recomputing it per call would be wasteful and could return
+    mutually inconsistent windows.
+
+    Everything reported is an *association*. Nothing here establishes causation, and
+    analyses whose input is too thin are omitted rather than shown weakly.
+    """
+    tenant_id = get_current_tenant_id()
+    now = datetime.now(timezone.utc)
+    window_start = now - timedelta(days=days)
+
+    rows = await session.execute(
+        select(DataPoint.metric_type, DataPoint.timestamp, DataPoint.value)
+        .where(
+            DataPoint.tenant_id == tenant_id,
+            DataPoint.value.is_not(None),
+            DataPoint.timestamp >= window_start,
+            DataPoint.timestamp <= now,
+        )
+        .order_by(DataPoint.timestamp)
+    )
+    series = build_daily_series(rows.all())
+
+    source_rows = await session.execute(
+        select(distinct(DataSource.source_type)).where(DataSource.tenant_id == tenant_id)
+    )
+    provenance = Provenance(
+        computed_at=now.isoformat(),
+        window_start=window_start.isoformat(),
+        window_end=now.isoformat(),
+        sources=sorted(s for s in source_rows.scalars() if s),
+    )
+
+    quality = {
+        metric: series_quality(daily, days) for metric, daily in sorted(series.items())
+    }
+    # Analyses only run on series with a defensible amount of data.
+    usable = {m: d for m, d in series.items() if quality[m]["sufficient"]}
+
+    correlations = [
+        c
+        for c in correlation_pairs(usable)
+        if abs(c["coefficient"]) >= min_strength
+    ]
+
+    trends: dict[str, Any] = {}
+    anomalies: dict[str, Any] = {}
+    routines: dict[str, Any] = {}
+    for metric, daily in usable.items():
+        if metric_type and metric != metric_type:
+            continue
+        ordered_days = sorted(daily)
+        values = [daily[d] for d in ordered_days]
+        if (trend := trend_for_metric(ordered_days, values)) is not None:
+            trends[metric] = trend
+        if (anomaly := detect_anomalies(daily)) is not None:
+            anomalies[metric] = anomaly
+        if (routine := weekday_pattern(daily)) is not None:
+            routines[metric] = routine
+
+    comparisons: dict[str, Any] = {}
+    if compare_to_previous:
+        mid = now - timedelta(days=days // 2)
+        earlier = ((now - timedelta(days=days)).date().isoformat(), mid.date().isoformat())
+        later = (mid.date().isoformat(), now.date().isoformat())
+        for metric, daily in usable.items():
+            if metric_type and metric != metric_type:
+                continue
+            if (cmp := compare_periods(daily, period_a=earlier, period_b=later)) is not None:
+                comparisons[metric] = cmp
+
+    excluded = sorted(set(series) - set(usable))
+
+    return {
+        "tenant_id": tenant_id,
+        "provenance": provenance.to_dict(),
+        "disclaimer": (
+            "Alle Ergebnisse beschreiben statistische Zusammenhänge, keine "
+            "Ursache-Wirkungs-Beziehungen. Sie sind keine medizinische Beratung."
+        ),
+        "metrics_analysed": sorted(usable),
+        "metrics_excluded_for_quality": excluded,
+        "data_quality": quality,
+        "correlations": correlations,
+        "lagged_correlations": lagged_correlations(usable),
+        "trends": trends,
+        "anomalies": anomalies,
+        "routines": routines,
+        "period_comparisons": comparisons,
+        "docs_url": "/docs/features/correlations/",
+    }
 
 
 # ─── Coverage, Gaps and Import Planning ─────────────────────

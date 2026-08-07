@@ -444,7 +444,12 @@ export default function DashboardPage() {
           )}
 
           {activeTab === "analysis" && (
-            <AnalysisTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+            <AnalysisTab
+              apiBase={API_BASE}
+              token={token}
+              tenantId={tenantId}
+              refreshTrigger={refreshTrigger}
+            />
           )}
 
           {activeTab === "profile" && (
