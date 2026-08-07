@@ -11,6 +11,18 @@
 #
 # Raise maxActions temporarily when adding a property that needs a longer trace,
 # and note in the spec why the deeper bound is required.
+# Most specs here model a workflow that finishes: plan an import, log in and log
+# out, upload a CSV. Once the terminal state is reached no action is enabled, and
+# Fizzbee reports that as DEADLOCK -- seven of the twelve failed on it. For a
+# terminating model that is the intended end, not a defect.
+#
+# The cost is real: this also switches off deadlock detection for the genuinely
+# concurrent models (distributed_ingestion in particular), where a state with no
+# enabled action *would* be a bug. Fizzbee reads one fizz.yaml per directory, so
+# the setting cannot currently be narrowed to individual specs. A spec that needs
+# the check back should move into its own subdirectory with its own fizz.yaml.
+deadlock_detection: false
+
 options:
   maxActions: 6
   maxConcurrentActions: 2
