@@ -90,7 +90,11 @@ always assertion IdempotencyKeyUnique:
             return False
     return True
 
-eventually assertion EventualConsistency:
+# `eventually assertion` on its own is not a form Fizzbee supports -- it
+# accepts always, always-eventually, eventually-always and exists, and panics
+# on anything else. This claims the system settles and *stays* settled, so it
+# is eventually-always.
+eventually always assertion EventualConsistency:
     # If a message is in broker_queue and broker is available, it is eventually consumed
     # Note: Fizzbee Liveness checks if this evaluates to True eventually
     return len(broker_queue) == 0 or broker_available == False

@@ -66,7 +66,10 @@ atomic action BackoffRecover:
     rate_limited = False
     importer_state = "IDLE"
 
-atomic action TransformAndPublish:
+# Fair: the liveness property below says the buffer is eventually drained.
+# An unfair action can be starved forever, which would make that false by
+# construction rather than by any defect.
+atomic fair action TransformAndPublish:
     require len(local_buffer) > 0
     record = local_buffer[0]
     local_buffer.pop(0)
@@ -115,6 +118,10 @@ always assertion UniqueKeyMapping:
             return False
     return True
 
-eventually assertion BufferFlushed:
+# `eventually assertion` on its own is not a form Fizzbee supports -- it
+# accepts always, always-eventually, eventually-always and exists, and panics
+# on anything else. This claims the system settles and *stays* settled, so it
+# is eventually-always.
+eventually always assertion BufferFlushed:
     # If importer is idle and buffer has items, items are eventually published to NATS
     return len(local_buffer) == 0 or importer_state != "IDLE"
