@@ -7,9 +7,10 @@ from typing import Any
 import httpx
 import nats
 
-from weather_importer.client import ProviderClient
+from weather_importer.client import ProviderClient, WeatherApiError
 from weather_importer.config import settings
 from weather_importer.internal_auth import internal_headers
+from weather_importer.sync_task import SyncTask, parse_sync_task, resolve_window
 from weather_importer.transformer import transform
 
 logging.basicConfig(
@@ -33,30 +34,104 @@ async def credentials(tenant_id: str, request_id: str) -> dict[str, Any] | None:
             return None
 
 
+async def report_sync_result_to_core(
+    task: SyncTask, *, status: str, message: str, points_received: int | None = None
+) -> None:
+    """Close out the sync run so Core can advance the adaptive resume point."""
+    url = (
+        f"{settings.CORE_SERVICE_URL}"
+        f"/api/v1/internal/data/sources/{task.source_type}/status"
+    )
+    payload: dict[str, Any] = {
+        "sync_status": status,
+        "last_sync_message": message,
+        "sync_run_id": task.sync_run_id,
+    }
+    if points_received is not None:
+        payload["points_received"] = points_received
+    async with httpx.AsyncClient(timeout=10) as client:
+        try:
+            await client.post(
+                url, headers=internal_headers(task.request_id, task.tenant_id), json=payload
+            )
+        except Exception as exc:
+            logger.warning(f"Could not report sync result to Core: {exc}")
+
+
 async def process(message: Any, connection: Any) -> None:
+    task = None
     try:
-        task = json.loads(message.data)
-        tenant_id = task.get("tenant_id")
-        request_id = task.get("request_id", "req_unknown")
-        if not tenant_id or not request_id:
-            await message.ack()
+        task = parse_sync_task(json.loads(message.data))
+        if task is None:
+            logger.warning("Missing tenant_id in weather task payload; dropping.")
             return
 
-        logger.info(f"[req_id={request_id}] Processing weather sync task for tenant {tenant_id}")
-        secret = await credentials(tenant_id, request_id)
-        if secret and secret.get("access_token") and secret.get("status") == "active":
-            config = secret.get("config") or {}
-            base_url = config.get("base_url") or settings.API_BASE_URL
-            if base_url:
-                records = await ProviderClient(base_url, secret["access_token"]).fetch()
-                published = 0
-                for event in transform(records, tenant_id, secret["source_id"]):
-                    event["request_id"] = request_id
-                    await connection.jetstream().publish("qs.ingest.weather", json.dumps(event).encode())
-                    published += 1
-                logger.info(f"[req_id={request_id}] Published {published} weather events to JetStream")
-    except Exception as e:
-        logger.error(f"Error processing weather task: {e}")
+        secret = await credentials(task.tenant_id, task.request_id)
+        if not secret or secret.get("status") != "active":
+            logger.info(
+                "[req_id=%s] No active weather connector for tenant %s; staying idle.",
+                task.request_id,
+                task.tenant_id,
+            )
+            return
+
+        config = secret.get("config") or {}
+        base_url = config.get("base_url") or settings.API_BASE_URL
+        source_id = secret.get("source_id")
+        if not base_url or not source_id:
+            return
+
+        window_start, window_end = resolve_window(task, config)
+        client = ProviderClient(
+            base_url,
+            # Open-Meteo needs no credential; only send one if configured.
+            secret.get("access_token"),
+            latitude=config.get("latitude"),
+            longitude=config.get("longitude"),
+            timezone=config.get("timezone", "UTC"),
+        )
+
+        logger.info(
+            "[req_id=%s] Fetching weather for tenant=%s window=%s..%s",
+            task.request_id,
+            task.tenant_id,
+            window_start.date().isoformat(),
+            window_end.date().isoformat(),
+        )
+        records = await client.fetch(
+            start_date=window_start.date().isoformat(),
+            end_date=window_end.date().isoformat(),
+        )
+
+        published = 0
+        stream = connection.jetstream()
+        for event in transform(records, task.tenant_id, source_id):
+            event["request_id"] = task.request_id
+            if task.sync_run_id:
+                event["sync_run_id"] = task.sync_run_id
+            await stream.publish("qs.ingest.weather", json.dumps(event).encode())
+            published += 1
+
+        logger.info(
+            "[req_id=%s] Published %d weather events to JetStream", task.request_id, published
+        )
+        await report_sync_result_to_core(
+            task,
+            status="idle",
+            message=f"{published} Wetter-Datenpunkte übertragen.",
+            points_received=published,
+        )
+
+    except WeatherApiError as exc:
+        logger.error("[req_id=%s] Weather sync failed: %s", getattr(task, "request_id", "?"), exc)
+        if task:
+            await report_sync_result_to_core(task, status="error", message=str(exc)[:500])
+    except Exception as exc:
+        logger.error(f"Error processing weather task: {exc}")
+        if task:
+            await report_sync_result_to_core(
+                task, status="error", message=f"Unerwarteter Fehler: {type(exc).__name__}"
+            )
     finally:
         await message.ack()
 

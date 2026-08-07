@@ -1,6 +1,5 @@
 """Unit tests for Dawarich Importer Transformer & Client."""
 
-import pytest
 from dawarich_importer.transformer import (
     _normalize_iso_timestamp,
     generate_idempotency_key,

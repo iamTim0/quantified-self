@@ -93,20 +93,65 @@ class DawarichClient:
 
         return {}
 
-    async def get_points(self, start_at: str | None = None, end_at: str | None = None, per_page: int = 500) -> list[dict[str, Any]]:
-        """Fetch GPS points recorded in Dawarich for a given time window."""
-        params: dict[str, Any] = {"per_page": per_page}
-        if start_at:
-            params["start_at"] = start_at
-        if end_at:
-            params["end_at"] = end_at
+    async def get_points(
+        self,
+        start_at: str | None = None,
+        end_at: str | None = None,
+        per_page: int = 500,
+        max_pages: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Fetch all GPS points in a window, following pagination.
 
-        res = await self._get("api/v1/points", params=params)
-        if isinstance(res, list):
-            return res
-        if isinstance(res, dict):
-            return res.get("points") or res.get("data") or []
-        return []
+        This previously issued a single request with ``per_page=500`` and returned
+        whatever came back, so any window containing more than 500 points silently
+        lost everything past the first page — and busy days routinely exceed that.
+
+        Pagination stops on a short page, an empty page or a repeated page, so a
+        server that ignores the ``page`` parameter cannot spin this forever.
+        ``max_pages`` is a final backstop; hitting it is logged rather than passed
+        off as a complete result.
+        """
+        collected: list[dict[str, Any]] = []
+        seen_signatures: set[str] = set()
+
+        for page in range(1, max_pages + 1):
+            params: dict[str, Any] = {"per_page": per_page, "page": page}
+            if start_at:
+                params["start_at"] = start_at
+            if end_at:
+                params["end_at"] = end_at
+
+            res = await self._get("api/v1/points", params=params)
+            if isinstance(res, list):
+                batch = res
+            elif isinstance(res, dict):
+                batch = res.get("points") or res.get("data") or []
+            else:
+                batch = []
+
+            if not batch:
+                break
+
+            # A server that ignores `page` returns the same rows forever.
+            signature = f"{len(batch)}:{batch[0]}:{batch[-1]}"
+            if signature in seen_signatures:
+                logger.warning(
+                    "Dawarich returned an identical page %d; stopping pagination.", page
+                )
+                break
+            seen_signatures.add(signature)
+
+            collected.extend(batch)
+
+            if len(batch) < per_page:
+                break
+        else:
+            logger.warning(
+                "Dawarich pagination hit the %d-page cap; the window may be incomplete.",
+                max_pages,
+            )
+
+        return collected
 
     async def get_stats(self) -> dict[str, Any]:
         """Fetch general location stats from Dawarich."""

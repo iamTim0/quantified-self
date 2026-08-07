@@ -15,8 +15,8 @@ the same occurrence is genuinely a no-op.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
