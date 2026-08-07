@@ -13,6 +13,7 @@ import ShareModal from "./components/ShareModal";
 import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
+import LegalFooter from "./components/LegalFooter";
 import { SummaryMetrics } from "./components/MetricCards";
 import {
   STORAGE_KEYS,
@@ -486,6 +487,8 @@ export default function DashboardPage() {
             apiBase={API_BASE}
             token={token}
           />
+
+          <LegalFooter />
         </main>
       </div>
     </div>

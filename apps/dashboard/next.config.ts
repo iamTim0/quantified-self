@@ -47,6 +47,13 @@ const tileImageHosts = (
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: allowedOriginsList,
+  // The legal texts moved to /legal/*. Keep the old path working for bookmarks and
+  // any link already published.
+  redirects: async () => [
+    { source: "/privacy", destination: "/legal/datenschutz", permanent: true },
+    { source: "/datenschutz", destination: "/legal/datenschutz", permanent: true },
+    { source: "/impressum", destination: "/legal/impressum", permanent: true },
+  ],
   // SECURITY L3: Add security headers
   headers: async () => [
     {

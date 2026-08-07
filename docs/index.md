@@ -17,6 +17,17 @@ Im Docker-Setup wird die Dokumentation über Traefik unter `/docs` geroutet und 
 - Jedes Event enthält `tenant_id`, `source_id`, `metric_type`, `timestamp` und einen deterministischen `idempotency_key`.
 - Core bleibt der einzige Service mit Datenbankzugriff.
 
+## Rechtliches
+
+Die Rechtstexte werden in der Anwendung selbst gepflegt, damit sie immer zur laufenden
+Version passen:
+
+- [Datenschutzerklärung](/legal/datenschutz)
+- [Impressum](/legal/impressum)
+
+Beide sind Vorlagen mit Platzhaltern und müssen vor einem produktiven Einsatz durch eine
+qualifizierte Stelle geprüft werden.
+
 ## Externe Referenzen
 
 - [MkDocs](https://www.mkdocs.org/) für Markdown-basierte Projektdokumentation.

@@ -491,6 +491,38 @@ export default function ProfileTab({
           </div>
         </div>
       )}
+
+      <div className="pt-2">
+        <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+          Rechtliches
+        </h3>
+        <p className="mb-2 text-xs text-slate-500">
+          Welche Daten wir verarbeiten, auf welcher Grundlage und wie du sie löschen
+          kannst.
+        </p>
+        <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
+          <a
+            href="/legal/datenschutz"
+            className="text-[#0d5c3a] underline hover:text-[#08432a]"
+          >
+            Datenschutzerklärung
+          </a>
+          <a
+            href="/legal/impressum"
+            className="text-[#0d5c3a] underline hover:text-[#08432a]"
+          >
+            Impressum
+          </a>
+          <a
+            href="/docs/"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#0d5c3a] underline hover:text-[#08432a]"
+          >
+            Dokumentation
+          </a>
+        </div>
+      </div>
     </div>
   );
 }

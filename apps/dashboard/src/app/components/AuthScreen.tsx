@@ -242,9 +242,18 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 Neuregistrierung vom Administrator deaktiviert.
               </div>
             )}
-            <div>
-              <a href="/privacy" className="text-slate-400 hover:text-slate-600 transition-colors underline">
+            <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
+              <a
+                href="/legal/datenschutz"
+                className="text-slate-400 underline transition-colors hover:text-slate-600"
+              >
                 Datenschutzerklärung
+              </a>
+              <a
+                href="/legal/impressum"
+                className="text-slate-400 underline transition-colors hover:text-slate-600"
+              >
+                Impressum
               </a>
             </div>
           </div>
