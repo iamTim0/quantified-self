@@ -1,6 +1,6 @@
 site_name: Quantified Self Platform Docs
 site_description: Importer, data quality, and analysis documentation for the Quantified Self Platform.
-site_url: http://localhost/docs/
+site_url: https://quantified-self.example.com/docs/
 docs_dir: docs
 site_dir: site
 repo_url: https://github.com/iamTim0/quantified-self
@@ -15,6 +15,9 @@ theme:
     - search.highlight
 nav:
   - Start: index.md
+  - Architektur: architecture.md
+  - Betrieb: operations.md
+  - Fehlerbehebung: troubleshooting.md
   - Importer:
       - Standard: importer-standard.md
       - Überblick: importers/index.md

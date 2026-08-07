@@ -113,6 +113,25 @@ services:
     networks:
       - qs-network
 
+  # The production stack shipped without documentation, so every in-app /docs/…
+  # link 404'd while the dev stack served it happily. Built here rather than run
+  # through `mkdocs serve`, and without mounting the repository.
+  docs:
+    build:
+      context: .
+      dockerfile: infra/docs.Dockerfile
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.docs.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.entrypoints=web"
+      - "traefik.http.routers.docs.priority=20"
+      - "traefik.http.services.docs.loadbalancer.server.port=8003"
+      - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
+      - "traefik.http.routers.docs.middlewares=docs-stripprefix"
+    networks:
+      - qs-network
+
   yazio-importer:
     build:
       context: ./services/importers/yazio

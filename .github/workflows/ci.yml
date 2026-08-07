@@ -1,0 +1,155 @@
+name: CI
+
+# There was no CI in this repository at all: lint, tests and the docs build were
+# manual-only, so nothing enforced them. This runs the gates that already exist.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHONUNBUFFERED: "1"
+  PYTHONIOENCODING: "utf-8"
+
+jobs:
+  lint-python:
+    name: Ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Ruff
+        # Not --exit-non-zero-on-fix; this reports the existing findings without
+        # failing the build on the pre-existing backlog. Tighten once it is clear.
+        run: uv run --with ruff ruff check services/ specs/ --output-format github
+        continue-on-error: true
+
+  test-core:
+    name: Core + Gateway
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_USER: qs_dev
+          POSTGRES_PASSWORD: qs_dev_password
+          POSTGRES_DB: quantified_self
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U qs_dev -d quantified_self"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      nats:
+        image: nats:2-alpine
+        ports: ["4222:4222"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Apply migrations
+        run: uv run --directory services/core alembic upgrade head
+
+      - name: Verify migration rollback
+        # AGENTS.md rule 7 requires a working downgrade; assert it rather than trust it.
+        run: |
+          uv run --directory services/core alembic downgrade -1
+          uv run --directory services/core alembic upgrade head
+
+      - name: Core tests
+        run: uv run --directory services/core --with pytest --with pytest-asyncio pytest tests -q
+
+      - name: Gateway tests
+        run: uv run --directory services/api-gateway --with pytest --with pytest-asyncio pytest tests -q
+
+      - name: Spec invariant tests
+        run: |
+          uv run --with pytest --with cryptography --directory specs pytest tests -q
+
+      - name: End-to-end tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: >-
+          uv run --directory services/core
+          --with pytest --with pytest-asyncio --with nats-py
+          --with icalendar --with recurring-ical-events
+          pytest ${{ github.workspace }}/tests/e2e -q --rootdir ${{ github.workspace }}
+
+  test-importers:
+    name: Importers
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        importer:
+          [apple_health, calendar, dawarich, home_assistant, streak, weather, whoop, yazio]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Test ${{ matrix.importer }}
+        run: >-
+          uv run --directory services/importers/${{ matrix.importer }}
+          --with pytest --with pytest-asyncio pytest tests -q
+
+  dashboard:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --no-audit --no-fund
+      - name: Type check
+        run: npx tsc --noEmit
+      - name: Lint
+        run: npx eslint src
+        continue-on-error: true
+      - name: Build
+        run: npx next build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - name: Build site (strict)
+        # --strict turns MkDocs' own warnings, including unresolved internal
+        # links, into build failures.
+        run: uv run --with mkdocs --with mkdocs-material mkdocs build --strict
+
+      - name: Check links
+        uses: lycheeverse/lychee-action@v2
+        with:
+          args: >-
+            --no-progress --max-concurrency 4
+            --exclude-path site/
+            --exclude '^https?://localhost'
+            --exclude '^https?://127\.0\.0\.1'
+            --exclude '^/'
+            'docs/**/*.md' 'README.md'
+          fail: true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: docs-site
+          path: site/
+          retention-days: 7

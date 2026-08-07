@@ -2,9 +2,31 @@
 
 A SaaS-ready, microservice-based personal data analytics platform.
 
-![CI](https://img.shields.io/badge/CI-Passing-success)
+[![CI](https://github.com/iamTim0/quantified-self/actions/workflows/ci.yml/badge.svg)](https://github.com/iamTim0/quantified-self/actions/workflows/ci.yml)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
+
+## Documentation
+
+📖 **<https://quantified-self.example.com/docs/>** — hosted from this repository
+(`docs/`, built with Material for MkDocs and served as a separate container).
+
+Locally: `task docs:serve` → <http://127.0.0.1:8003>
+
+Start here:
+
+| Page | What it covers |
+| --- | --- |
+| [Architektur](docs/architecture.md) | Services, data flow, idempotency, tenant isolation |
+| [Betrieb](docs/operations.md) | Deployment, required secrets, monitoring, backup |
+| [Smart-/Force-Import](docs/features/smart-import.md) | Adaptive windows and duplicate detection |
+| [Authentifizierung](docs/features/authentication.md) | Sessions, logout, tenant mapping |
+| [API-Keys](docs/features/api-keys.md) | Tenant-bound inbound keys |
+| [Fehlerbehebung](docs/troubleshooting.md) | Common failures and what they mean |
+
+> **Before deploying:** `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY`
+> ship with development defaults that are committed to this repository. See
+> [Betrieb](docs/operations.md) — they must be replaced.
 
 ## Architecture Overview
 
