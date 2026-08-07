@@ -99,6 +99,14 @@ tasks:
     requires:
       vars: [SERVICE]
 
+  fizz:lint:
+    desc: "Structural check of the Fizzbee specs — runs anywhere, including plain Windows"
+    # Not a model checker: it explores no state space. It catches the mistakes
+    # that otherwise cost a full CI round trip, and it is the only spec check
+    # that runs natively on Windows, where Fizzbee has no binary at all.
+    cmds:
+      - python .agents/scripts/lint_specs.py
+
   fizz:check:
     desc: "Model-check every Fizzbee specification in specs/"
     # `fizzbee check specs/` was never a real command: the binary is called

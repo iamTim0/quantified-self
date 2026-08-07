@@ -100,8 +100,18 @@ jobs:
   specs:
     name: Fizzbee model check
     runs-on: ubuntu-latest
+    env:
+      # Job level, not step level: a step's own `env` is not available to that
+      # step's `with:` block, so the cache key was interpolating to an empty
+      # version and would not have changed when the version did.
+      FIZZBEE_VERSION: v0.5.2
     steps:
       - uses: actions/checkout@v4
+
+      # Seconds, and no download. Fails the job early on the structural mistakes
+      # rather than after a 340 MB fetch and a full state-space exploration.
+      - name: Lint specifications
+        run: python .agents/scripts/lint_specs.py
 
       # The release archive is ~340 MB because it bundles a Python runtime for
       # the parser, so cache it rather than re-downloading on every push.
@@ -111,13 +121,9 @@ jobs:
         with:
           path: /opt/fizzbee
           key: fizzbee-${{ env.FIZZBEE_VERSION }}-linux_x86
-        env:
-          FIZZBEE_VERSION: v0.5.2
 
       - name: Install Fizzbee
         if: steps.cache-fizzbee.outputs.cache-hit != 'true'
-        env:
-          FIZZBEE_VERSION: v0.5.2
         run: |
           curl -sfL -o /tmp/fizzbee.tar.gz \
             "https://github.com/fizzbee-io/fizzbee/releases/download/${FIZZBEE_VERSION}/fizzbee-${FIZZBEE_VERSION}-linux_x86.tar.gz"
