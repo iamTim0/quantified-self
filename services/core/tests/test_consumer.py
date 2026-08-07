@@ -2,7 +2,6 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-
 from core.events.consumer import process_message
 
 

@@ -133,13 +133,23 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # expected to be expired or already invalid by the time they are called.
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
+        # Listing enabled login providers must work before anyone is signed in.
+        "/api/v1/auth/oidc/providers",
     }
+
+    # Sign-in flows with a provider slug in the path. These are how a session is
+    # obtained, so requiring one would be circular; each validates its own
+    # single-use, server-side state instead.
+    EXEMPT_PREFIXES: ClassVar[tuple[str, ...]] = ("/api/v1/auth/oidc/",)
+
+    def _is_exempt(self, path: str) -> bool:
+        return path in self.EXEMPT_PATHS or path.startswith(self.EXEMPT_PREFIXES)
 
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
         path = request.url.path
-        if path in self.EXEMPT_PATHS:
+        if self._is_exempt(path):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization") or ""

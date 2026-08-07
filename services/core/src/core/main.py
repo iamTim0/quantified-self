@@ -27,23 +27,33 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.config import settings
 from core.analytics import detect_daily_gaps, find_cross_source_conflicts, pearson_pairs
+from core.config import settings
 from core.db.models import (
     ApiKey,
     DataPoint,
     DataSource,
     ExplorerView,
+    OidcAuthRequest,
+    OidcProvider,
     RefreshToken,
     RevokedAccessToken,
     SyncRun,
     Tenant,
     TenantShare,
     User,
+    UserIdentity,
 )
 from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.ingest_planning import (
+    BucketCount,
+    TimeRange,
+    analyse_coverage,
+    compute_sync_window,
+    plan_import,
+)
 from core.insights import (
     Provenance,
     build_daily_series,
@@ -54,13 +64,6 @@ from core.insights import (
     series_quality,
     trend_for_metric,
     weekday_pattern,
-)
-from core.ingest_planning import (
-    BucketCount,
-    TimeRange,
-    analyse_coverage,
-    compute_sync_window,
-    plan_import,
 )
 from core.security.auth import (
     AuthenticationMiddleware,
@@ -73,6 +76,16 @@ from core.security.crypto import (
     decrypt_secret,
     encrypt_secret,
     mask_secret,
+)
+from core.security.oidc import (
+    AUTH_REQUEST_TTL_SECONDS,
+    OidcError,
+    apply_claims_mapping,
+    build_authorization_request,
+    exchange_code,
+    fetch_discovery,
+    is_redirect_uri_allowed,
+    verify_id_token,
 )
 from core.security.tokens import (
     TokenError,
@@ -556,6 +569,368 @@ async def change_password(
         "message": "Passwort wurde erfolgreich geändert. Bitte melde dich erneut an.",
         "sessions_revoked": True,
     }
+
+
+# ─── OIDC / External Identity Providers ─────────────────────
+
+
+def _serialize_provider(provider: OidcProvider, *, admin: bool = False) -> dict[str, Any]:
+    """Public shape. The client secret is never included, masked or otherwise."""
+    public = {
+        "slug": provider.slug,
+        "display_name": provider.display_name,
+        "enabled": provider.enabled,
+    }
+    if not admin:
+        return public
+    return {
+        **public,
+        "id": provider.id,
+        "issuer": provider.issuer,
+        "client_id": provider.client_id,
+        "has_client_secret": bool(provider.encrypted_client_secret),
+        "scopes": provider.scopes,
+        "redirect_uri": provider.redirect_uri,
+        "claims_mapping": provider.claims_mapping,
+        "allow_signup": provider.allow_signup,
+        "require_verified_email": provider.require_verified_email,
+        "created_at": provider.created_at.isoformat() if provider.created_at else None,
+    }
+
+
+async def _load_enabled_provider(session: AsyncSession, slug: str) -> OidcProvider:
+    res = await session.execute(
+        select(OidcProvider).where(OidcProvider.slug == slug, OidcProvider.enabled.is_(True))
+    )
+    provider = res.scalars().first()
+    if not provider:
+        # Same answer for "unknown" and "disabled": no enumeration.
+        raise HTTPException(status_code=404, detail="Unknown or disabled login provider")
+    return provider
+
+
+@app.get("/api/v1/auth/oidc/providers")
+async def list_oidc_providers(session: AsyncSession = Depends(get_session)):
+    """Enabled providers, for rendering login buttons. Unauthenticated by design."""
+    res = await session.execute(
+        select(OidcProvider).where(OidcProvider.enabled.is_(True)).order_by(OidcProvider.display_name)
+    )
+    return {"providers": [_serialize_provider(p) for p in res.scalars().all()]}
+
+
+class OidcStartRequest(BaseModel):
+    redirect_uri: str | None = Field(None, description="Must match the configured URI exactly")
+
+
+@app.post("/api/v1/auth/oidc/{slug}/start")
+async def start_oidc_login(
+    slug: str,
+    req: OidcStartRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Begin an Authorization Code + PKCE login.
+
+    ``state``, ``nonce`` and the PKCE verifier are stored server-side, so the
+    browser never holds anything that would let it forge or replay the callback.
+    """
+    provider = await _load_enabled_provider(session, slug)
+    body = req or OidcStartRequest()
+
+    redirect_uri = body.redirect_uri or provider.redirect_uri
+    if not is_redirect_uri_allowed(redirect_uri, provider.redirect_uri):
+        raise HTTPException(status_code=400, detail="redirect_uri is not allowed for this provider")
+
+    try:
+        discovery = await fetch_discovery(provider.issuer)
+        auth_request = build_authorization_request(
+            discovery=discovery,
+            client_id=provider.client_id,
+            redirect_uri=redirect_uri,
+            scopes=provider.scopes,
+        )
+    except OidcError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+    now = datetime.now(timezone.utc)
+    session.add(
+        OidcAuthRequest(
+            state=auth_request.state,
+            provider_slug=provider.slug,
+            nonce=auth_request.nonce,
+            code_verifier=auth_request.code_verifier,
+            redirect_uri=redirect_uri,
+            expires_at=now + timedelta(seconds=AUTH_REQUEST_TTL_SECONDS),
+        )
+    )
+    # Opportunistic cleanup of abandoned attempts.
+    await session.execute(delete(OidcAuthRequest).where(OidcAuthRequest.expires_at < now))
+    await session.commit()
+
+    return {
+        "authorization_url": auth_request.authorization_url,
+        "state": auth_request.state,
+        "expires_in": AUTH_REQUEST_TTL_SECONDS,
+    }
+
+
+class OidcCallbackRequest(BaseModel):
+    code: str = Field(..., min_length=1, max_length=4096)
+    state: str = Field(..., min_length=8, max_length=128)
+
+
+@app.post("/api/v1/auth/oidc/{slug}/callback")
+async def complete_oidc_login(
+    slug: str,
+    req: OidcCallbackRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Finish the flow: validate the token, resolve the account, issue a session."""
+    provider = await _load_enabled_provider(session, slug)
+
+    res = await session.execute(
+        select(OidcAuthRequest).where(OidcAuthRequest.state == req.state)
+    )
+    auth_request = res.scalars().first()
+
+    now = datetime.now(timezone.utc)
+    if not auth_request or auth_request.provider_slug != slug:
+        raise HTTPException(status_code=400, detail="Unknown or expired login attempt")
+    if auth_request.consumed_at is not None:
+        # Single use. A replayed state means the callback leaked.
+        await session.execute(
+            delete(OidcAuthRequest).where(OidcAuthRequest.state == req.state)
+        )
+        await session.commit()
+        raise HTTPException(status_code=400, detail="This login attempt was already used")
+
+    expires_at = auth_request.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at <= now:
+        raise HTTPException(status_code=400, detail="This login attempt has expired")
+
+    auth_request.consumed_at = now
+    await session.commit()
+
+    client_secret = None
+    if provider.encrypted_client_secret:
+        try:
+            client_secret = decrypt_secret(provider.encrypted_client_secret)
+        except DecryptionError:
+            raise HTTPException(status_code=500, detail="Provider secret could not be decrypted")
+
+    try:
+        discovery = await fetch_discovery(provider.issuer)
+        tokens = await exchange_code(
+            discovery=discovery,
+            client_id=provider.client_id,
+            client_secret=client_secret,
+            code=req.code,
+            redirect_uri=auth_request.redirect_uri,
+            code_verifier=auth_request.code_verifier,
+        )
+        identity = verify_id_token(
+            id_token=tokens["id_token"],
+            discovery=discovery,
+            client_id=provider.client_id,
+            issuer=provider.issuer,
+            expected_nonce=auth_request.nonce,
+        )
+        identity = apply_claims_mapping(identity, provider.claims_mapping or {})
+    except OidcError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+    finally:
+        await session.execute(
+            delete(OidcAuthRequest).where(OidcAuthRequest.state == req.state)
+        )
+        await session.commit()
+
+    # Identity is keyed on (provider, subject). Never on email.
+    link_res = await session.execute(
+        select(UserIdentity).where(
+            UserIdentity.provider_slug == provider.slug,
+            UserIdentity.subject == identity.subject,
+        )
+    )
+    link = link_res.scalars().first()
+
+    if link:
+        user_res = await session.execute(select(User).where(User.id == link.user_id))
+        user = user_res.scalars().first()
+        if not user:
+            raise HTTPException(status_code=401, detail="Linked account no longer exists")
+        link.last_login_at = now
+        link.email = identity.email
+        await session.commit()
+        return await _oidc_session_response(session, user, provider.slug, linked=False)
+
+    # No link yet. Everything below is first contact, which is where account
+    # takeover happens if the rules are loose.
+    if provider.require_verified_email and not identity.email_verified:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Der Anbieter hat diese E-Mail-Adresse nicht als verifiziert bestätigt. "
+                "Bitte melde dich mit E-Mail und Passwort an und verknüpfe den Anbieter "
+                "in den Einstellungen."
+            ),
+        )
+    if not identity.email:
+        raise HTTPException(
+            status_code=403, detail="Der Anbieter hat keine E-Mail-Adresse übermittelt."
+        )
+
+    existing_res = await session.execute(select(User).where(User.email == identity.email))
+    existing_user = existing_res.scalars().first()
+
+    if existing_user:
+        # An account with this address already exists but was never linked.
+        # Auto-linking on a matching email is exactly the takeover vector: anyone
+        # who can get a provider to assert an address would inherit the account.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Für diese E-Mail-Adresse existiert bereits ein Konto. Melde dich mit "
+                "E-Mail und Passwort an und verknüpfe den Anbieter in den Einstellungen."
+            ),
+        )
+
+    if not provider.allow_signup or not settings.ALLOW_REGISTRATION:
+        raise HTTPException(
+            status_code=403, detail="Registrierung über diesen Anbieter ist deaktiviert."
+        )
+
+    tenant_id = str(uuid.uuid4())
+    user_id = str(uuid.uuid4())
+    display_name = identity.name or identity.email.split("@")[0]
+
+    session.add(Tenant(id=tenant_id, name=f"{display_name}'s Workspace"))
+    session.add(
+        User(
+            id=user_id,
+            tenant_id=tenant_id,
+            email=identity.email,
+            # No local password. Sign-in works only through the provider until the
+            # user sets one; an empty string would be a hash nobody can match.
+            password_hash="!oidc-only",
+            name=display_name,
+            role="owner",
+        )
+    )
+    # Flush before the identity row: it carries a foreign key to users, and the
+    # unit of work does not otherwise guarantee the user is inserted first.
+    await session.flush()
+
+    session.add(
+        UserIdentity(
+            user_id=user_id,
+            tenant_id=tenant_id,
+            provider_slug=provider.slug,
+            subject=identity.subject,
+            email=identity.email,
+            last_login_at=now,
+        )
+    )
+    await session.commit()
+
+    created_res = await session.execute(select(User).where(User.id == user_id))
+    return await _oidc_session_response(
+        session, created_res.scalars().first(), provider.slug, linked=True
+    )
+
+
+async def _oidc_session_response(
+    session: AsyncSession, user: User, provider_slug: str, *, linked: bool
+) -> dict[str, Any]:
+    """Issue the same session an email/password login would."""
+    tokens = await _issue_session(
+        session,
+        user_id=user.id,
+        tenant_id=user.tenant_id,
+        email=user.email,
+        role=user.role,
+    )
+    logger.info(
+        "OIDC login succeeded via %s for user=%s tenant=%s (new_account=%s)",
+        provider_slug,
+        user.id,
+        user.tenant_id,
+        linked,
+    )
+    return {
+        "status": "success",
+        **tokens,
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "provider": provider_slug,
+        "account_created": linked,
+    }
+
+
+@app.get("/api/v1/data/oidc/identities")
+async def list_my_identities(session: AsyncSession = Depends(get_session)):
+    """Providers linked to the calling user."""
+    principal = get_current_principal()
+    res = await session.execute(
+        select(UserIdentity).where(UserIdentity.user_id == principal.user_id)
+    )
+    return {
+        "identities": [
+            {
+                "provider_slug": i.provider_slug,
+                "email": i.email,
+                "linked_at": i.created_at.isoformat() if i.created_at else None,
+                "last_login_at": i.last_login_at.isoformat() if i.last_login_at else None,
+            }
+            for i in res.scalars().all()
+        ]
+    }
+
+
+@app.delete("/api/v1/data/oidc/identities/{provider_slug}")
+async def unlink_identity(
+    provider_slug: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Unlink a provider, refusing to leave the account unreachable."""
+    principal = get_current_principal()
+
+    user_res = await session.execute(select(User).where(User.id == principal.user_id))
+    user = user_res.scalars().first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    res = await session.execute(
+        select(UserIdentity).where(
+            UserIdentity.user_id == principal.user_id,
+            UserIdentity.provider_slug == provider_slug,
+        )
+    )
+    identity = res.scalars().first()
+    if not identity:
+        raise HTTPException(status_code=404, detail="Provider is not linked to this account")
+
+    remaining = await session.execute(
+        select(func.count())
+        .select_from(UserIdentity)
+        .where(UserIdentity.user_id == principal.user_id)
+    )
+    has_password = user.password_hash and user.password_hash != "!oidc-only"
+    if (remaining.scalar() or 0) <= 1 and not has_password:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Das ist die einzige Anmeldemöglichkeit für dieses Konto. Lege zuerst "
+                "ein Passwort fest oder verknüpfe einen weiteren Anbieter."
+            ),
+        )
+
+    await session.delete(identity)
+    await session.commit()
+    return {"status": "unlinked", "provider_slug": provider_slug}
 
 
 # ─── Tenant Sharing Endpoints ───────────────────────────────

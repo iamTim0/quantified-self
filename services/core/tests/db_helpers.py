@@ -17,6 +17,7 @@ from core.db.models import (
     Tenant,
     TenantShare,
     User,
+    UserIdentity,
 )
 from core.db.session import async_session_maker
 from core.security.tokens import create_access_token, create_service_token
@@ -89,6 +90,9 @@ async def cleanup_test_tenant(tenant_id: str) -> None:
         )
         await session.execute(
             delete(RefreshToken).where(RefreshToken.tenant_id == tenant_id)
+        )
+        await session.execute(
+            delete(UserIdentity).where(UserIdentity.tenant_id == tenant_id)
         )
         await session.execute(
             delete(ExplorerView).where(ExplorerView.tenant_id == tenant_id)

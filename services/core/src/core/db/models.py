@@ -256,6 +256,93 @@ class SyncRun(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class OidcProvider(Base):
+    """A configurable OpenID Connect provider.
+
+    Deliberately data rather than code: Google is just one row. The client secret
+    is Fernet-encrypted at rest like any other credential, and is never returned
+    by the API — the admin endpoints expose only a masked form.
+    """
+    __tablename__ = "oidc_providers"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    # URL-safe key used in the callback path, e.g. "google".
+    slug: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    issuer: Mapped[str] = mapped_column(String(512), nullable=False)
+    client_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    encrypted_client_secret: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    scopes: Mapped[str] = mapped_column(String(512), nullable=False, default="openid email profile")
+    redirect_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Which claim supplies which field, e.g. {"email": "email", "name": "name"}.
+    claims_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Whether a first-time login may create an account, or only link an existing one.
+    allow_signup: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Only trust the provider's email_verified claim if the provider is trustworthy.
+    require_verified_email: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class OidcAuthRequest(Base):
+    """One in-flight authorization request.
+
+    Stored server-side rather than in a cookie so ``state``, ``nonce`` and the PKCE
+    verifier cannot be read or replayed by the browser, and so the flow works across
+    replicas. Rows are single-use and short-lived.
+    """
+    __tablename__ = "oidc_auth_requests"
+
+    state: Mapped[str] = mapped_column(String(128), primary_key=True)
+    provider_slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    code_verifier: Mapped[str] = mapped_column(String(256), nullable=False)
+    redirect_uri: Mapped[str] = mapped_column(String(512), nullable=False)
+    # Set when an already-signed-in user is linking a provider to their account.
+    link_user_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class UserIdentity(Base):
+    """A federated identity linked to a local user.
+
+    The unique key is ``(provider_slug, subject)`` — the provider's stable subject
+    identifier, not the email address. Emails change hands and can be re-registered;
+    matching on them is how accounts get taken over.
+    """
+    __tablename__ = "user_identities"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    tenant_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False, index=True)
+    provider_slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        UniqueConstraint("provider_slug", "subject", name="uq_user_identities_provider_subject"),
+    )
+
+
 class ExplorerView(Base):
     """SaaS Multi-tenant saved Explorer View query configuration model."""
     __tablename__ = "explorer_views"

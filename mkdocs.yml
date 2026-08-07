@@ -36,6 +36,7 @@ nav:
       - GPS-Visualisierung: features/gps-visualization.md
   - Sicherheit:
       - Authentifizierung & Sessions: features/authentication.md
+      - Externe Anmeldung (OIDC): features/oidc.md
       - Tenant-gebundene API-Keys: features/api-keys.md
   - Superpowers:
       - Plans:

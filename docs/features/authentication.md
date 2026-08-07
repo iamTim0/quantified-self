@@ -117,7 +117,7 @@ Logout und Token-Erneuerung sind darüber nachvollziehbar.
 - Tokens liegen im `localStorage` des Browsers, nicht in `httpOnly`-Cookies. Sie sind
   damit für XSS lesbar. Ein Wechsel auf Cookies mit serverseitigen Route-Guards
   (in Next.js 16 über `proxy.ts`, nicht mehr `middleware.ts`) ist offene Folgearbeit.
-- Es gibt noch keine externen OIDC-Provider (Google o. Ä.); die Anmeldung erfolgt
-  ausschließlich über E-Mail und Passwort.
+- Externe Anmeldung über OIDC ist verfügbar, aber standardmäßig deaktiviert; siehe
+  [Externe Anmeldung (OIDC)](oidc.md).
 - Rollen (`owner`, `admin`, `member`) werden bisher nur für die Verwaltung der
   API-Keys ausgewertet.

@@ -59,10 +59,9 @@ async def test_tenant_context_async_concurrency_isolation():
 
 async def _dispatch(path: str, headers: list[tuple[bytes, bytes]]):
     """Run AuthenticationMiddleware over a synthetic request and return the response."""
+    from core.security.auth import AuthenticationMiddleware
     from starlette.requests import Request
     from starlette.responses import Response
-
-    from core.security.auth import AuthenticationMiddleware
 
     async def call_next(_request: Request) -> Response:
         return Response("ok")

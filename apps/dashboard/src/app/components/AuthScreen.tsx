@@ -19,9 +19,16 @@ interface AuthScreenProps {
   onLogin: (data: UserAuthData) => void;
 }
 
+interface OidcProvider {
+  slug: string;
+  display_name: string;
+}
+
 export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   const [allowRegistration, setAllowRegistration] = useState(true);
+  const [providers, setProviders] = useState<OidcProvider[]>([]);
+  const [startingProvider, setStartingProvider] = useState<string | null>(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
@@ -41,6 +48,47 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       })
       .catch(() => {});
   }, [apiBase]);
+
+  React.useEffect(() => {
+    fetch(`${apiBase}/api/v1/auth/oidc/providers`)
+      .then((res) => (res.ok ? res.json() : { providers: [] }))
+      .then((data) => setProviders(data.providers ?? []))
+      .catch(() => {
+        // No providers configured is the normal case; a failure here must not
+        // block email/password login.
+      });
+  }, [apiBase]);
+
+  /**
+   * Ask the server for an authorization URL and follow it.
+   *
+   * The state and PKCE verifier stay server-side; the browser only ever carries
+   * the opaque state back on the redirect.
+   */
+  const handleOidcLogin = async (slug: string) => {
+    setStartingProvider(slug);
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/v1/auth/oidc/${slug}/start`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.authorization_url) {
+        throw new Error(data?.detail || "Anmeldung über diesen Anbieter ist nicht möglich.");
+      }
+      // Remembered so the callback knows which provider answered; one redirect
+      // URI can then serve every configured provider.
+      sessionStorage.setItem("qs_oidc_provider", slug);
+      // A full navigation, not a client-side route: the next hop is the identity
+      // provider's own origin.
+      window.location.assign(data.authorization_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStartingProvider(null);
+    }
+  };
 
   const formatErrorMessage = (detail: unknown): string => {
     if (typeof detail === "string") return detail;
@@ -242,6 +290,31 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 Neuregistrierung vom Administrator deaktiviert.
               </div>
             )}
+            {providers.length > 0 && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <span className="h-px flex-1 bg-slate-200" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    oder
+                  </span>
+                  <span className="h-px flex-1 bg-slate-200" />
+                </div>
+                {providers.map((provider) => (
+                  <button
+                    key={provider.slug}
+                    type="button"
+                    onClick={() => handleOidcLogin(provider.slug)}
+                    disabled={startingProvider !== null}
+                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {startingProvider === provider.slug
+                      ? "Weiterleitung…"
+                      : `Mit ${provider.display_name} anmelden`}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
               <a
                 href="/legal/datenschutz"
