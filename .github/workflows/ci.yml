@@ -97,6 +97,39 @@ jobs:
           --with icalendar --with recurring-ical-events
           pytest ${{ github.workspace }}/tests/e2e -q --rootdir ${{ github.workspace }}
 
+  specs:
+    name: Fizzbee model check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The release archive is ~340 MB because it bundles a Python runtime for
+      # the parser, so cache it rather than re-downloading on every push.
+      - name: Cache Fizzbee
+        id: cache-fizzbee
+        uses: actions/cache@v4
+        with:
+          path: /opt/fizzbee
+          key: fizzbee-${{ env.FIZZBEE_VERSION }}-linux_x86
+        env:
+          FIZZBEE_VERSION: v0.5.2
+
+      - name: Install Fizzbee
+        if: steps.cache-fizzbee.outputs.cache-hit != 'true'
+        env:
+          FIZZBEE_VERSION: v0.5.2
+        run: |
+          curl -sfL -o /tmp/fizzbee.tar.gz \
+            "https://github.com/fizzbee-io/fizzbee/releases/download/${FIZZBEE_VERSION}/fizzbee-${FIZZBEE_VERSION}-linux_x86.tar.gz"
+          sudo tar xzf /tmp/fizzbee.tar.gz -C /opt
+          sudo mv "/opt/fizzbee-${FIZZBEE_VERSION}-linux_x86" /opt/fizzbee
+
+      - name: Model-check every specification
+        run: |
+          echo "/opt/fizzbee" >> "$GITHUB_PATH"
+          export PATH="/opt/fizzbee:$PATH"
+          python .agents/scripts/verify_specs.py
+
   test-importers:
     name: Importers
     runs-on: ubuntu-latest

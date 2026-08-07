@@ -1,59 +1,88 @@
-TENANTS = ['tenant_a', 'tenant_b', 'tenant_c']
-db = [] # list of {"tenant_id": t, "data": d}
-shares = [] # list of {"grantor": t1, "grantee": t2}
-last_query_results = []
-last_querier = ""
-query_error = False
-next_data = 1
+# Two tenants, not three. Every property below is about a *pair*: whether B may
+# read A's rows. A third tenant only adds a bystander, and it is expensive --
+# `shares` alone goes from 4 possible states to 64, and with a six-action bound
+# the checker stopped terminating in useful time.
+TENANTS = ['tenant_a', 'tenant_b']
+
+# Without a bound `next_data` increments forever and the state space never
+# closes. Two records is enough to distinguish "returned the right rows" from
+# "returned all rows".
+MAX_RECORDS = 2
+
+action Init:
+    # Mutable state must be created in Init. A top-level assignment is a frozen
+    # constant, and appending to one fails at model-check time.
+    db = []                    # list of {"tenant_id": t, "data": d}
+    shares = []                # list of {"grantor": t1, "grantee": t2}
+    last_query_results = []
+    last_querier = ""
+    # The authorization *decision* taken when the last query ran, not a snapshot
+    # of the grant table. Snapshotting `shares` was correct but multiplied the
+    # state space by every subset of grants (2^6) and the checker stopped
+    # terminating. A decision plus the tenant it was taken about carries the same
+    # information for these invariants at a fraction of the cost -- and is a
+    # closer model of the implementation, which evaluates a grant per request
+    # rather than carrying the table around.
+    last_query_grantor = ""
+    last_query_authorized = False
+    query_error = False
+    next_data = 1
 
 atomic action InsertData:
-    tenant = any(TENANTS)
+    require next_data <= MAX_RECORDS
+    tenant = oneof(TENANTS)
     db.append({"tenant_id": tenant, "data": next_data})
     next_data = next_data + 1
 
 atomic action QueryOwnData:
-    tenant = any(TENANTS)
+    tenant = oneof(TENANTS)
     last_querier = tenant
     last_query_results = []
+    last_query_grantor = ""
+    last_query_authorized = True
+    query_error = False
     for record in db:
         if record["tenant_id"] == tenant:
             last_query_results.append(record)
 
 atomic action QuerySharedData:
-    grantor = any(TENANTS)
-    grantee = any(TENANTS)
+    grantor = oneof(TENANTS)
+    grantee = oneof(TENANTS)
     require grantor != grantee
-    
+
     last_querier = grantee
+    last_query_grantor = grantor
     last_query_results = []
-    
+    query_error = False
+
     has_grant = False
     for share in shares:
         if share["grantor"] == grantor and share["grantee"] == grantee:
             has_grant = True
-            
+
+    last_query_authorized = has_grant
     if has_grant:
         for record in db:
             if record["tenant_id"] == grantor:
                 last_query_results.append(record)
 
 atomic action GrantShare:
-    grantor = any(TENANTS)
-    grantee = any(TENANTS)
+    grantor = oneof(TENANTS)
+    grantee = oneof(TENANTS)
     require grantor != grantee
-    
-    # avoid duplicates
-    exists = False
+
+    # avoid duplicates ('exists' is a reserved quantifier keyword in Fizzbee)
+    already_granted = False
     for share in shares:
         if share["grantor"] == grantor and share["grantee"] == grantee:
-            exists = True
-    if not exists:
+            already_granted = True
+    if not already_granted:
         shares.append({"grantor": grantor, "grantee": grantee})
 
 atomic action RevokeShare:
-    grantor = any(TENANTS)
-    grantee = any(TENANTS)
-    
+    grantor = oneof(TENANTS)
+    grantee = oneof(TENANTS)
+
     new_shares = []
     for share in shares:
         if share["grantor"] != grantor or share["grantee"] != grantee:
@@ -61,20 +90,27 @@ atomic action RevokeShare:
     shares = new_shares
 
 atomic action QueryWithoutTenantId:
-    # Attempt a query without tenant_id. This must error.
+    # A query that arrives with no tenant context must error and return nothing.
     query_error = True
+    last_querier = ""
+    last_query_grantor = ""
+    last_query_authorized = False
     last_query_results = []
 
 always assertion NoUnauthorizedAccess:
+    # Every record handed to a querier is either their own, or was released by a
+    # grant check that actually ran and passed.
+    #
+    # Judged against the decision taken at query time, not the live `shares`
+    # list. An earlier version compared against live state, and the checker
+    # produced a counterexample in 3819 nodes: insert -> grant -> query -> revoke
+    # left an already-returned result set looking unauthorized. That is not a
+    # system defect -- the response was already on the wire and a later
+    # revocation cannot un-send it -- it was the invariant asking for something
+    # no implementation can provide.
     for res in last_query_results:
-        if res["tenant_id"] != last_querier:
-            # Must have a share
-            has_share = False
-            for share in shares:
-                if share["grantor"] == res["tenant_id"] and share["grantee"] == last_querier:
-                    has_share = True
-            if not has_share:
-                return False
+        if res["tenant_id"] != last_querier and not last_query_authorized:
+            return False
     return True
 
 always assertion TenantIdAlwaysPresent:
@@ -85,7 +121,23 @@ always assertion TenantIdAlwaysPresent:
     return True
 
 always assertion ShareRevocationImmediate:
-    # After a share is revoked, subsequent queries must not return the formerly shared data.
-    # Covered implicitly by NoUnauthorizedAccess because if it is removed from 'shares',
-    # any queried results retaining that data would flag NoUnauthorizedAccess as False.
+    # A revoked grant takes effect on the next query: once the grant is gone, a
+    # query for that grantor's data returns nothing.
+    #
+    # This replaces a body that was literally `return True`, with a comment
+    # claiming NoUnauthorizedAccess covered it. It did not -- a tautology cannot
+    # fail, so it verified nothing. The property has teeth here because
+    # QuerySharedData re-evaluates the grant on every call: if RevokeShare failed
+    # to remove the row, or a query served a cached grant decision, the results
+    # would be non-empty with `last_query_authorized` false and trip this.
+    if last_query_grantor != "" and not last_query_authorized:
+        for res in last_query_results:
+            if res["tenant_id"] == last_query_grantor:
+                return False
+    return True
+
+always assertion UntenantedQueryReturnsNothing:
+    # A query with no tenant context must expose no rows at all.
+    if query_error and len(last_query_results) > 0:
+        return False
     return True

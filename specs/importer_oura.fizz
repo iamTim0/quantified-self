@@ -4,26 +4,29 @@
 TENANTS = ["tenant_a", "tenant_b"]
 METRICS = ["sleep_score", "readiness_score", "activity_score"]
 
-api_available = True
-token_valid = True
-rate_limited = False
-importer_state = "IDLE" # IDLE, POLLING, BACKOFF, REFRESHING_TOKEN
-local_buffer = []
-nats_broker = []
-published_keys = {}
-retry_count = 0
-last_polled_timestamp = "2026-07-26T00:00:00Z"
+
+
+action Init:
+    api_available = True
+    token_valid = True
+    rate_limited = False
+    importer_state = "IDLE" # IDLE, POLLING, BACKOFF, REFRESHING_TOKEN
+    local_buffer = []
+    nats_broker = []
+    published_keys = {}
+    retry_count = 0
+    last_polled_timestamp = "2026-07-26T00:00:00Z"
 
 atomic action PollOuraAPI:
     require importer_state == "IDLE" and token_valid == True and rate_limited == False
     importer_state = "POLLING"
     
     # Non-deterministically simulate API outcome
-    outcome = any(["HTTP_200", "HTTP_429", "HTTP_401", "HTTP_500"])
+    outcome = oneof(["HTTP_200", "HTTP_429", "HTTP_401", "HTTP_500"])
     
     if outcome == "HTTP_200":
-        tenant = any(TENANTS)
-        metric = any(METRICS)
+        tenant = oneof(TENANTS)
+        metric = oneof(METRICS)
         # Create raw record
         record = {
             "tenant_id": tenant,

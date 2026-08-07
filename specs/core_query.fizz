@@ -5,25 +5,28 @@ TENANTS = ["tenant_a", "tenant_b", "tenant_c"]
 METRICS = ["sleep_score", "readiness_score", "steps"]
 
 # State
-database_records = [
-    {"tenant_id": "tenant_a", "metric_type": "sleep_score", "val": 88},
-    {"tenant_id": "tenant_a", "metric_type": "steps", "val": 10000},
-    {"tenant_id": "tenant_b", "metric_type": "sleep_score", "val": 75},
-    {"tenant_id": "tenant_c", "metric_type": "readiness_score", "val": 90}
-]
 
-tenant_shares = [
-    {"grantor": "tenant_a", "grantee": "tenant_b", "scope": "read_all"}
-]
 
-query_result = []
-query_caller = "IDLE"
-query_target = "IDLE"
-access_granted = False
+
+
+action Init:
+    database_records = [
+        {"tenant_id": "tenant_a", "metric_type": "sleep_score", "val": 88},
+        {"tenant_id": "tenant_a", "metric_type": "steps", "val": 10000},
+        {"tenant_id": "tenant_b", "metric_type": "sleep_score", "val": 75},
+        {"tenant_id": "tenant_c", "metric_type": "readiness_score", "val": 90}
+    ]
+    tenant_shares = [
+        {"grantor": "tenant_a", "grantee": "tenant_b", "scope": "read_all"}
+    ]
+    query_result = []
+    query_caller = "IDLE"
+    query_target = "IDLE"
+    access_granted = False
 
 atomic action QuerySelfData:
-    caller = any(TENANTS)
-    metric = any(METRICS)
+    caller = oneof(TENANTS)
+    metric = oneof(METRICS)
     
     query_caller = caller
     query_target = caller
@@ -35,9 +38,9 @@ atomic action QuerySelfData:
             query_result.append(rec)
 
 atomic action QueryOtherData:
-    caller = any(TENANTS)
-    target = any(TENANTS)
-    metric = any(METRICS)
+    caller = oneof(TENANTS)
+    target = oneof(TENANTS)
+    metric = oneof(METRICS)
     
     require caller != target
     

@@ -7,21 +7,24 @@
 # client that re-minted a token whenever storage was empty, "log out" was a no-op.
 
 # State
-issued_access_tokens = []   # jti values ever issued
-revoked_jtis = set([])      # logout denylist
-active_refresh = {}         # refresh_token -> user, only while usable
-consumed_refresh = set([])  # refresh tokens already rotated or revoked
 # Set if a replay purge ever left a session usable. A *later* fresh login is
 # legitimate, so this property belongs to the handler, not to the whole run.
-compromise_left_sessions_alive = False
 # Acceptance is a point-in-time event. Recording only the jti and comparing it
 # against the *current* denylist would wrongly flag a request that legitimately
 # succeeded before the logout, so the revocation state at that moment is captured.
-accepted_while_revoked = 0
-accepted_count = 0
-chain_compromised = False
 
-next_id = 0
+
+
+action Init:
+    issued_access_tokens = []   # jti values ever issued
+    revoked_jtis = set([])      # logout denylist
+    active_refresh = {}         # refresh_token -> user, only while usable
+    consumed_refresh = set([])  # refresh tokens already rotated or revoked
+    compromise_left_sessions_alive = False
+    accepted_while_revoked = 0
+    accepted_count = 0
+    chain_compromised = False
+    next_id = 0
 
 atomic action Login:
     # A login mints an access token and a refresh token bound to the same user.
@@ -33,7 +36,7 @@ atomic action Login:
 
 atomic action CallProtectedEndpoint:
     # Any issued token may be presented; only a non-revoked one is accepted.
-    jti = any(issued_access_tokens)
+    jti = oneof(issued_access_tokens)
     if jti in revoked_jtis:
         accepted_while_revoked = accepted_while_revoked + 1
     else:
@@ -41,17 +44,17 @@ atomic action CallProtectedEndpoint:
 
 atomic action Logout:
     # Logout revokes the access token's jti and consumes the refresh token.
-    jti = any(issued_access_tokens)
+    jti = oneof(issued_access_tokens)
     revoked_jtis.add(jti)
     if len(active_refresh) > 0:
-        refresh = any(active_refresh.keys())
+        refresh = oneof(active_refresh.keys())
         consumed_refresh.add(refresh)
         active_refresh.pop(refresh)
 
 atomic action RefreshRotate:
     # Rotation is single use: the presented token is consumed and replaced.
     require len(active_refresh) > 0
-    refresh = any(active_refresh.keys())
+    refresh = oneof(active_refresh.keys())
     active_refresh.pop(refresh)
     consumed_refresh.add(refresh)
 
@@ -65,7 +68,7 @@ atomic action ReplayConsumedRefresh:
     # Presenting an already-rotated token means the credential leaked. Every
     # session for that user is revoked rather than a new one being handed out.
     require len(consumed_refresh) > 0
-    replayed = any(consumed_refresh)
+    replayed = oneof(consumed_refresh)
     chain_compromised = True
     for token in active_refresh.keys():
         consumed_refresh.add(token)

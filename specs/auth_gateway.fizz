@@ -14,11 +14,14 @@ TOKENS_DB = {
     "expired_token": {"tenant_id": "tenant_a", "valid": False}
 }
 
-downstream_queue = []
-gateway_rejected_count = 0
+
+
+action Init:
+    downstream_queue = []
+    gateway_rejected_count = 0
 
 atomic action GatewayProcessRequest:
-    req = any(CLIENT_REQUESTS)
+    req = oneof(CLIENT_REQUESTS)
     token = req["token"]
     
     # Auth validation logic

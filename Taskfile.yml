@@ -100,9 +100,21 @@ tasks:
       vars: [SERVICE]
 
   fizz:check:
-    desc: "Run fizzbee model checker on specs/"
+    desc: "Model-check every Fizzbee specification in specs/"
+    # `fizzbee check specs/` was never a real command: the binary is called
+    # `fizz`, it takes one spec file rather than a directory, and there is no
+    # `check` subcommand. The runner uses `fizz` from PATH when present and the
+    # container from infra/fizzbee.Dockerfile otherwise, because Fizzbee ships no
+    # Windows build.
     cmds:
-      - fizzbee check specs/
+      - python .agents/scripts/verify_specs.py
+
+  fizz:one:
+    desc: "Model-check a single specification, e.g. task fizz:one SPEC=tenant_isolation"
+    cmds:
+      - python .agents/scripts/verify_specs.py {{.SPEC}}
+    requires:
+      vars: [SPEC]
 
   lint:all:
     desc: "Run linters across Python & Next.js dashboard"

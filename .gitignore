@@ -65,3 +65,6 @@ yarn-error.log*
 # Fizzbee model-checker output: per-run state graphs, error traces and a `latest`
 # symlink. Regenerated on every `fizz` invocation.
 /specs/out/
+
+# Fizzbee parser output (regenerated next to each spec on every run)
+/specs/*.json

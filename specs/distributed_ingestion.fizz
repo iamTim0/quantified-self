@@ -1,17 +1,20 @@
 TENANTS = ['tenant_a', 'tenant_b']
 IMPORTERS = ['oura_1', 'oura_2']
-broker_queue = []
-core_db = {}
-processed_count = 0
-duplicate_count = 0
-broker_available = True
-next_idempotency_key = 1
+
+
+action Init:
+    broker_queue = []
+    core_db = {}
+    processed_count = 0
+    duplicate_count = 0
+    broker_available = True
+    next_idempotency_key = 1
 
 atomic action ImporterPublish:
     require broker_available == True
-    tenant_id = any(TENANTS)
-    importer = any(IMPORTERS)
-    metric_type = any(["steps", "sleep", "heart_rate"])
+    tenant_id = oneof(TENANTS)
+    importer = oneof(IMPORTERS)
+    metric_type = oneof(["steps", "sleep", "heart_rate"])
     
     key = str(next_idempotency_key)
     next_idempotency_key = next_idempotency_key + 1
@@ -19,7 +22,7 @@ atomic action ImporterPublish:
     msg = {"tenant_id": tenant_id, "importer": importer, "metric_type": metric_type, "idempotency_key": key}
     
     # Non-deterministically choose whether to publish once or twice
-    times = any([1, 2])
+    times = oneof([1, 2])
     if times == 1:
         broker_queue.append(msg)
     else:

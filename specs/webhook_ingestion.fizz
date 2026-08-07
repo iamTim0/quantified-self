@@ -5,17 +5,20 @@
 TENANT_API_KEYS = {"key_a": "tenant_a", "key_b": "tenant_b"}
 VALID_KEYS = set(["key_a", "key_b"])
 
-broker_is_up = True
-ingested_data = [] # List of {"tenant_id": t, "data": d}
-webhook_responses = [] # List of HTTP status codes returned to the provider
+
+
+action Init:
+    broker_is_up = True
+    ingested_data = [] # List of {"tenant_id": t, "data": d}
+    webhook_responses = [] # List of HTTP status codes returned to the provider
 
 atomic action ToggleBrokerState:
     # Simulate NATS broker going down or coming back up
     broker_is_up = not broker_is_up
 
 atomic action ReceiveWebhook:
-    api_key = any(["key_a", "key_b", "invalid_key", ""])
-    payload_data = any([1, 2, 3])
+    api_key = oneof(["key_a", "key_b", "invalid_key", ""])
+    payload_data = oneof([1, 2, 3])
     
     if api_key not in VALID_KEYS:
         # Invalid or missing API key must be rejected

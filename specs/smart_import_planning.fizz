@@ -10,21 +10,24 @@
 ALL_BUCKETS = [0, 1, 2, 3, 4]
 
 # Which buckets are fully present, partially present, or absent.
-full_buckets = set([])
-partial_buckets = set([])
 
 # Planner output
-planned_import = set([])
-skipped = set([])
-plan_confidence = "high"
-mode = "smart"
-planned = False
+
+
+action Init:
+    full_buckets = set([])
+    partial_buckets = set([])
+    planned_import = set([])
+    skipped = set([])
+    plan_confidence = "high"
+    mode = "smart"
+    planned = False
 
 atomic action SeedCoverage:
     # Choose an arbitrary coverage shape before planning.
     require not planned
     for b in ALL_BUCKETS:
-        kind = any(["full", "partial", "empty"])
+        kind = oneof(["full", "partial", "empty"])
         if kind == "full":
             full_buckets.add(b)
         elif kind == "partial":
@@ -32,7 +35,7 @@ atomic action SeedCoverage:
 
 atomic action ChooseMode:
     require not planned
-    mode = any(["smart", "force"])
+    mode = oneof(["smart", "force"])
 
 atomic action Plan:
     require not planned

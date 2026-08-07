@@ -1,0 +1,16 @@
+# Model-checker bounds, applied to every spec in this directory.
+#
+# Fizzbee defaults to max_actions: 100, meaning it explores traces up to a hundred
+# actions deep. For these specs that does not terminate in any useful time --
+# tenant_isolation was still enumerating past 160,000 states after 70 seconds.
+#
+# Every invariant here is about a short causal sequence: insert, grant, query,
+# revoke, query again. Six actions is enough to reach each of those and to
+# interleave them, while keeping a full run to a few seconds so the check can sit
+# in CI on every push.
+#
+# Raise maxActions temporarily when adding a property that needs a longer trace,
+# and note in the spec why the deeper bound is required.
+options:
+  maxActions: 6
+  maxConcurrentActions: 2
