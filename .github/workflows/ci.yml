@@ -46,14 +46,28 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U qs_dev -d quantified_self"
           --health-interval 5s --health-timeout 5s --health-retries 20
-      nats:
-        image: nats:2-alpine
-        ports: ["4222:4222"]
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
+
+      - name: Start NATS with JetStream
+        # Not a `services:` container: that syntax cannot pass a command to the
+        # image, and the NATS server only enables JetStream when started with
+        # `-js`. Without it `add_stream` fails and every publish raises
+        # NoStreamResponseError, which is what broke the ingestion test.
+        run: |
+          docker run -d --name qs-nats -p 4222:4222 -p 8222:8222 nats:2-alpine -js -m 8222
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8222/healthz > /dev/null; then
+              echo "NATS healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "NATS did not become healthy" >&2
+          docker logs qs-nats >&2
+          exit 1
 
       - name: Apply migrations
         run: uv run --directory services/core alembic upgrade head
@@ -139,12 +153,27 @@ jobs:
       - name: Check links
         uses: lycheeverse/lychee-action@v2
         with:
+          # --root-dir is required for lychee to resolve root-relative links at
+          # all; without it they are a hard error, and `--exclude '^/'` never
+          # applies because exclusion runs on a resolved URI.
+          #
+          # /legal/* are Next.js routes served by the dashboard, a different
+          # service to this MkDocs site. They are correct root-relative links in
+          # the deployed stack (docs live under /docs on the same host) but have
+          # no file on disk, so they are excluded after resolution.
+          #
+          # The deployment host is excluded because a link checker on every push
+          # should not fail when the environment happens to be down -- that is
+          # what uptime monitoring is for. It returned 530 (Cloudflare: origin
+          # unreachable) on the run that prompted this change.
           args: >-
             --no-progress --max-concurrency 4
+            --root-dir ${{ github.workspace }}
             --exclude-path site/
             --exclude '^https?://localhost'
             --exclude '^https?://127\.0\.0\.1'
-            --exclude '^/'
+            --exclude 'quantified-self\.hoffschroeer\.dev'
+            --exclude 'file://.*/legal/'
             'docs/**/*.md' 'README.md'
           fail: true
 

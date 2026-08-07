@@ -17,6 +17,7 @@ import uuid
 from datetime import datetime, timezone
 
 import nats
+import nats.js.errors
 import pytest
 from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
@@ -26,6 +27,8 @@ from sqlalchemy import select
 from tests.db_helpers import cleanup_test_tenant
 
 NATS_URL = "nats://127.0.0.1:4222"
+STREAM_NAME = "ingestion"
+STREAM_SUBJECT = "qs.ingest.>"
 
 @pytest.mark.asyncio
 async def test_end_to_end_ingestion_deduplication():
@@ -37,6 +40,7 @@ async def test_end_to_end_ingestion_deduplication():
     idempotency_key = f"test-idemp-{uuid.uuid4().hex[:8]}"
 
     nc = None
+    created_stream = False
     try:
         async with async_session_maker() as session:
             t = Tenant(id=tenant_id, name="Test Integration Tenant")
@@ -51,11 +55,18 @@ async def test_end_to_end_ingestion_deduplication():
         nc = await nats.connect(NATS_URL)
         js = nc.jetstream()
 
-        # Ensure stream
+        # Create the stream this test needs rather than assuming one exists
+        # (AGENTS.md rule 10). A pre-existing stream is reused and left alone;
+        # only a stream we created here is torn down.
+        #
+        # This used to be wrapped in `except Exception: pass`, which swallowed
+        # "JetStream not enabled for this server" and let the failure resurface
+        # several lines later as an unexplained NoStreamResponseError on publish.
         try:
-            await js.add_stream(name="ingestion", subjects=["qs.ingest.>"])
-        except Exception:
-            pass
+            await js.stream_info(STREAM_NAME)
+        except nats.js.errors.NotFoundError:
+            await js.add_stream(name=STREAM_NAME, subjects=[STREAM_SUBJECT])
+            created_stream = True
 
         # 3. Create test event payload
         event_payload = {
@@ -110,5 +121,10 @@ async def test_end_to_end_ingestion_deduplication():
             assert points[0].tenant_id == tenant_id
     finally:
         if nc:
+            if created_stream:
+                try:
+                    await nc.jetstream().delete_stream(STREAM_NAME)
+                except Exception:  # noqa: BLE001 - teardown must not mask a test failure
+                    pass
             await nc.close()
         await cleanup_test_tenant(tenant_id)
