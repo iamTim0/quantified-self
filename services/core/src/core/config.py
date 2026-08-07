@@ -36,6 +36,21 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
     ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
 
+    # ── Session cookies ──────────────────────────────────────────────────────
+    # Browser sessions are carried in httpOnly cookies so that a cross-site
+    # scripting flaw cannot read the credential. Defaults are the secure ones:
+    # override only for a deployment that genuinely cannot serve HTTPS.
+    #
+    # Secure=True is safe for local development: browsers treat http://localhost
+    # and http://127.0.0.1 as trustworthy origins and accept Secure cookies there.
+    COOKIE_SECURE: bool = True
+    # "lax" lets the cookie ride top-level navigations (needed for the OIDC
+    # redirect back from the provider) while blocking cross-site form posts.
+    COOKIE_SAMESITE: str = "lax"
+    # Leave unset so the cookie is host-only. Set it only when the dashboard and
+    # API are on different subdomains of one registrable domain.
+    COOKIE_DOMAIN: str | None = None
+
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { Search, ChevronRight, X, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu, Bookmark, Save, Trash2 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 // Client-only dynamic import for ChartJS canvas
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
@@ -42,13 +43,12 @@ export interface BackendSavedView {
 
 interface ExplorerTabProps {
   apiBase: string;
-  token: string;
   tenantId: string;
 }
 
 const COLOR_PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#ec4899", "#a855f7", "#06b6d4", "#f43f5e", "#eab308"];
 
-export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabProps) {
+export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -73,9 +73,8 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const fetchAllMetrics = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/metrics?limit=500`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics?limit=500`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -99,9 +98,8 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   // Fetch saved views directly from PostgreSQL Core Service
   const fetchSavedViews = async () => {
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/explorer/views`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/explorer/views`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -115,21 +113,20 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   };
 
   useEffect(() => {
-    if (token && tenantId) {
+    if (tenantId) {
       fetchAllMetrics();
       fetchSavedViews();
     }
-  }, [apiBase, token, tenantId]);
+  }, [apiBase, tenantId]);
 
   // Handle Save New View to PostgreSQL
   const handleSaveCurrentView = async () => {
     if (!newViewName.trim()) return;
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/explorer/views`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/explorer/views`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
         body: JSON.stringify({
@@ -161,10 +158,9 @@ export default function ExplorerTab({ apiBase, token, tenantId }: ExplorerTabPro
   const handleDeleteView = async (viewId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/explorer/views/${viewId}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/explorer/views/${viewId}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });

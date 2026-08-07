@@ -61,3 +61,7 @@ yarn-error.log*
 
 # MkDocs build output (`task docs:build` writes here; site_dir in mkdocs.yml)
 /site/
+
+# Fizzbee model-checker output: per-run state graphs, error traces and a `latest`
+# symlink. Regenerated on every `fizz` invocation.
+/specs/out/

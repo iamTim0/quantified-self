@@ -2,15 +2,17 @@
 
 import React, { useState } from "react";
 import { Activity, Lock, Mail, User, ArrowRight, AlertCircle } from "lucide-react";
+import { SessionUser } from "../lib/session";
 
+/**
+ * What a completed sign-in hands back to the page.
+ *
+ * Deliberately carries no credential. The access and refresh tokens are set by
+ * Core as httpOnly cookies on the login response, so there is nothing for this
+ * component to receive, pass on, or store — only who the user turned out to be.
+ */
 export interface UserAuthData {
-  token: string;
-  /** Opaque rotating refresh token; absent only if the server did not issue one. */
-  refreshToken: string | null;
-  tenantId: string;
-  userName: string;
-  userEmail: string;
-  userRole: string;
+  user: SessionUser;
   tenantName: string;
 }
 
@@ -116,13 +118,17 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     setLoading(true);
 
     const endpoint = isLogin ? "/api/v1/auth/login" : "/api/v1/auth/signup";
-    const body = isLogin 
+    const body = isLogin
       ? { email, password }
       : { email, password, name };
 
     try {
+      // credentials: "include" is what lets the browser keep the Set-Cookie the
+      // server sends back. Without it the login would appear to succeed and every
+      // subsequent request would be unauthenticated.
       const res = await fetch(`${apiBase}${endpoint}`, {
         method: "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
@@ -132,37 +138,19 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
         throw new Error(formatErrorMessage(data.detail));
       }
 
-      if (isLogin) {
-        onLogin({
-          token: data.access_token,
-          refreshToken: data.refresh_token ?? null,
+      // Signup already establishes a session, so there is no second login round
+      // trip: the cookies are set by the signup response itself.
+      const fallbackName = isLogin ? email.split("@")[0] : name;
+      onLogin({
+        user: {
+          userId: data.user_id,
           tenantId: data.tenant_id,
-          userName: data.name || email.split("@")[0],
-          userEmail: data.email || email,
-          userRole: data.role || "owner",
-          tenantName: `${data.name || email.split("@")[0]}'s Workspace`,
-        });
-      } else {
-        const loginRes = await fetch(`${apiBase}/api/v1/auth/login`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password }),
-        });
-        const loginData = await loginRes.json();
-        if (!loginRes.ok) {
-          throw new Error(formatErrorMessage(loginData.detail));
-        }
-
-        onLogin({
-          token: loginData.access_token,
-          refreshToken: loginData.refresh_token ?? null,
-          tenantId: loginData.tenant_id,
-          userName: loginData.name || name,
-          userEmail: loginData.email || email,
-          userRole: loginData.role || "owner",
-          tenantName: `${loginData.name || name}'s Workspace`,
-        });
-      }
+          email: data.email || email,
+          name: data.name || fallbackName,
+          role: data.role || "owner",
+        },
+        tenantName: `${data.name || fallbackName}'s Workspace`,
+      });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       setError(msg);

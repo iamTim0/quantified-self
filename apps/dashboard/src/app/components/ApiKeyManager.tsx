@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 /**
  * Management for tenant-bound inbound API keys.
@@ -38,7 +39,6 @@ export interface ApiKey {
 
 interface ApiKeyManagerProps {
   apiBase: string;
-  token: string;
   sourceType: string;
   ingestPath: string;
   providerLabel: string;
@@ -49,7 +49,6 @@ const formatDate = (iso: string | null) =>
 
 export default function ApiKeyManager({
   apiBase,
-  token,
   sourceType,
   ingestPath,
   providerLabel,
@@ -65,14 +64,14 @@ export default function ApiKeyManager({
   const [copied, setCopied] = useState(false);
 
   const headers = useCallback(
-    () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token}` }),
-    [token],
+    () => ({ "Content-Type": "application/json" }),
+    [],
   );
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/api-keys`, { headers: headers() });
+      const res = await apiFetch(`${apiBase}/api/v1/data/api-keys`, { headers: headers() });
       if (res.ok) {
         const all: ApiKey[] = (await res.json()).api_keys || [];
         setKeys(all.filter((k) => k.source_type === sourceType));
@@ -99,7 +98,7 @@ export default function ApiKeyManager({
     setBusy("create");
     setError("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/api-keys`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/api-keys`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({
@@ -124,7 +123,7 @@ export default function ApiKeyManager({
     setBusy(id);
     setError("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/api-keys/${id}/rotate`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/api-keys/${id}/rotate`, {
         method: "POST",
         headers: headers(),
       });
@@ -150,7 +149,7 @@ export default function ApiKeyManager({
     setBusy(id);
     setError("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/api-keys/${id}/revoke`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/api-keys/${id}/revoke`, {
         method: "POST",
         headers: headers(),
       });

@@ -12,6 +12,7 @@ import {
   ShieldQuestion,
   TrendingUp,
 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 /**
  * Analysis dashboard.
@@ -155,11 +156,9 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE");
 
 export default function AnalysisTab({
   apiBase,
-  token,
   refreshTrigger,
 }: {
   apiBase: string;
-  token: string;
   tenantId?: string;
   refreshTrigger?: number;
 }) {
@@ -182,9 +181,8 @@ export default function AnalysisTab({
         min_strength: String(minStrength),
         compare_to_previous: "true",
       });
-      const res = await fetch(`${apiBase}/api/v1/data/analysis/insights?${params}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await apiFetch(`${apiBase}/api/v1/data/analysis/insights?${params}`, {
+              });
       if (!res.ok) throw new Error("Analysen konnten nicht geladen werden.");
       setData(await res.json());
     } catch (err) {
@@ -192,7 +190,7 @@ export default function AnalysisTab({
     } finally {
       setLoading(false);
     }
-  }, [apiBase, token, windowDays, minStrength]);
+  }, [apiBase, windowDays, minStrength]);
 
   useEffect(() => {
     let cancelled = false;

@@ -33,7 +33,6 @@ interface OverviewTabProps {
   carbValues?: number[];
   fatValues?: number[];
   apiBase: string;
-  token: string;
   tenantId: string;
   refreshTrigger: number;
   onRefresh: () => void;
@@ -50,7 +49,6 @@ export default function OverviewTab({
   carbValues = [],
   fatValues = [],
   apiBase,
-  token,
   tenantId,
   refreshTrigger,
   onRefresh,
@@ -121,7 +119,7 @@ export default function OverviewTab({
       </div>
 
       {/* Dawarich Interactive GPS Location Map */}
-      <LocationMap apiBase={apiBase} token={token} tenantId={tenantId} refreshTrigger={refreshTrigger} />
+      <LocationMap apiBase={apiBase} tenantId={tenantId} refreshTrigger={refreshTrigger} />
     </div>
   );
 }

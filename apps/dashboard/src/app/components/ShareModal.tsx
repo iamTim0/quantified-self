@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { X, Share2, Shield, Trash2, CheckCircle2 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 interface ShareItem {
   id: string;
@@ -14,10 +15,9 @@ interface ShareModalProps {
   isOpen: boolean;
   onClose: () => void;
   apiBase: string;
-  token: string;
 }
 
-export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareModalProps) {
+export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps) {
   const [email, setEmail] = useState("");
   const [shares, setShares] = useState<ShareItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,9 +34,8 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
   useEffect(() => {
     let isMounted = true;
     if (isOpen) {
-      fetch(`${apiBase}/api/v1/data/shares`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      apiFetch(`${apiBase}/api/v1/data/shares`, {
+              })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (isMounted && data) {
@@ -48,7 +47,7 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
     return () => {
       isMounted = false;
     };
-  }, [isOpen, apiBase, token]);
+  }, [isOpen, apiBase]);
 
   const handleShare = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,11 +56,10 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
     setSuccess("");
 
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/shares`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/shares`, {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({ grantee_email: email, scope: "read_all" })
       });
@@ -74,9 +72,8 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
       setSuccess(`Daten erfolgreich mit ${email} geteilt.`);
       setEmail("");
       
-      const refreshRes = await fetch(`${apiBase}/api/v1/data/shares`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const refreshRes = await apiFetch(`${apiBase}/api/v1/data/shares`, {
+              });
       if (refreshRes.ok) {
         const refreshData = await refreshRes.json();
         setShares(refreshData.granted_by_me || []);
@@ -91,10 +88,9 @@ export default function ShareModal({ isOpen, onClose, apiBase, token }: ShareMod
 
   const handleRevoke = async (shareId: string) => {
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/shares/${shareId}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/shares/${shareId}`, {
         method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+              });
       if (res.ok) {
         setShares((prev) => prev.filter((s) => s.id !== shareId));
       }

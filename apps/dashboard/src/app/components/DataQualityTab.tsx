@@ -10,10 +10,11 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import ImportDialog from "./ImportDialog";
+import { apiFetch } from "../lib/api";
 
-// tenantId is no longer read: Core derives the tenant from the bearer token, so the
+// tenantId is no longer read: Core derives the tenant from the session credential, so the
 // prop is kept only for call-site compatibility with the other tabs.
-type Props = { apiBase: string; token: string; tenantId?: string };
+type Props = { apiBase: string; tenantId?: string };
 type Gap = { metric_type: string; missing_dates: string[] };
 type Connector = { source_type: string; lookback_days: number };
 
@@ -51,7 +52,7 @@ const formatDay = (iso: string) =>
     year: "numeric",
   });
 
-export default function DataQualityTab({ apiBase, token }: Props) {
+export default function DataQualityTab({ apiBase }: Props) {
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [conflicts, setConflicts] = useState<number>(0);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -64,18 +65,16 @@ export default function DataQualityTab({ apiBase, token }: Props) {
     const end = new Date();
     const start = new Date(end);
     start.setDate(end.getDate() - (windowDays - 1));
-    const headers = { Authorization: `Bearer ${token}` };
-
+    
     try {
       const [gapRes, conflictRes, connectorRes] = await Promise.all([
-        fetch(
+        apiFetch(
           `${apiBase}/api/v1/data/quality/gaps?start_date=${start
             .toISOString()
             .slice(0, 10)}&end_date=${end.toISOString().slice(0, 10)}`,
-          { headers },
         ),
-        fetch(`${apiBase}/api/v1/data/quality/conflicts`, { headers }),
-        fetch(`${apiBase}/api/v1/data/sources`, { headers }),
+        apiFetch(`${apiBase}/api/v1/data/quality/conflicts`),
+        apiFetch(`${apiBase}/api/v1/data/sources`),
       ]);
       if (gapRes.ok) setGaps((await gapRes.json()).gaps ?? []);
       if (conflictRes.ok)
@@ -85,7 +84,7 @@ export default function DataQualityTab({ apiBase, token }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [apiBase, token, windowDays]);
+  }, [apiBase, windowDays]);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +286,6 @@ export default function DataQualityTab({ apiBase, token }: Props) {
         <ImportDialog
           key={backfill.sourceType}
           apiBase={apiBase}
-          token={token}
           sourceType={backfill.sourceType}
           sourceName={backfill.sourceType}
           isOpen={true}

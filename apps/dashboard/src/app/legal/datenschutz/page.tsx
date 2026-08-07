@@ -72,50 +72,67 @@ export default function DatenschutzPage() {
         Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Erfüllung des Nutzungsvertrags).
       </p>
 
-      <h2>4. Anmeldung, Sitzungen und lokale Speicherung</h2>
+      <h2>4. Anmeldung, Sitzungen und Cookies</h2>
       <p>
-        <strong>Diese Anwendung setzt keine Cookies.</strong> Für die Anmeldung wird
-        stattdessen der <code>localStorage</code> Ihres Browsers verwendet. Dort werden
-        gespeichert:
+        Für die Anmeldung setzt diese Anwendung technisch notwendige Cookies. Es werden
+        keine Cookies zu Werbe-, Tracking- oder Analysezwecken verwendet und keine Daten
+        an Dritte weitergegeben. Gesetzt werden:
       </p>
       <table>
         <thead>
           <tr>
-            <th>Schlüssel</th>
+            <th>Name</th>
             <th>Inhalt</th>
+            <th>Eigenschaften</th>
             <th>Speicherdauer</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>
-              <code>qs_token</code>
+              <code>qs_access</code>
             </td>
             <td>Signiertes Zugriffstoken (JWT) mit Nutzer-, Tenant- und Rollenangabe</td>
+            <td>HttpOnly, Secure, SameSite=Lax</td>
             <td>12 Stunden</td>
           </tr>
           <tr>
             <td>
-              <code>qs_refresh_token</code>
+              <code>qs_refresh</code>
             </td>
             <td>Zufälliges Erneuerungstoken; serverseitig nur als Hash gespeichert</td>
+            <td>HttpOnly, Secure, SameSite=Lax, nur an Anmelde-Endpunkte</td>
             <td>30 Tage</td>
           </tr>
           <tr>
             <td>
-              <code>qs_tenant_id</code>, <code>qs_user_name</code>,{" "}
-              <code>qs_user_email</code>, <code>qs_user_role</code>
+              <code>qs_csrf</code>
             </td>
-            <td>Anzeigeinformationen zur Darstellung der Oberfläche</td>
-            <td>bis zur Abmeldung</td>
+            <td>
+              Zufallswert zum Schutz vor Cross-Site-Request-Forgery. Kein Zugangstoken:
+              er erlaubt für sich genommen keinen Zugriff auf Daten.
+            </td>
+            <td>Secure, SameSite=Lax, für die Oberfläche lesbar</td>
+            <td>30 Tage</td>
           </tr>
         </tbody>
       </table>
       <p>
-        Diese Speicherung ist für den Betrieb des von Ihnen ausdrücklich angeforderten
-        Dienstes unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG) und bedarf daher keiner
-        gesonderten Einwilligung. Beim Abmelden werden alle genannten Einträge gelöscht und
+        <code>HttpOnly</code> bedeutet, dass die beiden Zugangs-Cookies für JavaScript im
+        Browser nicht lesbar sind. Sie können damit auch bei einer Sicherheitslücke in der
+        Oberfläche nicht ausgelesen und an Dritte übertragen werden.
+      </p>
+      <p>
+        Diese Cookies sind für den Betrieb des von Ihnen ausdrücklich angeforderten
+        Dienstes unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG) und bedürfen daher keiner
+        gesonderten Einwilligung. Beim Abmelden werden alle genannten Cookies gelöscht und
         die zugehörige Sitzung zusätzlich serverseitig ungültig gemacht.
+      </p>
+      <p>
+        Zusätzlich wird beim Anmelden über einen externen Anbieter kurzzeitig der Name des
+        gewählten Anbieters im <code>sessionStorage</code> des Browsers abgelegt, damit die
+        Rückleitung dem richtigen Anbieter zugeordnet werden kann. Dieser Eintrag enthält
+        keine personenbezogenen Daten und wird nach Abschluss der Anmeldung entfernt.
       </p>
       <p>
         Ein Erneuerungstoken ist nur einmal verwendbar. Wird ein bereits verbrauchtes

@@ -22,6 +22,7 @@ import {
   CalendarDays,
   BookOpen
 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 export interface ConnectorItem {
   id: string;
@@ -43,7 +44,6 @@ export interface ConnectorItem {
 
 interface ConnectorsPageProps {
   apiBase: string;
-  token: string;
   tenantId: string;
   onOpenConfigureModal: (connector?: ConnectorItem, sourceType?: string) => void;
 }
@@ -70,7 +70,6 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
 
 export default function ConnectorsPage({
   apiBase,
-  token,
   tenantId,
   onOpenConfigureModal,
 }: ConnectorsPageProps) {
@@ -83,9 +82,8 @@ export default function ConnectorsPage({
 
   const fetchConnectors = async () => {
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources`, {
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -101,28 +99,27 @@ export default function ConnectorsPage({
   };
 
   useEffect(() => {
-    if (token && tenantId) {
+    if (tenantId) {
       fetchConnectors();
     }
-  }, [apiBase, token, tenantId]);
+  }, [apiBase, tenantId]);
 
   // 10s Live Auto-Polling for Queue Status & Last Sync Timestamps
   useEffect(() => {
-    if (!token || !tenantId) return;
+    if (!tenantId) return;
     const interval = setInterval(() => {
       fetchConnectors();
     }, 10000);
     return () => clearInterval(interval);
-  }, [apiBase, token, tenantId]);
+  }, [apiBase, tenantId]);
 
   const handleTriggerSync = async (sourceType: string) => {
     setSyncingSource(sourceType);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources/sync`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/sync`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
         body: JSON.stringify({ source_type: sourceType }),
@@ -144,10 +141,9 @@ export default function ConnectorsPage({
     }
     setDeletingSource(sourceType);
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -468,7 +464,6 @@ export default function ConnectorsPage({
         <ImportDialog
           key={importDialogFor.id}
           apiBase={apiBase}
-          token={token}
           sourceType={importDialogFor.id}
           sourceName={importDialogFor.name}
           isOpen={true}

@@ -77,6 +77,15 @@ from core.security.crypto import (
     encrypt_secret,
     mask_secret,
 )
+from core.security.cookies import (
+    ACCESS_COOKIE,
+    CSRF_COOKIE,
+    CSRF_HEADER,
+    REFRESH_COOKIE,
+    clear_session_cookies,
+    csrf_token_matches,
+    set_session_cookies,
+)
 from core.security.oidc import (
     AUTH_REQUEST_TTL_SECONDS,
     OidcError,
@@ -194,16 +203,24 @@ async def health_check():
 
 async def _issue_session(
     session: AsyncSession,
+    response: Response,
     *,
     user_id: str,
     tenant_id: str,
     email: str,
     role: str,
 ) -> dict[str, Any]:
-    """Mint an access/refresh pair and persist the refresh token's hash.
+    """Mint an access/refresh pair, persist the refresh hash, set the cookies.
 
-    Only the hash is stored, so a database disclosure cannot be replayed against
-    the API.
+    Only the refresh token's hash is stored, so a database disclosure cannot be
+    replayed against the API.
+
+    The tokens themselves are deliberately absent from the returned body. They
+    used to be in it, and the dashboard put them in ``localStorage`` where any
+    script on the page could read them. Handing them back at all would keep that
+    door open no matter what the client then chose to do, so the credential now
+    leaves this function only as an httpOnly cookie. The body carries the session
+    *metadata* a UI legitimately needs to render itself.
     """
     access_token, _jti, access_expires = create_access_token(
         user_id=user_id, tenant_id=tenant_id, email=email, role=role
@@ -220,10 +237,16 @@ async def _issue_session(
     )
     await session.commit()
 
+    set_session_cookies(
+        response,
+        access_token=access_token,
+        access_expires=access_expires,
+        refresh_token=raw_refresh,
+        refresh_expires=refresh_expires,
+    )
+
     return {
-        "access_token": access_token,
-        "refresh_token": raw_refresh,
-        "token_type": "bearer",
+        "token_type": "cookie",
         "expires_at": access_expires.isoformat(),
         "expires_in": int((access_expires - datetime.now(timezone.utc)).total_seconds()),
     }
@@ -253,6 +276,7 @@ async def _revoke_all_sessions(
 @app.post("/api/v1/auth/signup")
 async def signup(
     req: UserSignupRequest,
+    response: Response,
     session: AsyncSession = Depends(get_session),
 ):
     if not settings.ALLOW_REGISTRATION:
@@ -283,7 +307,12 @@ async def signup(
     await session.commit()
 
     tokens = await _issue_session(
-        session, user_id=user_id, tenant_id=tenant_id, email=req.email, role="owner"
+        session,
+        response,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        email=req.email,
+        role="owner",
     )
 
     return {
@@ -300,6 +329,7 @@ async def signup(
 @app.post("/api/v1/auth/login")
 async def login(
     req: UserLoginRequest,
+    response: Response,
     session: AsyncSession = Depends(get_session),
 ):
     stmt = select(User).where(User.email == req.email)
@@ -311,6 +341,7 @@ async def login(
 
     tokens = await _issue_session(
         session,
+        response,
         user_id=user.id,
         tenant_id=user.tenant_id,
         email=user.email,
@@ -329,12 +360,16 @@ async def login(
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str = Field(..., min_length=16, max_length=512)
+    # Optional: browsers present the refresh token in the qs_refresh cookie and
+    # send no body at all. This field is the non-browser path.
+    refresh_token: str | None = Field(None, min_length=16, max_length=512)
 
 
 @app.post("/api/v1/auth/refresh")
 async def refresh_session(
-    req: RefreshRequest,
+    request: Request,
+    response: Response,
+    req: RefreshRequest | None = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Exchange a refresh token for a fresh access/refresh pair.
@@ -342,8 +377,23 @@ async def refresh_session(
     Rotation is single-use. Presenting a token that has already been rotated is
     treated as replay: the entire chain for that user is revoked rather than
     silently issuing another session.
+
+    This endpoint is exempt from the authentication middleware -- the access
+    token is expected to be expired by the time anyone calls it -- so it performs
+    its own CSRF check for the cookie path rather than inheriting one.
     """
-    presented_hash = hash_token(req.refresh_token)
+    cookie_refresh = request.cookies.get(REFRESH_COOKIE)
+    presented = cookie_refresh or (req.refresh_token if req else None)
+
+    if not presented:
+        raise HTTPException(status_code=401, detail="No refresh token presented")
+
+    if cookie_refresh and not csrf_token_matches(
+        request.cookies.get(CSRF_COOKIE), request.headers.get(CSRF_HEADER)
+    ):
+        raise HTTPException(status_code=403, detail="Missing or invalid CSRF token")
+
+    presented_hash = hash_token(presented)
     res = await session.execute(
         select(RefreshToken).where(RefreshToken.token_hash == presented_hash)
     )
@@ -397,11 +447,19 @@ async def refresh_session(
     )
     await session.commit()
 
+    # Rotating the cookies also rotates the CSRF token, so a token captured from
+    # an earlier session cannot be paired with the new credential.
+    set_session_cookies(
+        response,
+        access_token=access_token,
+        access_expires=access_expires,
+        refresh_token=raw_refresh,
+        refresh_expires=refresh_expires,
+    )
+
     return {
         "status": "success",
-        "access_token": access_token,
-        "refresh_token": raw_refresh,
-        "token_type": "bearer",
+        "token_type": "cookie",
         "expires_at": access_expires.isoformat(),
         "expires_in": int((access_expires - now).total_seconds()),
         "user_id": user.id,
@@ -439,9 +497,15 @@ async def logout(
     tenant_id: str | None = None
     user_id: str | None = None
 
-    if auth_header.startswith("Bearer "):
+    presented_access = (
+        auth_header[7:].strip()
+        if auth_header.startswith("Bearer ")
+        else request.cookies.get(ACCESS_COOKIE)
+    )
+
+    if presented_access:
         try:
-            claims = decode_access_token(auth_header[7:].strip())
+            claims = decode_access_token(presented_access)
         except TokenError:
             claims = None
         if claims:
@@ -463,11 +527,15 @@ async def logout(
 
     body = req or LogoutRequest()
 
-    if body.refresh_token:
+    # The cookie is the browser's refresh token; the body field is the
+    # non-browser path. Revoke whichever was presented.
+    presented_refresh = request.cookies.get(REFRESH_COOKIE) or body.refresh_token
+
+    if presented_refresh:
         await session.execute(
             sa_update(RefreshToken)
             .where(
-                RefreshToken.token_hash == hash_token(body.refresh_token),
+                RefreshToken.token_hash == hash_token(presented_refresh),
                 RefreshToken.revoked_at.is_(None),
             )
             .values(revoked_at=now)
@@ -484,7 +552,14 @@ async def logout(
         delete(RevokedAccessToken).where(RevokedAccessToken.expires_at < now)
     )
     await session.commit()
-    return Response(status_code=204)
+
+    # Clear the cookies unconditionally. Logout must leave the browser signed out
+    # even when the presented credential was already expired or unparseable --
+    # otherwise a stale cookie survives and the next page load looks signed in,
+    # which is precisely the bug this endpoint exists to prevent.
+    out = Response(status_code=204)
+    clear_session_cookies(out)
+    return out
 
 
 @app.get("/api/v1/auth/me")
@@ -517,6 +592,7 @@ class ChangePasswordRequest(BaseModel):
 @app.post("/api/v1/auth/change-password")
 async def change_password(
     req: ChangePasswordRequest,
+    response: Response,
     session: AsyncSession = Depends(get_session),
 ):
     """Safely update account password for the authenticated user.
@@ -563,6 +639,12 @@ async def change_password(
             .on_conflict_do_nothing(index_elements=["jti"])
         )
     await session.commit()
+
+    # The caller's own session was just revoked along with the rest, so leave the
+    # browser genuinely signed out. Without this the cookies survive a change that
+    # invalidated them, and the UI keeps rendering as signed-in until some later
+    # request happens to 401.
+    clear_session_cookies(response)
 
     return {
         "status": "success",
@@ -682,6 +764,7 @@ class OidcCallbackRequest(BaseModel):
 async def complete_oidc_login(
     slug: str,
     req: OidcCallbackRequest,
+    response: Response,
     session: AsyncSession = Depends(get_session),
 ):
     """Finish the flow: validate the token, resolve the account, issue a session."""
@@ -762,7 +845,9 @@ async def complete_oidc_login(
         link.last_login_at = now
         link.email = identity.email
         await session.commit()
-        return await _oidc_session_response(session, user, provider.slug, linked=False)
+        return await _oidc_session_response(
+            session, response, user, provider.slug, linked=False
+        )
 
     # No link yet. Everything below is first contact, which is where account
     # takeover happens if the rules are loose.
@@ -835,16 +920,22 @@ async def complete_oidc_login(
 
     created_res = await session.execute(select(User).where(User.id == user_id))
     return await _oidc_session_response(
-        session, created_res.scalars().first(), provider.slug, linked=True
+        session, response, created_res.scalars().first(), provider.slug, linked=True
     )
 
 
 async def _oidc_session_response(
-    session: AsyncSession, user: User, provider_slug: str, *, linked: bool
+    session: AsyncSession,
+    response: Response,
+    user: User,
+    provider_slug: str,
+    *,
+    linked: bool,
 ) -> dict[str, Any]:
     """Issue the same session an email/password login would."""
     tokens = await _issue_session(
         session,
+        response,
         user_id=user.id,
         tenant_id=user.tenant_id,
         email=user.email,

@@ -13,6 +13,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 /**
  * Import dialog with an explicit time range, a smart/force choice and a preview of
@@ -62,7 +63,6 @@ export interface SyncRun {
 
 interface ImportDialogProps {
   apiBase: string;
-  token: string;
   sourceType: string;
   sourceName: string;
   isOpen: boolean;
@@ -103,7 +103,6 @@ function durationLabel(range: ImportRange): string {
 
 export default function ImportDialog({
   apiBase,
-  token,
   sourceType,
   sourceName,
   isOpen,
@@ -123,8 +122,8 @@ export default function ImportDialog({
   const [rangeTouched, setRangeTouched] = useState(false);
 
   const authHeaders = useCallback(
-    () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token}` }),
-    [token],
+    () => ({ "Content-Type": "application/json" }),
+    [],
   );
 
   /**
@@ -142,7 +141,7 @@ export default function ImportDialog({
           body.start = fromLocalInput(start);
           body.end = fromLocalInput(end);
         }
-        const res = await fetch(
+        const res = await apiFetch(
           `${apiBase}/api/v1/data/sources/${sourceType}/import-plan`,
           { method: "POST", headers: authHeaders(), body: JSON.stringify(body) },
         );
@@ -168,7 +167,7 @@ export default function ImportDialog({
 
   const loadRuns = useCallback(async () => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `${apiBase}/api/v1/data/sources/${sourceType}/sync-runs?limit=5`,
         { headers: authHeaders() },
       );
@@ -216,7 +215,7 @@ export default function ImportDialog({
     setError("");
     setResult("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/sources/sync`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/sync`, {
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({

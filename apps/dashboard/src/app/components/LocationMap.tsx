@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as LeafletMap } from "leaflet";
 import { Calendar, Globe2, Layers, MapPin, Navigation, RefreshCw, ShieldCheck } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 /**
  * GPS route rendering, vector-first.
@@ -32,7 +33,6 @@ export interface GpsPoint {
 
 interface LocationMapProps {
   apiBase: string;
-  token: string;
   tenantId: string;
   refreshTrigger: number;
 }
@@ -98,7 +98,7 @@ export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): 
   return kept;
 }
 
-export default function LocationMap({ apiBase, token, refreshTrigger }: LocationMapProps) {
+export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProps) {
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
   const [points, setPoints] = useState<GpsPoint[]>([]);
@@ -124,10 +124,9 @@ export default function LocationMap({ apiBase, token, refreshTrigger }: Location
         end_time: now.toISOString(),
         limit: "1000",
       });
-      const res = await fetch(`${apiBase}/api/v1/data/metrics?${query}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
         cache: "no-store",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+              });
       if (!res.ok) return;
 
       const data = await res.json();
@@ -153,10 +152,9 @@ export default function LocationMap({ apiBase, token, refreshTrigger }: Location
     } finally {
       setLoading(false);
     }
-  }, [apiBase, token, dateFilter]);
+  }, [apiBase, dateFilter]);
 
   useEffect(() => {
-    if (!token) return;
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
@@ -165,7 +163,7 @@ export default function LocationMap({ apiBase, token, refreshTrigger }: Location
     return () => {
       cancelled = true;
     };
-  }, [token, fetchLocationData, refreshTrigger]);
+  }, [fetchLocationData, refreshTrigger]);
 
   const isToday = (isoString?: string) => {
     if (!isoString) return false;

@@ -3,7 +3,6 @@
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { saveSession } from "../../lib/session";
 
 /**
  * OIDC redirect target.
@@ -11,6 +10,9 @@ import { saveSession } from "../../lib/session";
  * The provider sends the browser here with `code` and `state`. Neither is a
  * credential on its own: the server holds the matching single-use state row and
  * the PKCE verifier, so this page just hands both back and receives a session.
+ *
+ * The session arrives as httpOnly cookies on the callback response, so there is
+ * nothing to save here — the redirect to `/` finds an authenticated browser.
  *
  * The provider slug travels in `state_provider` rather than being guessed from
  * the URL, so one redirect URI serves every configured provider.
@@ -53,6 +55,8 @@ function CallbackInner() {
         `${apiBase}/api/v1/auth/oidc/${encodeURIComponent(provider)}/callback`,
         {
           method: "POST",
+          // Required for the browser to keep the session cookies this returns.
+          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code, state }),
         },
@@ -62,14 +66,7 @@ function CallbackInner() {
         throw new Error(data?.detail || "Die Anmeldung konnte nicht abgeschlossen werden.");
       }
 
-      saveSession({
-        token: data.access_token,
-        refreshToken: data.refresh_token ?? null,
-        tenantId: data.tenant_id,
-        userName: data.name ?? "",
-        userEmail: data.email ?? "",
-        userRole: data.role ?? "member",
-      });
+      sessionStorage.removeItem("qs_oidc_provider");
       setStatus("Angemeldet. Weiterleitung…");
       router.replace("/");
     } catch (err) {

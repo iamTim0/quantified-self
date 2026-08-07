@@ -8,9 +8,13 @@ remains a useful edge filter but is no longer the only guard.
 
 Two principal kinds are recognised:
 
-* **user** — a signed access token (``aud=qs-api``). The tenant comes from the
-  ``tenant_id`` claim. A supplied ``X-Tenant-ID`` may only *agree* with the claim;
-  disagreement is 403, never a silent override.
+* **user** — a signed access token (``aud=qs-api``), presented either in the
+  ``qs_access`` httpOnly cookie (browsers) or as an ``Authorization: Bearer``
+  header (tests, scripts, anything that is not a browser). The tenant comes from
+  the ``tenant_id`` claim. A supplied ``X-Tenant-ID`` may only *agree* with the
+  claim; disagreement is 403, never a silent override. Cookie-authenticated
+  writes additionally carry a double-submit CSRF token — see
+  :mod:`core.security.cookies` for why the header path does not need one.
 * **service** — an internal mesh credential (``aud=qs-internal``), accepted only on
   ``/api/v1/internal/*``. Here ``X-Tenant-ID`` *is* honoured, because an authenticated
   importer legitimately acts on behalf of many tenants in turn.
@@ -32,6 +36,13 @@ from datetime import datetime, timezone
 from typing import ClassVar, Literal
 
 from core.db.tenant import _current_tenant_id
+from core.security.cookies import (
+    ACCESS_COOKIE,
+    CSRF_COOKIE,
+    CSRF_HEADER,
+    SAFE_METHODS,
+    csrf_token_matches,
+)
 from core.security.tokens import (
     TokenError,
     decode_access_token,
@@ -152,18 +163,35 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         if self._is_exempt(path):
             return await call_next(request)
 
+        # The Authorization header wins when present: that is how services,
+        # importers and API keys authenticate. The cookie is the browser path.
         auth_header = request.headers.get("Authorization") or ""
-        if not auth_header.startswith("Bearer "):
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Missing Authorization Bearer credential"},
-            )
-        raw_credential = auth_header[7:].strip()
+        raw_credential = ""
+        from_cookie = False
+
+        if auth_header.startswith("Bearer "):
+            raw_credential = auth_header[7:].strip()
+        else:
+            raw_credential = (request.cookies.get(ACCESS_COOKIE) or "").strip()
+            from_cookie = bool(raw_credential)
+
         if not raw_credential:
             return JSONResponse(
                 status_code=401,
-                content={"detail": "Missing Authorization Bearer credential"},
+                content={"detail": "Missing session cookie or Authorization Bearer credential"},
             )
+
+        # CSRF only concerns the cookie path. A browser never attaches an
+        # Authorization header on its own, so header-authenticated callers cannot
+        # be made to act by a hostile page.
+        if from_cookie and request.method not in SAFE_METHODS:
+            if not csrf_token_matches(
+                request.cookies.get(CSRF_COOKIE), request.headers.get(CSRF_HEADER)
+            ):
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "Missing or invalid CSRF token"},
+                )
 
         header_tenant = request.headers.get("X-Tenant-ID")
         is_internal = path.startswith(INTERNAL_PATH_PREFIX)

@@ -42,7 +42,16 @@ app.add_middleware(
     allow_origin_regex=r"https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
-    allow_headers=["Authorization", "Content-Type", "X-Tenant-ID", "X-Request-ID", "X-Api-Key"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "X-Tenant-ID",
+        "X-Request-ID",
+        "X-Api-Key",
+        # Sent by the dashboard on every state-changing request; without it in
+        # this list the browser's preflight fails before the request is made.
+        "X-CSRF-Token",
+    ],
 )
 
 # SECURITY C3: Log warning if running in dev mode
@@ -67,7 +76,58 @@ _SAFE_FORWARD_HEADERS = {
     "accept-language",
     "user-agent",
     "x-request-id",
+    # Browser sessions live in httpOnly cookies, so Core needs the Cookie header
+    # and the CSRF header that pairs with it. Without these the Gateway would
+    # strip the credential and every browser request would 401.
+    "cookie",
+    "x-csrf-token",
 }
+
+# Name of the access-token cookie set by Core. Duplicated rather than imported:
+# the Gateway shares no code with Core by design (AGENTS.md rule 6). Keep in step
+# with core.security.cookies.ACCESS_COOKIE.
+ACCESS_COOKIE = "qs_access"
+
+# Response headers that belong to the hop, not the payload.
+_HOP_BY_HOP_HEADERS = {"transfer-encoding", "connection", "server", "content-encoding"}
+
+
+def _session_credential(request: Request) -> str | None:
+    """The caller's access token, from the Authorization header or session cookie.
+
+    The header takes precedence: it is how services, scripts and tests
+    authenticate. The cookie is the browser path.
+    """
+    auth_header = request.headers.get("Authorization") or ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token:
+            return token
+    return request.cookies.get(ACCESS_COOKIE)
+
+
+def _relay_response(upstream: httpx.Response) -> Response:
+    """Copy an upstream response through, preserving *every* Set-Cookie header.
+
+    Building the header dict with a comprehension silently collapses repeated
+    keys, and a login sets three cookies -- so two of them were being dropped.
+    Set-Cookie is therefore re-appended one value at a time.
+    """
+    headers = {
+        k: v
+        for k, v in upstream.headers.items()
+        if k.lower() not in _HOP_BY_HOP_HEADERS and k.lower() != "set-cookie"
+    }
+    headers["X-Request-ID"] = get_current_request_id()
+
+    out = Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        headers=headers,
+    )
+    for cookie in upstream.headers.get_list("set-cookie"):
+        out.headers.append("set-cookie", cookie)
+    return out
 
 
 @app.get("/health")
@@ -100,7 +160,8 @@ async def proxy_auth_service(
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
     # /logout, /me and /change-password authenticate against the caller's own
-    # token, so Core needs to see it.
+    # token, so Core needs to see it. (The Cookie header rides along via
+    # _SAFE_FORWARD_HEADERS for browser sessions.)
     if auth_header := request.headers.get("Authorization"):
         forwarded_headers["Authorization"] = auth_header
     forwarded_headers["X-Request-ID"] = get_current_request_id()
@@ -114,16 +175,7 @@ async def proxy_auth_service(
                 params=request.query_params,
                 content=await request.body(),
             )
-            safe_response_headers = {
-                k: v for k, v in response.headers.items()
-                if k.lower() not in {"transfer-encoding", "connection", "server"}
-            }
-            safe_response_headers["X-Request-ID"] = get_current_request_id()
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=safe_response_headers,
-            )
+            return _relay_response(response)
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=503,
@@ -216,12 +268,14 @@ async def proxy_core_service(
     Importers reach Core directly over the internal network with a service credential.
     """
     tenant_id = request.headers.get("X-Tenant-ID")
-    auth_header = request.headers.get("Authorization")
+    token = _session_credential(request)
 
-    if not auth_header or not auth_header.startswith("Bearer "):
-        return JSONResponse(status_code=401, content={"detail": "Missing Authorization Bearer header"})
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing session cookie or Authorization Bearer header"},
+        )
 
-    token = auth_header.split(" ", 1)[1]
     try:
         claims = decode_jwt(token)
     except HTTPException as e:
@@ -238,8 +292,12 @@ async def proxy_core_service(
         k: v for k, v in request.headers.items()
         if k.lower() in _SAFE_FORWARD_HEADERS
     }
-    # Core re-validates the token itself; the Gateway is no longer the only guard.
-    forwarded_headers["Authorization"] = auth_header
+    # Core re-validates the credential itself; the Gateway is no longer the only
+    # guard. Pass the Authorization header on when there was one -- but do not
+    # synthesise one from the cookie, or a cookie-authenticated request would
+    # arrive at Core looking header-authenticated and skip its CSRF check.
+    if auth_header := request.headers.get("Authorization"):
+        forwarded_headers["Authorization"] = auth_header
     forwarded_headers["X-Tenant-ID"] = tenant_id
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 
@@ -252,16 +310,7 @@ async def proxy_core_service(
                 params=request.query_params,
                 content=await request.body(),
             )
-            safe_response_headers = {
-                k: v for k, v in response.headers.items()
-                if k.lower() not in {"transfer-encoding", "connection", "server"}
-            }
-            safe_response_headers["X-Request-ID"] = get_current_request_id()
-            return Response(
-                content=response.content,
-                status_code=response.status_code,
-                headers=safe_response_headers,
-            )
+            return _relay_response(response)
         except httpx.RequestError as e:
             raise HTTPException(
                 status_code=503,

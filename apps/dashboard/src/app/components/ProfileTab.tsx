@@ -18,10 +18,10 @@ import {
   AlertTriangle,
   RefreshCw
 } from "lucide-react";
+import { apiFetch } from "../lib/api";
 
 interface ProfileTabProps {
   apiBase: string;
-  token: string;
   tenantId: string;
   userName: string;
   userEmail: string;
@@ -33,7 +33,6 @@ interface ProfileTabProps {
 
 export default function ProfileTab({
   apiBase,
-  token,
   tenantId,
   userName,
   userEmail,
@@ -76,11 +75,10 @@ export default function ProfileTab({
 
     setPasswordLoading(true);
     try {
-      const res = await fetch(`${apiBase}/api/v1/auth/me/password`, {
+      const res = await apiFetch(`${apiBase}/api/v1/auth/me/password`, {
         method: "PUT",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
         body: JSON.stringify({
@@ -111,10 +109,9 @@ export default function ProfileTab({
     setWipeError("");
     setWipeSuccess("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/wipe`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/wipe`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -136,10 +133,9 @@ export default function ProfileTab({
     setWipeLoading(true);
     setWipeError("");
     try {
-      const res = await fetch(`${apiBase}/api/v1/data/account`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/account`, {
         method: "DELETE",
         headers: {
-          Authorization: `Bearer ${token}`,
           "X-Tenant-ID": tenantId,
         },
       });
@@ -157,24 +153,6 @@ export default function ProfileTab({
     }
   };
 
-  // Decode JWT payload for claim inspector
-  const parseJwt = (tokenStr: string) => {
-    try {
-      const base64Url = tokenStr.split(".")[1];
-      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-      const jsonPayload = decodeURIComponent(
-        atob(base64)
-          .split("")
-          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-          .join("")
-      );
-      return JSON.parse(jsonPayload);
-    } catch {
-      return {};
-    }
-  };
-
-  const jwtPayload = parseJwt(token);
 
   return (
     <div className="space-y-8">

@@ -15,15 +15,8 @@ import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
 import LegalFooter from "./components/LegalFooter";
 import { SummaryMetrics } from "./components/MetricCards";
-import {
-  STORAGE_KEYS,
-  StoredSession,
-  clearSession,
-  endSession,
-  readStoredSession,
-  refreshSession,
-  saveSession,
-} from "./lib/session";
+import { SessionUser, endSession, fetchSession } from "./lib/session";
+import { apiFetch } from "./lib/api";
 
 const getApiBase = (): string => {
   if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
@@ -62,7 +55,8 @@ export default function DashboardPage() {
     else router.push("/");
   };
 
-  const [token, setToken] = useState("");
+  // No access token in component state: the credential is an httpOnly cookie the
+  // browser attaches itself, and nothing here can (or should) read it.
   const [tenantId, setTenantId] = useState("");
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
@@ -100,18 +94,15 @@ export default function DashboardPage() {
     };
   }, [isAuthenticated, triggerRefresh]);
 
-  const applySession = useCallback((session: StoredSession) => {
-    setToken(session.token);
-    setTenantId(session.tenantId);
-    if (session.userName) setUserName(session.userName);
-    if (session.userEmail) setUserEmail(session.userEmail);
-    if (session.userRole) setUserRole(session.userRole);
+  const applySession = useCallback((user: SessionUser) => {
+    setTenantId(user.tenantId);
+    if (user.name) setUserName(user.name);
+    if (user.email) setUserEmail(user.email);
+    if (user.role) setUserRole(user.role);
     setIsAuthenticated(true);
   }, []);
 
   const resetToSignedOut = useCallback(() => {
-    clearSession();
-    setToken("");
     setTenantId("");
     setUserName("");
     setUserEmail("");
@@ -119,35 +110,21 @@ export default function DashboardPage() {
     setIsAuthenticated(false);
   }, []);
 
-  // Bootstrap: restore a *valid* stored session, try one refresh if the access
-  // token has expired, and otherwise stay signed out. Nothing here mints a token.
+  // Bootstrap: ask the server whether the cookies we may or may not have amount
+  // to a session. There is no local state to consult and nothing here mints a
+  // token — `fetchSession` returning null means signed out, full stop.
   useEffect(() => {
     let cancelled = false;
 
     (async () => {
-      const { session, expired } = readStoredSession();
-
-      if (session) {
-        if (!cancelled) {
-          applySession(session);
-          setMounted(true);
-        }
-        return;
-      }
-
-      if (expired) {
-        const refreshed = await refreshSession(API_BASE);
-        if (!cancelled && refreshed) {
-          applySession(refreshed);
-          setMounted(true);
-          return;
-        }
-      }
-
-      if (!cancelled) {
+      const user = await fetchSession(API_BASE);
+      if (cancelled) return;
+      if (user) {
+        applySession(user);
+      } else {
         resetToSignedOut();
-        setMounted(true);
       }
+      setMounted(true);
     })();
 
     return () => {
@@ -155,30 +132,22 @@ export default function DashboardPage() {
     };
   }, [API_BASE, applySession, resetToSignedOut]);
 
-  // Logging out in one tab must sign the others out too, rather than leaving a
-  // live session behind whichever tab the user did not click in.
+  // Logging out in one tab must sign the others out too. The cookie is shared
+  // across tabs but its removal fires no event, so a tab that regains focus
+  // re-checks with the server rather than trusting what it last rendered.
   useEffect(() => {
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEYS.token && !event.newValue) {
-        setToken("");
-        setIsAuthenticated(false);
-      }
+    if (!isAuthenticated) return;
+    const recheck = async () => {
+      if (document.visibilityState !== "visible") return;
+      const user = await fetchSession(API_BASE);
+      if (!user) resetToSignedOut();
     };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
+    document.addEventListener("visibilitychange", recheck);
+    return () => document.removeEventListener("visibilitychange", recheck);
+  }, [API_BASE, isAuthenticated, resetToSignedOut]);
 
   const handleLogin = (data: UserAuthData) => {
-    const session: StoredSession = {
-      token: data.token,
-      refreshToken: data.refreshToken ?? null,
-      tenantId: data.tenantId,
-      userName: data.userName,
-      userEmail: data.userEmail,
-      userRole: data.userRole,
-    };
-    saveSession(session);
-    applySession(session);
+    applySession(data.user);
     triggerRefresh();
   };
 
@@ -214,7 +183,7 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    if (!mounted || !token) return;
+    if (!mounted || !isAuthenticated) return;
 
     let isMounted = true;
     const activeTenant = tenantId;
@@ -222,15 +191,15 @@ export default function DashboardPage() {
     async function loadDashboardData() {
       try {
         const [summaryRes, metricsRes] = await Promise.all([
-          fetch(`${API_BASE}/api/v1/data/metrics/summary`, {
+          apiFetch(`${API_BASE}/api/v1/data/metrics/summary`, {
             cache: "no-store",
-            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
+            headers: { "X-Tenant-ID": activeTenant },
           }),
           // Fetch the newest points first so large histories do not hide current data
           // behind the endpoint's result limit. The chart is rendered chronologically below.
-          fetch(`${API_BASE}/api/v1/data/metrics?limit=1000&sort=desc`, {
+          apiFetch(`${API_BASE}/api/v1/data/metrics?limit=1000&sort=desc`, {
             cache: "no-store",
-            headers: { Authorization: `Bearer ${token}`, "X-Tenant-ID": activeTenant },
+            headers: { "X-Tenant-ID": activeTenant },
           }),
         ]);
 
@@ -372,7 +341,7 @@ export default function DashboardPage() {
     return () => {
       isMounted = false;
     };
-  }, [mounted, isAuthenticated, token, tenantId, refreshTrigger, API_BASE, resetToSignedOut]);
+  }, [mounted, isAuthenticated, tenantId, refreshTrigger, API_BASE, resetToSignedOut]);
 
   if (!mounted) {
     return <div className="min-h-screen bg-slate-200/60" />;
@@ -417,7 +386,6 @@ export default function DashboardPage() {
               carbValues={carbValues}
               fatValues={fatValues}
               apiBase={API_BASE}
-              token={token}
               tenantId={tenantId}
               refreshTrigger={refreshTrigger}
               onRefresh={triggerRefresh}
@@ -426,27 +394,25 @@ export default function DashboardPage() {
           )}
 
           {activeTab === "explorer" && (
-            <ExplorerTab key={refreshTrigger} apiBase={API_BASE} token={token} tenantId={tenantId} />
+            <ExplorerTab key={refreshTrigger} apiBase={API_BASE} tenantId={tenantId} />
           )}
 
           {activeTab === "connectors" && (
             <ConnectorsPage
               key={refreshTrigger}
               apiBase={API_BASE}
-              token={token}
               tenantId={tenantId}
               onOpenConfigureModal={(c, st) => handleOpenConfigureModal(c, st)}
             />
           )}
 
           {activeTab === "quality" && (
-            <DataQualityTab apiBase={API_BASE} token={token} tenantId={tenantId} />
+            <DataQualityTab apiBase={API_BASE} tenantId={tenantId} />
           )}
 
           {activeTab === "analysis" && (
             <AnalysisTab
               apiBase={API_BASE}
-              token={token}
               tenantId={tenantId}
               refreshTrigger={refreshTrigger}
             />
@@ -455,17 +421,17 @@ export default function DashboardPage() {
           {activeTab === "profile" && (
             <ProfileTab
               apiBase={API_BASE}
-              token={token}
               tenantId={tenantId}
               userName={userName}
               userEmail={userEmail}
               userRole={userRole}
               tenantName={tenantName}
               onUpdateProfile={(name: string, email: string) => {
+                // React state only. These used to be mirrored into localStorage
+                // to survive a reload; the reload now asks /auth/me instead, so
+                // the copy had nothing left reading it.
                 setUserName(name);
                 setUserEmail(email);
-                localStorage.setItem("qs_user_name", name);
-                localStorage.setItem("qs_user_email", email);
               }}
               onLogout={handleLogout}
             />
@@ -481,7 +447,6 @@ export default function DashboardPage() {
             initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
             initialLookbackDays={selectedModalConnector?.lookback_days || 30}
             isEditing={Boolean(selectedModalConnector?.id)}
-            token={token}
             tenantId={tenantId}
             onSaved={triggerRefresh}
           />
@@ -490,7 +455,6 @@ export default function DashboardPage() {
             isOpen={isShareModalOpen}
             onClose={() => setIsShareModalOpen(false)}
             apiBase={API_BASE}
-            token={token}
           />
 
           <LegalFooter />

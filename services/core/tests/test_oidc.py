@@ -19,6 +19,7 @@ from core.db.models import OidcAuthRequest, OidcProvider, User, UserIdentity
 from core.db.session import async_session_maker
 from core.main import app
 from core.security import oidc as oidc_module
+from core.security.cookies import ACCESS_COOKIE
 from core.security.crypto import encrypt_secret
 from core.security.oidc import (
     OidcError,
@@ -480,24 +481,29 @@ async def test_signup_creates_an_account_and_issues_a_session(monkeypatch):
             )
             await session.commit()
 
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+        # https, because the session cookies are Secure and an RFC 6265 client
+        # will not send them back over plain http.
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="https://t"
+        ) as ac:
             res = await ac.post(
                 f"/api/v1/auth/oidc/{slug}/callback", json={"code": "abc", "state": state}
             )
 
-        assert res.status_code == 200, res.text
-        body = res.json()
-        assert body["account_created"] is True
-        assert body["access_token"] and body["refresh_token"]
-        assert body["email"] == email
+            assert res.status_code == 200, res.text
+            body = res.json()
+            assert body["account_created"] is True
+            assert body["email"] == email
+            # An external login is issued exactly like a local one: cookies, not
+            # tokens in the body for the page to store.
+            assert "access_token" not in body
+            assert "refresh_token" not in body
+            assert ac.cookies.get(ACCESS_COOKIE)
 
-        # The issued session must actually work.
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
-            me = await ac.get(
-                "/api/v1/auth/me",
-                headers={"Authorization": f"Bearer {body['access_token']}"},
-            )
-        assert me.status_code == 200
+            # The issued session must actually work, carried by the cookie alone.
+            me = await ac.get("/api/v1/auth/me")
+            assert me.status_code == 200
+            assert me.json()["email"] == email
     finally:
         await drop_provider(slug)
         await cleanup_user_by_email(email)

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug, BookOpen } from "lucide-react";
 import ApiKeyManager from "./ApiKeyManager";
+import { apiFetch } from "../lib/api";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -102,7 +103,6 @@ interface ConnectorModalProps {
   onClose: () => void;
   onSaved: () => void;
   tenantId: string;
-  token: string;
   apiBase?: string;
   initialSourceType?: string;
   initialPollInterval?: number;
@@ -115,7 +115,6 @@ export default function ConnectorModal({
   onClose,
   onSaved,
   tenantId,
-  token,
   apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000"),
   initialSourceType,
   initialPollInterval = 6,
@@ -265,12 +264,11 @@ export default function ConnectorModal({
         return;
       }
 
-      const res = await fetch(`${apiBase}/api/v1/data/sources/configure`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/configure`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Tenant-ID": tenantId,
-          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           source_type: selectedProvider.id,
@@ -591,7 +589,6 @@ export default function ConnectorModal({
             {selectedProvider?.id === "apple_health" && (
               <ApiKeyManager
                 apiBase={apiBase}
-                token={token}
                 sourceType="apple_health"
                 ingestPath="/api/v1/ingest/apple-health"
                 providerLabel="Health Auto Export"
@@ -601,7 +598,6 @@ export default function ConnectorModal({
             {selectedProvider?.id === "streak" && (
               <ApiKeyManager
                 apiBase={apiBase}
-                token={token}
                 sourceType="streak"
                 ingestPath="/api/v1/ingest/streak"
                 providerLabel="Streak 2.0 REST Export"

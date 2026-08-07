@@ -18,11 +18,41 @@ Audiences, damit ein kompromittierter Importer keine Nutzer-Tokens ausstellen ka
 | `token_type` | `access` | `service` |
 | Gültig auf | allen `/api/v1/data/*` | nur `/api/v1/internal/*` |
 
+## Wie das Token übertragen wird: Cookie oder Header
+
+Es gibt genau zwei Wege, und sie sind für unterschiedliche Aufrufer gedacht:
+
+| Aufrufer | Übertragung | CSRF-Schutz nötig |
+| --- | --- | --- |
+| Browser (Dashboard) | `qs_access`-Cookie, `HttpOnly` | ja — Double-Submit-Token |
+| Dienste, Skripte, Tests | `Authorization: Bearer <jwt>` | nein |
+
+Das Cookie ist `HttpOnly`, also für JavaScript nicht lesbar. Ein XSS-Fehler in der
+Oberfläche kann die Sitzung damit nicht mehr auslesen und exfiltrieren.
+
+Weil der Browser Cookies aber an *jeden* Request an diesen Origin anhängt — auch an
+einen, den eine fremde Seite auslöst — kommt ein zweiter Schutz dazu:
+
+- `SameSite=Lax` verhindert, dass das Cookie bei Cross-Site-Subrequests mitgeht.
+  `Lax` statt `Strict`, damit die Rückleitung vom OIDC-Anbieter noch angemeldet
+  ankommt.
+- Ein **Double-Submit-Token**: Das Cookie `qs_csrf` ist bewusst *nicht* `HttpOnly`.
+  Die Oberfläche liest es und schickt denselben Wert im Header `X-CSRF-Token`
+  zurück. Eine fremde Seite kann das Cookie zwar mitsenden lassen, es aber nicht
+  lesen — die Same-Origin-Policy verhindert das — und deshalb den passenden Header
+  nicht bilden.
+
+Der Header-Weg braucht keinen CSRF-Schutz: Kein Browser hängt von sich aus einen
+`Authorization`-Header an.
+
+Bei **zustandsändernden** Requests (`POST`, `PUT`, `PATCH`, `DELETE`) über den
+Cookie-Weg ist `X-CSRF-Token` Pflicht. Fehlt oder widerspricht er dem Cookie → `403`.
+
 ## Tenant-Zuordnung ausschließlich aus dem Token
 
-Der Tenant wird **immer** aus dem validierten Bearer-Token abgeleitet. Ein
-`X-Tenant-ID`-Header darf mit dem Claim übereinstimmen, ihn aber niemals
-überschreiben — Widerspruch führt zu `403`.
+Der Tenant wird **immer** aus dem validierten Token abgeleitet — gleich, ob es aus dem
+Cookie oder dem Header stammt. Ein `X-Tenant-ID`-Header darf mit dem Claim
+übereinstimmen, ihn aber niemals überschreiben — Widerspruch führt zu `403`.
 
 ```http
 GET /api/v1/data/metrics
@@ -52,21 +82,34 @@ Fehlerverhalten:
 
 ## Sessions: Laufzeiten und Erneuerung
 
-| Credential | Laufzeit | Widerrufbar |
-| --- | --- | --- |
-| Access Token | 12 Stunden (`ACCESS_TOKEN_TTL_MINUTES`) | ja, über `jti`-Denylist |
-| Refresh Token | 30 Tage (`REFRESH_TOKEN_TTL_DAYS`) | ja, sofort |
+| Credential | Cookie | Laufzeit | Widerrufbar |
+| --- | --- | --- | --- |
+| Access Token | `qs_access` (`HttpOnly`, Pfad `/`) | 12 Stunden (`ACCESS_TOKEN_TTL_MINUTES`) | ja, über `jti`-Denylist |
+| Refresh Token | `qs_refresh` (`HttpOnly`, Pfad `/api/v1/auth`) | 30 Tage (`REFRESH_TOKEN_TTL_DAYS`) | ja, sofort |
+| CSRF-Token | `qs_csrf` (lesbar) | 30 Tage | rotiert bei jeder Erneuerung |
 
 Refresh Tokens sind **keine** JWTs, sondern zufällige, undurchsichtige
 Zeichenketten. Gespeichert wird nur ihr SHA-256-Hash, damit ein Datenbankleck nicht
 direkt gegen die API einsetzbar ist.
 
+Das Refresh-Cookie ist auf `/api/v1/auth` eingeschränkt. Es fährt damit nicht bei
+jeder Metrik-Abfrage mit, sondern nur dort, wo es gebraucht wird.
+
+Konfiguration der Cookie-Attribute: `COOKIE_SECURE` (Standard `true`),
+`COOKIE_SAMESITE` (Standard `lax`), `COOKIE_DOMAIN` (Standard leer = host-only).
+`Secure=true` funktioniert auch lokal, weil Browser `http://localhost` als
+vertrauenswürdigen Origin behandeln.
+
 ### Rotation ist einmalig
 
 ```http
 POST /api/v1/auth/refresh
-{ "refresh_token": "<token>" }
+Cookie: qs_refresh=<token>; qs_csrf=<csrf>
+X-CSRF-Token: <csrf>
 ```
+
+Nicht-Browser-Clients können den Token stattdessen im Body mitgeben
+(`{ "refresh_token": "<token>" }`).
 
 Jede Erneuerung verbraucht den präsentierten Token und gibt ein neues Paar aus. Wird
 ein bereits verbrauchter Token erneut vorgelegt, gilt das als Hinweis auf einen
@@ -77,21 +120,26 @@ auszustellen.
 
 ```http
 POST /api/v1/auth/logout
-Authorization: Bearer <jwt>
-{ "refresh_token": "<token>", "all_sessions": false }
+Cookie: qs_access=<jwt>; qs_refresh=<token>; qs_csrf=<csrf>
+X-CSRF-Token: <csrf>
+{ "all_sessions": false }
 ```
 
 - Der `jti` des Access Tokens landet auf der Denylist; weitere Requests damit → `401`.
 - Der Refresh Token wird widerrufen.
 - Mit `all_sessions: true` werden alle Sessions des Nutzers beendet.
+- Alle drei Cookies werden gelöscht — auch dann, wenn das präsentierte Token schon
+  abgelaufen oder unlesbar war. Andernfalls bliebe ein Cookie zurück und der nächste
+  Seitenaufruf sähe wieder angemeldet aus.
 - Die Antwort ist immer `204`, auch bei ungültigem oder fehlendem Token. Logout muss
   auch dann funktionieren, wenn der Client sein Token verloren hat, und darf nicht
   verraten, ob ein präsentiertes Token echt war.
 
-Im Dashboard werden zusätzlich alle lokalen Anmeldedaten gelöscht, andere Browser-Tabs
-über ein `storage`-Event abgemeldet, und ein `401` aus einem beliebigen Request
-beendet die Session sofort. **Ein Seiten-Refresh nach dem Logout meldet nicht wieder
-an.**
+Das Dashboard hält selbst keine Anmeldedaten mehr, die es löschen könnte — die
+Sitzung *ist* das Cookie. Ein `401` aus einem beliebigen Request beendet die Session
+sofort, und ein Tab, der wieder in den Vordergrund kommt, fragt den Server erneut,
+statt seinem zuletzt gerenderten Zustand zu vertrauen. **Ein Seiten-Refresh nach dem
+Logout meldet nicht wieder an.**
 
 !!! warning "Entfernter Dev-Token-Endpunkt"
     `GET /api/v1/auth/dev-token` gibt es nicht mehr. Er stellte 365 Tage gültige
@@ -114,9 +162,11 @@ Logout und Token-Erneuerung sind darüber nachvollziehbar.
 
 ## Bekannte Einschränkungen
 
-- Tokens liegen im `localStorage` des Browsers, nicht in `httpOnly`-Cookies. Sie sind
-  damit für XSS lesbar. Ein Wechsel auf Cookies mit serverseitigen Route-Guards
-  (in Next.js 16 über `proxy.ts`, nicht mehr `middleware.ts`) ist offene Folgearbeit.
+- Der Zugriffsschutz greift erst im Netzwerk-Request, nicht schon beim Rendern: Es
+  gibt keinen serverseitigen Route-Guard (in Next.js 16 über `proxy.ts`, nicht mehr
+  `middleware.ts`). Geschützte Seiten rendern kurz ihr Grundgerüst, bevor
+  `/api/v1/auth/me` antwortet. Daten sind davon nicht betroffen — die kommen erst
+  nach der Prüfung.
 - Externe Anmeldung über OIDC ist verfügbar, aber standardmäßig deaktiviert; siehe
   [Externe Anmeldung (OIDC)](oidc.md).
 - Rollen (`owner`, `admin`, `member`) werden bisher nur für die Verwaltung der
