@@ -13,7 +13,12 @@ import pytest
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 
-from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import (
+    auth_headers,
+    cleanup_test_tenant,
+    create_test_tenant,
+    service_headers,
+)
 
 app.state.testing = True
 
@@ -53,6 +58,88 @@ async def test_configure_and_list_connectors():
         source_id = config_data["source_id"]
         oura_conn = next(c for c in list_data["connectors"] if c["id"] == source_id)
         assert oura_conn["masked_token"] == "••••••••9999"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_push_connector_configures_without_a_provider_credential():
+    """Apple Health and Streak authenticate per-request with tenant-bound API keys.
+
+    They hold no provider credential of their own, so requiring one at setup made the
+    connector impossible to configure once the key flow replaced the token flow.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={"source_type": "apple_health", "status": "active"},
+                headers=headers,
+            )
+            assert res.status_code == 200, res.text
+
+            listed = await ac.get("/api/v1/data/sources", headers=headers)
+
+        # Must still appear in the list even though it has no encrypted_token.
+        types = [c["source_type"] for c in listed.json()["connectors"]]
+        assert "apple_health" in types
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_calendar_ics_url_configures_without_an_api_key():
+    """A public ICS URL is a complete configuration on its own."""
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+    ics_url = "https://outlook.office365.com/owa/calendar/public/calendar.ics"
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "status": "active",
+                    "config": {"ics_url": ics_url},
+                },
+                headers=headers,
+            )
+            assert res.status_code == 200, res.text
+
+            # The importer must be able to read the feed config back with a null token.
+            internal = await ac.get(
+                "/api/v1/internal/data/sources/calendar/token",
+                headers=service_headers(tenant_id),
+            )
+
+        assert internal.status_code == 200, internal.text
+        data = internal.json()
+        assert data["access_token"] is None
+        assert data["config"]["ics_url"] == ics_url
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_pull_connector_still_requires_a_credential():
+    """The relaxation must not leak to connectors that genuinely need a token."""
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={"source_type": "whoop", "status": "active"},
+                headers=auth_headers(tenant_id),
+            )
+        assert res.status_code == 400
     finally:
         await cleanup_test_tenant(tenant_id)
 

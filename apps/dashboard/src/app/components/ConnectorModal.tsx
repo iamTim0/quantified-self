@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug, BookOpen } from "lucide-react";
+import ApiKeyManager from "./ApiKeyManager";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -138,14 +139,9 @@ export default function ConnectorModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const generateRandomApiKey = () => {
-    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let key = "qs_sec_";
-    for (let i = 0; i < 32; i++) {
-      key += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setAccessToken(key);
-  };
+  // The client-side key generator is gone: inbound keys are now minted by Core
+  // (cryptographically random, stored only as a hash) and managed in ApiKeyManager.
+  // Math.random() was never a suitable source for a credential anyway.
 
   useEffect(() => {
     if (isOpen) {
@@ -259,6 +255,10 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
+      } else if (isPassive) {
+        // Push connectors authenticate with tenant-bound API keys managed separately
+        // (see ApiKeyManager), so there is no provider credential to enter here.
+        payloadConfig = { ...(payloadConfig || {}), auth_mode: "api_key" };
       } else if (!finalToken && !isEditing) {
         setError(`Bitte gib einen gültigen API Key für ${selectedProvider.name} ein oder generiere einen.`);
         setLoading(false);
@@ -589,101 +589,23 @@ export default function ConnectorModal({
             )}
 
             {selectedProvider?.id === "apple_health" && (
-              <div className="space-y-3">
-                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2.5">
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Plug className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Health Auto Export Webhook Konfiguration</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-slate-600">1. Webhook URL:</div>
-                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
-                      {apiBase}/api/v1/ingest/apple-health
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-slate-600">2. Erforderlicher Header Name:</div>
-                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-slate-900 font-extrabold select-all shadow-sm inline-block">
-                      X-Api-Key
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                      <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                      <span>Erforderlicher API Key Wert (Header Value)</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={generateRandomApiKey}
-                      className="text-[11px] font-semibold text-[#0d5c3a] hover:underline"
-                    >
-                      🔐 Key Generieren
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Generiere oder gib einen API Token zur Webhook-Absicherung ein"
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    required={!isEditing}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Trage diesen API Key in der Health Auto Export App unter Header Name <code>X-Api-Key</code> ein.
-                  </p>
-                </div>
-              </div>
+              <ApiKeyManager
+                apiBase={apiBase}
+                token={token}
+                sourceType="apple_health"
+                ingestPath="/api/v1/ingest/apple-health"
+                providerLabel="Health Auto Export"
+              />
             )}
 
             {selectedProvider?.id === "streak" && (
-              <div className="space-y-3">
-                <div className="p-4 bg-emerald-50/80 border border-emerald-200/80 rounded-2xl space-y-2.5">
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <Plug className="w-4 h-4 text-[#0d5c3a]" />
-                    <span>Streak - Gym Log REST Export Konfiguration</span>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-slate-600">1. REST Export URL:</div>
-                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-[#0d5c3a] font-bold select-all break-all shadow-sm">
-                      {apiBase}/api/v1/ingest/streak
-                    </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-bold text-slate-600">2. Erforderlicher Header Name:</div>
-                    <div className="p-2 bg-white border border-slate-200 rounded-xl font-mono text-[11px] text-slate-900 font-extrabold select-all shadow-sm inline-block">
-                      X-Api-Key
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                      <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
-                      <span>Erforderlicher API Key Wert (Header Value)</span>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={generateRandomApiKey}
-                      className="text-[11px] font-semibold text-[#0d5c3a] hover:underline"
-                    >
-                      🔐 Key Generieren
-                    </button>
-                  </div>
-                  <input
-                    type="text"
-                    placeholder="Generiere oder gib einen API Token für Streak REST Export ein"
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    required={!isEditing}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
-                  />
-                  <p className="text-[11px] text-slate-500 mt-1">
-                    Trage diesen API Key in Streak 2.0 unter Header Name <code>X-Api-Key</code> ein.
-                  </p>
-                </div>
-              </div>
+              <ApiKeyManager
+                apiBase={apiBase}
+                token={token}
+                sourceType="streak"
+                ingestPath="/api/v1/ingest/streak"
+                providerLabel="Streak 2.0 REST Export"
+              />
             )}
 
             {!isPassive && (

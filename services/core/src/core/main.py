@@ -85,6 +85,11 @@ ValidSourceType = Literal[
 ]
 ValidStatus = Literal["active", "inactive"]
 
+# Connectors that receive pushed data. They authenticate inbound requests with
+# tenant-bound API keys (see the api_keys table), so they hold no provider
+# credential of their own and must be configurable without one.
+PUSH_SOURCE_TYPES = {"apple_health", "streak"}
+
 
 class ManualDataPointRequest(BaseModel):
     """Validated manual or visually mapped import row."""
@@ -1136,6 +1141,15 @@ async def configure_connector(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # A connector legitimately has no provider credential when it either receives
+    # pushed data (authenticated per-request by a tenant-bound API key) or reads a
+    # public/tokenised ICS URL, where the URL itself is the credential.
+    incoming_config = req.config or {}
+    credential_optional = req.source_type in PUSH_SOURCE_TYPES or (
+        req.source_type == "calendar"
+        and bool(incoming_config.get("ics_url") or incoming_config.get("base_url"))
+    )
+
     if raw_token:
         encrypted_token = encrypt_secret(raw_token)
         masked_token = mask_secret(raw_token)
@@ -1144,6 +1158,8 @@ async def configure_connector(
     elif existing and existing.config and "encrypted_token" in existing.config:
         config_data["encrypted_token"] = existing.config["encrypted_token"]
         config_data["masked_token"] = existing.config.get("masked_token", "••••••••")
+    elif credential_optional:
+        config_data["masked_token"] = "—"
     else:
         raise HTTPException(
             status_code=400,
@@ -1355,7 +1371,14 @@ async def list_connectors(
     connectors = []
     for s in sources:
         config = s.config or {}
-        if config.get("status") == "inactive" or not config.get("encrypted_token"):
+        # A push connector or a public ICS feed has no stored credential, so absence
+        # of one is not evidence that the connector is unconfigured.
+        credential_optional = s.source_type in PUSH_SOURCE_TYPES or (
+            s.source_type == "calendar" and bool(config.get("ics_url") or config.get("base_url"))
+        )
+        if config.get("status") == "inactive":
+            continue
+        if not config.get("encrypted_token") and not credential_optional:
             continue
 
         last_dp_stmt = select(func.max(DataPoint.created_at)).where(
@@ -1446,7 +1469,29 @@ async def get_connector_token(
 
     encrypted_token = source.config.get("encrypted_token")
     if not encrypted_token:
-        raise HTTPException(status_code=404, detail="Token not found in connector configuration")
+        # Push connectors and public ICS feeds have no provider credential. The
+        # importer still needs source_id and config, so return those with a null
+        # token rather than a 404 it would have to special-case.
+        credential_optional = source_type in PUSH_SOURCE_TYPES or (
+            source_type == "calendar"
+            and bool(source.config.get("ics_url") or source.config.get("base_url"))
+        )
+        if not credential_optional:
+            raise HTTPException(
+                status_code=404, detail="Token not found in connector configuration"
+            )
+        return {
+            "tenant_id": tenant_id,
+            "source_id": str(source.id),
+            "source_type": source_type,
+            "access_token": None,
+            "status": source.config.get("status", "active"),
+            "config": {
+                k: v
+                for k, v in (source.config or {}).items()
+                if k not in {"encrypted_token", "masked_token"}
+            },
+        }
 
     try:
         decrypted_token = decrypt_secret(encrypted_token)
@@ -1467,9 +1512,6 @@ async def get_connector_token(
 
 
 # ─── Tenant-bound Inbound API Keys ──────────────────────────
-
-# Only connectors that receive pushed data need an inbound key.
-PUSH_SOURCE_TYPES = {"apple_health", "streak"}
 
 
 class CreateApiKeyRequest(BaseModel):

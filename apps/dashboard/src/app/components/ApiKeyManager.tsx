@@ -1,0 +1,387 @@
+"use client";
+
+import React, { useCallback, useEffect, useState } from "react";
+import {
+  AlertTriangle,
+  BookOpen,
+  Check,
+  Copy,
+  KeyRound,
+  Loader2,
+  Plug,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+
+/**
+ * Management for tenant-bound inbound API keys.
+ *
+ * This replaces the old flow, where the "API key" was just the connector's stored
+ * access token: compared in plaintext, with the tenant taken from a header the
+ * caller supplied. Keys are now minted server-side, stored only as a hash, bound
+ * to one tenant and one connector, and shown exactly once.
+ */
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  key_prefix: string;
+  source_type: string;
+  scopes: string[];
+  status: string;
+  expires_at: string | null;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  rotated_from_id: string | null;
+  created_at: string | null;
+}
+
+interface ApiKeyManagerProps {
+  apiBase: string;
+  token: string;
+  sourceType: string;
+  ingestPath: string;
+  providerLabel: string;
+}
+
+const formatDate = (iso: string | null) =>
+  iso ? new Date(iso).toLocaleDateString("de-DE") : "—";
+
+export default function ApiKeyManager({
+  apiBase,
+  token,
+  sourceType,
+  ingestPath,
+  providerLabel,
+}: ApiKeyManagerProps) {
+  const [keys, setKeys] = useState<ApiKey[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [newKeyName, setNewKeyName] = useState("");
+  const [expiresInDays, setExpiresInDays] = useState<number | "">("");
+  // The plaintext key, held in memory only, shown once after creation/rotation.
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const headers = useCallback(
+    () => ({ "Content-Type": "application/json", Authorization: `Bearer ${token}` }),
+    [token],
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/api-keys`, { headers: headers() });
+      if (res.ok) {
+        const all: ApiKey[] = (await res.json()).api_keys || [];
+        setKeys(all.filter((k) => k.source_type === sourceType));
+      }
+    } catch {
+      setError("Schlüssel konnten nicht geladen werden.");
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, headers, sourceType]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      await Promise.resolve();
+      if (!cancelled) await load();
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [load]);
+
+  const handleCreate = async () => {
+    setBusy("create");
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/api-keys`, {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({
+          name: newKeyName.trim() || `${providerLabel} Key`,
+          source_type: sourceType,
+          expires_in_days: expiresInDays === "" ? undefined : Number(expiresInDays),
+        }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || "Schlüssel konnte nicht erstellt werden.");
+      setRevealedKey(data.api_key);
+      setNewKeyName("");
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRotate = async (id: string) => {
+    setBusy(id);
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/api-keys/${id}/rotate`, {
+        method: "POST",
+        headers: headers(),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || "Rotation fehlgeschlagen.");
+      setRevealedKey(data.api_key);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRevoke = async (id: string, prefix: string) => {
+    if (
+      !confirm(
+        `Schlüssel ${prefix}… wirklich widerrufen? Geräte, die ihn verwenden, können ` +
+          `danach sofort keine Daten mehr senden.`,
+      )
+    )
+      return;
+    setBusy(id);
+    setError("");
+    try {
+      const res = await fetch(`${apiBase}/api/v1/data/api-keys/${id}/revoke`, {
+        method: "POST",
+        headers: headers(),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Widerruf fehlgeschlagen.");
+      }
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const copyKey = async () => {
+    if (!revealedKey) return;
+    try {
+      await navigator.clipboard.writeText(revealedKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Kopieren nicht möglich — bitte manuell markieren.");
+    }
+  };
+
+  const activeKeys = keys.filter((k) => k.status === "active");
+
+  return (
+    <div className="space-y-3">
+      <div className="space-y-2.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
+          <Plug className="h-4 w-4 text-[#0d5c3a]" />
+          <span>{providerLabel} Webhook-Konfiguration</span>
+        </div>
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-bold text-slate-600">1. URL:</div>
+          <div className="select-all break-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-bold text-[#0d5c3a] shadow-sm">
+            {apiBase}
+            {ingestPath}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <div className="text-[11px] font-bold text-slate-600">2. Header:</div>
+          <div className="inline-block select-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-extrabold text-slate-900 shadow-sm">
+            Authorization: Bearer &lt;dein-key&gt;
+          </div>
+          <p className="text-[11px] text-slate-500">
+            Ein separater <code>X-Tenant-ID</code>-Header ist nicht nötig — der Tenant
+            wird aus dem Schlüssel selbst ermittelt. Ältere Apps dürfen weiterhin{" "}
+            <code>X-Api-Key</code> senden.
+          </p>
+        </div>
+        <a
+          href="/docs/features/api-keys/"
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#0d5c3a] underline"
+        >
+          <BookOpen className="h-3.5 w-3.5" /> Dokumentation zu API-Keys
+        </a>
+      </div>
+
+      {revealedKey && (
+        <div className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+            <AlertTriangle className="h-4 w-4" />
+            Dieser Schlüssel wird nur einmal angezeigt
+          </div>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 select-all break-all rounded-xl border border-amber-200 bg-white p-2.5 font-mono text-[11px] text-slate-900">
+              {revealedKey}
+            </code>
+            <button
+              type="button"
+              onClick={copyKey}
+              className="shrink-0 rounded-xl border border-amber-300 bg-white p-2.5 text-amber-800 hover:bg-amber-100"
+              title="In die Zwischenablage kopieren"
+            >
+              {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+          <p className="text-[11px] text-amber-900">
+            Jetzt in der App hinterlegen. Nach dem Schließen ist er nicht wieder
+            abrufbar — nur widerrufen und neu erzeugen.
+          </p>
+          <button
+            type="button"
+            onClick={() => setRevealedKey(null)}
+            className="text-[11px] font-semibold text-amber-900 underline"
+          >
+            Verstanden, ausblenden
+          </button>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+        <div className="mb-2.5 flex items-center gap-1.5">
+          <KeyRound className="h-4 w-4 text-[#0d5c3a]" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+            API-Keys ({activeKeys.length} aktiv)
+          </h3>
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+        </div>
+
+        {keys.length === 0 && !loading && (
+          <p className="mb-3 text-[11px] text-slate-500">
+            Noch kein Schlüssel für {providerLabel}. Erzeuge einen, um Daten zu empfangen.
+          </p>
+        )}
+
+        <ul className="mb-3 space-y-2">
+          {keys.map((k) => (
+            <li
+              key={k.id}
+              className={`rounded-xl border p-2.5 ${
+                k.status === "active"
+                  ? "border-slate-200 bg-slate-50"
+                  : "border-slate-200 bg-slate-100 opacity-60"
+              }`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-[11px] font-bold text-slate-800">{k.name}</p>
+                  <p className="font-mono text-[11px] text-slate-500">{k.key_prefix}…</p>
+                  <p className="mt-0.5 text-[10px] text-slate-400">
+                    Erstellt {formatDate(k.created_at)}
+                    {k.expires_at && ` · Läuft ab ${formatDate(k.expires_at)}`}
+                    {" · "}
+                    {k.last_used_at
+                      ? `Zuletzt genutzt ${formatDate(k.last_used_at)}`
+                      : "Noch nie genutzt"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                      k.status === "active"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-200 text-slate-600"
+                    }`}
+                  >
+                    {k.status === "active" ? "aktiv" : "widerrufen"}
+                  </span>
+                  {k.status === "active" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleRotate(k.id)}
+                        disabled={busy === k.id}
+                        title="Nachfolger erzeugen; dieser Key bleibt bis zum Widerruf gültig"
+                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRevoke(k.id, k.key_prefix)}
+                        disabled={busy === k.id}
+                        title="Sofort ungültig machen"
+                        className="rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+
+        <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+          <label className="min-w-[140px] flex-1">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Name
+            </span>
+            <input
+              type="text"
+              value={newKeyName}
+              onChange={(e) => setNewKeyName(e.target.value)}
+              placeholder={`z. B. iPhone von Timo`}
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-[#0d5c3a]"
+            />
+          </label>
+          <label>
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              Ablauf
+            </span>
+            <select
+              value={expiresInDays}
+              onChange={(e) =>
+                setExpiresInDays(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none"
+            >
+              <option value="">Kein Ablauf</option>
+              <option value={90}>90 Tage</option>
+              <option value={365}>1 Jahr</option>
+              <option value={730}>2 Jahre</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={handleCreate}
+            disabled={busy === "create"}
+            className="flex items-center gap-1.5 rounded-xl bg-[#0d5c3a] px-4 py-2 text-xs font-bold text-white hover:bg-[#08432a] disabled:opacity-50"
+          >
+            {busy === "create" ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <KeyRound className="h-3.5 w-3.5" />
+            )}
+            Key erzeugen
+          </button>
+        </div>
+
+        {activeKeys.length > 1 && (
+          <p className="mt-2 text-[10px] text-slate-400">
+            Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass
+            die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die
+            App auf den neuen umgestellt ist.
+          </p>
+        )}
+      </div>
+
+      {error && (
+        <p className="rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
