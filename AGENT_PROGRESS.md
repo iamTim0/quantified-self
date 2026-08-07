@@ -170,6 +170,11 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 15 | Hosted documentation site | P3 | `completed` |
 | 16 | Contextual UI links to docs | P3 | `completed` |
 | 17 | Privacy policy and imprint | P3 | `completed` |
+| 19 | Continuous integration | P1 | `completed` (green as of `7e6f0d0`) |
+| 20 | Session credentials in `httpOnly` cookies + CSRF | P0 | `completed` |
+| 21 | Fizzbee CLI installed and specs model-checked | P1 | `in_progress` — CLI works, 1 of 12 specs verified; see §10 |
+| 22 | Server-side route guard (Next 16 `proxy.ts`) | P2 | `open` |
+| 23 | Rotate committed default secrets | P0 (deploy) | `open` — deployment action, see §10 |
 
 ---
 
@@ -393,3 +398,132 @@ streak 13, weather 14, whoop 13, yazio 11.
 | No browser-level tests | frontend regressions | Still no jest/vitest/playwright. Frontend is covered only by `tsc`, ESLint and `next build`. |
 | Fizzbee CLI unavailable | weaker guarantee | Specs carry executable Python models asserting the invariants over exhaustive short traces; `task fizz:check` was never run. |
 | WHOOP token refresh | manual step | No refresh-token flow; an expired OAuth token must be replaced by hand. |
+
+---
+
+## 10. Third Pass — CI repair, cookie sessions, Fizzbee
+
+Three things were asked for: get CI green, install the Fizzbee CLI, and move session
+credentials out of `localStorage` into HTTP cookies.
+
+### CI was failing for three unrelated reasons
+
+| Job | Cause |
+|---|---|
+| Dashboard | `.gitignore` carried an unanchored `lib/` from the Python section, which matches a directory of that name at **any** depth. It silently excluded `apps/dashboard/src/app/lib/`, so `session.ts` — imported by `page.tsx` and the OIDC callback — existed only on the machine that wrote it and had never been committed. Local builds passed; CI could not resolve the module. |
+| Core + Gateway | NATS ran as a `services:` container. That syntax cannot pass a command to the image, and the NATS server only enables JetStream with `-js`. `add_stream` failed, and because the test wrapped it in `except Exception: pass` the real error surfaced later as an unexplained `NoStreamResponseError` on publish. |
+| Documentation | lychee treats a root-relative link as a hard error unless `--root-dir` is set, so the existing `--exclude '^/'` never ran — exclusion applies to a *resolved* URI. Separately, the deployment URL in the README returned 530 (Cloudflare: origin unreachable). |
+
+All three are fixed and the pipeline is green as of `7e6f0d0`. The first is the one
+worth remembering: a build that passes locally and fails in CI on a missing module is
+usually a file that was never committed, and an over-broad ignore rule is the usual
+reason.
+
+### Sessions moved to `httpOnly` cookies
+
+Recorded as an open risk in §8 and §9; now closed.
+
+- `qs_access` and `qs_refresh` are `HttpOnly`, `Secure`, `SameSite=Lax`. The refresh
+  cookie is scoped to `/api/v1/auth` so it does not ride along on every query.
+- **The tokens are gone from the response bodies.** Removing them from `localStorage`
+  alone would have been cosmetic: while login returns a token as JSON, any client can
+  put it back somewhere readable. Tests assert their absence.
+- CSRF, which `httpOnly` cookies newly expose: `SameSite=Lax` plus a double-submit
+  token. `qs_csrf` is deliberately readable so the dashboard can echo it in
+  `X-CSRF-Token`; an attacker's page can cause the cookie to be *sent* but cannot read
+  it to build the header. Unsafe methods on the cookie path require it.
+- `Authorization: Bearer` still works for services, scripts and tests, and needs no
+  CSRF token — no browser attaches that header on its own.
+- The privacy policy said "this application sets no cookies" and listed the
+  localStorage keys. It now describes the three cookies, their flags, and why the CSRF
+  one is readable.
+
+Two defects surfaced while doing it:
+
+- The Gateway built response headers with a dict comprehension, which silently
+  collapses repeated keys. A login sets three cookies; two were being dropped.
+- `change-password` revoked every session but left the cookies in place, so the UI kept
+  rendering as signed-in until some later request happened to 401.
+
+### Fizzbee: the CLI works, and the specs had never been run
+
+Installing it exposed that the specs were unverified prose. `specs/README.md` said
+`brew install fizzbee` and `fizzbee run <spec>`; the Taskfile ran
+`fizzbee check specs/`. None of those exist — the binary is `fizz`, it takes one file,
+and there is no `check` subcommand.
+
+Running the real checker found:
+
+- Mutable state declared at top level, where Fizzbee freezes it. Every spec that
+  appended to a list failed with `cannot append to frozen list`.
+- `exists` used as a variable name; it is a reserved quantifier keyword.
+- `x = any(COLLECTION)`, deprecated in favour of `oneof`.
+- **A genuine specification defect.** `tenant_isolation`'s `NoUnauthorizedAccess`
+  compared results against the *live* share table, and the checker produced a
+  counterexample in 3819 states: insert → grant → query → revoke left an
+  already-returned result set looking unauthorized. No implementation can satisfy
+  that — the response was already sent. The invariant now judges the authorization
+  decision taken at query time.
+- `ShareRevocationImmediate` had a body of `return True` and a comment claiming
+  another invariant covered it. A tautology cannot fail, so it verified nothing. It
+  has a real body now.
+
+Installation notes worth keeping: there is **no Windows build**, and the checker needs
+**glibc 2.34+**, so WSL on Ubuntu 20.04 parses a spec and then dies with
+`GLIBC_2.34 not found`. Hence `infra/fizzbee.Dockerfile` and a runner that prefers a
+native `fizz` and falls back to the container.
+
+`specs/fizz.yaml` bounds exploration to 6 actions. The default of 100 does not
+terminate for these models. This is not merely a speed concern: the checker holds its
+state graph in memory, and an unbounded run exhausted the Docker Desktop VM and took
+the local Postgres and NATS containers down with it. The runner caps container memory
+so a runaway spec fails as itself.
+
+### Verified in this pass
+
+| Check | Result |
+|---|---|
+| Core | 153 passed |
+| Gateway | 10 passed |
+| Spec invariant tests (Python) | 36 passed |
+| End-to-end | 19 passed |
+| Importers | 137 passed across 8 services |
+| **Total** | **355 passed, 0 failed** |
+| `tsc --noEmit` | clean |
+| ESLint | 25 problems, all pre-existing; 0 in any file added or rewritten (was 26) |
+| `next build` | 11 routes |
+| GitHub Actions | green |
+
+### Next steps
+
+In the order I would take them.
+
+1. **Rotate the committed secrets.** Still the highest risk in the repository and still
+   not a code change: `JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY`, the
+   hardcoded Yazio OAuth client credentials in
+   `services/importers/yazio/src/yazio_importer/client.py`, and the seeded owner hash
+   in `infra/db/init.sql`. Rotating `ENCRYPTION_KEY` requires re-encrypting stored
+   connector credentials — plan that migration before turning the key.
+2. **Finish the Fizzbee verification.** Ten specs are converted but not yet
+   model-checked; the CI job added here is what confirms them. Expect each to need
+   bounding the way `tenant_isolation` did. Treat any invariant whose body is
+   `return True` as unwritten.
+3. **Add a server-side route guard** (`proxy.ts`, Next 16's rename of `middleware.ts`).
+   Cookies make this possible for the first time — the server can now see the
+   credential. Today a protected page renders its shell before `/api/v1/auth/me`
+   answers. No data leaks, but the flash is visible.
+4. **Browser-level tests.** The frontend has no jest/vitest/playwright, so the cookie
+   flows above are covered by server tests and type-checking only. Login → reload →
+   logout → reload is the sequence most worth automating: it is the bug that started
+   all of this.
+5. **A scheduler.** `poll_interval_hours` sizes an import window but nothing triggers a
+   run; every import is still manual.
+6. **`services/analysis/`** is still a placeholder. Analyses run inside Core and are
+   served over REST. Moving them out means finishing Core's gRPC server, which is a
+   stub.
+
+### Local environment note
+
+Docker Desktop and WSL both became unresponsive during this session — `wsl --shutdown`
+itself hung, which is why the remaining specs were verified in CI rather than locally.
+A reboot should clear it. Nothing in the repository depends on that state.
