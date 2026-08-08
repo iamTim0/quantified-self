@@ -200,10 +200,13 @@ services:
     environment:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
-      # Was missing from the file this replaces, and its default is
-      # http://127.0.0.1:8006 — inside this container that is the Gateway itself,
-      # so `POST /ingest` for Streak proxied to nowhere.
+      # Both were missing, and both default to 127.0.0.1 — which inside this
+      # container is the Gateway itself, so each of these proxies pointed at
+      # nothing. The Gateway is the documented way in for the two push importers
+      # (`POST /api/v1/ingest/{streak,apple-health}`), and it is where the request
+      # picks up its X-Request-ID, so this is the path that has to work.
       - STREAK_IMPORTER_URL=http://streak-importer:8006
+      - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
       # Defaults to this deployment's own origin, not `*`. The file this replaced

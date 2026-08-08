@@ -88,6 +88,9 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - STREAK_IMPORTER_URL=http://streak-importer:8006
+      # Defaults to 127.0.0.1:8005, which in this container is the Gateway itself,
+      # so POST /api/v1/ingest/apple-health proxied to nothing.
+      - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
