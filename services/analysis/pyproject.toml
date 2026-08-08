@@ -6,12 +6,21 @@ dependencies = [
     "fastapi>=0.110.0",
     "uvicorn>=0.29.0",
     "grpcio>=1.62.0",
-    "grpcio-tools>=1.62.0",
-    "numpy>=1.26.0",
     "pydantic>=2.6.0",
-    "pydantic-settings>=2.2.0"
+    "pydantic-settings>=2.2.0",
+    # Mints the service credential this presents to Core's gRPC endpoint.
+    "pyjwt>=2.13.0",
+    "qs-proto",
 ]
+# Neither numpy nor grpcio-tools is here. The statistics are stdlib-only
+# (see analysis/insights.py -- math, statistics, collections), and grpcio-tools
+# is a build-time code generator, not a runtime dependency.
 requires-python = ">=3.12"
+
+# Path dependency rather than a copy of the generated files: a protobuf change
+# reaches this service through packages/proto/generate.py (AGENTS.md rule 7).
+[tool.uv.sources]
+qs-proto = { path = "../../packages/proto", editable = true }
 
 [build-system]
 requires = ["hatchling"]

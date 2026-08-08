@@ -33,8 +33,28 @@ message ListMetricTypesResponse {
   repeated string metric_types = 1;
 }
 
+// Which connectors a tenant has configured. The Analysis Service needs this for
+// the provenance block it attaches to every result -- "these findings came from
+// these sources" -- and it must not reach into the database to get it.
+message ListDataSourcesRequest {
+  string tenant_id = 1;
+}
+
+// No status field: `data_sources` has no status column, and sync state lives in
+// `sync_runs`. An always-empty field would read like missing data rather than an
+// absent concept. Add one here when there is something real to put in it.
+message DataSourceSummary {
+  string id = 1;
+  string source_type = 2;
+}
+
+message ListDataSourcesResponse {
+  repeated DataSourceSummary sources = 1;
+}
+
 service CoreDataService {
   rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
   rpc GetDataPoint(GetDataPointRequest) returns (DataPoint);
   rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
+  rpc ListDataSources(ListDataSourcesRequest) returns (ListDataSourcesResponse);
 }

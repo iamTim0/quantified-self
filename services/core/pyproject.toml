@@ -22,8 +22,14 @@ dependencies = [
     "pyjwt>=2.13.0",
     "httpx>=0.27.0",
     "cryptography>=42.0.0",
+    "qs-proto",
 ]
 requires-python = ">=3.12"
+
+# Path dependency rather than a copy of the generated files: a protobuf change
+# reaches this service through packages/proto/generate.py (AGENTS.md rule 7).
+[tool.uv.sources]
+qs-proto = { path = "../../packages/proto", editable = true }
 
 [build-system]
 requires = ["hatchling"]

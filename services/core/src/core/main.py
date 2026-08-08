@@ -47,6 +47,7 @@ from core.db.models import (
 from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
+from core.grpc.server import serve_grpc
 from core.ingest_planning import (
     BucketCount,
     TimeRange,
@@ -162,6 +163,19 @@ async def lifespan(app: FastAPI):
     if getattr(app.state, "testing", False):
         yield
         return
+
+    # The gRPC server is how the Analysis Service reads data (AGENTS.md rule 3).
+    # It starts before the NATS consumer and outside that try block on purpose:
+    # the consumer's failure path deliberately still yields so Core serves HTTP
+    # without a broker, and folding gRPC into it would have let the read API for
+    # another service disappear silently.
+    grpc_server = None
+    try:
+        grpc_server = await serve_grpc()
+        app.state.grpc_server = grpc_server
+    except Exception:
+        logger.exception("gRPC server failed to start; Analysis Service reads will fail")
+
     try:
         nc = await start_consumer()
         app.state.nats_client = nc
@@ -169,6 +183,9 @@ async def lifespan(app: FastAPI):
         await nc.close()
     except Exception:
         yield
+    finally:
+        if grpc_server is not None:
+            await grpc_server.stop(grace=2.0)
 
 
 
