@@ -21,7 +21,12 @@ def generate_idempotency_key(
 def transform_consumed_items(
     raw_data: dict[str, Any] | list[Any],
     day: str,
-    tenant_id: str = settings.TENANT_ID,
+    # No default. It used to fall back to a hardcoded workspace UUID — the one
+    # `infra/db/init.sql` seeded — so a caller that forgot to pass a tenant did
+    # not fail, it silently attributed somebody's food diary to that workspace.
+    # The tenant now comes from the sync task, which is the only place that knows
+    # it (AGENTS.md rule 2, and the hardcoded-tenant anti-pattern).
+    tenant_id: str,
     source_id: str = settings.SOURCE_ID,
     product_cache: dict[str, dict[str, Any]] | None = None,
     recipe_cache: dict[str, dict[str, Any]] | None = None,

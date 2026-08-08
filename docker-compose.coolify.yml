@@ -49,8 +49,18 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
       - NATS_URL=nats://nats:4222
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-quantified-self-2026}
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      # `:?` rather than `:-`. These previously defaulted to values printed in
+      # this repository, so a deployment that never set them ran on secrets
+      # anybody could read — and nothing said so. Compose now refuses to start.
+      #
+      # ENCRYPTION_KEY decrypts stored connector credentials, so changing it is
+      # not a restart: re-encrypt first with
+      # `python -m core.rotate_encryption_key --old … --new …`, then set it here.
+      # See docs/operations.md.
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY; re-encrypt stored credentials before changing it - see docs/operations.md}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     networks:
       - qs-network
@@ -66,8 +76,9 @@ services:
       - core
     environment:
       - CORE_GRPC_URL=core:50051
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
-      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
+      # Must match Core's, or Analysis cannot authenticate to the gRPC API.
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
     networks:
       - qs-network
 
@@ -101,7 +112,7 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - ENVIRONMENT=${ENVIRONMENT:-production}
-      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
     labels:

@@ -20,6 +20,16 @@ def _default_jwt_secret() -> str:
 
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-core-service"
+    # Matches the Gateway's convention. "dev" (or anything not in
+    # core.security.secret_audit.PRODUCTION_ENVIRONMENTS) means published default
+    # secrets are a loud warning; production means Core refuses to start on them.
+    #
+    # Defaults to development rather than production so that a laptop, the test
+    # suite and CI all work with no configuration. The deployment does not rely on
+    # anyone remembering to change this: docker-compose.coolify.yml sets
+    # ENVIRONMENT=production and uses ${VAR:?...} so an unset secret stops the
+    # deploy outright.
+    ENVIRONMENT: str = "development"
     DATABASE_URL: str = "postgresql+asyncpg://qs_dev:qs_dev_password@127.0.0.1:5433/quantified_self"
     NATS_URL: str = "nats://127.0.0.1:4222"
     GRPC_PORT: int = 50051

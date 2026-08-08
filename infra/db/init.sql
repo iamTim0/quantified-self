@@ -72,18 +72,10 @@ CREATE TABLE tenant_shares (
     UNIQUE (grantor_tenant_id, grantee_tenant_id, scope)
 );
 
--- Permanent Seeding for Primary Developer Workspace & Account
-INSERT INTO tenants (id, name)
-VALUES ('56fe04c2-b103-40f1-b5f4-2326d1c52830', 'Timo''s Workspace')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO users (id, tenant_id, email, password_hash, name, role)
-VALUES (
-    '56fe04c2-b103-40f1-b5f4-2326d1c52830',
-    '56fe04c2-b103-40f1-b5f4-2326d1c52830',
-    'owner@example.com',
-    '***REMOVED-PASSWORD-HASH***',
-    'Timo',
-    'owner'
-)
-ON CONFLICT (id) DO NOTHING;
+-- No seed data. This file used to end by inserting a tenant and an owner account
+-- with a bcrypt hash committed to the repository, which is two problems at once:
+-- AGENTS.md rule 9 forbids automatic seeding, and anybody with a copy of this
+-- repository had an offline target for that hash and knew the account it opens.
+--
+-- Create the first account through the sign-up flow, which is also the only path
+-- that produces a hash nobody else has seen.

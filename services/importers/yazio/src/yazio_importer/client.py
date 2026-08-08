@@ -11,8 +11,10 @@ from yazio_importer.config import settings
 
 logger = logging.getLogger(__name__)
 
-CLIENT_ID = "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c"
-CLIENT_SECRET = "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o"
+# Yazio's mobile-app OAuth client. See config.py for why these are configuration
+# rather than a secret -- and why they are not ours to rotate.
+CLIENT_ID = settings.YAZIO_CLIENT_ID
+CLIENT_SECRET = settings.YAZIO_CLIENT_SECRET
 
 # ANTI-BAN & RATE PROTECTION CONFIGURATION
 REQUEST_PACING_SECONDS = 0.25  # Pacing delay between HTTP requests

@@ -351,7 +351,7 @@ async def process_task_message(msg, nc: nats.NATS):
 
 
 async def main():
-    logger.info(f"Starting Yazio Importer Service (tenant={settings.TENANT_ID})...")
+    logger.info("Starting Yazio Importer Service; awaiting sync tasks on NATS...")
     nc = await nats.connect(settings.NATS_URL)
     logger.info(f"Connected to NATS at {settings.NATS_URL}")
 

@@ -4,7 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    TENANT_ID: str = "56fe04c2-b103-40f1-b5f4-2326d1c52830"
+    # NOTE: TENANT_ID was removed deliberately. It defaulted to the workspace
+    # UUID that infra/db/init.sql used to seed, so it named a tenant that no
+    # longer exists and, worse, gave every code path a plausible-looking tenant
+    # to fall back on. The tenant comes from the sync task on NATS, which is the
+    # only place that knows it (AGENTS.md rule 2).
     NATS_URL: str = "nats://localhost:4222"
     CORE_SERVICE_URL: str = "http://localhost:8001"
     WHOOP_API_BASE_URL: str = "https://api.prod.whoop.com/developer"
