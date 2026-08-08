@@ -8,15 +8,28 @@ on every sync.
 
 Each entity now gets its own metric name derived from its ``entity_id``, and rows
 without a usable timestamp or a numeric state are skipped.
+
+Home Assistant is the reason the metric registry has dynamic namespaces at all: every
+installation exposes a different set of entities, so the catalog cannot enumerate them
+in advance. ``home_assistant_`` is registered as a namespace
+(packages/shared-schemas/src/shared_schemas/metrics.py), which makes these names legal
+without pretending they carry a known unit -- the unit comes from the entity's
+``unit_of_measurement`` attribute and travels in the event metadata.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
+
+logger = logging.getLogger(__name__)
+
 SOURCE_TYPE = "home_assistant"
+NAMESPACE = "home_assistant_"
 
 # States that are not measurements but do carry meaning as 1/0.
 BOOLEAN_STATES = {"on": 1.0, "off": 0.0, "home": 1.0, "not_home": 0.0, "open": 1.0, "closed": 0.0}
@@ -37,7 +50,7 @@ def metric_name(entity_id: str) -> str:
     """``sensor.living_room_temp`` -> ``home_assistant_living_room_temp``."""
     tail = entity_id.split(".", 1)[-1] if "." in entity_id else entity_id
     cleaned = "".join(ch if ch.isalnum() else "_" for ch in tail).strip("_").lower()
-    return f"home_assistant_{cleaned}" if cleaned else "home_assistant_unknown"
+    return f"{NAMESPACE}{cleaned}" if cleaned else f"{NAMESPACE}unknown"
 
 
 def _normalise_timestamp(raw: Any) -> str | None:
@@ -90,7 +103,23 @@ def transform(
             continue
 
         entity_id = str(record.get("entity_id") or "")
-        metric = str(record.get("metric_type") or metric_name(entity_id))
+        # An explicit metric_type on the row is a name from outside, so it is checked
+        # against the registry: either it is a catalogued metric or it sits under a
+        # namespace. Anything else is dropped rather than stored uninterpretable.
+        try:
+            metric = canonical_metric_type(
+                str(record.get("metric_type") or metric_name(entity_id))
+            )
+        except UnknownMetricTypeError:
+            logger.warning(
+                "Skipping unregistered metric_type %r for entity %r; prefix it with %r "
+                "to store it as a Home Assistant metric",
+                record.get("metric_type"),
+                entity_id,
+                NAMESPACE,
+            )
+            continue
+
         attributes = record.get("attributes") or {}
 
         events.append(

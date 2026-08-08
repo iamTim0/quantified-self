@@ -198,6 +198,6 @@ async def test_a_dead_refresh_token_reports_a_reconnect_rather_than_an_expired_t
             )
 
         assert res.status_code == 409
-        assert "neu verbinden" in res.json()["detail"].lower()
+        assert "connect it again" in res.json()["detail"].lower()
     finally:
         await cleanup_test_tenant(tenant_id)

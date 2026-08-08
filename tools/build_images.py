@@ -18,9 +18,11 @@ while CI installed with npm, so the image had been unbuildable for some time and
 nothing said so.
 
 Contexts differ per image and are not cosmetic. Core and Analysis build from the
-repository root because they depend on `packages/proto` through a path dependency,
-which cannot resolve from outside the build context; the docs image needs
-`mkdocs.yml` and `docs/`; everything else builds from its own directory.
+repository root because they depend on `packages/proto`, and every importer does the
+same because it depends on `packages/shared-schemas` for the metric catalog -- a path
+dependency cannot resolve from outside the build context. The docs image needs
+`mkdocs.yml` and `docs/`. Only the Gateway and the dashboard build from their own
+directory, because neither has a path dependency on `packages/`.
 """
 
 from __future__ import annotations
@@ -63,22 +65,16 @@ IMAGES: tuple[Image, ...] = (
     Image("api-gateway", "services/api-gateway", "services/api-gateway/Dockerfile"),
     Image("dashboard", "apps/dashboard", "apps/dashboard/Dockerfile", cache="max"),
     Image("docs", ".", "infra/docs.Dockerfile"),
-    Image("importer-yazio", "services/importers/yazio", "services/importers/yazio/Dockerfile"),
-    Image("importer-whoop", "services/importers/whoop", "services/importers/whoop/Dockerfile"),
-    Image("importer-dawarich", "services/importers/dawarich", "services/importers/dawarich/Dockerfile"),
-    Image(
-        "importer-apple-health",
-        "services/importers/apple_health",
-        "services/importers/apple_health/Dockerfile",
-    ),
-    Image("importer-streak", "services/importers/streak", "services/importers/streak/Dockerfile"),
-    Image(
-        "importer-home-assistant",
-        "services/importers/home_assistant",
-        "services/importers/home_assistant/Dockerfile",
-    ),
-    Image("importer-weather", "services/importers/weather", "services/importers/weather/Dockerfile"),
-    Image("importer-calendar", "services/importers/calendar", "services/importers/calendar/Dockerfile"),
+    # Every importer builds from the repository root: each one resolves metric names
+    # and units through the path dependency on packages/shared-schemas.
+    Image("importer-yazio", ".", "services/importers/yazio/Dockerfile"),
+    Image("importer-whoop", ".", "services/importers/whoop/Dockerfile"),
+    Image("importer-dawarich", ".", "services/importers/dawarich/Dockerfile"),
+    Image("importer-apple-health", ".", "services/importers/apple_health/Dockerfile"),
+    Image("importer-streak", ".", "services/importers/streak/Dockerfile"),
+    Image("importer-home-assistant", ".", "services/importers/home_assistant/Dockerfile"),
+    Image("importer-weather", ".", "services/importers/weather/Dockerfile"),
+    Image("importer-calendar", ".", "services/importers/calendar/Dockerfile"),
 )
 
 # Dockerfiles that exist but are deliberately not published: the Fizzbee model

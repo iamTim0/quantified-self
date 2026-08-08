@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useT, type Translate } from "../lib/i18n/provider";
 
 /**
  * Import dialog with an explicit time range, a smart/force choice and a preview of
@@ -94,11 +95,11 @@ function formatRange(range: ImportRange): string {
   return `${fmt.format(new Date(range.start))} – ${fmt.format(new Date(range.end))}`;
 }
 
-function durationLabel(range: ImportRange): string {
+function durationLabel(t: Translate, range: ImportRange): string {
   const ms = new Date(range.end).getTime() - new Date(range.start).getTime();
   const hours = ms / 3_600_000;
-  if (hours < 48) return `${Math.max(1, Math.round(hours))} Std.`;
-  return `${Math.round(hours / 24)} Tage`;
+  if (hours < 48) return t("import.hours", { count: Math.max(1, Math.round(hours)) });
+  return t("import.days", { count: Math.round(hours / 24) });
 }
 
 export default function ImportDialog({
@@ -109,6 +110,7 @@ export default function ImportDialog({
   onClose,
   onQueued,
 }: ImportDialogProps) {
+  const t = useT();
   const [mode, setMode] = useState<"smart" | "force">("smart");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -147,7 +149,7 @@ export default function ImportDialog({
         );
         if (!res.ok) {
           const detail = await res.json().catch(() => null);
-          throw new Error(detail?.detail || "Importplan konnte nicht geladen werden.");
+          throw new Error(detail?.detail || t("import.planFailed"));
         }
         const data: ImportPlan = await res.json();
         setPlan(data);
@@ -226,12 +228,12 @@ export default function ImportDialog({
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || "Import konnte nicht gestartet werden.");
+      if (!res.ok) throw new Error(data?.detail || t("import.startFailed"));
 
       setResult(
         data?.status === "skipped"
-          ? "Nichts zu tun — der Zeitraum ist bereits vollständig vorhanden."
-          : "Import wurde eingereiht.",
+          ? t("import.nothingToDo")
+          : t("import.queued"),
       );
       onQueued?.();
       loadRuns();
@@ -258,13 +260,13 @@ export default function ImportDialog({
                 Daten importieren — {sourceName}
               </h2>
               <p className="text-[11px] text-slate-500">
-                Zeitraum prüfen und anpassen, bevor der Import startet.
+                {t("import.subtitle")}
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            aria-label="Dialog schließen"
+            aria-label={t("import.close")}
             className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
           >
             <X className="h-5 w-5" />
@@ -335,7 +337,7 @@ export default function ImportDialog({
                   <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> Smart (empfohlen)
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
-                  Bereits vollständig vorhandene Zeiträume werden übersprungen. Nur der
+                  {t("import.smartHint")}{" "}
                   fehlende Bereich wird importiert.
                 </span>
               </span>
@@ -357,7 +359,7 @@ export default function ImportDialog({
               />
               <span>
                 <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                  <Zap className="h-4 w-4 text-amber-600" /> Alles erzwingen
+                  <Zap className="h-4 w-4 text-amber-600" /> {t("import.forceLabel")}
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
                   Der gesamte Zeitraum wird erneut verarbeitet.
@@ -372,8 +374,7 @@ export default function ImportDialog({
               <p className="text-[11px] leading-relaxed text-amber-900">
                 Force-Importe verursachen deutlich mehr Verarbeitungsaufwand und erzeugen
                 Duplicate Events. Doppelte Datenpunkte entstehen dank Idempotenz nicht,
-                aber der Lauf dauert länger und belastet das API-Kontingent des Anbieters.
-                Der Lauf wird im Importprotokoll als <code>force</code> gekennzeichnet.
+                {t("import.forceHint")}
               </p>
             </div>
           )}
@@ -388,7 +389,7 @@ export default function ImportDialog({
             </div>
 
             {!plan && !planning && (
-              <p className="text-xs text-slate-500">Noch keine Analyse verfügbar.</p>
+              <p className="text-xs text-slate-500">{t("import.noAnalysis")}</p>
             )}
 
             {plan && (
@@ -397,7 +398,7 @@ export default function ImportDialog({
 
                 {plan.confidence === "low" && (
                   <p className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
-                    Die vorhandenen Daten sind zu unregelmäßig für eine sichere
+                    {t("import.tooIrregular")}{" "}
                     Bereichserkennung. Sicherheitshalber wird der volle Zeitraum importiert.
                   </p>
                 )}
@@ -405,7 +406,7 @@ export default function ImportDialog({
                 {plan.skipped_ranges.length > 0 && (
                   <div>
                     <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                      <SkipForward className="h-3.5 w-3.5" /> Wird übersprungen
+                      <SkipForward className="h-3.5 w-3.5" /> {t("import.willSkip")}
                     </p>
                     <ul className="space-y-1">
                       {plan.skipped_ranges.map((r) => (
@@ -414,7 +415,7 @@ export default function ImportDialog({
                           className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-slate-600"
                         >
                           <span className="font-mono">{formatRange(r)}</span>
-                          <span className="text-slate-400">{durationLabel(r)}</span>
+                          <span className="text-slate-400">{durationLabel(t, r)}</span>
                         </li>
                       ))}
                     </ul>
@@ -424,16 +425,16 @@ export default function ImportDialog({
                 {effective ? (
                   <div>
                     <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-[#0d5c3a]">
-                      <RefreshCw className="h-3.5 w-3.5" /> Wird importiert
+                      <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
                     </p>
                     <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
                       <span className="font-mono">{formatRange(effective)}</span>
-                      <span>{durationLabel(effective)}</span>
+                      <span>{durationLabel(t, effective)}</span>
                     </div>
                   </div>
                 ) : (
                   <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Nichts zu importieren.
+                    <CheckCircle2 className="h-3.5 w-3.5" /> {t("import.nothingToImportShort")}
                   </p>
                 )}
 
@@ -516,7 +517,7 @@ export default function ImportDialog({
             ) : (
               <RefreshCw className="h-4 w-4" />
             )}
-            {nothingToDo && mode === "smart" ? "Nichts zu importieren" : "Import starten"}
+            {nothingToDo && mode === "smart" ? t("import.nothingToImport") : t("import.start")}
           </button>
         </div>
       </div>

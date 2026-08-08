@@ -24,13 +24,16 @@ dependencies = [
     "httpx>=0.27.0",
     "cryptography>=42.0.0",
     "qs-proto",
+    "qs-shared-schemas",
 ]
 requires-python = ">=3.12"
 
-# Path dependency rather than a copy of the generated files: a protobuf change
-# reaches this service through packages/proto/generate.py (AGENTS.md rule 7).
+# Path dependencies rather than copies: a protobuf change reaches this service
+# through packages/proto/generate.py (AGENTS.md rule 7), and a metric definition
+# through packages/shared-schemas/src/shared_schemas/metrics.py.
 [tool.uv.sources]
 qs-proto = { path = "../../packages/proto", editable = true }
+qs-shared-schemas = { path = "../../packages/shared-schemas", editable = true }
 
 [build-system]
 requires = ["hatchling"]

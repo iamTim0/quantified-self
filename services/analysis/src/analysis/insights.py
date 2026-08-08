@@ -7,8 +7,8 @@ one place rather than being spread across endpoints.
 Two rules shape the whole module:
 
 **Nothing is reported as causal.** These are associations between series. The wording
-in every ``interpretation`` string says "hängt zusammen mit", never "wirkt auf" or
-"führt zu", and every correlation carries the sample size, the significance and the
+in every ``interpretation`` string says "goes together with", never "affects" or
+"leads to", and every correlation carries the sample size, the significance and the
 overlap so the reader can judge it.
 
 **Insufficient data yields no result, not a weak one.** A correlation over four days
@@ -149,18 +149,18 @@ def correlation_p_value(r: float, n: int) -> float:
 def strength_label(r: float) -> str:
     a = abs(r)
     if a < 0.2:
-        return "sehr schwach"
+        return "very weak"
     if a < 0.4:
-        return "schwach"
+        return "weak"
     if a < 0.6:
-        return "moderat"
+        return "moderate"
     if a < 0.8:
-        return "stark"
-    return "sehr stark"
+        return "strong"
+    return "very strong"
 
 
 def _direction_phrase(r: float) -> str:
-    return "höheren" if r > 0 else "niedrigeren"
+    return "higher" if r > 0 else "lower"
 
 
 # ─── result types ────────────────────────────────────────────
@@ -220,16 +220,16 @@ def correlation_pairs(
             caveats: list[str] = []
             if abs(pearson - spearman) > 0.25:
                 caveats.append(
-                    "Pearson und Spearman weichen deutlich voneinander ab — möglicher "
-                    "Ausreißer oder nicht-linearer Zusammenhang."
+                    "Pearson and Spearman disagree noticeably — possibly an "
+                    "outlier, or a relationship that is not linear."
                 )
             if n < min_sample * 2:
                 caveats.append(
-                    f"Nur {n} gemeinsame Tage — das Ergebnis ist wenig belastbar."
+                    f"Only {n} days in common — the result carries little weight."
                 )
             if p_value > alpha:
                 caveats.append(
-                    "Statistisch nicht signifikant: der Zusammenhang kann Zufall sein."
+                    "Not statistically significant: the relationship may be chance."
                 )
 
             results.append(
@@ -240,16 +240,16 @@ def correlation_pairs(
                     "spearman": round(spearman, 4),
                     "coefficient": round(headline, 4),
                     "strength_pct": round(abs(headline) * 100, 1),
-                    "direction": "positiv" if headline >= 0 else "negativ",
+                    "direction": "positive" if headline >= 0 else "negative",
                     "strength_label": strength_label(headline),
                     "sample_size": n,
                     "p_value": round(p_value, 5),
                     "significant": bool(p_value <= alpha),
                     "interpretation": (
-                        f"{left} und {right} hängen zusammen: Tage mit höheren Werten bei "
-                        f"{left} gehen im Mittel mit {_direction_phrase(headline)} Werten "
-                        f"bei {right} einher ({strength_label(headline)}, n={n}). "
-                        "Das ist ein Zusammenhang, keine Ursache."
+                        f"{left} and {right} go together: days with higher values for "
+                        f"{left} come on average with {_direction_phrase(headline)} values "
+                        f"for {right} ({strength_label(headline)}, n={n}). "
+                        "That is a relationship, not a cause."
                     ),
                     "caveats": caveats,
                 }
@@ -300,10 +300,10 @@ def lagged_correlations(
             if best and abs(best["coefficient"]) >= 0.3:
                 best["significant"] = best["p_value"] <= SIGNIFICANCE_ALPHA
                 best["interpretation"] = (
-                    f"{best['metric_a']} hängt mit {best['metric_b']} "
-                    f"{best['lag_days']} Tag(e) später zusammen "
+                    f"{best['metric_a']} goes together with {best['metric_b']} "
+                    f"{best['lag_days']} day(s) later "
                     f"({strength_label(best['coefficient'])}, n={best['sample_size']}). "
-                    "Eine zeitliche Reihenfolge belegt keine Ursache."
+                    "An order in time is not evidence of a cause."
                 )
                 out.append(best)
 
@@ -348,9 +348,9 @@ def trend_for_metric(
     # A slope smaller than a tenth of the day-to-day spread is indistinguishable
     # from noise at this resolution.
     if abs(slope) < spread * 0.1 or r_squared < 0.1:
-        direction = "stabil"
+        direction = "flat"
     else:
-        direction = "steigend" if slope > 0 else "fallend"
+        direction = "rising" if slope > 0 else "falling"
 
     change_pct = (slope * n / abs(my) * 100) if my else 0.0
 
@@ -365,14 +365,14 @@ def trend_for_metric(
         "mean": round(my, 3),
         "moving_average_7d": moving_average(values, 7),
         "interpretation": (
-            f"Der Verlauf ist über {n} Tage {direction}"
+            f"Over {n} days the course is {direction}"
             + (
-                f" (rund {abs(change_pct):.0f}% Veränderung im Zeitraum)."
-                if direction != "stabil"
+                f" (about {abs(change_pct):.0f}% change across the period)."
+                if direction != "flat"
                 else "."
             )
             + (
-                " Die Streuung ist hoch, der Trend daher unsicher."
+                " The spread is wide, so the trend is uncertain."
                 if r_squared < 0.3
                 else ""
             )
@@ -420,11 +420,11 @@ def weekday_pattern(
             "weekend_mean": round(we, 3),
             "difference_pct": round(delta_pct, 1),
             "interpretation": (
-                f"Am Wochenende liegt der Wert im Mittel "
-                f"{abs(delta_pct):.0f}% {'höher' if delta_pct > 0 else 'niedriger'} "
-                f"als unter der Woche."
+                f"At the weekend the value averages "
+                f"{abs(delta_pct):.0f}% {'higher' if delta_pct > 0 else 'lower'} "
+                f"than on weekdays."
                 if abs(delta_pct) >= 5
-                else "Zwischen Wochenende und Woche zeigt sich kein deutlicher Unterschied."
+                else "No clear difference between weekends and weekdays."
             ),
         },
     }
@@ -465,7 +465,7 @@ def detect_anomalies(
                     "date": day,
                     "value": round(value, 3),
                     "deviation_score": round(z, 2),
-                    "direction": "ungewöhnlich hoch" if z > 0 else "ungewöhnlich niedrig",
+                    "direction": "unusually high" if z > 0 else "unusually low",
                 }
             )
 
@@ -476,12 +476,12 @@ def detect_anomalies(
         "sample_size": len(values),
         "anomalies": anomalies[-20:],
         "interpretation": (
-            f"Typischer Bereich: {round(centre - 2 * scale, 1)} bis "
+            f"Typical range: {round(centre - 2 * scale, 1)} to "
             f"{round(centre + 2 * scale, 1)}. "
             + (
-                f"{len(anomalies)} Tag(e) liegen deutlich außerhalb."
+                f"{len(anomalies)} day(s) fall clearly outside it."
                 if anomalies
-                else "Keine auffälligen Ausreißer."
+                else "No notable outliers."
             )
         ),
     }
@@ -538,14 +538,14 @@ def compare_periods(
         "p_value": round(p, 5),
         "significant": bool(p <= SIGNIFICANCE_ALPHA),
         "interpretation": (
-            f"Im zweiten Zeitraum liegt der Mittelwert {abs(delta_pct):.0f}% "
-            f"{'höher' if delta > 0 else 'niedriger'}. "
+            f"In the second period the mean is {abs(delta_pct):.0f}% "
+            f"{'higher' if delta > 0 else 'lower'}. "
             + (
-                "Der Unterschied ist statistisch signifikant."
+                "The difference is statistically significant."
                 if p <= SIGNIFICANCE_ALPHA
-                else "Der Unterschied ist statistisch nicht signifikant und kann Zufall sein."
+                else "The difference is not statistically significant and may be chance."
             )
-            + " Ein Unterschied zwischen zwei Zeiträumen sagt nichts über die Ursache."
+            + " A difference between two periods says nothing about the cause."
         ),
     }
 
@@ -563,9 +563,9 @@ def series_quality(daily: dict[str, float], window_days: int) -> dict[str, Any]:
         "coverage_pct": round(coverage * 100, 1),
         "sufficient": observed >= MIN_SAMPLE_FOR_CORRELATION and coverage >= 0.5,
         "note": (
-            "Ausreichende Datenbasis."
+            "Enough data to work with."
             if observed >= MIN_SAMPLE_FOR_CORRELATION and coverage >= 0.5
-            else "Zu wenige Tage für belastbare Aussagen — Analysen werden ausgeblendet."
+            else "Too few days for a reliable statement — analyses are hidden."
         ),
     }
 

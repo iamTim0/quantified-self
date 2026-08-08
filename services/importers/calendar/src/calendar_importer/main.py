@@ -159,7 +159,7 @@ async def process(message: Any, connection: Any) -> None:
             await report_sync_result_to_core(
                 task,
                 status="idle",
-                message=f"{published} Kalender-Datenpunkte übertragen.",
+                message=f"{published} calendar data point(s) published.",
                 points_received=published,
             )
         finally:
@@ -175,7 +175,7 @@ async def process(message: Any, connection: Any) -> None:
         logger.error(f"Error processing calendar task: {e}")
         if task is not None:
             await report_sync_result_to_core(
-                task, status="error", message=f"Unerwarteter Fehler: {type(e).__name__}"
+                task, status="error", message=f"Unexpected error: {type(e).__name__}"
             )
     finally:
         await message.ack()

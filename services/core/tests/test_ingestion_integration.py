@@ -73,7 +73,7 @@ async def test_end_to_end_ingestion_deduplication():
             "id": str(uuid.uuid4()),
             "tenant_id": tenant_id,
             "source_id": source_id,
-            "metric_type": "sleep_score",
+            "metric_type": "oura_sleep_score",
             "timestamp": now.isoformat(),
             "value": 88.5,
             "metadata": {"source": "oura_api_v2", "readiness": 90},
@@ -117,7 +117,7 @@ async def test_end_to_end_ingestion_deduplication():
 
             assert len(points) == 1, "Deduplication failed: expected exactly 1 record in DB"
             assert points[0].value == 88.5
-            assert points[0].metric_type == "sleep_score"
+            assert points[0].metric_type == "oura_sleep_score"
             assert points[0].tenant_id == tenant_id
     finally:
         if nc:

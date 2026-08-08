@@ -34,6 +34,11 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
     - **Agent working state.** Per-run scratch directories and AI planning artifacts are not project documentation and MUST NOT be committed, least of all wired into the published documentation nav. Durable outputs belong in `specs/` (specifications), `docs/` (behaviour and operation) or a commit message (why a change was made) — under their own names, in the form the project already uses. A running log of what an agent did is not one of those: it duplicates the git history in a shape nothing verifies.
 
     Development *defaults* for secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, …) are a deliberate exception: they are published on purpose so local development needs no configuration, and production refuses to start on them. Everything above is not that — it is information about a particular person and a particular deployment, and no mechanism downstream can undo committing it.
+15. **One Metric, One Name, One Unit**: Metric names are not a service's to invent. Every `metric_type` written anywhere MUST be a canonical key from the registry in `packages/shared-schemas/src/shared_schemas/metrics.py`, and every value MUST be in the unit that registry declares for it — importers convert on the way in via `convert()`. Two sources reporting the same quantity write the same name; the name states what was measured, never who measured it and never in which unit. Providers whose metric set depends on the user's own installation emit under a registered dynamic namespace (`home_assistant_`, `apple_health_`, `custom_`) instead of bare names.
+
+    Resolve the name with `canonical_metric_type()` **before** deriving the `idempotency_key`, because the name is part of that hash (rule 4). Aliases may be read but never written: Core rejects them on the NATS path for exactly this reason, and rewrites them only on the manual-import path, where the key is derived after validation.
+
+    After changing the registry run `task metrics:generate` — the dashboard's TypeScript catalog and the table in `docs/metrics.md` are generated from it, and `task test:packages` fails if either is stale.
 
 ---
 
@@ -76,10 +81,15 @@ If the user asks to add an integration for a new data source:
 2. Implement four core modules: `config.py`, `client.py`, `transformer.py`, `main.py`.
 3. Configure the importer to fetch connector credentials dynamically from Core Data Service DB (`GET /api/v1/internal/data/sources/<name>/token`).
 4. Configure the importer to publish to the NATS subject `qs.ingest.<name>`.
-5. Ensure the `idempotency_key` is generated correctly in the transformer.
-6. Add a `Dockerfile` for the new service and add it to **three** places: `infra/docker-compose.yml` (development, builds from source), `docker-compose.prod.yml` (production, pulls the published image) and the `IMAGES` manifest in `tools/build_images.py`. The manifest is what the release workflow builds; a Dockerfile missing from it is an image that is simply never published, which is why CI fails on it rather than letting it pass silently.
-7. Write a Fizzbee spec extension ONLY IF new distributed patterns are introduced.
-8. Add comprehensive test coverage.
+5. Register every metric it emits in `packages/shared-schemas/src/shared_schemas/metrics.py`,
+   run `task metrics:generate`, and have the transformer resolve names through
+   `canonical_metric_type()` and convert values with `convert()`. An importer does not
+   invent metric names — see rule 15 and [Metriken](docs/metrics.md).
+6. Ensure the `idempotency_key` is generated correctly in the transformer, from the
+   *canonical* metric name.
+7. Add a `Dockerfile` for the new service and add it to **three** places: `infra/docker-compose.yml` (development, builds from source), `docker-compose.prod.yml` (production, pulls the published image) and the `IMAGES` manifest in `tools/build_images.py`. The manifest is what the release workflow builds; a Dockerfile missing from it is an image that is simply never published, which is why CI fails on it rather than letting it pass silently. Build from the **repository root**, because the path dependency on `packages/shared-schemas` cannot resolve from a narrower context.
+8. Write a Fizzbee spec extension ONLY IF new distributed patterns are introduced.
+9. Add comprehensive test coverage.
 
 ---
 
@@ -98,6 +108,8 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ Skipping Fizzbee specifications for new, complex distributed coordination.
 - ❌ Sharing mutable state between microservices.
 - ❌ A real email address, deployment hostname, absolute local path or personal name anywhere in a tracked file (rule 14).
+- ❌ A `metric_type` that is not in the metric registry, or a value stored in a unit other than the one the registry declares for that metric (rule 15).
+- ❌ A metric name that carries its unit (`*_kg`, `*_minutes`, `*_percentage`) or its source (`whoop_*` for a quantity another source also reports).
 - ❌ Committing agent scratch directories or AI planning documents, and never into the published docs nav.
 - ❌ Self-registration enabled by default. `ALLOW_REGISTRATION` is `False`; the first account is created with `python -m core.create_owner`.
 

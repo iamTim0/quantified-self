@@ -207,6 +207,10 @@ services:
       # picks up its X-Request-ID, so this is the path that has to work.
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
+      # Traefik routes / to the dashboard directly, so this only matters for a
+      # request that reaches the Gateway on its own port. In this network the UI
+      # is the container; the code default is loopback, for a local checkout.
+      - DASHBOARD_URL=http://dashboard:3000
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
       # Defaults to this deployment's own origin, not `*`. The file this replaced

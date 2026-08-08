@@ -17,7 +17,7 @@ def test_generate_idempotency_key():
     """Verifies Rule 4: SHA256 deterministic idempotency key format."""
     tenant_id = "00000000-0000-0000-0000-000000000001"
     source_id = "streak_src"
-    metric_type = "workout_set_weight_kg_1001"
+    metric_type = "strength_set_weight_1001"
     timestamp = "2026-08-03T18:05:00+00:00"
 
     expected = hashlib.sha256(
@@ -69,15 +69,15 @@ def test_transform_streak_export_workouts():
     assert len(events) == 6
 
     m_types = [e["metric_type"] for e in events]
-    assert "workout_set_weight_kg" in m_types
-    assert "workout_set_reps" in m_types
-    assert "workout_set_volume" in m_types
-    assert "workout_set_heart_rate_max" in m_types
-    assert "workout_total_volume" in m_types
-    assert "workout_total_sets" in m_types
+    assert "strength_set_weight" in m_types
+    assert "strength_set_reps" in m_types
+    assert "strength_set_volume" in m_types
+    assert "strength_set_heart_rate_max" in m_types
+    assert "strength_session_volume" in m_types
+    assert "strength_session_sets" in m_types
 
     # Check set volume calculation (80 * 10 = 800)
-    vol_event = next(e for e in events if e["metric_type"] == "workout_set_volume")
+    vol_event = next(e for e in events if e["metric_type"] == "strength_set_volume")
     assert vol_event["value"] == 800.0
     assert vol_event["metadata"]["exercise_title"] == "Bench Press"
 

@@ -49,6 +49,11 @@ that sequence; the docstring at the top of `playwright.config.ts` is the short o
   without `NEXT_PUBLIC_API_URL` so the UI calls `window.location.origin`, which is
   Traefik, which routes `/api` to the Gateway — one image for every deployment.
   Setting that variable on a running container does nothing.
+- **`next dev` proxies `/api` to the Gateway** (`rewrites` in `next.config.ts`,
+  development only). Without it the UI's own-origin calls 404 against the dev
+  server. Same-origin on purpose: an absolute API base would need CORS, and
+  cookies from `127.0.0.1` are not sent from a page on `localhost`. Override with
+  `DEV_GATEWAY_URL`.
 - `src/proxy.ts` is the server-side route guard (Next 16's `middleware.ts`).
 - `next.config.ts` sets `output: "standalone"`; the image ships the traced server
   (20 MB) instead of `node_modules` (522 MB).

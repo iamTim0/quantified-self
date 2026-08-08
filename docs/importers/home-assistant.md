@@ -18,15 +18,22 @@ Home Assistant REST Requests verwenden den Header `Authorization: Bearer <TOKEN>
 
 | Beispiel-Entity | Normalisierte Metrik | Nutzen |
 | --- | --- | --- |
-| `sensor.*temperature*` | `home_temperature_c` | Schlaf-/Erholungsqualität mit Raumtemperatur vergleichen. |
-| `sensor.*humidity*` | `home_humidity_percent` | Trockene Luft oder hohe Luftfeuchte sichtbar machen. |
-| `sensor.*illuminance*` | `home_illuminance_lux` | Lichtmenge mit Tagesrhythmus korrelieren. |
-| `sensor.*noise*` | `home_noise_db` | Nächtliche Störungen bewerten. |
+| `sensor.living_room_temperature` | `home_assistant_living_room_temperature` | Schlaf-/Erholungsqualität mit Raumtemperatur vergleichen. |
+| `sensor.bedroom_humidity` | `home_assistant_bedroom_humidity` | Trockene Luft oder hohe Luftfeuchte sichtbar machen. |
+| `sensor.hallway_illuminance` | `home_assistant_hallway_illuminance` | Lichtmenge mit Tagesrhythmus korrelieren. |
+| `binary_sensor.window_open` | `home_assistant_window_open` | Zustände werden als `1`/`0` gespeichert. |
+
+Der Metrikname entsteht aus der `entity_id`: alles nach dem Punkt, kleingeschrieben,
+mit dem Präfix `home_assistant_`. Welche Entitäten es gibt, entscheidet die
+Einrichtung des Nutzers, nicht der Hersteller - deshalb ist `home_assistant_` in der
+Registry als *dynamischer Namensraum* eingetragen. Namen darunter sind erlaubt, ohne
+katalogisiert zu sein, und tragen ihre Einheit in `metadata.unit` (aus
+`unit_of_measurement`) statt in der Registry.
 
 ## Daten abrufen
 
 ```http
-GET /api/v1/data/metrics?metric_type=home_temperature_c&start_time=<iso>&end_time=<iso>
+GET /api/v1/data/metrics?metric_type=home_assistant_living_room_temperature&start_time=<iso>&end_time=<iso>
 Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 ```
@@ -39,3 +46,5 @@ Das Home Assistant Token wird ausschließlich in Core verschlüsselt gespeichert
 
 - [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/)
 - [Home Assistant Authentication API](https://developers.home-assistant.io/docs/auth_api)
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 
+import { useT, type Translate } from "../lib/i18n/provider";
+
 const REPOSITORY = "https://github.com/iamTim0/quantified-self";
 
 /**
@@ -14,17 +16,20 @@ const REPOSITORY = "https://github.com/iamTim0/quantified-self";
  * commit in as build arguments, so this names the exact source. A build without them
  * (local development) falls back to the repository, which is where that source is.
  */
-function sourceLink(): { href: string; label: string } {
+function sourceLink(t: Translate): { href: string; label: string } {
   const version = process.env.NEXT_PUBLIC_SOURCE_VERSION;
   const commit = process.env.NEXT_PUBLIC_SOURCE_COMMIT;
 
   if (version) {
-    return { href: `${REPOSITORY}/tree/v${version}`, label: `Quellcode (v${version})` };
+    return { href: `${REPOSITORY}/tree/v${version}`, label: t("footer.sourceVersion", { version }) };
   }
   if (commit) {
-    return { href: `${REPOSITORY}/tree/${commit}`, label: `Quellcode (${commit.slice(0, 7)})` };
+    return {
+      href: `${REPOSITORY}/tree/${commit}`,
+      label: t("footer.sourceCommit", { commit: commit.slice(0, 7) }),
+    };
   }
-  return { href: REPOSITORY, label: "Quellcode" };
+  return { href: REPOSITORY, label: t("footer.source") };
 }
 
 /**
@@ -34,22 +39,23 @@ function sourceLink(): { href: string; label: string } {
  * reachable only from the login screen and became unreachable once signed in.
  */
 export default function LegalFooter({ className = "" }: { className?: string }) {
-  const source = sourceLink();
+  const t = useT();
+  const source = sourceLink(t);
 
   return (
     <footer
       className={`mt-8 border-t border-slate-200 pt-4 text-xs text-slate-500 ${className}`}
     >
-      <nav aria-label="Rechtliches und Dokumentation">
+      <nav aria-label={t("footer.nav")}>
         <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <li>
             <Link href="/legal/impressum" className="underline hover:text-slate-700">
-              Impressum
+              {t("footer.imprint")}
             </Link>
           </li>
           <li>
             <Link href="/legal/datenschutz" className="underline hover:text-slate-700">
-              Datenschutzerklärung
+              {t("footer.privacy")}
             </Link>
           </li>
           <li>
@@ -59,7 +65,7 @@ export default function LegalFooter({ className = "" }: { className?: string }) 
               rel="noreferrer"
               className="underline hover:text-slate-700"
             >
-              Dokumentation
+              {t("footer.docs")}
             </a>
           </li>
           <li>

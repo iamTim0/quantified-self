@@ -226,6 +226,59 @@ async def test_the_ui_proxy_streams_the_whole_body_through():
 
 
 @pytest.mark.asyncio
+async def test_the_ui_proxy_stops_paying_for_a_base_that_does_not_answer(monkeypatch):
+    """A base that fails must cost one attempt in total, not one per request.
+
+    The proxy tries several addresses because the dashboard sits at a different
+    one in each environment. It used to rebuild that list per request and always
+    start at the top, so outside a container every single proxied request first
+    spent a DNS failure on the container name and then the full 10s connect
+    timeout on `host.docker.internal`, where nothing listens. Measured: 12.7s
+    added to each request, for a page the dev server renders in 50ms.
+
+    Also pins the order: loopback is attempted before `host.docker.internal`,
+    because outside a container loopback is the answer and inside one it is
+    refused immediately rather than stalling.
+    """
+    import httpx
+    from gateway import main as gateway_main
+
+    attempted: list[str] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        attempted.append(request.url.host)
+        if request.url.host != "127.0.0.1":
+            raise httpx.ConnectError("no route to host", request=request)
+        return httpx.Response(200, content=b"ok")
+
+    transport = httpx.MockTransport(upstream)
+    original = httpx.AsyncClient
+
+    def patched(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    # The container-name-first case, which is what a Compose deployment has.
+    monkeypatch.setattr(gateway_main.settings, "DASHBOARD_URL", "http://dashboard:3000")
+    monkeypatch.setattr(gateway_main, "_ui_base", None)
+    gateway_main.httpx.AsyncClient = patched
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
+        ) as ac:
+            first = await ac.get("/")
+            after_first = list(attempted)
+            second = await ac.get("/")
+    finally:
+        gateway_main.httpx.AsyncClient = original
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert after_first == ["dashboard", "127.0.0.1"]
+    assert attempted[len(after_first):] == ["127.0.0.1"]
+
+
+@pytest.mark.asyncio
 async def test_the_gateway_refuses_to_start_in_production_with_a_published_secret(
     monkeypatch,
 ):

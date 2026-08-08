@@ -37,7 +37,7 @@ class TestWhoopTransformer(unittest.TestCase):
         dps = transform_whoop_records("recovery", records, "tenant-456", "whoop_src")
         self.assertEqual(len(dps), 5)
 
-        rec_dp = next(dp for dp in dps if dp["metric_type"] == "recovery_score")
+        rec_dp = next(dp for dp in dps if dp["metric_type"] == "whoop_recovery_score")
         self.assertEqual(rec_dp["tenant_id"], "tenant-456")
         self.assertEqual(rec_dp["value"], 88.0)
         self.assertEqual(rec_dp["metadata"]["source_type"], "whoop")

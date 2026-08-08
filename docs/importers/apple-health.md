@@ -45,19 +45,37 @@ Der Importer schreibt nicht direkt in die Datenbank. Der Core-Service ist der ei
 
 | `metric_type` | Bedeutung | Einheit |
 | --- | --- | --- |
-| `steps_count` | Anzahl der Schritte | Schritte |
-| `active_energy_kcal` | Aktive Energie | kcal |
-| `resting_heart_rate_bpm` | Ruhepuls | Schläge/min |
-| `sleep_duration_hours` | Schlafdauer | Stunden |
+| `steps` | Anzahl der Schritte | `count` |
+| `distance` | Zurückgelegte Distanz | `km` |
+| `energy_active` | Aktive Energie | `kcal` |
+| `energy_resting` | Grundumsatz | `kcal` |
+| `heart_rate` | Puls | `bpm` |
+| `heart_rate_resting` | Ruhepuls | `bpm` |
+| `hrv_sdnn` | Herzratenvariabilität (SDNN) | `ms` |
+| `blood_oxygen` | Sauerstoffsättigung | `%` |
+| `sleep_duration` | Schlafdauer | `min` |
+| `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | Schlafphasen | `min` |
+| `body_weight` | Körpergewicht | `kg` |
+| `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | Trainingseinheiten | `min`, `km`, `kcal`, `bpm` |
 
-Weitere Metriktypen können durch die Normalisierung der Quelle hinzukommen. Für Abfragen ist immer der exakte `metric_type`-Wert zu verwenden.
+Health Auto Export liefert zu jeder Metrik die Einheit mit, und die richtet sich nach
+dem Gebietsschema des Telefons - Meilen oder Kilometer, Stunden oder Minuten. Der
+Importer liest diese Angabe und rechnet auf die Einheit der Registry um; der
+ursprüngliche Wert bleibt in `metadata.provider_value`, die gemeldete Einheit in
+`metadata.units`.
+
+HealthKit-Typen, die der Katalog nicht kennt, landen unter dem Präfix
+`apple_health_` (zum Beispiel `apple_health_dietary_water`). Sie gehen also nicht
+verloren, belegen aber auch keinen kanonischen Namen.
+
+Für Abfragen ist immer der exakte `metric_type`-Wert zu verwenden.
 
 ## Daten abrufen
 
 Die Messwerte werden über die tenant-geschützte Core/Gateway-API abgefragt:
 
 ```http
-GET /api/v1/data/metrics?metric_type=steps_count&start_time=2026-01-01T00:00:00Z&end_time=2026-01-08T00:00:00Z&limit=1000
+GET /api/v1/data/metrics?metric_type=steps&start_time=2026-01-01T00:00:00Z&end_time=2026-01-08T00:00:00Z&limit=1000
 Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
@@ -91,3 +109,5 @@ Der Core-Service dedupliziert anhand des deterministisch gebildeten `idempotency
 Apple-Health-Daten sind besonders schützenswert. Konfiguriere nur die benötigten Kategorien und gewähre Zugriff ausschließlich dem vorgesehenen Tenant. Zugangsdaten werden verschlüsselt abgelegt und dürfen nicht in Logs, Broker-Nachrichten oder Quellcode auftauchen.
 
 Die verfügbaren Daten hängen von Apple Health, den aktivierten Berechtigungen und der verwendeten Export-App ab. Ein erfolgreicher Connector-Sync garantiert daher nicht, dass für jeden Zeitraum Werte vorhanden sind. Die API liefert normalisierte Plattformmetriken; die ursprünglichen Apple-Health-Rohobjekte sind nicht das primäre Abfrageformat.
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

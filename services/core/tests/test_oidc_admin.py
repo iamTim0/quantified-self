@@ -264,7 +264,7 @@ async def test_a_provider_in_use_cannot_be_deleted():
             )
 
         assert res.status_code == 409
-        assert "deaktiviere" in res.json()["detail"].lower()
+        assert "disable it" in res.json()["detail"].lower()
     finally:
         async with async_session_maker() as session:
             await session.execute(

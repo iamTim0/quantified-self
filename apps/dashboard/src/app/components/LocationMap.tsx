@@ -5,6 +5,8 @@ import type { Map as LeafletMap } from "leaflet";
 import { Calendar, Globe2, Layers, MapPin, Navigation, RefreshCw, ShieldCheck } from "lucide-react";
 import { apiFetch } from "../lib/api";
 
+import { useI18n } from "../lib/i18n/provider";
+
 /**
  * GPS route rendering, vector-first.
  *
@@ -99,6 +101,7 @@ export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): 
 }
 
 export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProps) {
+  const { t, formatDateTime } = useI18n();
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
   const [points, setPoints] = useState<GpsPoint[]>([]);
@@ -230,7 +233,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
               .addTo(map)
               .bindPopup(
                 `<div style="font-family:sans-serif;font-size:12px">` +
-                  `<strong>${pt.timestamp ? new Date(pt.timestamp).toLocaleString("de-DE") : ""}</strong><br/>` +
+                  `<strong>${pt.timestamp ? formatDateTime(pt.timestamp) : ""}</strong><br/>` +
                   `<span style="font-family:monospace">${pt.latitude.toFixed(5)}°, ${pt.longitude.toFixed(5)}°</span>` +
                   `</div>`,
               );
@@ -241,9 +244,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
         // Never leave a silent grey box: say what happened and go back to vectors.
         console.error("Map failed to load:", err);
         if (!cancelled) {
-          setTileError(
-            "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
-          );
+          setTileError(t("map.tilesFailed"));
           setShowTiles(false);
         }
       }
@@ -296,11 +297,10 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
         <div>
           <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
             <MapPin className="h-5 w-5 text-[#0d5c3a]" />
-            <span>GPS-Standorte &amp; Strecke</span>
+            <span>{t("map.headline")}</span>
           </h3>
           <p className="mt-0.5 text-xs text-slate-500">
-            Standard ist eine reine Vektor-Route ohne externe Anfragen. Eine Kartenkachel
-            wird erst geladen, wenn du es ausdrücklich möchtest.
+            {t("map.privacyLead")}
           </p>
         </div>
 
@@ -317,7 +317,9 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
                 }`}
               >
                 {f === "today" && <Calendar className="h-3 w-3" />}
-                {f === "today" ? "Heute" : f === "7d" ? "7 Tage" : "30 Tage"}
+                {f === "today"
+                  ? t("map.today")
+                  : t("quality.windowDays", { count: f === "7d" ? 7 : 30 })}
               </button>
             ))}
           </div>
@@ -333,13 +335,11 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             title={
-              showTiles
-                ? "Zurück zur Vektor-Darstellung"
-                : "Lädt Kartenkacheln von einem externen Anbieter"
+              showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")
             }
           >
             <Globe2 className="h-3.5 w-3.5" />
-            {showTiles ? "Karte ausblenden" : "Karte laden"}
+            {showTiles ? t("map.hideTiles") : t("map.showTiles")}
           </button>
 
           {showTiles && (
@@ -362,9 +362,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
         <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d5c3a]" />
           <span>
-            Es werden keine Standortdaten an Kartenanbieter übertragen. Beim Laden der
-            Karte fordert dein Browser Kacheln direkt beim Anbieter an; dabei wird der
-            betrachtete Kartenausschnitt für den Anbieter sichtbar.
+            {t("map.privacyDetail")}
           </span>
         </p>
       )}
@@ -402,7 +400,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
                   strokeWidth="1.5"
                 >
                   <title>
-                    {p.timestamp ? new Date(p.timestamp).toLocaleString("de-DE") : ""} —{" "}
+                    {p.timestamp ? formatDateTime(p.timestamp) : ""} —{" "}
                     {p.latitude.toFixed(5)}°, {p.longitude.toFixed(5)}°
                   </title>
                 </circle>
@@ -410,7 +408,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
             </svg>
           ) : (
             <div className="flex h-[380px] items-center justify-center text-xs text-slate-400">
-              Keine GPS-Punkte im gewählten Zeitraum.
+              {t("map.empty")}
             </div>
           )}
         </div>

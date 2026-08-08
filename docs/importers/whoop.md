@@ -71,4 +71,33 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten aus dem Transformer.
+Filtere optional nach weiteren `metric_type` Werten:
+
+| `metric_type` | Bedeutung | Einheit |
+| --- | --- | --- |
+| `whoop_recovery_score` | Recovery | `%` |
+| `whoop_strain` | Strain des Tages | `index` (0-21) |
+| `whoop_workout_strain` | Strain einer Einheit | `index` (0-21) |
+| `whoop_sleep_performance` | Sleep Performance | `%` |
+| `sleep_efficiency` | Schlafeffizienz | `%` |
+| `heart_rate_resting` | Ruhepuls | `bpm` |
+| `heart_rate_average` | Durchschnittspuls des Tages | `bpm` |
+| `hrv_rmssd` | Herzratenvariabilität (RMSSD) | `ms` |
+| `blood_oxygen` | Sauerstoffsättigung | `%` |
+| `respiratory_rate` | Atemfrequenz | `br/min` |
+| `skin_temperature` | Hauttemperatur | `°C` |
+| `energy_total` | Gesamtumsatz des Tages | `kcal` |
+| `workout_energy` | Energie einer Einheit | `kcal` |
+| `workout_distance` | Distanz einer Einheit | `km` |
+| `workout_heart_rate_average` | Durchschnittspuls einer Einheit | `bpm` |
+
+WHOOP liefert Energie in **Kilojoule** und Distanzen in **Metern**. Der Importer
+rechnet beides auf die Einheiten der Registry um (kcal beziehungsweise km), damit
+dieselbe Größe von Apple Health und von WHOOP vergleichbar ist. Der Rohwert bleibt
+in `metadata.provider_value`, die Quelleinheit in `metadata.provider_unit`.
+
+`whoop_recovery_score`, `whoop_strain` und `whoop_sleep_performance` behalten ihr
+Herstellerpräfix: Es sind WHOOP-eigene Kennzahlen ohne Entsprechung bei anderen
+Quellen.
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

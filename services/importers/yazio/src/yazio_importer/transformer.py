@@ -2,6 +2,18 @@
 
 Maps Yazio raw diary JSON documents into standardized DataPoint dictionaries.
 Generates deterministic SHA256 idempotency_keys.
+
+Metric names come from the shared registry
+(packages/shared-schemas/src/shared_schemas/metrics.py). Two of the old names were
+worse than merely inconsistent:
+
+* ``consumed_product`` was written when an item had no calorie figure, and its value
+  was then the logged *amount* -- so one series mixed grams and kilocalories. Amount
+  and energy are now two metrics with two units.
+* Meal aggregates were named ``f"{meal_category}_calories"``, minting a metric name
+  per meal label the provider happened to use. The meal is a property of the reading,
+  not a different quantity, so it lives in ``metadata["meal_category"]`` and every
+  meal shares one metric.
 """
 
 import hashlib
@@ -92,7 +104,7 @@ def transform_consumed_items(
             item_fat = float(p_info.get("fat_g", 0.0)) * ratio
 
         val_flt = float(item_cal) if item_cal is not None else float(amount)
-        metric_type = "consumed_item_calories" if item_cal is not None else "consumed_product"
+        metric_type = "nutrition_item_energy" if item_cal is not None else "nutrition_item_amount"
 
         if item_cal is not None:
             total_cal += float(item_cal)
@@ -147,7 +159,7 @@ def transform_consumed_items(
             or (f"Rezept #{rid[:8]}" if rid else "Unbekanntes Rezept")
         )
 
-        metric_type = "consumed_recipe_portion"
+        metric_type = "nutrition_recipe_portions"
         item_source_id = f"{source_id}_recipe_{r_id}"
 
         idempotency_key = generate_idempotency_key(
@@ -193,7 +205,7 @@ def transform_consumed_items(
         total_fat += float(fat_val)
         total_carb += float(carb_val)
 
-        metric_type = "consumed_item_calories"
+        metric_type = "nutrition_item_energy"
         item_source_id = f"{source_id}_simple_{s_id}"
 
         idempotency_key = generate_idempotency_key(
@@ -242,7 +254,7 @@ def transform_consumed_items(
             total_carb += c_val
             total_fat += f_val
 
-            metric_type = "consumed_item_calories"
+            metric_type = "nutrition_item_energy"
             item_source_id = f"{source_id}_{item_id}"
 
             idempotency_key = generate_idempotency_key(
@@ -280,11 +292,11 @@ def transform_consumed_items(
     raw_fiber_val = summary.get("fiber_g") or summary.get("fiber")
 
     daily_metrics = {
-        "calories": float(raw_cal_val) if raw_cal_val is not None else None,
-        "protein": float(raw_prot_val) if raw_prot_val is not None else None,
-        "carbohydrates": float(raw_carb_val) if raw_carb_val is not None else None,
-        "fat": float(raw_fat_val) if raw_fat_val is not None else None,
-        "fiber": float(raw_fiber_val) if raw_fiber_val is not None else None,
+        "nutrition_energy": float(raw_cal_val) if raw_cal_val is not None else None,
+        "nutrition_protein": float(raw_prot_val) if raw_prot_val is not None else None,
+        "nutrition_carbohydrates": float(raw_carb_val) if raw_carb_val is not None else None,
+        "nutrition_fat": float(raw_fat_val) if raw_fat_val is not None else None,
+        "nutrition_fiber": float(raw_fiber_val) if raw_fiber_val is not None else None,
     }
 
     for metric_type, val in daily_metrics.items():
@@ -316,9 +328,12 @@ def transform_consumed_items(
             if isinstance(meal_info, dict) and ("calories" in meal_info or "energy" in meal_info):
                 cal_val = meal_info.get("calories") or meal_info.get("energy")
                 if cal_val is not None:
-                    metric_type = f"{meal_cat}_calories"
+                    metric_type = "nutrition_meal_energy"
+                    # Every meal shares the metric now, so the meal has to enter the
+                    # key instead of the name -- otherwise breakfast and dinner on one
+                    # day hash identically and Core keeps whichever arrived first.
                     idempotency_key = generate_idempotency_key(
-                        tenant_id, source_id, metric_type, timestamp
+                        tenant_id, f"{source_id}_meal_{meal_cat}", metric_type, timestamp
                     )
                     dp = {
                         "tenant_id": tenant_id,

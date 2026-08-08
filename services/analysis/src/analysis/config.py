@@ -18,7 +18,10 @@ _ROOT_ENV = _find_root_env()
 
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-analysis-service"
-    CORE_GRPC_URL: str = "core-service:50051"
+    # Loopback for a local checkout; Compose sets the container name, which is
+    # `core`. The default named `core-service`, a host that exists in neither
+    # place, so a locally started Analysis service could not reach Core at all.
+    CORE_GRPC_URL: str = "127.0.0.1:50051"
 
     # There is deliberately no DATABASE_URL here. This service reads through
     # Core's gRPC API and owns no database connection (AGENTS.md rules 1 and 3).

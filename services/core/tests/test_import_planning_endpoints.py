@@ -194,7 +194,7 @@ async def test_import_plan_force_skips_nothing():
         plan = res.json()
         assert plan["mode"] == "force"
         assert plan["skipped_ranges"] == []
-        assert "Force-Modus" in plan["reason"]
+        assert "Force mode" in plan["reason"]
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -268,7 +268,7 @@ async def test_sync_skips_when_the_range_is_already_complete(mock_nats):
         assert res.status_code == 202
         body = res.json()
         assert body["status"] == "skipped"
-        assert "bereits vollständig vorhanden" in body["plan"]["reason"]
+        assert "already complete" in body["plan"]["reason"]
         assert len(mock_nats.published) == before, "nothing should have been enqueued"
     finally:
         await cleanup_test_tenant(tenant_id)

@@ -13,6 +13,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useI18n } from "../lib/i18n/provider";
 
 /**
  * Management for tenant-bound inbound API keys.
@@ -44,8 +45,7 @@ interface ApiKeyManagerProps {
   providerLabel: string;
 }
 
-const formatDate = (iso: string | null) =>
-  iso ? new Date(iso).toLocaleDateString("de-DE") : "—";
+
 
 export default function ApiKeyManager({
   apiBase,
@@ -53,6 +53,7 @@ export default function ApiKeyManager({
   ingestPath,
   providerLabel,
 }: ApiKeyManagerProps) {
+  const { t, formatDate } = useI18n();
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -77,7 +78,7 @@ export default function ApiKeyManager({
         setKeys(all.filter((k) => k.source_type === sourceType));
       }
     } catch {
-      setError("Schlüssel konnten nicht geladen werden.");
+      setError(t("apikeys.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -108,7 +109,7 @@ export default function ApiKeyManager({
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || "Schlüssel konnte nicht erstellt werden.");
+      if (!res.ok) throw new Error(data?.detail || t("apikeys.createFailed"));
       setRevealedKey(data.api_key);
       setNewKeyName("");
       await load();
@@ -141,8 +142,7 @@ export default function ApiKeyManager({
   const handleRevoke = async (id: string, prefix: string) => {
     if (
       !confirm(
-        `Schlüssel ${prefix}… wirklich widerrufen? Geräte, die ihn verwenden, können ` +
-          `danach sofort keine Daten mehr senden.`,
+        t("apikeys.confirmRevoke", { prefix }),
       )
     )
       return;
@@ -172,7 +172,7 @@ export default function ApiKeyManager({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      setError("Kopieren nicht möglich — bitte manuell markieren.");
+      setError(t("apikeys.copyFailed"));
     }
   };
 
@@ -198,9 +198,7 @@ export default function ApiKeyManager({
             Authorization: Bearer &lt;dein-key&gt;
           </div>
           <p className="text-[11px] text-slate-500">
-            Ein separater <code>X-Tenant-ID</code>-Header ist nicht nötig — der Tenant
-            wird aus dem Schlüssel selbst ermittelt. Ältere Apps dürfen weiterhin{" "}
-            <code>X-Api-Key</code> senden.
+            {t("apikeys.headerHint")}
           </p>
         </div>
         <a
@@ -209,7 +207,7 @@ export default function ApiKeyManager({
           rel="noreferrer"
           className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#0d5c3a] underline"
         >
-          <BookOpen className="h-3.5 w-3.5" /> Dokumentation zu API-Keys
+          <BookOpen className="h-3.5 w-3.5" /> {t("apikeys.docs")}
         </a>
       </div>
 
@@ -217,7 +215,7 @@ export default function ApiKeyManager({
         <div className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">
           <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
             <AlertTriangle className="h-4 w-4" />
-            Dieser Schlüssel wird nur einmal angezeigt
+            {t("apikeys.shownOnce")}
           </div>
           <div className="flex items-center gap-2">
             <code className="flex-1 select-all break-all rounded-xl border border-amber-200 bg-white p-2.5 font-mono text-[11px] text-slate-900">
@@ -227,14 +225,13 @@ export default function ApiKeyManager({
               type="button"
               onClick={copyKey}
               className="shrink-0 rounded-xl border border-amber-300 bg-white p-2.5 text-amber-800 hover:bg-amber-100"
-              title="In die Zwischenablage kopieren"
+              title={t("apikeys.copy")}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
           <p className="text-[11px] text-amber-900">
-            Jetzt in der App hinterlegen. Nach dem Schließen ist er nicht wieder
-            abrufbar — nur widerrufen und neu erzeugen.
+            {t("apikeys.storeNow")}
           </p>
           <button
             type="button"
@@ -257,7 +254,7 @@ export default function ApiKeyManager({
 
         {keys.length === 0 && !loading && (
           <p className="mb-3 text-[11px] text-slate-500">
-            Noch kein Schlüssel für {providerLabel}. Erzeuge einen, um Daten zu empfangen.
+            {t("apikeys.none", { provider: providerLabel })}
           </p>
         )}
 
@@ -276,12 +273,13 @@ export default function ApiKeyManager({
                   <p className="truncate text-[11px] font-bold text-slate-800">{k.name}</p>
                   <p className="font-mono text-[11px] text-slate-500">{k.key_prefix}…</p>
                   <p className="mt-0.5 text-[10px] text-slate-400">
-                    Erstellt {formatDate(k.created_at)}
-                    {k.expires_at && ` · Läuft ab ${formatDate(k.expires_at)}`}
+                    {t("apikeys.created", { date: formatDate(k.created_at) })}
+                    {k.expires_at &&
+                      ` · ${t("apikeys.expires", { date: formatDate(k.expires_at) })}`}
                     {" · "}
                     {k.last_used_at
-                      ? `Zuletzt genutzt ${formatDate(k.last_used_at)}`
-                      : "Noch nie genutzt"}
+                      ? t("apikeys.lastUsed", { date: formatDate(k.last_used_at) })
+                      : t("apikeys.neverUsed")}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
@@ -292,7 +290,7 @@ export default function ApiKeyManager({
                         : "bg-slate-200 text-slate-600"
                     }`}
                   >
-                    {k.status === "active" ? "aktiv" : "widerrufen"}
+                    {k.status === "active" ? t("apikeys.statusActive") : t("apikeys.statusRevoked")}
                   </span>
                   {k.status === "active" && (
                     <>
@@ -300,7 +298,7 @@ export default function ApiKeyManager({
                         type="button"
                         onClick={() => handleRotate(k.id)}
                         disabled={busy === k.id}
-                        title="Nachfolger erzeugen; dieser Key bleibt bis zum Widerruf gültig"
+                        title={t("apikeys.rotateTitle")}
                         className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
@@ -309,7 +307,7 @@ export default function ApiKeyManager({
                         type="button"
                         onClick={() => handleRevoke(k.id, k.key_prefix)}
                         disabled={busy === k.id}
-                        title="Sofort ungültig machen"
+                        title={t("apikeys.revokeTitle")}
                         className="rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -331,7 +329,7 @@ export default function ApiKeyManager({
               type="text"
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder={`z. B. iPhone von Timo`}
+              placeholder={t("apikeys.namePlaceholder")}
               className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-[#0d5c3a]"
             />
           </label>
@@ -346,8 +344,8 @@ export default function ApiKeyManager({
               }
               className="rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none"
             >
-              <option value="">Kein Ablauf</option>
-              <option value={90}>90 Tage</option>
+              <option value="">{t("apikeys.noExpiry")}</option>
+              <option value={90}>{t("quality.windowDays", { count: 90 })}</option>
               <option value={365}>1 Jahr</option>
               <option value={730}>2 Jahre</option>
             </select>
@@ -369,8 +367,7 @@ export default function ApiKeyManager({
 
         {activeKeys.length > 1 && (
           <p className="mt-2 text-[10px] text-slate-400">
-            Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass
-            die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die
+            {t("apikeys.rotationHint")}
             App auf den neuen umgestellt ist.
           </p>
         )}

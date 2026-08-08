@@ -4,14 +4,15 @@ import React, { useState, useEffect } from "react";
 import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug, BookOpen } from "lucide-react";
 import ApiKeyManager from "./ApiKeyManager";
 import { apiFetch } from "../lib/api";
+import { useT, type MessageKey } from "../lib/i18n/provider";
 
 export type ConnectorDirection = "active" | "passive";
 
 export interface ProviderCatalogItem {
   id: string;
   name: string;
-  category: string;
-  description: string;
+  categoryKey: MessageKey;
+  descriptionKey: MessageKey;
   icon: React.ElementType;
   iconColor: string;
   status: "available" | "coming_soon";
@@ -23,8 +24,8 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   {
     id: "yazio",
     name: "Yazio Nutrition v15",
-    category: "Ernährung & Tagebuch",
-    description: "Aktiv: Der Importer fragt Mahlzeiten, Kalorien und Nährwerte aus deinem Yazio-Tagebuch ab.",
+    categoryKey: "modal.catNutrition",
+    descriptionKey: "modal.desc.yazio",
     icon: Flame,
     iconColor: "text-amber-400",
     status: "available",
@@ -34,8 +35,8 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   {
     id: "whoop",
     name: "Whoop",
-    category: "Regeneration & Schlaf",
-    description: "Aktiv: Der Importer fragt Recovery Score, HRV, Schlafphasen, Ruhepuls und Strain ab.",
+    categoryKey: "modal.catRecovery",
+    descriptionKey: "modal.desc.whoop",
     icon: Activity,
     iconColor: "text-red-400",
     status: "available",
@@ -45,51 +46,51 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
   {
     id: "apple_health",
     name: "Apple Health",
-    category: "Fitness & Vitaldaten",
-    description: "Passiv: Health Auto Export sendet Schritte, Herzfrequenz, Schlafphasen und Workouts an deinen Webhook.",
+    categoryKey: "modal.catVitals",
+    descriptionKey: "modal.desc.apple_health",
     icon: Heart,
     iconColor: "text-rose-400",
     status: "available",
-    supportedMetrics: ["Schritte", "Herzfrequenz", "Aktivitätskalorien", "Schlaf-Phasen", "Workouts"],
+    supportedMetrics: ["Steps", "Heart rate", "Active energy", "Sleep stages", "Workouts"],
     direction: "passive",
   },
   {
     id: "streak",
     name: "Streak - Gym Log",
-    category: "Krafttraining & Gym Log",
-    description: "Passiv: Streak 2.0 sendet Workouts, Sätze, Reps und Gewichte an deinen REST-Webhook.",
+    categoryKey: "modal.catStrength",
+    descriptionKey: "modal.desc.streak",
     icon: Dumbbell,
     iconColor: "text-[#0d5c3a]",
     status: "available",
-    supportedMetrics: ["Übungssätze", "Gewicht (kg)", "Wiederholungen", "Max Puls", "Set Volumen"],
+    supportedMetrics: ["Exercise sets", "Weight (kg)", "Reps", "Max heart rate", "Set volume"],
     direction: "passive",
   },
   {
     id: "dawarich",
     name: "Dawarich Location",
-    category: "Location & GPS Tracking",
-    description: "Aktiv: Der Importer fragt Standorte, GPS-Punkte und Bewegungsstrecken von deinem Dawarich-Server ab.",
+    categoryKey: "modal.catLocation",
+    descriptionKey: "modal.desc.dawarich",
     icon: MapPin,
     iconColor: "text-emerald-500",
     status: "available",
-    supportedMetrics: ["Standortpunkte", "Breitengrad", "Längengrad"],
+    supportedMetrics: ["Location points", "Latitude", "Longitude"],
     direction: "active",
   },
   {
-    id: "home_assistant", name: "Home Assistant", category: "Smart Home",
-    description: "Aktiv: Liest Temperatur, Luftfeuchte, Licht und weitere freigegebene Sensorzustände.",
+    id: "home_assistant", name: "Home Assistant", categoryKey: "modal.catSmartHome",
+    descriptionKey: "modal.desc.home_assistant",
     icon: HousePlug, iconColor: "text-sky-500", status: "available",
-    supportedMetrics: ["Temperatur", "Luftfeuchte", "Licht", "Lärm"], direction: "active",
+    supportedMetrics: ["Temperature", "Humidity", "Light", "Noise"], direction: "active",
   },
   {
-    id: "weather", name: "Wetter", category: "Umwelt",
-    description: "Aktiv: Importiert lokale Wetterzeitreihen über eine Open-Meteo-kompatible API.",
+    id: "weather", name: "Weather", categoryKey: "modal.catEnvironment",
+    descriptionKey: "modal.desc.weather",
     icon: CloudSun, iconColor: "text-amber-500", status: "available",
     supportedMetrics: ["Temperatur", "Luftdruck", "Niederschlag", "UV-Index"], direction: "active",
   },
   {
-    id: "calendar", name: "Kalender", category: "Routine & Stress",
-    description: "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
+    id: "calendar", name: "Calendar", categoryKey: "modal.catRoutine",
+    descriptionKey: "modal.desc.calendar",
     icon: Calendar, iconColor: "text-violet-500", status: "available",
     supportedMetrics: ["Termine", "Meetingdauer", "Busy Hours"], direction: "active",
   },
@@ -121,6 +122,7 @@ export default function ConnectorModal({
   initialLookbackDays = 30,
   isEditing = false,
 }: ConnectorModalProps) {
+  const t = useT();
   const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
   const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
 
@@ -192,7 +194,7 @@ export default function ConnectorModal({
         if (yazioAuthMode === "login") {
           if (yazioEmail.trim() || yazioPassword.trim()) {
             if (!yazioEmail.trim() || !yazioPassword.trim()) {
-              setError("Bitte gib sowohl E-Mail als auch Passwort ein.");
+              setError(t("modal.needEmailPassword"));
               setLoading(false);
               return;
             }
@@ -203,7 +205,7 @@ export default function ConnectorModal({
             };
           }
         } else if (!finalToken && !isEditing) {
-          setError("Bitte gib einen Yazio Bearer Access Token ein.");
+          setError(t("modal.needYazioToken"));
           setLoading(false);
           return;
         }
@@ -213,19 +215,19 @@ export default function ConnectorModal({
           base_url: dawarichUrl.trim() || "http://localhost:3000",
         };
         if (!finalToken && !isEditing) {
-          setError("Bitte gib den Dawarich API Key ein.");
+          setError(t("modal.needDawarichKey"));
           setLoading(false);
           return;
         }
       } else if (selectedProvider.id === "calendar") {
         const url = providerBaseUrl.trim();
         if (!url) {
-          setError("Bitte gib die URL deines Kalender-Feeds (.ics) ein.");
+          setError(t("modal.needCalendarUrl"));
           setLoading(false);
           return;
         }
         if (!/^https?:\/\//i.test(url)) {
-          setError("Die Kalender-URL muss mit http:// oder https:// beginnen.");
+          setError(t("modal.calendarUrlScheme"));
           setLoading(false);
           return;
         }
@@ -236,21 +238,20 @@ export default function ConnectorModal({
         payloadConfig = { ics_url: url, base_url: url };
         if (!isIcsUrl && !finalToken && !isEditing) {
           setError(
-            "Diese URL sieht nicht nach einem .ics-Feed aus. Gib entweder eine gültige " +
-              "ICS-URL oder zusätzlich einen API Key an.",
+            t("modal.calendarUrlSuspect"),
           );
           setLoading(false);
           return;
         }
       } else if (["home_assistant", "weather"].includes(selectedProvider.id)) {
         if (!providerBaseUrl.trim()) {
-          setError("Bitte gib die HTTPS-Basis-URL der Provider-API ein.");
+          setError(t("modal.needBaseUrl"));
           setLoading(false);
           return;
         }
         payloadConfig = { base_url: providerBaseUrl.trim() };
         if (!finalToken && !isEditing) {
-          setError(`Bitte gib einen gültigen API Key für ${selectedProvider.name} ein.`);
+          setError(t("modal.needApiKey", { provider: selectedProvider.name }));
           setLoading(false);
           return;
         }
@@ -259,7 +260,7 @@ export default function ConnectorModal({
         // (see ApiKeyManager), so there is no provider credential to enter here.
         payloadConfig = { ...(payloadConfig || {}), auth_mode: "api_key" };
       } else if (!finalToken && !isEditing) {
-        setError(`Bitte gib einen gültigen API Key für ${selectedProvider.name} ein oder generiere einen.`);
+        setError(t("modal.needApiKeyOrGenerate", { provider: selectedProvider.name }));
         setLoading(false);
         return;
       }
@@ -282,7 +283,7 @@ export default function ConnectorModal({
       });
 
       if (res.ok) {
-        setMessage(`${selectedProvider.name} Einstellungen erfolgreich gespeichert!`);
+        setMessage(t("modal.saved", { provider: selectedProvider.name }));
         setAccessToken("");
         setYazioEmail("");
         setYazioPassword("");
@@ -292,10 +293,10 @@ export default function ConnectorModal({
         }, 1200);
       } else {
         const data = await res.json().catch(() => null);
-        setError(data?.detail || "Konfiguration konnte nicht gespeichert werden.");
+        setError(data?.detail || t("modal.saveFailed"));
       }
     } catch (err: any) {
-      setError(`Netzwerkfehler: ${err?.message || "Server nicht erreichbar"}`);
+      setError(t("modal.networkError", { message: err?.message || t("modal.serverUnreachable") }));
     } finally {
       setLoading(false);
     }
@@ -313,7 +314,7 @@ export default function ConnectorModal({
               <button
                 onClick={() => setStep("select_provider")}
                 className="p-2 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 transition-colors"
-                title="Zurück zur Auswahl"
+                title={t("modal.backToChoice")}
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -322,10 +323,10 @@ export default function ConnectorModal({
               <Plug className="w-5 h-5 text-[#0d5c3a]" />
               <h2 className="text-lg font-bold">
                 {step === "select_provider"
-                  ? "Datenquelle auswählen"
+                  ? t("modal.pickSource")
                   : isEditing
-                  ? `${selectedProvider?.name} bearbeiten`
-                  : `${selectedProvider?.name} verbinden`}
+                  ? t("modal.editProvider", { provider: selectedProvider?.name ?? "" })
+                  : t("modal.connectProvider", { provider: selectedProvider?.name ?? "" })}
               </h2>
               {selectedProvider && step === "configure_provider" && (
                 <a
@@ -333,7 +334,7 @@ export default function ConnectorModal({
                   target="_blank"
                   rel="noreferrer"
                   className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-800 hover:bg-emerald-100 transition-colors"
-                  title={`Anleitung zu ${selectedProvider.name} öffnen`}
+                  title={t("modal.guideFor", { provider: selectedProvider.name })}
                 >
                   <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
                   <span>Anleitung</span>
@@ -353,7 +354,7 @@ export default function ConnectorModal({
         {step === "select_provider" ? (
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
-              Wähle einen Importer aus. Die Kennzeichnung zeigt, ob er einen Dienst selbst abfragt oder Daten von ihm empfängt:
+              {t("modal.pickHint")}
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
               {PROVIDER_CATALOG.map((provider) => {
@@ -380,16 +381,16 @@ export default function ConnectorModal({
                               : "bg-slate-200 text-slate-500 border border-slate-300"
                           }`}
                         >
-                          {isAvailable ? "Verfügbar" : "Demnächst"}
+                          {isAvailable ? t("modal.available") : t("connectors.soon")}
                         </span>
                       </div>
                       <h3 className="text-sm font-bold text-slate-900">{provider.name}</h3>
                       <span className={provider.direction === "active"
                         ? "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-sky-50 text-sky-800 border border-sky-200"
                         : "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-violet-50 text-violet-800 border border-violet-200"}>
-                        {provider.direction === "active" ? "Aktiv · fragt ab" : "Passiv · empfängt"}
+                        {provider.direction === "active" ? t("modal.activeShort") : t("modal.passiveShort")}
                       </span>
-                      <p className="text-[11px] text-slate-500 leading-snug">{provider.description}</p>
+                      <p className="text-[11px] text-slate-500 leading-snug">{t(provider.descriptionKey)}</p>
                     </div>
 
                     <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-200">
@@ -417,12 +418,12 @@ export default function ConnectorModal({
               )}
               <div>
                 <span className="font-bold block">
-                  {isPassive ? "Passiver Importer · Daten werden zugestellt" : "Aktiver Importer · fragt den Dienst selbst ab"}
+                  {isPassive ? t("modal.passiveTitle") : t("modal.activeTitle")}
                 </span>
                 <span className="text-[11px] leading-relaxed block mt-0.5">
                   {isPassive
-                    ? "Du hinterlegst die Webhook-Adresse und den Header-Schlüssel. Der externe Dienst sendet neue Daten ereignisbasiert; ein Sync-Intervall ist nicht erforderlich."
-                    : "Du hinterlegst Zugangsdaten. Der Importer ruft den externen Dienst nach dem konfigurierten Intervall und Zeitraum ab."}
+                    ? t("modal.passiveBody")
+                    : t("modal.activeBody")}
                 </span>
               </div>
             </div>
@@ -431,7 +432,7 @@ export default function ConnectorModal({
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-2.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <div>
-                  <span className="font-bold block">Zugangsdaten sind hinterlegt (Fernet AES-256)</span>
+                  <span className="font-bold block">{t("modal.credentialsStored")}</span>
                   <span className="text-[11px] text-emerald-700 leading-relaxed block mt-0.5">
                     Du kannst Abfrage-Frequenz und Zeitraum anpassen, ohne das Passwort neu einzugeben.
                   </span>
@@ -470,7 +471,7 @@ export default function ConnectorModal({
                       </label>
                       <input
                         type="email"
-                        placeholder={isEditing ? "Bestehende Zugangsdaten beibehalten..." : "name@example.com"}
+                        placeholder={isEditing ? t("modal.keepCredentials") : "name@example.com"}
                         value={yazioEmail}
                         onChange={(e) => setYazioEmail(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
@@ -482,7 +483,7 @@ export default function ConnectorModal({
                       </label>
                       <input
                         type="password"
-                        placeholder={isEditing ? "•••••••• (unverändert lassen)" : "••••••••"}
+                        placeholder={isEditing ? t("modal.keepUnchanged") : "••••••••"}
                         value={yazioPassword}
                         onChange={(e) => setYazioPassword(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
@@ -498,7 +499,7 @@ export default function ConnectorModal({
                     </label>
                     <input
                       type="password"
-                      placeholder={isEditing ? "•••••••• (Zugangsdaten beibehalten)" : "Füge deinen Yazio Bearer Token hier ein"}
+                      placeholder={isEditing ? t("modal.keepCredentialsShort") : t("modal.pasteYazioToken")}
                       value={accessToken}
                       onChange={(e) => setAccessToken(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
@@ -531,7 +532,7 @@ export default function ConnectorModal({
                   </label>
                   <input
                     type="password"
-                    placeholder={isEditing ? "•••••••• (API Key beibehalten)" : "Füge deinen Dawarich API Key hier ein"}
+                    placeholder={isEditing ? t("modal.keepApiKey") : t("modal.pasteDawarichKey")}
                     value={dawarichApiKey}
                     onChange={(e) => setDawarichApiKey(e.target.value)}
                     required={!isEditing}
@@ -556,7 +557,7 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
                   />
                   <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                    Öffentliche und private ICS-Feeds (Outlook, Google, Nextcloud) funktionieren
+                    {t("modal.icsHint")}
                     ohne API Key. Die URL einer privaten Feed-Adresse ist selbst das Geheimnis und
                     wird verschlüsselt gespeichert sowie nie protokolliert.{" "}
                     <a href="/docs/importers/calendar/" className="text-[#0d5c3a] underline" target="_blank" rel="noreferrer">
@@ -566,13 +567,13 @@ export default function ConnectorModal({
                 </div>
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    API Key <span className="text-slate-400 font-normal text-[11px] lowercase">(optional, nur für API-Kalender)</span>
+                    API Key <span className="text-slate-400 font-normal text-[11px] lowercase">{t("modal.apiKeyOptional")}</span>
                   </label>
                   <input
                     type="password"
                     value={accessToken}
                     onChange={(event) => setAccessToken(event.target.value)}
-                    placeholder="Nur nötig, wenn dein Anbieter keinen ICS-Feed anbietet"
+                    placeholder={t("modal.apiKeyOptionalPlaceholder")}
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
                   />
                 </div>
@@ -608,7 +609,7 @@ export default function ConnectorModal({
             /* Sync Frequency & Period Configuration */
             <div className="pt-3 border-t border-slate-100 space-y-3">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" /> Abfrage-Intervall & Zeitraum bearbeiten
+                <Clock className="w-3.5 h-3.5" /> {t("modal.intervalSection")}
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -620,29 +621,29 @@ export default function ConnectorModal({
                     onChange={(e) => setPollIntervalHours(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
                   >
-                    <option value={1} className="bg-white text-slate-900">Jede Stunde (1 Std)</option>
-                    <option value={3} className="bg-white text-slate-900">Alle 3 Stunden</option>
-                    <option value={6} className="bg-white text-slate-900">Alle 6 Stunden (Standard)</option>
-                    <option value={12} className="bg-white text-slate-900">Alle 12 Stunden</option>
-                    <option value={24} className="bg-white text-slate-900">Täglich (24 Std)</option>
-                    <option value={168} className="bg-white text-slate-900">Wöchentlich (168 Std)</option>
+                    <option value={1} className="bg-white text-slate-900">{t("modal.everyHour")}</option>
+                    <option value={3} className="bg-white text-slate-900">{t("modal.everyNHours", { count: 3 })}</option>
+                    <option value={6} className="bg-white text-slate-900">{t("modal.everyNHoursDefault", { count: 6 })}</option>
+                    <option value={12} className="bg-white text-slate-900">{t("modal.everyNHours", { count: 12 })}</option>
+                    <option value={24} className="bg-white text-slate-900">{t("modal.daily")}</option>
+                    <option value={168} className="bg-white text-slate-900">{t("modal.weekly")}</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-emerald-600" /> Import-Zeitraum
+                    <Calendar className="w-3 h-3 text-emerald-600" /> {t("modal.importPeriod")}
                   </label>
                   <select
                     value={lookbackDays}
                     onChange={(e) => setLookbackDays(Number(e.target.value))}
                     className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
                   >
-                    <option value={7} className="bg-white text-slate-900">Letzte 7 Tage</option>
-                    <option value={14} className="bg-white text-slate-900">Letzte 14 Tage</option>
-                    <option value={30} className="bg-white text-slate-900">Letzte 30 Tage (Standard)</option>
-                    <option value={60} className="bg-white text-slate-900">Letzte 60 Tage</option>
-                    <option value={90} className="bg-white text-slate-900">Letzte 90 Tage</option>
+                    <option value={7} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 7 })}</option>
+                    <option value={14} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 14 })}</option>
+                    <option value={30} className="bg-white text-slate-900">{t("modal.lastNDaysDefault", { count: 30 })}</option>
+                    <option value={60} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 60 })}</option>
+                    <option value={90} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 90 })}</option>
                   </select>
                 </div>
               </div>
@@ -652,7 +653,7 @@ export default function ConnectorModal({
             {isPassive && (
               <div className="pt-3 border-t border-slate-100">
                 <p className="text-[11px] text-slate-500">
-                  <span className="font-bold text-violet-700">Passiver Datenfluss:</span> Nach dem Speichern sendet die konfigurierte App Daten an die oben angezeigte URL. Neue Daten werden ohne manuelles Abfragen verarbeitet.
+                  <span className="font-bold text-violet-700">{t("modal.passiveFlowLead")}</span> {t("modal.passiveFlowBody")}
                 </p>
               </div>
             )}
@@ -667,7 +668,7 @@ export default function ConnectorModal({
                   onClick={() => setStep("select_provider")}
                   className="px-4 py-2 text-xs font-bold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" /> Zurück
+                  <ArrowLeft className="w-3.5 h-3.5" /> {t("modal.back")}
                 </button>
               ) : (
                 <button
@@ -683,7 +684,7 @@ export default function ConnectorModal({
                 disabled={loading}
                 className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
               >
-                {loading ? "Speichere..." : isEditing ? "Einstellungen Speichern" : "Verbindung Speichern"}
+                {loading ? t("modal.saving") : isEditing ? t("modal.saveSettings") : t("modal.saveConnection")}
               </button>
             </div>
           </form>

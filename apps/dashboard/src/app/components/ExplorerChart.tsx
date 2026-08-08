@@ -15,6 +15,8 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 
+import { useT } from "../lib/i18n/provider";
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -41,6 +43,7 @@ interface ExplorerChartProps {
 }
 
 export default function ExplorerChart({ dates, series, chartType, aggregation }: ExplorerChartProps) {
+  const t = useT();
   const chartData = {
     labels: dates,
     datasets: series.map((s) => ({
@@ -117,7 +120,7 @@ export default function ExplorerChart({ dates, series, chartType, aggregation }:
         )
       ) : (
         <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">
-          Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.
+          {t("chart.emptyFilter")}
         </div>
       )}
     </div>

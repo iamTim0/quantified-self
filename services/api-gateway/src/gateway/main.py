@@ -425,17 +425,58 @@ async def proxy_core_service(
             )
 
 
+# Where the dashboard answers, in the order worth trying.
+#
+# The address differs per environment -- a container name inside Compose, loopback
+# for a local checkout -- so the proxy tries a list. What it must not do is re-pay
+# for the wrong entries on every request: outside a container, `dashboard` costs a
+# failed DNS lookup and `host.docker.internal` resolves to an address where
+# nothing listens, so its 10s connect timeout runs out in full. Measured on a
+# Windows host: 2.7s + 10.0s = 12.7s added to *every* proxied request, for a page
+# `next dev` renders in 50ms. It looked like the UI was slow; nothing was slow.
+#
+# So the base that answered is remembered and tried first, and loopback comes
+# before `host.docker.internal`: outside a container loopback is the right answer,
+# and inside one it is refused immediately rather than stalling.
+_UI_FALLBACKS = (
+    "http://dashboard:3000",
+    "http://127.0.0.1:3000",
+    "http://host.docker.internal:3000",
+)
+_ui_base: str | None = None
+
+
+def _ui_candidates() -> list[str]:
+    """Configured base, then the fallbacks — whatever last worked leads."""
+    ordered = [settings.DASHBOARD_URL, *_UI_FALLBACKS]
+    if _ui_base is not None:
+        ordered.insert(0, _ui_base)
+    seen: set[str] = set()
+    return [base for base in ordered if not (base in seen or seen.add(base))]
+
+
+def _remember_ui_base(base: str) -> None:
+    global _ui_base
+    _ui_base = base
+
+
+def _as_websocket(base: str) -> str:
+    """`http://host` -> `ws://host`, `https://host` -> `wss://host`."""
+    return f"ws{base[4:]}" if base.startswith("http") else base
+
+
 @app.websocket("/_next/{path:path}")
 async def proxy_next_websocket(websocket: WebSocket, path: str):
     """Proxy Next.js dev server WebSockets (HMR) to Dashboard UI."""
     await websocket.accept()
-    candidate_bases = ["ws://dashboard:3000", "ws://host.docker.internal:3000", "ws://127.0.0.1:3000"]
     query_str = f"?{websocket.query_params}" if websocket.query_params else ""
 
-    for base in candidate_bases:
-        target_ws_url = f"{base}/_next/{path}{query_str}"
+    for base in _ui_candidates():
+        target_ws_url = f"{_as_websocket(base)}/_next/{path}{query_str}"
         try:
             async with websockets.connect(target_ws_url) as client_ws:
+                _remember_ui_base(base)
+
                 async def forward_to_client():
                     try:
                         async for msg in client_ws:
@@ -494,18 +535,13 @@ async def proxy_dashboard_ui(path: str, request: Request):
 
     body = await request.body()
 
-    candidate_bases = [settings.DASHBOARD_URL]
-    for fallback in ["http://dashboard:3000", "http://host.docker.internal:3000", "http://127.0.0.1:3000"]:
-        if fallback not in candidate_bases:
-            candidate_bases.append(fallback)
-
     # Not `async with`: the client has to outlive this function, because the
     # response body is still being read from it while Starlette sends it on.
     # Closing it here would truncate every response to whatever had arrived.
     client = httpx.AsyncClient(timeout=_UI_TIMEOUT)
     last_error: Exception | None = None
 
-    for base in candidate_bases:
+    for base in _ui_candidates():
         target_url = f"{base.rstrip('/')}{subpath}"
         upstream_request = client.build_request(
             method=request.method,
@@ -521,6 +557,8 @@ async def proxy_dashboard_ui(path: str, request: Request):
             # candidate host is still safe. Once bytes are flowing it would not be.
             last_error = e
             continue
+
+        _remember_ui_base(base)
 
         # `aiter_bytes` yields decoded bytes, so the upstream's own
         # Content-Encoding and Content-Length no longer describe what we send.

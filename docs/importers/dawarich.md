@@ -38,4 +38,12 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten aus dem Transformer.
+Filtere optional nach weiteren `metric_type` Werten:
+
+| `metric_type` | Bedeutung | Einheit |
+| --- | --- | --- |
+| `location_point` | ein aufgezeichneter Standortpunkt | `count` |
+| `location_latitude` | Breitengrad | `°` |
+| `location_longitude` | Längengrad | `°` |
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

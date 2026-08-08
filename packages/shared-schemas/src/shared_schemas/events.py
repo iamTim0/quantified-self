@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from .metrics import UnknownMetricTypeError, canonical_metric_type
+
 
 class IngestEvent(BaseModel):
     """Event model representing data ingestion into the system."""
@@ -32,6 +34,28 @@ class IngestEvent(BaseModel):
         if not v or not v.strip():
             raise ValueError("idempotency_key cannot be empty")
         return v
+
+    @field_validator("metric_type")
+    @classmethod
+    def validate_metric_type_is_canonical(cls, v: str) -> str:
+        """Reject anything the metric registry does not recognise as canonical.
+
+        Strict on purpose, including for aliases: the idempotency key is derived from
+        the metric name before the event is built, so silently rewriting an alias here
+        would store the point under a name its key does not describe. A transformer
+        resolves the name itself via ``canonical_metric_type`` and then hashes it.
+        """
+        try:
+            canonical = canonical_metric_type(v)
+        except UnknownMetricTypeError as exc:
+            raise ValueError(str(exc)) from None
+        if canonical != v.strip():
+            raise ValueError(
+                f"metric_type {v!r} is a legacy alias of {canonical!r}; call "
+                "shared_schemas.canonical_metric_type() before deriving the "
+                "idempotency key and emit the canonical name"
+            )
+        return canonical
 
 
 class IngestEventBatch(BaseModel):

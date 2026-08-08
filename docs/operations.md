@@ -4,6 +4,7 @@
 
 ```bash
 task dev:up            # Postgres, NATS, Traefik, Dashboard, Docs
+task dev:docker        # derselbe Stack, aber mit dem Checkout gemountet
 task db:migrate        # Alembic auf head
 task dev:local         # Backends lokal statt im Container
 task docs:serve        # Dokumentation auf :8003
@@ -11,6 +12,63 @@ task docs:serve        # Dokumentation auf :8003
 
 Ohne Postgres auf `:5433` schlagen die Integrationstests fehl — das ist erwartet,
 kein Defekt.
+
+### Welche Adresse man öffnet
+
+Die UI ruft immer ihren **eigenen** Ursprung auf. Es gibt deshalb pro Betriebsart
+genau eine Adresse, unter der sowohl die Seite als auch `/api` beantwortet werden:
+
+| Betriebsart | Adresse | Wer verteilt |
+| --- | --- | --- |
+| `task dev:up` (alles im Container) | `http://localhost:8080` | Traefik: `/` → Dashboard, `/api` → Gateway |
+| `task dev:docker` (Container + Checkout gemountet) | `http://localhost:8080` | dieselbe Traefik-Verteilung |
+| `task dev:local` (Backends lokal) | `http://localhost:3000` | der Dev-Server: `/api` wird an den Gateway umgeschrieben |
+
+Nur unter `:8080` beantwortet auch `/docs` — die Dokumentation ist ein eigener
+Container hinter derselben Traefik. Im Modus `dev:local` läuft er nicht, und jeder
+`/docs/…`-Link aus der Oberfläche (Sidebar, Connector-Dialoge, API-Keys) landet
+deshalb im Nichts. Wer mit der Dokumentation arbeitet, nimmt `dev:docker`.
+
+Die veröffentlichten Ports der einzelnen Dienste (`:3000` im Container-Stack,
+`:8000` am Gateway) sind zum Debuggen da, nicht zum Benutzen. Wer den
+Container-Port 3000 direkt öffnet, umgeht Traefik — dann beantwortet niemand
+`/api`, und die Anmeldemaske kann nicht einmal feststellen, ob Registrierung
+erlaubt ist.
+
+Der Gateway liefert die UI zusätzlich unter seinem eigenen Port aus, indem er sie
+durchschleift. Das ist für produktionsnahe Prüfungen gedacht — die Browser-Tests
+laufen genau darüber, weil ein einziger Ursprung die Session-Cookies so verhält
+wie im Betrieb. Für die tägliche Entwicklung ist `:3000` die richtige Adresse:
+dort funktioniert Hot Reload.
+
+### Im Container entwickeln (`task dev:docker`)
+
+Derselbe Stack wie `dev:up`, aber jeder Dienst liest seinen Code aus dem Checkout
+statt aus dem Image (`infra/docker-compose.dev.yml`). Damit braucht eine Änderung
+keinen Neubau, und es bleibt bei einer einzigen Adresse für Oberfläche, `/api` und
+`/docs`.
+
+Was eine Änderung kostet, hängt vom Dienst ab:
+
+| Dienst | Wirkt |
+| --- | --- |
+| Core, Gateway, Analysis | sofort — `uvicorn --reload` |
+| Importer | nach `docker compose … restart <dienst>` (Sekunden, kein Neubau) |
+| Dashboard | nach `… restart dashboard` (~10 s) |
+| Dokumentation | sofort — `mkdocs serve` beobachtet `docs/` selbst |
+
+Das Dashboard ist der eine Fall ohne Hot Reload, und das ist eine Eigenschaft der
+Plattform, kein Konfigurationsfehler: Turbopack erkennt Änderungen über inotify,
+und ein Bind-Mount eines Windows- oder macOS-Verzeichnisses liefert diese Ereignisse
+nicht in den Container. Der Container *liest* die geänderte Datei korrekt, sobald er
+gefragt wird — nur erfährt der Beobachter nie davon, sodass der Dev-Server seinen
+zwischengespeicherten Stand weiter ausliefert. Wer längere Zeit an der Oberfläche
+arbeitet, startet `next dev` nativ auf dem Host; für alles andere ist der Neustart
+billiger als der Moduswechsel.
+
+Nach einer Änderung an `package.json` oder `bun.lock` genügt ein Neubau nicht:
+`node_modules` liegt in einem benannten Volume, das nur einmal aus dem Image befüllt
+wird. Dafür gibt es `task dev:docker:reset`.
 
 ## Tests
 

@@ -91,6 +91,9 @@ services:
       # Defaults to 127.0.0.1:8005, which in this container is the Gateway itself,
       # so POST /api/v1/ingest/apple-health proxied to nothing.
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
+      # The Gateway serves the UI on / by proxying it. In this network that is
+      # the container; the code default is loopback, for a local checkout.
+      - DASHBOARD_URL=http://dashboard:3000
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
@@ -104,7 +107,10 @@ services:
 
   yazio-importer:
     build:
-      context: ../services/importers/yazio
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/yazio/Dockerfile
     depends_on:
       - nats
       - core
@@ -117,7 +123,10 @@ services:
 
   dawarich-importer:
     build:
-      context: ../services/importers/dawarich
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/dawarich/Dockerfile
     depends_on:
       - nats
       - core
@@ -130,7 +139,10 @@ services:
 
   whoop-importer:
     build:
-      context: ../services/importers/whoop
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/whoop/Dockerfile
     depends_on:
       - nats
       - core
@@ -143,7 +155,10 @@ services:
 
   apple-health-importer:
     build:
-      context: ../services/importers/apple_health
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/apple_health/Dockerfile
     ports:
       - "8005:8005"
     depends_on:
@@ -159,7 +174,10 @@ services:
 
   streak-importer:
     build:
-      context: ../services/importers/streak
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/streak/Dockerfile
     ports:
       - "8006:8006"
     depends_on:
@@ -179,19 +197,31 @@ services:
     networks:
       - qs-network
   home-assistant-importer:
-    build: { context: ../services/importers/home_assistant }
+    build:
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/home_assistant/Dockerfile
     depends_on: [nats, core]
     environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
     networks: [qs-network]
 
   weather-importer:
-    build: { context: ../services/importers/weather }
+    build:
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/weather/Dockerfile
     depends_on: [nats, core]
     environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
     networks: [qs-network]
 
   calendar-importer:
-    build: { context: ../services/importers/calendar }
+    build:
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/calendar/Dockerfile
     depends_on: [nats, core]
     environment: [NATS_URL=nats://nats:4222, CORE_SERVICE_URL=http://core:8001]
     networks: [qs-network]
@@ -203,8 +233,11 @@ services:
       - "3000:3000"
     depends_on:
       - api-gateway
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+    # No NEXT_PUBLIC_API_URL: it used to be set here and did nothing, because Next
+    # inlines NEXT_PUBLIC_* at build time. The UI calls its own origin, so the way
+    # in is Traefik on http://localhost:${TRAEFIK_HTTP_PORT:-8080} -- it routes /
+    # here and /api to the Gateway. Opening this container's own port 3000 skips
+    # Traefik, and then nothing serves /api.
     labels:
       # `workspace`, priority 1: the UI is whatever no other route claimed. The
       # four roles and why they are shaped this way are documented once, in
@@ -225,12 +258,19 @@ services:
       - ..:/docs-workspace:ro
     labels:
       - "traefik.enable=true"
+      # No stripprefix here, deliberately, and this is the one label that differs
+      # from docker-compose.prod.yml. `mkdocs serve` reads site_url, which ends in
+      # /docs/, and serves the site under that prefix -- its own log says
+      # `Serving on http://0.0.0.0:8003/docs/`. Stripping /docs handed it `GET /`,
+      # which it answered with `302 -> /docs/`, which Traefik stripped again: a
+      # redirect loop, and /docs was simply unreachable in the dev stack.
+      #
+      # Production strips correctly, because there the image is a `mkdocs build`
+      # site served from a root and the prefix really is Traefik's to remove.
       - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
-      - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
-      - "traefik.http.routers.docs.middlewares=docs-stripprefix"
     networks:
       - qs-network
 

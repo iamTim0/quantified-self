@@ -24,15 +24,25 @@ Open-Meteo bietet HTTP-GET APIs mit JSON-Antworten, einheitlichen Parametern und
 
 | Metrik | Bedeutung | Empfehlung |
 | --- | --- | --- |
-| `weather_temperature_c` | Außentemperatur in °C | Mit Schlafqualität, Puls und Aktivitätsniveau vergleichen. |
-| `weather_precipitation_mm` | Niederschlag | Kontext für Outdoor-Aktivität und GPS-Routen. |
-| `weather_pressure_hpa` | Luftdruck | Optional für Migräne-/Stimmungsanalysen. |
-| `weather_uv_index` | UV-Index | Kontext für Tageslicht-/Outdoor-Exposition. |
+| `weather_temperature` | Außentemperatur (`°C`) | Mit Schlafqualität, Puls und Aktivitätsniveau vergleichen. |
+| `weather_temperature_apparent` | Gefühlte Temperatur (`°C`) | Belastung bei Outdoor-Aktivität einordnen. |
+| `weather_humidity` | Luftfeuchtigkeit (`%`) | Schlafqualität und Raumklima gegenüberstellen. |
+| `weather_precipitation` | Niederschlag (`mm`) | Kontext für Outdoor-Aktivität und GPS-Routen. |
+| `weather_pressure` | Luftdruck (`hPa`) | Optional für Migräne-/Stimmungsanalysen. |
+| `weather_wind_speed` | Windgeschwindigkeit (`km/h`) | Kontext für Lauf- und Radeinheiten. |
+| `weather_cloud_cover` | Bewölkung (`%`) | Zusammen mit dem UV-Index als Lichtkontext. |
+| `weather_uv_index` | UV-Index (`index`) | Kontext für Tageslicht-/Outdoor-Exposition. |
+
+Die Namen trugen früher ihre Einheit als Suffix (`weather_temperature_c`,
+`weather_wind_speed_kmh`). Die Einheit steht jetzt in der Registry - ein Wechsel der
+Einheit wird damit zu einer Umrechnung statt zu einer zweiten Metrik.
 
 ## Daten abrufen
 
 ```http
-GET /api/v1/data/metrics?metric_type=weather_temperature_c&start_time=<iso>&end_time=<iso>
+GET /api/v1/data/metrics?metric_type=weather_temperature&start_time=<iso>&end_time=<iso>
 Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 ```
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

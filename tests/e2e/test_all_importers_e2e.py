@@ -122,8 +122,10 @@ def test_whoop_importer_e2e_mock_import(mock_tenant_context):
     dps = transform_whoop_records("recovery", recovery_records, tenant_id, source_id)
     assert len(dps) == 5
     metrics = {dp["metric_type"]: dp["value"] for dp in dps}
-    assert metrics["recovery_score"] == 85.0
-    assert metrics["resting_heart_rate"] == 52.0
+    assert metrics["whoop_recovery_score"] == 85.0
+    assert metrics["heart_rate_resting"] == 52.0
+    # Same canonical name Apple Health writes its resting pulse under.
+    assert metrics["hrv_rmssd"] == 68.4
     for dp in dps:
         assert dp["tenant_id"] == tenant_id
         assert len(dp["idempotency_key"]) == 64
@@ -155,8 +157,8 @@ def test_apple_health_importer_e2e_mock_import(mock_tenant_context):
                     "name": "Outdoor Run",
                     "start": "2026-08-04 08:00:00 +0000",
                     "end": "2026-08-04 08:45:00 +0000",
-                    "activeEnergy": 420.0,
-                    "totalDistance": 5200.0,
+                    "activeEnergy": {"qty": 420.0, "units": "kcal"},
+                    "totalDistance": {"qty": 5.2, "units": "km"},
                 }
             ],
         }
@@ -165,9 +167,10 @@ def test_apple_health_importer_e2e_mock_import(mock_tenant_context):
     dps = transform_health_auto_export_json(payload, tenant_id, source_id)
     assert len(dps) >= 4
     metrics = {dp["metric_type"] for dp in dps}
-    assert "step_count" in metrics
+    assert "steps" in metrics
     assert "heart_rate" in metrics
-    assert "workout_active_energy" in metrics
+    assert "workout_energy" in metrics
+    assert "workout_distance" in metrics
     for dp in dps:
         assert dp["tenant_id"] == tenant_id
 

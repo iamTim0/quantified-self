@@ -4,6 +4,8 @@ import React, { useEffect, useState } from "react";
 import { AlertTriangle, ShieldAlert, Info, X } from "lucide-react";
 
 import { apiFetch } from "../lib/api";
+import { useT, type MessageKey, type Translate } from "../lib/i18n/provider";
+import { en } from "../lib/i18n/catalog-en";
 
 /**
  * Configuration and credential problems, shown where the operator is looking.
@@ -17,6 +19,13 @@ import { apiFetch } from "../lib/api";
  * load until the thing is actually fixed, because a permanent "don't show again"
  * on "your password is public" is how it stays public. Dismissing hides it for
  * this session only.
+ *
+ * The wording is translated here rather than on the server. Core sends a stable
+ * `code` per warning, so the dashboard looks up `warning.<code>.*` and can speak
+ * the reader's language for something the API only knows in English. A code this
+ * build does not have a translation for still renders — from the server's own
+ * text — because a new warning nobody has translated yet is still a warning worth
+ * seeing.
  */
 
 type Severity = "critical" | "warning" | "info";
@@ -28,29 +37,53 @@ interface SystemWarning {
   detail: string;
   action: string;
   docs: string | null;
+  /** Values for the placeholders in this warning's translation, if it has any. */
+  params?: Record<string, string> | null;
 }
 
-const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: string }> = {
+const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: MessageKey }> = {
   critical: {
     box: "border-rose-300 bg-rose-50 text-rose-950",
     icon: <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" aria-hidden />,
-    label: "Kritisch",
+    label: "warnings.severity.critical",
   },
   warning: {
     box: "border-amber-300 bg-amber-50 text-amber-950",
     icon: <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />,
-    label: "Warnung",
+    label: "warnings.severity.warning",
   },
   info: {
     box: "border-slate-300 bg-slate-50 text-slate-800",
     icon: <Info className="w-5 h-5 text-slate-500 shrink-0" aria-hidden />,
-    label: "Hinweis",
+    label: "warnings.severity.info",
   },
 };
 
 const ORDER: Severity[] = ["critical", "warning", "info"];
 
+/**
+ * The command the two secret warnings tell you to run.
+ *
+ * It lives in the catalogue as a placeholder so the sentence around it can be
+ * translated without anybody retyping a command — and so a change to the command
+ * is one edit, not four.
+ */
+const GENERATE_SECRET = 'python -c "import secrets; print(secrets.token_urlsafe(48))"';
+
+/** A translation for this warning's field, or the server's own wording. */
+function field(
+  t: Translate,
+  warning: SystemWarning,
+  part: "title" | "detail" | "action",
+  fallback: string,
+): string {
+  const key = `warning.${warning.code}.${part}`;
+  if (!(key in en)) return fallback;
+  return t(key as MessageKey, { generate: GENERATE_SECRET, ...(warning.params ?? {}) });
+}
+
 export default function SystemWarnings({ apiBase }: { apiBase: string }) {
+  const t = useT();
   const [warnings, setWarnings] = useState<SystemWarning[]>([]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
 
@@ -83,7 +116,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
   if (visible.length === 0) return null;
 
   return (
-    <section className="mb-6 space-y-3" aria-label="Systemwarnungen">
+    <section className="mb-6 space-y-3" aria-label={t("warnings.region")}>
       {visible.map((w) => {
         const style = STYLES[w.severity] ?? STYLES.warning;
         return (
@@ -99,16 +132,18 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">
-                    {style.label}
+                    {t(style.label)}
                   </span>
-                  <h3 className="text-sm font-bold">{w.title}</h3>
+                  <h3 className="text-sm font-bold">{field(t, w, "title", w.title)}</h3>
                 </div>
-                <p className="mt-1.5 text-sm leading-relaxed opacity-90">{w.detail}</p>
+                <p className="mt-1.5 text-sm leading-relaxed opacity-90">
+                  {field(t, w, "detail", w.detail)}
+                </p>
                 <p className="mt-2 text-sm font-semibold">
                   {/* The action is a command or a setting, not advice, so it is
                       rendered as something you can copy. */}
                   <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[12px] break-all">
-                    {w.action}
+                    {field(t, w, "action", w.action)}
                   </code>
                 </p>
                 {w.docs && (
@@ -118,7 +153,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
                     rel="noreferrer"
                     className="mt-2 inline-block text-xs font-semibold underline underline-offset-2 opacity-80 hover:opacity-100"
                   >
-                    Dokumentation öffnen
+                    {t("warnings.openDocs")}
                   </a>
                 )}
               </div>
@@ -126,8 +161,8 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
                 type="button"
                 onClick={() => setHidden((prev) => new Set(prev).add(w.code))}
                 className="shrink-0 rounded-lg p-1 opacity-50 transition hover:opacity-100"
-                aria-label="Für diese Sitzung ausblenden"
-                title="Für diese Sitzung ausblenden — beim nächsten Laden wieder da"
+                aria-label={t("warnings.dismiss")}
+                title={t("warnings.dismissTitle")}
               >
                 <X className="w-4 h-4" aria-hidden />
               </button>

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import OidcProviderAdmin from "./OidcProviderAdmin";
+import { useT } from "../lib/i18n/provider";
 
 interface ProfileTabProps {
   apiBase: string;
@@ -41,6 +42,7 @@ export default function ProfileTab({
   tenantName,
   onLogout,
 }: ProfileTabProps) {
+  const t = useT();
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -70,7 +72,7 @@ export default function ProfileTab({
     setPasswordSuccess("");
 
     if (newPassword !== confirmPassword) {
-      setPasswordError("Die neuen Passwörter stimmen nicht überein.");
+      setPasswordError(t("profile.passwordMismatch"));
       return;
     }
 
@@ -90,10 +92,10 @@ export default function ProfileTab({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || "Passwortänderung fehlgeschlagen.");
+        throw new Error(data.detail || t("profile.passwordFailed"));
       }
 
-      setPasswordSuccess("Passwort erfolgreich geändert!");
+      setPasswordSuccess(t("profile.passwordChanged"));
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -118,9 +120,9 @@ export default function ProfileTab({
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.detail || "Datenpunkt-Reset fehlgeschlagen.");
+        throw new Error(data.detail || t("profile.wipeFailed"));
       }
-      setWipeSuccess(`Erfolgreich ${data.deleted_count || 0} Datenpunkte im Workspace gelöscht!`);
+      setWipeSuccess(t("profile.wipeDone", { count: data.deleted_count || 0 }));
       setShowWipeModal(false);
     } catch (err: unknown) {
       setWipeError(err instanceof Error ? err.message : String(err));
@@ -145,7 +147,7 @@ export default function ProfileTab({
         onLogout();
       } else {
         const data = await res.json();
-        throw new Error(data.detail || "Kontolöschung fehlgeschlagen.");
+        throw new Error(data.detail || t("profile.deleteAccountFailed"));
       }
     } catch (err: unknown) {
       setWipeError(err instanceof Error ? err.message : String(err));
@@ -162,7 +164,7 @@ export default function ProfileTab({
         <div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Konto- & Profileinstellungen</h1>
           <p className="text-xs text-slate-500 mt-1">
-            Verwalte deine Benutzerdaten, Sicherheitseinstellungen und die 1-Klick-Datenlöschung.
+            {t("profile.subtitle")}
           </p>
         </div>
 
@@ -225,15 +227,15 @@ export default function ProfileTab({
             <div className="flex items-center justify-between border-b border-rose-100 pb-3">
               <div className="flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-rose-600" />
-                <h3 className="text-base font-extrabold text-slate-900">1-Klick Datenlöschung (DSGVO Art. 17)</h3>
+                <h3 className="text-base font-extrabold text-slate-900">{t("profile.gdprTitle")}</h3>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
-                Löschrecht Aktiv
+                {t("profile.gdprBadge")}
               </span>
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Gemäß DSGVO Art. 17 (Recht auf Vergessenwerden) kannst du alle in der Plattform gespeicherten Datenpunkte oder dein Konto vollständig mit 1 Klick löschen.
+              {t("profile.gdprBody")}
             </p>
 
             {wipeSuccess && (
@@ -255,7 +257,7 @@ export default function ProfileTab({
                 className="py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-all flex items-center justify-center gap-2"
               >
                 <RefreshCw className="w-4 h-4 text-amber-700" />
-                <span>1-Klick Datenpunkt Reset</span>
+                <span>{t("profile.wipeButton")}</span>
               </button>
 
               <button
@@ -263,7 +265,7 @@ export default function ProfileTab({
                 className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>Konto & Alle Daten Löschen</span>
+                <span>{t("profile.deleteAccountButton")}</span>
               </button>
             </div>
           </div>
@@ -272,13 +274,13 @@ export default function ProfileTab({
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
               <Lock className="w-5 h-5 text-[#0d5c3a]" />
-              <h3 className="text-base font-bold text-slate-900">Passwort Ändern</h3>
+              <h3 className="text-base font-bold text-slate-900">{t("profile.changePassword")}</h3>
             </div>
 
             <form onSubmit={handlePasswordChange} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                  Aktuelles Passwort
+                  {t("profile.currentPassword")}
                 </label>
                 <input
                   type="password"
@@ -293,7 +295,7 @@ export default function ProfileTab({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Neues Passwort
+                    {t("profile.newPassword")}
                   </label>
                   <input
                     type="password"
@@ -308,7 +310,7 @@ export default function ProfileTab({
 
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    Bestätigen
+                    {t("profile.confirm")}
                   </label>
                   <input
                     type="password"
@@ -341,7 +343,7 @@ export default function ProfileTab({
                   disabled={passwordLoading}
                   className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
                 >
-                  {passwordLoading ? "Wird geändert..." : "Passwort Ändern"}
+                  {passwordLoading ? t("profile.changing") : t("profile.changePassword")}
                 </button>
               </div>
             </form>
@@ -382,7 +384,7 @@ export default function ProfileTab({
                   <span>AES-256 Encrypted Secrets</span>
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
-                  Connector-Tokens werden vor der Speicherung in PostgreSQL mit Fernet AES-256 verschlüsselt.
+                  {t("profile.encryptionNote")}
                 </p>
               </div>
             </div>
@@ -400,7 +402,7 @@ export default function ProfileTab({
               className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold transition-all"
             >
               <LogOut className="w-4 h-4" />
-              <span>Vom Konto Abmelden</span>
+              <span>{t("profile.signOut")}</span>
             </button>
           </div>
         </div>
@@ -414,11 +416,10 @@ export default function ProfileTab({
               <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200">
                 <AlertTriangle className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">1-Klick Datenpunkt-Reset?</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">{t("profile.wipeConfirmTitle")}</h3>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Möchtest du wirklich **alle importierten Datenpunkte** in deinem Workspace löschen? 
-              Deine verbundenen Datenquellen und Tokens bleiben dabei erhalten.
+              {t("profile.wipeConfirmBody")}
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -432,7 +433,7 @@ export default function ProfileTab({
                 disabled={wipeLoading}
                 className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
               >
-                {wipeLoading ? "Lösche Daten..." : "Ja, alle Datenpunkte löschen"}
+                {wipeLoading ? t("profile.wipeRunning") : t("profile.wipeConfirmAction")}
               </button>
             </div>
           </div>
@@ -447,10 +448,10 @@ export default function ProfileTab({
               <div className="p-2.5 rounded-2xl bg-rose-50 border border-rose-200">
                 <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">Vollständige Kontolöschung?</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">{t("profile.deleteAccountTitle")}</h3>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Dieser Vorgang löscht **alle Datenpunkte, Connector-Tokens und Freigaben** deines Kontos unwiderruflich aus PostgreSQL (DSGVO Art. 17).
+              {t("profile.deleteAccountBody")}
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
@@ -464,7 +465,7 @@ export default function ProfileTab({
                 disabled={wipeLoading}
                 className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-all disabled:opacity-50"
               >
-                {wipeLoading ? "Lösche Konto..." : "Unwiderruflich Löschen"}
+                {wipeLoading ? t("profile.deleteAccountRunning") : t("profile.deleteAccountAction")}
               </button>
             </div>
           </div>
@@ -482,7 +483,7 @@ export default function ProfileTab({
           Rechtliches
         </h3>
         <p className="mb-2 text-xs text-slate-500">
-          Welche Daten wir verarbeiten, auf welcher Grundlage und wie du sie löschen
+          {t("profile.privacyLead")}
           kannst.
         </p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
@@ -490,7 +491,7 @@ export default function ProfileTab({
             href="/legal/datenschutz"
             className="text-[#0d5c3a] underline hover:text-[#08432a]"
           >
-            Datenschutzerklärung
+            {t("footer.privacy")}
           </a>
           <a
             href="/legal/impressum"

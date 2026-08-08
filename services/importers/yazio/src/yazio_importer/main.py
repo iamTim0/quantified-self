@@ -311,7 +311,7 @@ async def fetch_and_publish(
     await report_sync_result_to_core(
         task,
         status="idle",
-        message=f"{published_count} Datenpunkte aus Yazio übertragen.",
+        message=f"{published_count} data point(s) published from Yazio.",
         points_received=published_count,
     )
 

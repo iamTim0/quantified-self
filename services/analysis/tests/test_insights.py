@@ -50,7 +50,7 @@ def test_perfect_positive_correlation():
     assert len(result) == 1
     assert result[0]["pearson"] == pytest.approx(1.0)
     assert result[0]["spearman"] == pytest.approx(1.0)
-    assert result[0]["direction"] == "positiv"
+    assert result[0]["direction"] == "positive"
     assert result[0]["strength_pct"] == pytest.approx(100.0)
 
 
@@ -59,7 +59,7 @@ def test_perfect_negative_correlation():
     result = correlation_pairs({"a": series_from(xs), "b": series_from(xs[::-1])})
 
     assert result[0]["pearson"] == pytest.approx(-1.0)
-    assert result[0]["direction"] == "negativ"
+    assert result[0]["direction"] == "negative"
     assert result[0]["strength_pct"] == pytest.approx(100.0)
 
 
@@ -90,7 +90,7 @@ def test_spearman_survives_an_outlier_that_breaks_pearson():
     assert result["pearson"] < result["spearman"]
     # The headline takes the conservative reading and the gap is flagged.
     assert result["coefficient"] == result["pearson"]
-    assert any("Ausreißer" in c for c in result["caveats"])
+    assert any("outlier" in c for c in result["caveats"])
 
 
 def test_insignificant_correlation_is_marked_as_such():
@@ -102,7 +102,7 @@ def test_insignificant_correlation_is_marked_as_such():
     if result:  # only asserted when the pair clears the sample floor
         r = result[0]
         if not r["significant"]:
-            assert any("nicht signifikant" in c for c in r["caveats"])
+            assert any("not statistically significant" in c for c in r["caveats"])
 
 
 def test_correlation_never_uses_causal_language():
@@ -111,9 +111,9 @@ def test_correlation_never_uses_causal_language():
     result = correlation_pairs({"a": series_from(xs), "b": series_from(xs)})[0]
     text = result["interpretation"].lower()
 
-    for forbidden in ("wirkt", "führt zu", "verursacht", "bewirkt", "sorgt für"):
+    for forbidden in ("causes", "leads to", "makes ", "results in", "affects"):
         assert forbidden not in text, f"causal phrasing leaked: {forbidden}"
-    assert "zusammen" in text
+    assert "go together" in text
 
 
 def test_p_value_is_small_for_a_strong_large_sample_correlation():
@@ -133,7 +133,7 @@ def test_p_value_is_bounded():
 
 @pytest.mark.parametrize(
     ("r", "expected"),
-    [(0.05, "sehr schwach"), (0.3, "schwach"), (0.5, "moderat"), (0.7, "stark"), (0.95, "sehr stark")],
+    [(0.05, "very weak"), (0.3, "weak"), (0.5, "moderate"), (0.7, "strong"), (0.95, "very strong")],
 )
 def test_strength_labels(r, expected):
     assert strength_label(r) == expected
@@ -163,7 +163,7 @@ def test_lagged_correlation_states_that_order_is_not_cause():
         {"a": series_from(base), "b": series_from([0.0, 0.0] + base[:-2])}
     )
     assert results
-    assert "keine Ursache" in results[0]["interpretation"]
+    assert "not evidence of a cause" in results[0]["interpretation"]
 
 
 # ─── trends ──────────────────────────────────────────────────
@@ -173,20 +173,20 @@ def test_rising_trend_is_detected():
     values = [float(i) for i in range(30)]
     trend = trend_for_metric(days(30), values)
 
-    assert trend["direction"] == "steigend"
+    assert trend["direction"] == "rising"
     assert trend["slope_per_day"] == pytest.approx(1.0)
     assert trend["r_squared"] == pytest.approx(1.0)
 
 
 def test_falling_trend_is_detected():
     values = [float(30 - i) for i in range(30)]
-    assert trend_for_metric(days(30), values)["direction"] == "fallend"
+    assert trend_for_metric(days(30), values)["direction"] == "falling"
 
 
 def test_flat_noisy_series_is_reported_as_stable():
     """A slope smaller than the day-to-day noise is not a trend."""
     values = [50.0 + (1.0 if i % 2 else -1.0) for i in range(30)]
-    assert trend_for_metric(days(30), values)["direction"] == "stabil"
+    assert trend_for_metric(days(30), values)["direction"] == "flat"
 
 
 def test_trend_needs_a_minimum_number_of_days():
@@ -209,7 +209,7 @@ def test_anomaly_detection_flags_an_extreme_day():
 
     assert result is not None
     assert any(a["value"] == 500.0 for a in result["anomalies"])
-    assert result["anomalies"][-1]["direction"] == "ungewöhnlich hoch"
+    assert result["anomalies"][-1]["direction"] == "unusually high"
 
 
 def test_baseline_is_not_dragged_by_the_outlier_it_should_detect():
@@ -244,7 +244,7 @@ def test_weekend_effect_is_detected():
     pattern = weekday_pattern(daily)
     assert pattern is not None
     assert pattern["weekend_effect"]["difference_pct"] == pytest.approx(100.0, abs=1)
-    assert "höher" in pattern["weekend_effect"]["interpretation"]
+    assert "higher" in pattern["weekend_effect"]["interpretation"]
 
 
 def test_weekday_pattern_needs_two_weeks():
@@ -267,7 +267,7 @@ def test_period_comparison_detects_a_real_shift():
     # Two perfectly constant windows at different levels are maximally separable.
     assert result["significant"] is True
     # Every comparison must still disclaim causation.
-    assert "ursache" in result["interpretation"].lower()
+    assert "cause" in result["interpretation"].lower()
 
 
 def test_period_comparison_reports_no_significance_for_noise():
@@ -291,7 +291,7 @@ def test_period_comparison_needs_data_in_both_windows():
 def test_quality_marks_a_sparse_series_as_insufficient():
     quality = series_quality(series_from([1.0] * 5), window_days=90)
     assert quality["sufficient"] is False
-    assert "Zu wenige" in quality["note"]
+    assert "Too few days" in quality["note"]
 
 
 def test_quality_accepts_a_dense_series():

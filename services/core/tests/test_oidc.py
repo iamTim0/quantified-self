@@ -421,7 +421,7 @@ async def test_existing_local_account_is_never_auto_adopted(monkeypatch):
             )
 
         assert res.status_code == 409
-        assert "bereits ein Konto" in res.json()["detail"]
+        assert "already exists" in res.json()["detail"]
     finally:
         await drop_provider(slug)
         await cleanup_test_tenant(tenant_id)

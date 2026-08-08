@@ -204,8 +204,8 @@ async def get_insights(
         "tenant_id": tenant_id,
         "provenance": provenance.to_dict(),
         "disclaimer": (
-            "Alle Ergebnisse beschreiben statistische Zusammenhänge, keine "
-            "Ursache-Wirkungs-Beziehungen. Sie sind keine medizinische Beratung."
+            "Every result describes a statistical relationship, not cause and "
+            "effect. None of it is medical advice."
         ),
         "metrics_analysed": sorted(usable),
         "metrics_excluded_for_quality": excluded,

@@ -10,17 +10,29 @@ every time.
 Timestamps are now always normalised UTC instants, and the idempotency key is
 derived from the event's stable identity (UID plus recurrence id), so re-importing
 the same occurrence is genuinely a no-op.
+
+``calendar_busy_hours`` is gone. It carried the same number as
+``calendar_busy_minutes`` in a different unit, purely because the unit lived in the
+metric name -- the correlation analysis duly reported the two as perfectly correlated
+series. The unit now lives in the registry
+(packages/shared-schemas/src/shared_schemas/metrics.py), so one metric suffices and
+the dashboard formats hours where hours read better.
 """
 
 from __future__ import annotations
 
 import hashlib
+import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
+
 from calendar_importer.ics import CalendarEvent
+
+logger = logging.getLogger(__name__)
 
 SOURCE_TYPE = "calendar"
 
@@ -80,7 +92,7 @@ def transform_events(
             _event(
                 tenant_id=tenant_id,
                 source_id=source_id,
-                metric_type="calendar_meeting_duration_minutes",
+                metric_type="calendar_meeting_duration",
                 timestamp=event.start,
                 value=event.duration_minutes,
                 metadata={
@@ -113,24 +125,13 @@ def transform_events(
                 metadata={"day": day},
             )
         )
-        minutes = busy_minutes_per_day.get(day, 0.0)
         out.append(
             _event(
                 tenant_id=tenant_id,
                 source_id=source_id,
-                metric_type="calendar_busy_minutes",
+                metric_type="calendar_busy_duration",
                 timestamp=midnight,
-                value=minutes,
-                metadata={"day": day},
-            )
-        )
-        out.append(
-            _event(
-                tenant_id=tenant_id,
-                source_id=source_id,
-                metric_type="calendar_busy_hours",
-                timestamp=midnight,
-                value=round(minutes / 60.0, 4),
+                value=busy_minutes_per_day.get(day, 0.0),
                 metadata={"day": day},
             )
         )
@@ -160,7 +161,20 @@ def transform(
         if timestamp.tzinfo is None:
             timestamp = timestamp.replace(tzinfo=timezone.utc)
 
-        metric = str(record.get("metric_type") or "calendar_busy_minutes")
+        # The name arrives from a foreign JSON payload, so the registry decides
+        # whether it is storable; an unknown one is dropped with a log line rather
+        # than becoming a metric no consumer can interpret.
+        try:
+            metric = canonical_metric_type(
+                str(record.get("metric_type") or "calendar_busy_duration")
+            )
+        except UnknownMetricTypeError:
+            logger.warning(
+                "Skipping unregistered metric_type %r from the calendar provider",
+                record.get("metric_type"),
+            )
+            continue
+
         raw_value = record.get("duration_minutes", record.get("value"))
         try:
             value = float(raw_value)

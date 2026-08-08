@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import ImportDialog from "./ImportDialog";
+import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
@@ -39,20 +40,14 @@ function toRanges(dates: string[]): { start: string; end: string; days: number }
   return ranges.sort((a, b) => b.days - a.days);
 }
 
-const gapRecommendation = (missingDays: number) => {
-  if (missingDays === 0) return "Datenbasis wirkt vollständig.";
-  if (missingDays <= 3) return "Leichte Lücken: Analyse nutzbar, aber Trends prüfen.";
-  return "Connector, Token oder Sync-Frequenz prüfen, bevor Empfehlungen abgeleitet werden.";
+const gapRecommendation = (t: Translate, missingDays: number): string => {
+  if (missingDays === 0) return t("quality.recommendationComplete");
+  if (missingDays <= 3) return t("quality.recommendationMinor");
+  return t("quality.recommendationSerious");
 };
 
-const formatDay = (iso: string) =>
-  new Date(`${iso}T00:00:00Z`).toLocaleDateString("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  });
-
 export default function DataQualityTab({ apiBase }: Props) {
+  const { t, formatDate } = useI18n();
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [conflicts, setConflicts] = useState<number>(0);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -100,21 +95,19 @@ export default function DataQualityTab({ apiBase }: Props) {
   const missingTotal = gaps.reduce((sum, gap) => sum + gap.missing_dates.length, 0);
   const cards = [
     {
-      title: "Datenlücken",
+      title: t("quality.gapsTitle"),
       value: missingTotal,
       icon: CalendarX2,
-      detail: `${gaps.length} Metriken im ${windowDays}-Tage-Fenster`,
-      help: gapRecommendation(missingTotal),
+      detail: t("quality.gapsDetail", { metrics: gaps.length, days: windowDays }),
+      help: gapRecommendation(t, missingTotal),
     },
     {
-      title: "Quellenkonflikte",
+      title: t("quality.conflictsTitle"),
       value: conflicts,
       icon: AlertTriangle,
-      detail: "Abweichungen über 5 %",
+      detail: t("quality.conflictsDetail"),
       help:
-        conflicts === 0
-          ? "Keine auffälligen konkurrierenden Quellen."
-          : "Einheiten und bevorzugte Primärquelle prüfen.",
+        conflicts === 0 ? t("quality.conflictsNone") : t("quality.conflictsHelp"),
     },
   ];
 
@@ -123,27 +116,26 @@ export default function DataQualityTab({ apiBase }: Props) {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
-            Data Quality Center
+            {t("quality.eyebrow")}
           </p>
-          <h1 className="text-3xl font-extrabold text-slate-900">Datenqualität</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900">{t("quality.title")}</h1>
           <p className="mt-2 text-sm text-slate-500">
-            Finde Lücken, Quellenkonflikte und konkrete nächste Schritte für belastbare
-            Analysen.
+            {t("quality.subtitle")}
           </p>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-slate-500">
-            Zeitfenster
+            {t("quality.window")}
             <select
               value={windowDays}
               onChange={(e) => setWindowDays(Number(e.target.value))}
               className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none"
             >
-              <option value={7}>7 Tage</option>
-              <option value={30}>30 Tage</option>
-              <option value={90}>90 Tage</option>
-              <option value={180}>180 Tage</option>
-              <option value={365}>365 Tage</option>
+              {[7, 30, 90, 180, 365].map((days) => (
+                <option key={days} value={days}>
+                  {t("quality.windowDays", { count: days })}
+                </option>
+              ))}
             </select>
           </label>
           {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
@@ -171,12 +163,9 @@ export default function DataQualityTab({ apiBase }: Props) {
         <div className="flex gap-3">
           <Lightbulb className="h-5 w-5 shrink-0 text-amber-700" />
           <div>
-            <h2 className="font-bold text-slate-900">Was bedeuten diese Werte?</h2>
+            <h2 className="font-bold text-slate-900">{t("quality.explainTitle")}</h2>
             <p className="mt-1 text-sm text-slate-600">
-              Lücken reduzieren die Aussagekraft von Trends und Korrelationen.
-              Quellenkonflikte zeigen, dass zwei Integrationen für denselben Zeitraum
-              unterschiedliche Werte liefern. Empfehlung: zuerst Datenqualität
-              stabilisieren, dann Korrelationen interpretieren.
+              {t("quality.explainBody")}
             </p>
             <a
               href="/docs/features/data-quality/"
@@ -184,7 +173,7 @@ export default function DataQualityTab({ apiBase }: Props) {
               rel="noreferrer"
               className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 underline"
             >
-              <BookOpen className="h-3.5 w-3.5" /> Dokumentation zur Datenqualität
+              <BookOpen className="h-3.5 w-3.5" /> {t("quality.explainDocs")}
             </a>
           </div>
         </div>
@@ -192,15 +181,14 @@ export default function DataQualityTab({ apiBase }: Props) {
 
       <div className="grid gap-5 lg:grid-cols-2">
         <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-1 font-bold text-slate-900">Größte Datenlücken</h2>
+          <h2 className="mb-1 font-bold text-slate-900">{t("quality.largestGaps")}</h2>
           <p className="mb-4 text-xs text-slate-500">
-            Zusammenhängende fehlende Tage. Über &bdquo;Nachladen&ldquo; wird der
-            Importdialog mit genau diesem Zeitraum vorbelegt.
+            {t("quality.largestGapsHint")}
           </p>
 
           {gaps.length === 0 ? (
             <p className="text-sm text-slate-400">
-              Keine Datenlücken im {windowDays}-Tage-Fenster gefunden.
+              {t("quality.noGaps", { days: windowDays })}
             </p>
           ) : (
             gaps.slice(0, 6).map((gap) => {
@@ -210,7 +198,14 @@ export default function DataQualityTab({ apiBase }: Props) {
                   <div className="flex justify-between text-sm">
                     <span className="font-medium text-slate-700">{gap.metric_type}</span>
                     <span className="font-bold text-amber-600">
-                      {gap.missing_dates.length} Tage
+                      {t(
+                        plural(
+                          gap.missing_dates.length,
+                          "common.days_one",
+                          "common.days_other",
+                        ),
+                        { count: gap.missing_dates.length },
+                      )}
                     </span>
                   </div>
                   <ul className="mt-1.5 space-y-1">
@@ -221,22 +216,26 @@ export default function DataQualityTab({ apiBase }: Props) {
                       >
                         <span className="font-mono text-slate-600">
                           {r.start === r.end
-                            ? formatDay(r.start)
-                            : `${formatDay(r.start)} – ${formatDay(r.end)}`}
+                            ? formatDate(`${r.start}T00:00:00Z`)
+                            : `${formatDate(`${r.start}T00:00:00Z`)} – ${formatDate(
+                                `${r.end}T00:00:00Z`,
+                              )}`}
                         </span>
                         <span className="text-slate-400">
-                          {r.days} {r.days === 1 ? "Tag" : "Tage"}
+                          {t(plural(r.days, "common.days_one", "common.days_other"), {
+                            count: r.days,
+                          })}
                         </span>
                       </li>
                     ))}
                     {ranges.length > 3 && (
                       <li className="text-[11px] text-slate-400">
-                        … und {ranges.length - 3} weitere Bereiche
+                        {t("quality.moreRanges", { count: ranges.length - 3 })}
                       </li>
                     )}
                   </ul>
                   <p className="mt-1.5 text-xs text-slate-500">
-                    {gapRecommendation(gap.missing_dates.length)}
+                    {gapRecommendation(t, gap.missing_dates.length)}
                   </p>
                 </div>
               );
@@ -246,7 +245,7 @@ export default function DataQualityTab({ apiBase }: Props) {
           {gaps.length > 0 && connectors.length > 0 && (
             <div className="mt-4 border-t border-slate-100 pt-4">
               <p className="mb-2 text-xs font-semibold text-slate-600">
-                Fehlende Daten nachladen
+                {t("quality.backfillTitle")}
               </p>
               <div className="flex flex-wrap gap-2">
                 {connectors.map((c) => (
@@ -255,13 +254,12 @@ export default function DataQualityTab({ apiBase }: Props) {
                     onClick={() => setBackfill({ sourceType: c.source_type })}
                     className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
                   >
-                    {c.source_type} nachladen
+                    {t("quality.backfillSource", { source: c.source_type })}
                   </button>
                 ))}
               </div>
               <p className="mt-2 text-[11px] text-slate-400">
-                Der Importdialog schlägt den benötigten Zeitraum vor und überspringt
-                bereits vorhandene Bereiche.
+                {t("quality.backfillHint")}
               </p>
             </div>
           )}
@@ -269,15 +267,14 @@ export default function DataQualityTab({ apiBase }: Props) {
 
         <article className="rounded-3xl border border-slate-200 bg-white p-6">
           <ShieldCheck className="mb-4 h-6 w-6 text-emerald-700" />
-          <h2 className="mb-2 font-bold text-slate-900">Quellenkonflikte</h2>
+          <h2 className="mb-2 font-bold text-slate-900">{t("quality.conflictsTitle")}</h2>
           <p className="text-sm text-slate-500">
             {conflicts === 0
-              ? "Keine widersprüchlichen Messwerte gefunden."
-              : `${conflicts} Messwerte weichen zwischen Quellen deutlich voneinander ab.`}
+              ? t("quality.conflictsNoneLong")
+              : t("quality.conflictsSome", { count: conflicts })}
           </p>
           <p className="mt-3 text-xs text-slate-500">
-            Bei Konflikten sollte die zuverlässigste Quelle pro Metrik priorisiert und die
-            Einheit im Importer-Transformer geprüft werden.
+            {t("quality.conflictsAdvice")}
           </p>
         </article>
       </div>

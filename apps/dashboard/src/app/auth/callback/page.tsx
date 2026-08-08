@@ -4,6 +4,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { useT, type MessageKey } from "../../lib/i18n/provider";
+
 /**
  * OIDC redirect target.
  *
@@ -21,7 +23,10 @@ function CallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState("");
-  const [status, setStatus] = useState("Anmeldung wird abgeschlossen…");
+  const t = useT();
+  // State holds a key, not a finished sentence: a rendered string would stay
+  // in whatever language it was set in when the reader switches.
+  const [status, setStatus] = useState<MessageKey>("auth.callbackWorking");
 
   const apiBase =
     process.env.NEXT_PUBLIC_API_URL ||
@@ -46,7 +51,7 @@ function CallbackInner() {
       return;
     }
     if (!code || !state || !provider) {
-      setError("Die Rückmeldung des Anbieters war unvollständig.");
+      setError(t("auth.callbackIncomplete"));
       return;
     }
 
@@ -63,16 +68,16 @@ function CallbackInner() {
       );
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        throw new Error(data?.detail || "Die Anmeldung konnte nicht abgeschlossen werden.");
+        throw new Error(data?.detail || t("auth.callbackFailed"));
       }
 
       sessionStorage.removeItem("qs_oidc_provider");
-      setStatus("Angemeldet. Weiterleitung…");
+      setStatus("auth.callbackDone");
       router.replace("/");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [apiBase, params, router]);
+  }, [apiBase, params, router, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,18 +96,18 @@ function CallbackInner() {
         {error ? (
           <>
             <h1 className="mb-2 text-lg font-bold text-slate-900">
-              Anmeldung fehlgeschlagen
+              {t("auth.callbackTitle")}
             </h1>
             <p className="mb-5 text-sm leading-relaxed text-slate-600">{error}</p>
             <Link
               href="/"
               className="inline-block rounded-2xl bg-[#0d5c3a] px-5 py-2.5 text-sm font-bold text-white"
             >
-              Zurück zur Anmeldung
+              {t("auth.callbackRetry")}
             </Link>
           </>
         ) : (
-          <p className="text-sm text-slate-600">{status}</p>
+          <p className="text-sm text-slate-600">{t(status)}</p>
         )}
       </div>
     </main>
@@ -110,12 +115,14 @@ function CallbackInner() {
 }
 
 export default function OidcCallbackPage() {
+  const t = useT();
+
   // useSearchParams needs a Suspense boundary to keep the route static.
   return (
     <Suspense
       fallback={
         <main className="flex min-h-screen items-center justify-center bg-slate-100">
-          <p className="text-sm text-slate-500">Anmeldung wird abgeschlossen…</p>
+          <p className="text-sm text-slate-500">{t("auth.callbackWorking")}</p>
         </main>
       }
     >

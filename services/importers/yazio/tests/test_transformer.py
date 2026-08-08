@@ -7,6 +7,8 @@ Verifies Fizzbee Invariants:
 
 import hashlib
 
+from shared_schemas.metrics import canonical_metric_type
+
 from yazio_importer.transformer import (
     generate_idempotency_key,
     transform_consumed_items,
@@ -61,12 +63,28 @@ def test_transform_consumed_items():
 
     assert len(data_points) >= 10
     metric_types = [dp["metric_type"] for dp in data_points]
-    assert "calories" in metric_types
-    assert "protein" in metric_types
-    assert "breakfast_calories" in metric_types
-    assert "consumed_item_calories" in metric_types
+    assert "nutrition_energy" in metric_types
+    assert "nutrition_protein" in metric_types
+    assert "nutrition_item_energy" in metric_types
 
-    item_dp = next(dp for dp in data_points if dp["metric_type"] == "consumed_item_calories")
+    # Every emitted name is one the registry defines -- no interpolated names, no
+    # provider field names leaking into the metric space.
+    assert all(canonical_metric_type(m) == m for m in metric_types)
+
+    # The four meals share one metric and are told apart by metadata, where they used
+    # to be four metric names (`breakfast_calories`, `lunch_calories`, ...). Each still
+    # needs its own idempotency key, or three of the four would be dropped as
+    # duplicates of the first.
+    meal_dps = [dp for dp in data_points if dp["metric_type"] == "nutrition_meal_energy"]
+    assert {dp["metadata"]["meal_category"] for dp in meal_dps} == {
+        "breakfast",
+        "lunch",
+        "dinner",
+        "snack",
+    }
+    assert len({dp["idempotency_key"] for dp in meal_dps}) == len(meal_dps)
+
+    item_dp = next(dp for dp in data_points if dp["metric_type"] == "nutrition_item_energy")
     assert item_dp["metadata"]["food_name"] == "Oatmeal"
     assert len(item_dp["idempotency_key"]) == 64
 
@@ -103,6 +121,6 @@ def test_transform_consumed_items_with_caches():
     )
 
     assert len(dps) > 0
-    item_dp = next(dp for dp in dps if dp["metric_type"] == "consumed_item_calories")
+    item_dp = next(dp for dp in dps if dp["metric_type"] == "nutrition_item_energy")
     assert item_dp["metadata"]["food_name"] == "Organic Almond Milk"
     assert item_dp["value"] == 100.0  # 200g of 50kcal/100g = 100kcal

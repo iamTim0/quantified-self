@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useT } from "../lib/i18n/provider";
 
 /**
  * Administration for external login providers.
@@ -54,6 +55,7 @@ const emptyDraft = (): Draft => ({
 });
 
 export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
+  const t = useT();
   const [providers, setProviders] = useState<Provider[]>([]);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editingSlug, setEditingSlug] = useState<string | null>(null);
@@ -68,10 +70,10 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       if (res.status === 403) {
         // Not an error to shout about: a member simply cannot manage providers.
         setProviders([]);
-        setError("Nur Inhaber und Administratoren können Anbieter verwalten.");
+        setError(t("oidc.forbidden"));
         return;
       }
-      if (!res.ok) throw new Error("Anbieter konnten nicht geladen werden.");
+      if (!res.ok) throw new Error(t("oidc.loadFailed"));
       setProviders((await res.json()).providers ?? []);
       setError("");
     } catch (err) {
@@ -115,7 +117,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       );
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Speichern fehlgeschlagen.");
+        throw new Error(body?.detail ?? t("oidc.saveFailed"));
       }
       setDraft(null);
       setEditingSlug(null);
@@ -137,7 +139,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       );
       if (!res.ok && res.status !== 204) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? "Löschen fehlgeschlagen.");
+        throw new Error(body?.detail ?? t("oidc.deleteFailed"));
       }
       await load();
     } catch (err) {
@@ -199,9 +201,9 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Externe Anmeldeanbieter</h2>
+          <h2 className="text-lg font-bold text-slate-900">{t("oidc.title")}</h2>
           <p className="text-xs text-slate-500">
-            OpenID Connect. Anbieter sind standardmäßig deaktiviert.
+            {t("oidc.subtitle")}
           </p>
         </div>
         {!draft && (
@@ -212,7 +214,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
             }}
             className="inline-flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-4 py-2 text-sm font-bold text-white"
           >
-            <Plus className="h-4 w-4" /> Anbieter hinzufügen
+            <Plus className="h-4 w-4" /> {t("oidc.add")}
           </button>
         )}
       </header>
@@ -225,11 +227,10 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-400">Anbieter werden geladen…</p>
+        <p className="text-sm text-slate-400">{t("oidc.loading")}</p>
       ) : providers.length === 0 && !draft ? (
         <p className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          Noch kein Anbieter konfiguriert. Die Anmeldung per E-Mail und Passwort
-          funktioniert unabhängig davon.
+          {t("oidc.emptyState")}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -246,7 +247,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
                   </span>
                   {p.enabled ? (
                     <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                      <ShieldCheck className="h-3 w-3" /> aktiv
+                      <ShieldCheck className="h-3 w-3" /> {t("oidc.enabled")}
                     </span>
                   ) : (
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
@@ -257,7 +258,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
                 <p className="truncate text-xs text-slate-500">{p.issuer}</p>
                 <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
                   <KeyRound className="h-3 w-3" />
-                  {p.has_client_secret ? "Client Secret hinterlegt" : "Kein Client Secret (Public Client)"}
+                  {p.has_client_secret ? t("oidc.hasSecret") : t("oidc.noSecret")}
                   {p.allow_signup && " · Registrierung erlaubt"}
                 </p>
               </div>
@@ -274,7 +275,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
                   disabled={busy}
                   className="inline-flex items-center gap-1 rounded-2xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700"
                 >
-                  <Trash2 className="h-3 w-3" /> Löschen
+                  <Trash2 className="h-3 w-3" /> {t("common.delete")}
                 </button>
               </div>
             </li>
@@ -285,42 +286,41 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       {draft && (
         <div className="space-y-3 rounded-3xl border border-slate-200 bg-slate-50 p-5">
           <h3 className="text-sm font-bold text-slate-900">
-            {editingSlug ? `${editingSlug} bearbeiten` : "Neuer Anbieter"}
+            {editingSlug ? t("oidc.editing", { slug: editingSlug }) : t("oidc.newProvider")}
           </h3>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            {field("Slug (URL-Teil)", "slug", {
+            {field(t("oidc.fieldSlug"), "slug", {
               disabled: Boolean(editingSlug),
               placeholder: "google",
             })}
-            {field("Anzeigename", "display_name", { placeholder: "Google" })}
-            {field("Issuer", "issuer", { placeholder: "https://accounts.google.com" })}
-            {field("Client ID", "client_id")}
-            {field("Client Secret", "client_secret", {
+            {field(t("oidc.fieldDisplayName"), "display_name", { placeholder: "Google" })}
+            {field(t("oidc.fieldIssuer"), "issuer", { placeholder: "https://accounts.google.com" })}
+            {field(t("oidc.fieldClientId"), "client_id")}
+            {field(t("oidc.fieldClientSecret"), "client_secret", {
               type: "password",
-              placeholder: editingSlug ? "•••••••• (unverändert lassen)" : "",
+              placeholder: editingSlug ? t("oidc.secretUnchanged") : "",
             })}
-            {field("Redirect URI", "redirect_uri")}
-            {field("Scopes", "scopes")}
+            {field(t("oidc.fieldRedirectUri"), "redirect_uri")}
+            {field(t("oidc.fieldScopes"), "scopes")}
           </div>
 
           <div className="grid gap-2 sm:grid-cols-3">
-            {toggle("Aktiv", "enabled", "Erscheint auf der Anmeldeseite.")}
+            {toggle(t("oidc.toggleEnabled"), "enabled", t("oidc.toggleEnabledHint"))}
             {toggle(
-              "Registrierung erlauben",
+              t("oidc.toggleSignup"),
               "allow_signup",
-              "Legt bei unbekannter Identität ein neues Konto an.",
+              t("oidc.toggleSignupHint"),
             )}
             {toggle(
-              "Verifizierte E-Mail verlangen",
+              t("oidc.toggleVerified"),
               "require_verified_email",
-              "Empfohlen. Ohne Verifizierung ist die Adresse keine Identität.",
+              t("oidc.toggleVerifiedHint"),
             )}
           </div>
 
           <p className="text-xs text-slate-500">
-            Der Issuer wird beim Speichern geprüft: das Discovery-Dokument muss
-            erreichbar sein und denselben Issuer nennen.
+            {t("oidc.issuerHint")}
           </p>
 
           <div className="flex gap-2">
@@ -329,7 +329,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
               disabled={busy}
               className="rounded-2xl bg-[#0d5c3a] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
             >
-              {busy ? "Speichern…" : "Speichern"}
+              {busy ? t("common.saving") : t("common.save")}
             </button>
             <button
               onClick={() => {

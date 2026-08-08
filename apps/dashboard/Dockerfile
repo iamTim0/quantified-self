@@ -23,6 +23,31 @@ COPY package.json bun.lock ./
 # caught the stale lockfile years earlier than the first release attempt did.
 RUN bun install --frozen-lockfile
 
+# Development stage, used only by infra/docker-compose.dev.yml (`build.target: dev`).
+#
+# It carries node_modules and nothing else: the source arrives as a bind mount of
+# apps/dashboard, so an edit on the host is the file the dev server reads. The
+# mount would bury the installed packages under the host directory, which is why
+# the compose file keeps /app/node_modules and /app/.next as volumes -- these are
+# Linux builds of native binaries (sharp, the SWC binary) and a host checkout on
+# Windows or macOS has the wrong ones, or none.
+#
+# Placed before `runner` on purpose: a build without an explicit target builds the
+# *last* stage, and that has to stay the production image.
+FROM oven/bun:1-alpine AS dev
+
+WORKDIR /app
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+
+EXPOSE 3000
+
+# -H 0.0.0.0: the dev server has to answer Traefik from another container, and a
+# server bound to loopback inside a container answers nobody -- the same reason
+# the runner stage sets HOSTNAME.
+CMD ["bun", "run", "dev", "--", "-H", "0.0.0.0"]
+
 FROM oven/bun:1-alpine AS builder
 
 WORKDIR /app

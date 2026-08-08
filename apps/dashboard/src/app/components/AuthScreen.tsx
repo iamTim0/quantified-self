@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import { Activity, Lock, Mail, User, ArrowRight, AlertCircle } from "lucide-react";
 import { SessionUser } from "../lib/session";
+import { useT } from "../lib/i18n/provider";
+import LanguageSwitcher from "./LanguageSwitcher";
 
 /**
  * What a completed sign-in hands back to the page.
@@ -27,6 +29,7 @@ interface OidcProvider {
 }
 
 export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
+  const t = useT();
   const [isLogin, setIsLogin] = useState(true);
   const [allowRegistration, setAllowRegistration] = useState(true);
   const [providers, setProviders] = useState<OidcProvider[]>([]);
@@ -78,7 +81,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.authorization_url) {
-        throw new Error(data?.detail || "Anmeldung über diesen Anbieter ist nicht möglich.");
+        throw new Error(data?.detail || t("auth.providerUnavailable"));
       }
       // Remembered so the callback knows which provider answered; one redirect
       // URI can then serve every configured provider.
@@ -109,7 +112,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       if ("msg" in detail) return String((detail as { msg: unknown }).msg);
       return JSON.stringify(detail);
     }
-    return "Authentifizierung fehlgeschlagen";
+    return t("auth.failed");
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -159,7 +162,9 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     }
   };
 
-  const isAlreadyRegistered = error.toLowerCase().includes("already registered") || error.toLowerCase().includes("bereits registriert");
+  const lowered = error.toLowerCase();
+  const isAlreadyRegistered =
+    lowered.includes("already registered") || lowered.includes("already exists");
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
@@ -168,17 +173,21 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="z-10 w-full max-w-md">
+        <div className="mb-4 flex justify-end">
+          <LanguageSwitcher />
+        </div>
+
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-[#0d5c3a] text-white mb-4 shadow-xl shadow-[#0d5c3a]/20">
             <Activity className="w-8 h-8" />
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Quantified Self</h1>
-          <p className="text-slate-500 text-xs mt-1.5 font-medium">Deine persönliche Gesundheits- & Analytics-Plattform.</p>
+          <p className="text-slate-500 text-xs mt-1.5 font-medium">{t("auth.tagline")}</p>
         </div>
 
         <div className="glass-card bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xl">
           <h2 className="text-xl font-extrabold text-slate-900 mb-6">
-            {isLogin ? "Willkommen zurück" : "Konto erstellen"}
+            {isLogin ? t("auth.welcomeBack") : t("auth.createAccount")}
           </h2>
           
           {error && (
@@ -196,7 +205,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   }}
                   className="mt-1 text-xs font-bold text-[#0d5c3a] hover:underline block"
                 >
-                  ➜ Hier klicken, um dich direkt mit dieser E-Mail anzumelden.
+                  {t("auth.useExistingAccount")}
                 </button>
               )}
             </div>
@@ -205,7 +214,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div>
-                <label htmlFor="auth-name" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Name</label>
+                <label htmlFor="auth-name" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.name")}</label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                   <input 
@@ -222,7 +231,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             )}
             
             <div>
-              <label htmlFor="auth-email" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">E-Mail</label>
+              <label htmlFor="auth-email" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.email")}</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
@@ -238,7 +247,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             </div>
 
             <div>
-              <label htmlFor="auth-password" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Passwort</label>
+              <label htmlFor="auth-password" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.password")}</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
@@ -258,7 +267,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
               disabled={loading}
               className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 transition-all flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
-              {loading ? "Bitte warten..." : isLogin ? "Anmelden" : "Konto Registrieren"}
+              {loading ? t("common.pleaseWait") : isLogin ? t("auth.signIn") : t("auth.signUp")}
               {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
             </button>
           </form>
@@ -267,18 +276,18 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             {allowRegistration ? (
               <div>
                 <span className="text-slate-500">
-                  {isLogin ? "Noch kein Konto?" : "Bereits registriert?"}
+                  {isLogin ? t("auth.noAccount") : t("auth.haveAccount")}
                 </span>
                 <button 
                   onClick={() => { setIsLogin(!isLogin); setError(""); }}
                   className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
                 >
-                  {isLogin ? "Jetzt Registrieren" : "Hier Anmelden"}
+                  {isLogin ? t("auth.toSignUp") : t("auth.toSignIn")}
                 </button>
               </div>
             ) : (
               <div className="text-slate-400 text-xs italic">
-                Neuregistrierung vom Administrator deaktiviert.
+                {t("auth.registrationClosed")}
               </div>
             )}
             {providers.length > 0 && (
@@ -286,7 +295,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 <div className="flex items-center gap-3">
                   <span className="h-px flex-1 bg-slate-200" />
                   <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                    oder
+                    {t("auth.or")}
                   </span>
                   <span className="h-px flex-1 bg-slate-200" />
                 </div>
@@ -299,8 +308,8 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
                   >
                     {startingProvider === provider.slug
-                      ? "Weiterleitung…"
-                      : `Mit ${provider.display_name} anmelden`}
+                      ? t("auth.redirecting")
+                      : t("auth.signInWith", { provider: provider.display_name })}
                   </button>
                 ))}
               </div>
@@ -311,13 +320,13 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 href="/legal/datenschutz"
                 className="text-slate-400 underline transition-colors hover:text-slate-600"
               >
-                Datenschutzerklärung
+                {t("footer.privacy")}
               </a>
               <a
                 href="/legal/impressum"
                 className="text-slate-400 underline transition-colors hover:text-slate-600"
               >
-                Impressum
+                {t("footer.imprint")}
               </a>
             </div>
           </div>

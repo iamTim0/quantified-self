@@ -85,8 +85,8 @@ async def test_query_returns_only_the_requested_tenants_points(grpc_channel):
     tenant_a = await create_test_tenant()
     tenant_b = await create_test_tenant()
     try:
-        await _seed(tenant_a, metric="sleep_score", count=3)
-        await _seed(tenant_b, metric="sleep_score", count=5)
+        await _seed(tenant_a, metric="oura_sleep_score", count=3)
+        await _seed(tenant_b, metric="oura_sleep_score", count=5)
 
         stub = pb_grpc.CoreDataServiceStub(grpc_channel)
         response = await stub.QueryDataPoints(
@@ -108,7 +108,7 @@ async def test_unauthenticated_call_is_rejected(grpc_channel):
     """
     tenant_id = await create_test_tenant()
     try:
-        await _seed(tenant_id, metric="sleep_score", count=1)
+        await _seed(tenant_id, metric="oura_sleep_score", count=1)
         stub = pb_grpc.CoreDataServiceStub(grpc_channel)
 
         with pytest.raises(grpc.aio.AioRpcError) as excinfo:
@@ -208,7 +208,7 @@ async def test_list_data_sources_carries_no_credentials(grpc_channel):
     """
     tenant_id = await create_test_tenant()
     try:
-        await _seed(tenant_id, metric="sleep_score", count=1)
+        await _seed(tenant_id, metric="oura_sleep_score", count=1)
         stub = pb_grpc.CoreDataServiceStub(grpc_channel)
         response = await stub.ListDataSources(
             pb.ListDataSourcesRequest(tenant_id=tenant_id), metadata=_auth()
@@ -235,7 +235,7 @@ async def test_get_data_point_hides_other_tenants_behind_not_found(grpc_channel)
     tenant_a = await create_test_tenant()
     tenant_b = await create_test_tenant()
     try:
-        await _seed(tenant_a, metric="sleep_score", count=1)
+        await _seed(tenant_a, metric="oura_sleep_score", count=1)
         stub = pb_grpc.CoreDataServiceStub(grpc_channel)
 
         owned = await stub.QueryDataPoints(

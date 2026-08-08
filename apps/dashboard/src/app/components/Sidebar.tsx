@@ -3,6 +3,8 @@
 import React from "react";
 import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight, ScanSearch, BrainCircuit, BookOpen } from "lucide-react";
 
+import { useT } from "../lib/i18n/provider";
+
 export type TabType = "overview" | "explorer" | "quality" | "analysis" | "connectors" | "profile";
 
 interface SidebarProps {
@@ -13,12 +15,13 @@ interface SidebarProps {
 }
 
 export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: SidebarProps) {
+  const t = useT();
   const menuItems = [
-    { id: "overview" as TabType, label: "Dashboard", icon: LayoutDashboard },
-    { id: "explorer" as TabType, label: "Data Explorer", icon: LineChart },
-    { id: "quality" as TabType, label: "Data Quality", icon: ScanSearch },
-    { id: "analysis" as TabType, label: "Analysen", icon: BrainCircuit },
-    { id: "connectors" as TabType, label: "Connectors", icon: Plug },
+    { id: "overview" as TabType, label: t("sidebar.overview"), icon: LayoutDashboard },
+    { id: "explorer" as TabType, label: t("sidebar.explorer"), icon: LineChart },
+    { id: "quality" as TabType, label: t("sidebar.quality"), icon: ScanSearch },
+    { id: "analysis" as TabType, label: t("sidebar.analysis"), icon: BrainCircuit },
+    { id: "connectors" as TabType, label: t("sidebar.connectors"), icon: Plug },
   ];
 
   return (
@@ -42,7 +45,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
         {/* MENU Section */}
         <div className="mb-8">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-3 block">
-            MENU
+            {t("sidebar.menu")}
           </span>
           <nav className="space-y-1">
             {menuItems.map((item) => {
@@ -74,7 +77,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
               className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"
             >
               <Share2 className="w-4 h-4 text-slate-400" />
-              <span>Teilen & Export</span>
+              <span>{t("sidebar.share")}</span>
             </button>
           </nav>
         </div>
@@ -82,7 +85,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
         {/* GENERAL Section */}
         <div>
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-3 block">
-            GENERAL
+            {t("sidebar.general")}
           </span>
           <nav className="space-y-1">
             {/* Relative on purpose: Traefik serves the docs container under /docs
@@ -93,11 +96,11 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"
-              title="Zentrale Plattform-Dokumentation öffnen"
+              title={t("sidebar.docsTitle")}
             >
               <div className="flex items-center gap-3">
                 <BookOpen className="w-4 h-4 text-slate-400" />
-                <span>Dokumentation</span>
+                <span>{t("sidebar.docs")}</span>
               </div>
               <ArrowUpRight className="w-3.5 h-3.5 text-slate-400" />
             </a>
@@ -112,7 +115,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
             >
               <div className="flex items-center gap-3">
                 <User className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-slate-400"}`} />
-                <span>Einstellungen</span>
+                <span>{t("sidebar.settings")}</span>
               </div>
             </button>
 
@@ -121,7 +124,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
               className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
             >
               <LogOut className="w-4 h-4 text-rose-400" />
-              <span>Abmelden</span>
+              <span>{t("sidebar.logout")}</span>
             </button>
           </nav>
         </div>
@@ -137,15 +140,15 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
             PRO
           </span>
         </div>
-        <h4 className="text-xs font-bold text-white mb-1">Live Quantified Self</h4>
+        <h4 className="text-xs font-bold text-white mb-1">{t("sidebar.promoTitle")}</h4>
         <p className="text-[11px] text-emerald-100/80 mb-3 leading-tight">
-          Verbinde Yazio, Oura & Apple Health für Echtzeit-Analysen.
+          {t("sidebar.promoBody")}
         </p>
         <button
           onClick={() => onTabChange("connectors")}
           className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md"
         >
-          <span>Connectors verwalten</span>
+          <span>{t("sidebar.promoAction")}</span>
           <ArrowUpRight className="w-3.5 h-3.5" />
         </button>
       </div>

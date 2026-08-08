@@ -30,7 +30,7 @@ test.describe("system warnings", () => {
     // The signing key is the one that matters most: knowing it means being able
     // to mint a session for any account in any workspace.
     await expect(
-      warnings.getByText(/JWT_SECRET ist ein veröffentlichter Standardwert/),
+      warnings.getByText(/JWT_SECRET is a published default/),
     ).toBeVisible();
 
     // A warning without an action is a warning nobody acts on, so the action is
@@ -69,7 +69,7 @@ test.describe("system warnings", () => {
 
     const warnings = page.getByRole("region", { name: "Systemwarnungen" });
     const critical = warnings
-      .getByText(/JWT_SECRET ist ein veröffentlichter Standardwert/)
+      .getByText(/JWT_SECRET is a published default/)
       .first();
     await expect(critical).toBeVisible();
 
@@ -83,7 +83,7 @@ test.describe("system warnings", () => {
     await expect(
       page
         .getByRole("region", { name: "Systemwarnungen" })
-        .getByText(/JWT_SECRET ist ein veröffentlichter Standardwert/),
+        .getByText(/JWT_SECRET is a published default/),
     ).toBeVisible();
   });
 

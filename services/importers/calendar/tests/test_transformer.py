@@ -8,6 +8,8 @@ Maps to Fizzbee Invariants:
 from datetime import datetime, timedelta, timezone
 
 from calendar_importer.ics import CalendarEvent
+from shared_schemas.metrics import canonical_metric_type
+
 from calendar_importer.transformer import transform, transform_events
 
 TENANT = "tenant-1"
@@ -27,25 +29,29 @@ def _event(uid: str, hour: int, minutes: int = 60, **kwargs) -> CalendarEvent:
 
 
 def test_emits_the_documented_metric_names():
-    """docs/importers/calendar.md promises these three; the old code emitted one."""
+    """Every emitted name is the registry's canonical one.
+
+    `calendar_busy_hours` used to be here too: the same quantity as
+    `calendar_busy_duration` in a different unit, which existed only because the unit
+    lived in the metric name. The registry holds the unit now, so one metric is enough.
+    """
     points = transform_events([_event("a", 9), _event("b", 14, 30)], TENANT, SOURCE)
     metrics = {p["metric_type"] for p in points}
 
     assert metrics == {
-        "calendar_meeting_duration_minutes",
+        "calendar_meeting_duration",
         "calendar_event_count",
-        "calendar_busy_minutes",
-        "calendar_busy_hours",
+        "calendar_busy_duration",
     }
+    assert all(canonical_metric_type(m) == m for m in metrics)
 
 
 def test_daily_aggregates_are_correct():
     points = transform_events([_event("a", 9, 60), _event("b", 14, 30)], TENANT, SOURCE)
-    by_metric = {p["metric_type"]: p for p in points if p["metric_type"] != "calendar_meeting_duration_minutes"}
+    by_metric = {p["metric_type"]: p for p in points if p["metric_type"] != "calendar_meeting_duration"}
 
     assert by_metric["calendar_event_count"]["value"] == 2
-    assert by_metric["calendar_busy_minutes"]["value"] == 90
-    assert by_metric["calendar_busy_hours"]["value"] == 1.5
+    assert by_metric["calendar_busy_duration"]["value"] == 90
 
 
 def test_transparent_events_count_but_do_not_occupy_time():
@@ -55,11 +61,11 @@ def test_transparent_events_count_but_do_not_occupy_time():
     by_metric = {
         p["metric_type"]: p
         for p in points
-        if p["metric_type"] != "calendar_meeting_duration_minutes"
+        if p["metric_type"] != "calendar_meeting_duration"
     }
 
     assert by_metric["calendar_event_count"]["value"] == 2
-    assert by_metric["calendar_busy_minutes"]["value"] == 60
+    assert by_metric["calendar_busy_duration"]["value"] == 60
 
 
 def test_idempotency_keys_are_deterministic():
@@ -78,7 +84,7 @@ def test_two_meetings_at_the_same_instant_do_not_collide():
     occurrence_keys = [
         p["idempotency_key"]
         for p in points
-        if p["metric_type"] == "calendar_meeting_duration_minutes"
+        if p["metric_type"] == "calendar_meeting_duration"
     ]
 
     assert len(occurrence_keys) == 2
@@ -103,7 +109,7 @@ def test_recurring_instances_get_distinct_keys():
     keys = [
         p["idempotency_key"]
         for p in points
-        if p["metric_type"] == "calendar_meeting_duration_minutes"
+        if p["metric_type"] == "calendar_meeting_duration"
     ]
 
     assert len(set(keys)) == 4

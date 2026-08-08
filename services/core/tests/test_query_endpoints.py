@@ -35,7 +35,7 @@ async def ensure_seeded_data(tenant_id: str):
             id=str(uuid.uuid4()),
             tenant_id=tenant_id,
             source_id=source_id,
-            metric_type="sleep_score",
+            metric_type="oura_sleep_score",
             timestamp=datetime.now(timezone.utc),
             value=85.0,
             idempotency_key=f"test-sleep-{uuid.uuid4().hex[:8]}",
@@ -71,7 +71,7 @@ async def test_query_metrics_endpoint():
         await ensure_seeded_data(tenant_id)
         headers = auth_headers(tenant_id)
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-            response = await ac.get("/api/v1/data/metrics?metric_type=sleep_score", headers=headers)
+            response = await ac.get("/api/v1/data/metrics?metric_type=oura_sleep_score", headers=headers)
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -97,7 +97,7 @@ async def test_list_metric_types_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert "metric_types" in data
-    assert "sleep_score" in data["metric_types"]
+    assert "oura_sleep_score" in data["metric_types"]
     assert "steps" in data["metric_types"]
 
 
@@ -116,5 +116,5 @@ async def test_metrics_summary_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert "metrics" in data
-    assert "sleep_score" in data["metrics"]
-    assert data["metrics"]["sleep_score"]["count"] >= 1
+    assert "oura_sleep_score" in data["metrics"]
+    assert data["metrics"]["oura_sleep_score"]["count"] >= 1

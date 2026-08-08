@@ -142,16 +142,16 @@ def compute_sync_window(
     if last_success_end is None:
         return (
             TimeRange(horizon, now),
-            f"Erstimport: vollständiger Zeitraum der letzten {lookback_days} Tage.",
+            f"First import: the whole period of the last {lookback_days} days.",
         )
 
     last_success_end = _as_utc(last_success_end)
     overlap = overlap_for_interval(poll_interval_hours)
     start = last_success_end - overlap
     reason = (
-        f"Anschluss an den letzten erfolgreichen Import mit "
-        f"{int(overlap.total_seconds() // 3600)} h Überlappung "
-        f"(Abfrageintervall {poll_interval_hours:g} h)."
+        f"Continuing from the last successful import with "
+        f"{int(overlap.total_seconds() // 3600)} h of overlap "
+        f"(polling interval {poll_interval_hours:g} h)."
     )
 
     if earliest_known_gap is not None:
@@ -159,14 +159,14 @@ def compute_sync_window(
         if earliest_known_gap < start:
             start = earliest_known_gap
             reason = (
-                f"Erweitert bis zur ältesten bekannten Datenlücke "
+                f"Extended back to the oldest known gap "
                 f"({earliest_known_gap.date().isoformat()}), "
-                f"Abfrageintervall {poll_interval_hours:g} h."
+                f"polling interval {poll_interval_hours:g} h."
             )
 
     if start < horizon:
         start = horizon
-        reason += f" Begrenzt auf das konfigurierte Lookback von {lookback_days} Tagen."
+        reason += f" Capped at the configured lookback of {lookback_days} days."
 
     if start >= now:
         # The connector already has everything up to now; nothing sensible to do
@@ -474,9 +474,9 @@ async def plan_import(
             recommended=window,
             mode="force",
             reason=(
-                "Force-Modus: Der gesamte angeforderte Zeitraum wird erneut verarbeitet. "
-                "Bereits vorhandene Datenpunkte werden durch die Idempotenzprüfung "
-                "verworfen, es entsteht aber zusätzlicher Verarbeitungsaufwand."
+                "Force mode: the whole requested period is processed again. Points "
+                "that are already stored are dropped by the idempotency check, but "
+                "the run still costs the work."
             ),
             confidence="high",
         )
@@ -494,8 +494,8 @@ async def plan_import(
             recommended=window,
             mode="smart",
             reason=(
-                "Die vorhandenen Daten sind zu unregelmäßig für eine sichere "
-                "Bereichserkennung. Es wird der vollständige Zeitraum importiert."
+                "The existing data is too irregular to detect ranges reliably. "
+                "The whole period will be imported."
             ),
             confidence="low",
             expected_interval_seconds=None,
@@ -510,8 +510,8 @@ async def plan_import(
             recommended=None,
             mode="smart",
             reason=(
-                f"Der Zeitraum von {_fmt(window.start)} bis {_fmt(window.end)} ist "
-                "bereits vollständig vorhanden und wird übersprungen."
+                f"The period from {_fmt(window.start)} to {_fmt(window.end)} is "
+                "already complete and will be skipped."
             ),
             confidence=confidence,
             expected_interval_seconds=expectation or None,
@@ -521,14 +521,14 @@ async def plan_import(
     recommended = TimeRange(missing[0].start, missing[-1].end)
     if covered:
         reason = (
-            f"Bereits vorhanden: {_describe(covered)}. "
-            f"Importiert wird nur der neue Zeitraum von {_fmt(recommended.start)} "
-            f"bis {_fmt(recommended.end)}."
+            f"Already stored: {_describe(covered)}. "
+            f"Only the new period from {_fmt(recommended.start)} "
+            f"to {_fmt(recommended.end)}."
         )
     else:
         reason = (
-            f"Für den Zeitraum von {_fmt(window.start)} bis {_fmt(window.end)} "
-            "liegen noch keine Daten vor."
+            f"No data is stored yet for the period from {_fmt(window.start)} "
+            f"to {_fmt(window.end)}."
         )
 
     return ImportPlan(

@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { X, Share2, Shield, Trash2, CheckCircle2 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useT } from "../lib/i18n/provider";
 
 interface ShareItem {
   id: string;
@@ -18,6 +19,7 @@ interface ShareModalProps {
 }
 
 export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps) {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [shares, setShares] = useState<ShareItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -66,10 +68,10 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
       const data = await res.json();
       
       if (!res.ok) {
-        throw new Error(data.detail || "Freigabe fehlgeschlagen.");
+        throw new Error(data.detail || t("share.failed"));
       }
       
-      setSuccess(`Daten erfolgreich mit ${email} geteilt.`);
+      setSuccess(t("share.success", { email }));
       setEmail("");
       
       const refreshRes = await apiFetch(`${apiBase}/api/v1/data/shares`, {
@@ -109,7 +111,7 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
             <div className="p-2 bg-emerald-50 rounded-2xl text-[#0d5c3a] border border-emerald-200">
               <Share2 className="w-5 h-5" />
             </div>
-            <h2 className="text-lg font-extrabold text-slate-900">Daten Teilen</h2>
+            <h2 className="text-lg font-extrabold text-slate-900">{t("share.title")}</h2>
           </div>
           <button 
             onClick={handleClose}
@@ -122,7 +124,7 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
         <div className="p-6 space-y-6">
           <form onSubmit={handleShare} className="space-y-4">
             <p className="text-xs text-slate-500 leading-relaxed">
-              Gewähre Trainern, Ärzten oder Partnern sicheren Lesezugriff auf deine Gesundheitsdaten (Tenant Shared Read Access).
+              {t("share.intro")}
             </p>
             
             {error && <p role="alert" className="text-xs font-semibold text-rose-700 bg-rose-50 p-3 rounded-2xl border border-rose-200">{error}</p>}
@@ -133,7 +135,7 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="empfaenger@example.com"
+                placeholder={t("share.emailPlaceholder")}
                 required
                 className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 px-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
               />
@@ -144,13 +146,13 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
               disabled={loading}
               className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 text-xs transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
-              {loading ? "Wird freigegeben..." : "Einladung Senden"}
+              {loading ? t("share.submitting") : t("share.submit")}
             </button>
           </form>
 
           {shares.length > 0 && (
             <div className="pt-4 border-t border-slate-100">
-              <h3 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">Aktive Freigaben</h3>
+              <h3 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">{t("share.activeTitle")}</h3>
               <div className="space-y-2">
                 {shares.map(share => (
                   <div key={share.id} className="flex items-center justify-between p-3 rounded-2xl border border-slate-200 bg-slate-50">
@@ -164,7 +166,7 @@ export default function ShareModal({ isOpen, onClose, apiBase }: ShareModalProps
                     <button 
                       onClick={() => handleRevoke(share.id)}
                       className="p-1.5 text-rose-600 hover:bg-rose-100 rounded-xl transition-colors"
-                      title="Freigabe widerrufen"
+                      title={t("share.revoke")}
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>

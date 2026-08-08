@@ -126,7 +126,7 @@ def test_each_variable_becomes_its_own_metric():
     events = transform(records, TENANT, SOURCE)
     metrics = {e["metric_type"] for e in events}
 
-    assert metrics == {"weather_temperature_c", "weather_humidity_pct"}
+    assert metrics == {"weather_temperature", "weather_humidity"}
 
 
 def test_idempotency_key_is_deterministic():

@@ -3,6 +3,8 @@
 import React from "react";
 import { Plus, Share2, LogOut, LayoutDashboard, LineChart, Plug, User } from "lucide-react";
 
+import { useT } from "../lib/i18n/provider";
+
 export type TabType = "overview" | "explorer" | "connectors" | "profile";
 
 interface HeaderProps {
@@ -29,6 +31,7 @@ export default function Header({
   onShare,
   onLogout,
 }: HeaderProps) {
+  const t = useT();
   const getInitials = (name: string) => {
     if (!name) return "QS";
     const parts = name.trim().split(" ");
@@ -54,7 +57,7 @@ export default function Header({
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            Willkommen zurück, {userName} <span className="text-slate-400">({userEmail})</span>
+            {t("header.welcome", { name: userName })} <span className="text-slate-400">({userEmail})</span>
           </p>
         </div>
       </div>
@@ -120,12 +123,12 @@ export default function Header({
           className="flex items-center gap-2 px-3.5 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>Connector Hinzufügen</span>
+          <span>{t("header.addConnector")}</span>
         </button>
         <button
           onClick={onLogout}
           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-2xl transition-colors"
-          title="Abmelden"
+          title={t("sidebar.logout")}
         >
           <LogOut className="w-4 h-4" />
         </button>

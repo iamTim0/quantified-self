@@ -1,8 +1,39 @@
-"""Transformer for Health Auto Export (Apple Health) JSON into Standardized DataPoints."""
+"""Transformer for Health Auto Export (Apple Health) JSON into Standardized DataPoints.
+
+Names and units come from the shared registry
+(packages/shared-schemas/src/shared_schemas/metrics.py). Three things this transformer
+used to do that the registry makes unnecessary:
+
+* It emitted ``workout_avg_heart_rate`` where WHOOP emitted
+  ``workout_average_heart_rate`` for the same quantity, so the two never met.
+* It ignored the ``units`` string Health Auto Export ships alongside every metric and
+  stored the number raw. Sleep therefore arrived in hours on one phone and minutes on
+  another, under one metric name, and distance in miles or kilometres by locale. The
+  declared unit is now read and the value converted to the registry's unit.
+* Any name it did not recognise became a metric verbatim
+  (``METRIC_NAME_MAP.get(raw_name, raw_name)``), which handed the naming of the
+  platform's metric space to whatever HealthKit type a phone happened to record.
+  Unrecognised names now land under the ``apple_health_`` namespace, where they are
+  storable and searchable without claiming a canonical name.
+"""
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
+from shared_schemas.metrics import (
+    METRIC_CATALOG,
+    MetricUnit,
+    UnsupportedConversionError,
+    convert,
+)
+
+logger = logging.getLogger(__name__)
+
+#: Prefix for HealthKit types the catalog does not know. Registered as a dynamic
+#: namespace in the registry, so these are legal without being catalogued.
+NAMESPACE = "apple_health_"
 
 
 def generate_idempotency_key(
@@ -36,31 +67,141 @@ def parse_timestamp(date_str: str) -> str:
         return date_str
 
 
+#: HealthKit / Health Auto Export metric name -> canonical registry key.
 METRIC_NAME_MAP: dict[str, str] = {
-    "step_count": "step_count",
-    "steps": "step_count",
-    "active_energy": "active_energy",
-    "active_energy_burned": "active_energy",
-    "basal_energy_burned": "resting_energy",
-    "resting_energy": "resting_energy",
+    "step_count": "steps",
+    "steps": "steps",
+    "distance_walking_running": "distance",
+    "walking_running_distance": "distance",
+    "active_energy": "energy_active",
+    "active_energy_burned": "energy_active",
+    "basal_energy_burned": "energy_resting",
+    "resting_energy": "energy_resting",
     "heart_rate": "heart_rate",
-    "resting_heart_rate": "resting_heart_rate",
+    "resting_heart_rate": "heart_rate_resting",
     "heart_rate_variability_sdnn": "hrv_sdnn",
     "hrv": "hrv_sdnn",
     "sleep_analysis": "sleep_duration",
     "sleep": "sleep_duration",
-    "blood_oxygen": "spo2_percentage",
-    "oxygen_saturation": "spo2_percentage",
+    "blood_oxygen": "blood_oxygen",
+    "oxygen_saturation": "blood_oxygen",
     "respiratory_rate": "respiratory_rate",
-    "body_mass": "body_mass",
-    "weight": "body_mass",
-    "body_fat_percentage": "body_fat_percentage",
+    "body_mass": "body_weight",
+    "weight": "body_weight",
+    "body_fat_percentage": "body_fat",
     "vo2_max": "vo2_max",
-    "apple_exercise_time": "apple_exercise_time",
-    "apple_stand_time": "apple_stand_time",
-    "walking_heart_rate_average": "walking_heart_rate_average",
-    "dietary_energy_consumed": "calories_consumed",
+    "apple_exercise_time": "exercise_duration",
+    "apple_stand_time": "stand_duration",
+    "walking_heart_rate_average": "heart_rate_walking_average",
+    "dietary_energy_consumed": "nutrition_energy",
 }
+
+#: Apple's sleep stage key -> canonical registry key. Apple calls light sleep "Core",
+#: and its "asleep" is total sleep time -- the same quantity as the entry's own `qty`,
+#: which is why it maps to `sleep_duration` rather than a stage of its own.
+SLEEP_STAGE_MAP: dict[str, str] = {
+    "deep": "sleep_duration_deep",
+    "rem": "sleep_duration_rem",
+    "core": "sleep_duration_light",
+    "awake": "sleep_duration_awake",
+    "inBed": "sleep_duration_in_bed",
+    "asleep": "sleep_duration",
+}
+
+#: Workout payload field -> (canonical registry key, unit to assume when the field
+#: declares none). Workout fields are sometimes a bare number rather than a
+#: ``{"qty", "units"}`` object; ``duration`` in particular is seconds, which is why it
+#: carries a fallback instead of being read as minutes and inflating every session
+#: sixtyfold.
+WORKOUT_FIELD_MAP: tuple[tuple[str, str, MetricUnit | None], ...] = (
+    ("activeEnergy", "workout_energy", None),
+    ("totalDistance", "workout_distance", None),
+    ("duration", "workout_duration", MetricUnit.SECOND),
+    ("avgHeartRate", "workout_heart_rate_average", None),
+    ("maxHeartRate", "workout_heart_rate_max", None),
+)
+
+#: The `units` strings Health Auto Export emits, lowercased, mapped onto registry
+#: units. Anything absent means "we do not know what this number is in" -- the value is
+#: then stored unconverted rather than silently assumed to be canonical.
+PROVIDER_UNITS: dict[str, MetricUnit] = {
+    "count": MetricUnit.COUNT,
+    "kcal": MetricUnit.KCAL,
+    "cal": MetricUnit.KCAL,
+    "kj": MetricUnit.KILOJOULE,
+    "g": MetricUnit.GRAM,
+    "kg": MetricUnit.KILOGRAM,
+    "lb": MetricUnit.POUND,
+    "lbs": MetricUnit.POUND,
+    "%": MetricUnit.PERCENT,
+    "bpm": MetricUnit.BPM,
+    "count/min": MetricUnit.BPM,
+    "ms": MetricUnit.MILLISECOND,
+    "s": MetricUnit.SECOND,
+    "sec": MetricUnit.SECOND,
+    "min": MetricUnit.MINUTE,
+    "hr": MetricUnit.HOUR,
+    "h": MetricUnit.HOUR,
+    "hours": MetricUnit.HOUR,
+    "m": MetricUnit.METER,
+    "km": MetricUnit.KILOMETER,
+    "mi": MetricUnit.MILE,
+    "degc": MetricUnit.CELSIUS,
+    "°c": MetricUnit.CELSIUS,
+    "ml/kg·min": MetricUnit.ML_PER_KG_PER_MIN,
+    "ml/(kg*min)": MetricUnit.ML_PER_KG_PER_MIN,
+}
+
+
+def canonical_name(raw_name: str) -> str:
+    """Registry key for a HealthKit metric name, or a namespaced one if it has none.
+
+    The fallback used to be the provider's name unchanged, which let any HealthKit type
+    occupy a bare metric name next to the catalogued ones. Prefixing keeps the data —
+    an uncatalogued metric is still worth storing — while leaving the canonical space
+    to the registry.
+    """
+    if raw_name in METRIC_NAME_MAP:
+        return METRIC_NAME_MAP[raw_name]
+    cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw_name).strip("_").lower()
+    return f"{NAMESPACE}{cleaned}" if cleaned else f"{NAMESPACE}metric"
+
+
+def normalise_value(
+    value: float,
+    declared_units: str,
+    metric_type: str,
+    default_unit: MetricUnit | None = None,
+) -> float:
+    """Convert ``value`` into the unit the registry defines for ``metric_type``.
+
+    ``default_unit`` applies only when the payload declares nothing; a declared unit
+    always wins, so a fallback cannot override what the phone actually said.
+
+    Returns the value untouched when the metric is namespaced (no canonical unit
+    exists), when the unit is neither declared nor defaulted nor recognised, or when the
+    registry has no factor for the pair. Guessing in any of those cases would corrupt
+    the number far more thoroughly than leaving it alone.
+    """
+    definition = METRIC_CATALOG.get(metric_type)
+    if definition is None:
+        return value
+
+    provider_unit = PROVIDER_UNITS.get(declared_units.strip().lower(), default_unit)
+    if provider_unit is None or provider_unit is definition.unit:
+        return value
+
+    try:
+        return convert(value, provider_unit, definition.unit)
+    except UnsupportedConversionError:
+        logger.warning(
+            "Apple Health reported %s in %r, which the registry cannot convert to %r; "
+            "storing the value unconverted",
+            metric_type,
+            declared_units,
+            definition.unit.value,
+        )
+        return value
 
 
 def _extract_numeric_value(val: Any) -> float | None:
@@ -92,7 +233,7 @@ def transform_health_auto_export_json(
 
         raw_name = str(metric_obj.get("name") or "").lower().strip()
         units = str(metric_obj.get("units") or "")
-        metric_type = METRIC_NAME_MAP.get(raw_name, raw_name or "apple_health_metric")
+        metric_type = canonical_name(raw_name)
 
         data_entries = metric_obj.get("data") or []
         for entry in data_entries:
@@ -114,7 +255,11 @@ def transform_health_auto_export_json(
                 metadata = {
                     "source_type": "apple_health",
                     "original_metric_name": raw_name,
+                    # The unit the phone reported in, kept even after conversion: it is
+                    # what a "why is this number different from my Health app" question
+                    # is actually about.
                     "units": units,
+                    "provider_value": val,
                 }
                 if "source" in entry:
                     metadata["device_source"] = entry["source"]
@@ -124,7 +269,7 @@ def transform_health_auto_export_json(
                     "source_id": source_id,
                     "metric_type": metric_type,
                     "timestamp": ts,
-                    "value": val,
+                    "value": normalise_value(val, units, metric_type),
                     "metadata": metadata,
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, metric_type, ts
@@ -135,21 +280,26 @@ def transform_health_auto_export_json(
 
             # Extra handling for sleep stages sub-fields if present
             if raw_name in ("sleep_analysis", "sleep"):
-                for stage in ("deep", "rem", "core", "awake", "inBed", "asleep"):
+                for stage, stage_metric_type in SLEEP_STAGE_MAP.items():
+                    # `asleep` carries the same total the entry's own qty did. Emitting
+                    # both would produce two points with one idempotency key, of which
+                    # Core stores the first and logs the second as a duplicate.
+                    if stage_metric_type == metric_type and val is not None:
+                        continue
                     stage_val = _extract_numeric_value(entry.get(stage))
                     if stage_val is not None:
-                        stage_metric_type = f"sleep_{stage.lower()}_duration"
                         dp_stage = {
                             "tenant_id": tenant_id,
                             "source_id": source_id,
                             "metric_type": stage_metric_type,
                             "timestamp": ts,
-                            "value": stage_val,
+                            "value": normalise_value(stage_val, units, stage_metric_type),
                             "metadata": {
                                 "source_type": "apple_health",
                                 "parent_metric": raw_name,
                                 "stage": stage,
                                 "units": units,
+                                "provider_value": stage_val,
                             },
                             "idempotency_key": generate_idempotency_key(
                                 tenant_id, source_id, stage_metric_type, ts
@@ -176,30 +326,34 @@ def transform_health_auto_export_json(
             "end_time": parse_timestamp(str(workout.get("end") or workout.get("endDate") or "")),
         }
 
-        # Workout Metrics mapping
-        workout_fields = [
-            ("activeEnergy", "workout_active_energy"),
-            ("totalDistance", "workout_distance"),
-            ("duration", "workout_duration"),
-            ("avgHeartRate", "workout_avg_heart_rate"),
-            ("maxHeartRate", "workout_max_heart_rate"),
-        ]
+        for field_key, w_metric_type, fallback_unit in WORKOUT_FIELD_MAP:
+            raw_field = workout.get(field_key)
+            val = _extract_numeric_value(raw_field)
+            if val is None:
+                continue
 
-        for field_key, w_metric_type in workout_fields:
-            val = _extract_numeric_value(workout.get(field_key))
-            if val is not None:
-                dp_w = {
+            # Workout fields carry their unit inside the field object rather than
+            # alongside the metric, and distance in particular follows the phone's
+            # locale — miles on one, kilometres on the next.
+            field_units = str(raw_field.get("units") or "") if isinstance(raw_field, dict) else ""
+
+            data_points.append(
+                {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
                     "metric_type": w_metric_type,
                     "timestamp": ts,
-                    "value": val,
-                    "metadata": workout_metadata,
+                    "value": normalise_value(val, field_units, w_metric_type, fallback_unit),
+                    "metadata": {
+                        **workout_metadata,
+                        "units": field_units,
+                        "provider_value": val,
+                    },
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, w_metric_type, ts
                     ),
                     "source_type": "apple_health",
                 }
-                data_points.append(dp_w)
+            )
 
     return data_points

@@ -4,7 +4,7 @@ version = "0.1.0"
 license = "AGPL-3.0-only"
 description = "Quantified Self Apple Health (Health Auto Export JSON) Importer Service"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn>=0.28.0",
@@ -14,7 +14,13 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "qs-shared-schemas",
 ]
+
+# The metric catalog is shared, not copied: a name or unit defined in
+# packages/shared-schemas/src/shared_schemas/metrics.py reaches this importer here.
+[tool.uv.sources]
+qs-shared-schemas = { path = "../../../packages/shared-schemas", editable = true }
 
 [build-system]
 requires = ["hatchling"]

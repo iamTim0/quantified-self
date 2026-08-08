@@ -4,6 +4,8 @@ import React, { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { Search, ChevronRight, X, AreaChart, TrendingUp, BarChart2, Layers, Calendar, RefreshCw, Database, Check, Cpu, Bookmark, Save, Trash2 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useT } from "../lib/i18n/provider";
+import { describeMetric } from "../lib/metrics/catalog";
 
 // Client-only dynamic import for ChartJS canvas
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
@@ -49,6 +51,7 @@ interface ExplorerTabProps {
 const COLOR_PALETTE = ["#f59e0b", "#3b82f6", "#10b981", "#ec4899", "#a855f7", "#06b6d4", "#f43f5e", "#eab308"];
 
 export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
+  const t = useT();
   const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -341,7 +344,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           className="flex items-center gap-2 px-4 py-2.5 text-xs font-bold rounded-2xl bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-all shadow-xs"
         >
           <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
-          <span>Daten Aktualisieren</span>
+          <span>{t("explorer.refresh")}</span>
         </button>
       </div>
 
@@ -349,14 +352,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       <div className="glass-card p-5 bg-white border border-slate-200/80 rounded-3xl space-y-3">
         <div className="flex justify-between items-center">
           <span className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
-            <Bookmark className="w-3.5 h-3.5" /> Gespeicherte Ansichten (PostgreSQL Synced)
+            <Bookmark className="w-3.5 h-3.5" /> {t("explorer.savedViews")}
           </span>
           {!isSavingView ? (
             <button
               onClick={() => setIsSavingView(true)}
               className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-xl bg-emerald-50 text-[#0d5c3a] border border-emerald-200 hover:bg-emerald-100 transition-colors"
             >
-              <Save className="w-3.5 h-3.5" /> Aktuelle Ansicht Speichern
+              <Save className="w-3.5 h-3.5" /> {t("explorer.saveCurrent")}
             </button>
           ) : (
             <div className="flex items-center gap-2">
@@ -401,7 +404,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   <button
                     onClick={(e) => handleDeleteView(view.id, e)}
                     className="text-slate-400 hover:text-rose-500 transition-colors ml-1"
-                    title="Ansicht aus PostgreSQL löschen"
+                    title={t("explorer.deleteView")}
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>
@@ -411,7 +414,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           </div>
         ) : (
           <p className="text-xs text-slate-400">
-            Noch keine benutzerdefinierten Ansichten in PostgreSQL gespeichert. Konfiguriere Filter und klicke auf "Aktuelle Ansicht Speichern".
+            {t("explorer.noViews")}
           </p>
         )}
       </div>
@@ -424,14 +427,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {/* Source Provider Filter */}
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-[#0d5c3a]" /> Quelle:
+                <Layers className="w-3.5 h-3.5 text-[#0d5c3a]" /> {t("explorer.source")}
               </span>
               <select
                 value={selectedSource}
                 onChange={(e) => setSelectedSource(e.target.value)}
                 className="px-3 py-1.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-900 text-xs font-bold outline-none focus:border-[#0d5c3a]"
               >
-                <option value="all">Alle Quellen</option>
+                <option value="all">{t("explorer.allSources")}</option>
                 {availableSources.map((src) => (
                   <option key={src} value={src}>
                     {src.toUpperCase()}
@@ -443,7 +446,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {/* Date Range Picker Bar */}
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600" /> Zeitraum:
+                <Calendar className="w-3.5 h-3.5 text-emerald-600" /> {t("explorer.period")}
               </span>
               <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs">
                 {[
@@ -498,7 +501,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 className={`px-2.5 py-1 rounded-xl transition-all font-bold ${
                   aggregation === "sum" ? "bg-[#0d5c3a] text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
                 }`}
-                title="Tages-Summe"
+                title={t("explorer.dailySum")}
               >
                 SUM
               </button>
@@ -507,7 +510,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 className={`px-2.5 py-1 rounded-xl transition-all font-bold ${
                   aggregation === "avg" ? "bg-[#0d5c3a] text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
                 }`}
-                title="Tages-Durchschnitt"
+                title={t("explorer.dailyAverage")}
               >
                 Ø AVG
               </button>
@@ -529,7 +532,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 className={`p-1.5 rounded-xl transition-all ${
                   chartType === "area" ? "bg-[#0d5c3a] text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
                 }`}
-                title="Flächendiagramm"
+                title={t("chart.typeArea")}
               >
                 <AreaChart className="w-4 h-4" />
               </button>
@@ -559,14 +562,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         <div className="space-y-2">
           <div className="flex justify-between items-center">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5 text-[#0d5c3a]" /> Ausgewählte Metriken ({selectedMetrics.length}):
+              <Cpu className="w-3.5 h-3.5 text-[#0d5c3a]" /> {t("explorer.selectedMetrics", { count: selectedMetrics.length })}
             </span>
             <div className="flex items-center gap-2 text-[11px]">
               <button
                 onClick={selectAllMetrics}
                 className="text-[#0d5c3a] hover:underline font-bold"
               >
-                Alle auswählen
+                {t("explorer.selectAll")}
               </button>
               <span className="text-slate-300">•</span>
               <button
@@ -581,9 +584,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto pr-1">
             {availableMetricsWithCount.map(([m, count]) => {
               const selected = selectedMetrics.includes(m);
+              // The chip reads as a name, the tooltip keeps the canonical key: this is
+              // the raw-data explorer, so the key someone would put in an API call must
+              // stay reachable.
+              const { label, unit } = describeMetric(m);
               return (
                 <button
                   key={m}
+                  title={unit ? `${m} (${unit})` : m}
                   onClick={() => toggleMetric(m)}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-2xl border text-xs font-mono transition-all ${
                     selected
@@ -592,7 +600,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   }`}
                 >
                   {selected && <Check className="w-3 h-3 text-white shrink-0" />}
-                  <span>{m}</span>
+                  <span>{label}</span>
                   <span
                     className={`text-[9px] px-1.5 py-0.2 rounded-full font-sans ${
                       selected ? "bg-white/20 text-white" : "bg-slate-200 text-slate-500"
@@ -611,7 +619,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-4" />
           <input
             type="text"
-            placeholder="Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata...)"
+            placeholder={t("explorer.searchPlaceholder")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs outline-none focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 transition-all"
@@ -642,9 +650,9 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
                   <th className="pb-3 px-3">Zeitstempel</th>
-                  <th className="pb-3 px-3">Quelle</th>
+                  <th className="pb-3 px-3">{t("explorer.colSource")}</th>
                   <th className="pb-3 px-3">Metrik</th>
-                  <th className="pb-3 px-3">Wert</th>
+                  <th className="pb-3 px-3">{t("explorer.colValue")}</th>
                   <th className="pb-3 px-3">Metadata (JSON)</th>
                   <th className="pb-3 px-3 text-right">Details</th>
                 </tr>
@@ -667,6 +675,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                       </td>
                       <td className="py-2.5 px-3 text-slate-900 font-bold">
                         {pt.value}
+                        {/* The unit is a property of the metric, so a raw value is
+                            ambiguous without it -- which is how kJ and kcal used to
+                            sit in one column looking comparable. */}
+                        {describeMetric(pt.metric_type).unit && (
+                          <span className="ml-1 text-[10px] font-normal text-slate-500">
+                            {describeMetric(pt.metric_type).unit}
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-3 text-slate-500 max-w-xs truncate text-[11px]">
                         {foodName ? (
@@ -694,7 +710,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             </table>
           </div>
         ) : (
-          <p className="text-xs text-slate-400 py-4">Keine Datenpunkte für die aktuelle Abfrage gefunden.</p>
+          <p className="text-xs text-slate-400 py-4">{t("explorer.empty")}</p>
         )}
       </div>
 
@@ -750,7 +766,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 onClick={() => setInspectPoint(null)}
                 className="px-4 py-2 text-xs font-bold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors"
               >
-                Schließen
+                {t("common.close")}
               </button>
             </div>
           </div>

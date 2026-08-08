@@ -276,6 +276,20 @@ wheels = [
 ]
 
 [[package]]
+name = "qs-shared-schemas"
+version = "0.1.0"
+source = { editable = "../../../packages/shared-schemas" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.6.0" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest", specifier = ">=8.0.0" }]
+
+[[package]]
 name = "typing-extensions"
 version = "4.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -306,6 +320,7 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "qs-shared-schemas" },
 ]
 
 [package.metadata]
@@ -315,4 +330,5 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.2" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
+    { name = "qs-shared-schemas", editable = "../../../packages/shared-schemas" },
 ]

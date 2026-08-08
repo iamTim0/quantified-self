@@ -13,6 +13,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { useI18n, useT, type MessageKey } from "../lib/i18n/provider";
 
 /**
  * Analysis dashboard.
@@ -51,6 +52,7 @@ function correlationColor(r: number): string {
 
 /** Cell text must stay legible on both the pale and the saturated steps. */
 function cellInk(r: number): string {
+  const t = useT();
   return Math.abs(r) >= 0.7 ? "#ffffff" : INK.primary;
 }
 
@@ -143,16 +145,16 @@ interface Insights {
 
 type Section = "overview" | "correlations" | "trends" | "anomalies" | "routines" | "quality";
 
-const SECTIONS: { id: Section; label: string; icon: React.ElementType }[] = [
-  { id: "overview", label: "Überblick", icon: Activity },
-  { id: "correlations", label: "Zusammenhänge", icon: Activity },
-  { id: "trends", label: "Trends", icon: TrendingUp },
-  { id: "anomalies", label: "Auffälligkeiten", icon: AlertTriangle },
-  { id: "routines", label: "Routinen", icon: CalendarClock },
-  { id: "quality", label: "Datenqualität", icon: ShieldQuestion },
+const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[] = [
+  { id: "overview", labelKey: "analysis.tabOverview", icon: Activity },
+  { id: "correlations", labelKey: "analysis.tabCorrelations", icon: Activity },
+  { id: "trends", labelKey: "analysis.tabTrends", icon: TrendingUp },
+  { id: "anomalies", labelKey: "analysis.tabAnomalies", icon: AlertTriangle },
+  { id: "routines", labelKey: "analysis.tabRoutines", icon: CalendarClock },
+  { id: "quality", labelKey: "analysis.tabQuality", icon: ShieldQuestion },
 ];
 
-const fmtDate = (iso: string) => new Date(iso).toLocaleDateString("de-DE");
+
 
 export default function AnalysisTab({
   apiBase,
@@ -162,6 +164,7 @@ export default function AnalysisTab({
   tenantId?: string;
   refreshTrigger?: number;
 }) {
+  const { t, formatDate, formatDateTime } = useI18n();
   const [data, setData] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -182,7 +185,7 @@ export default function AnalysisTab({
         compare_to_previous: "true",
       });
       const res = await apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`);
-      if (!res.ok) throw new Error("Analysen konnten nicht geladen werden.");
+      if (!res.ok) throw new Error(t("analysis.loadFailed"));
       setData(await res.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -223,7 +226,7 @@ export default function AnalysisTab({
   if (loading && !data) {
     return (
       <section className="flex h-64 items-center justify-center text-sm text-slate-400">
-        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Analysen werden berechnet…
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> {t("analysis.computing")}
       </section>
     );
   }
@@ -244,12 +247,11 @@ export default function AnalysisTab({
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
-            Analysen
+            {t("sidebar.analysis")}
           </p>
-          <h1 className="text-3xl font-extrabold text-slate-900">Zusammenhänge &amp; Muster</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900">{t("analysis.title")}</h1>
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Statistische Auswertung deiner Daten. Alle Ergebnisse beschreiben
-            Zusammenhänge — keine Ursachen.
+            {t("analysis.subtitleTail")}
           </p>
         </div>
         {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
@@ -271,13 +273,13 @@ export default function AnalysisTab({
           </select>
         </label>
         <label className="text-xs font-semibold text-slate-600">
-          Mindeststärke
+          {t("analysis.minStrength")}
           <select
             value={minStrength}
             onChange={(e) => setMinStrength(Number(e.target.value))}
             className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
           >
-            <option value={0}>alle</option>
+            <option value={0}>{t("analysis.all")}</option>
             <option value={0.2}>ab 20 %</option>
             <option value={0.4}>ab 40 %</option>
             <option value={0.6}>ab 60 %</option>
@@ -298,14 +300,14 @@ export default function AnalysisTab({
             rel="noreferrer"
             className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-[#0d5c3a] underline"
           >
-            <BookOpen className="h-3.5 w-3.5" /> Wie diese Analysen zu lesen sind
+            <BookOpen className="h-3.5 w-3.5" /> {t("analysis.howToRead")}
           </a>
         )}
       </div>
 
       {/* Section navigation */}
       <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2">
-        {SECTIONS.map(({ id, label, icon: Icon }) => (
+        {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setSection(id)}
@@ -316,15 +318,14 @@ export default function AnalysisTab({
             }`}
           >
             <Icon className="h-3.5 w-3.5" />
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </nav>
 
       {!hasAnything && (
         <p className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500">
-          Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und
-          importiere Daten für mindestens zwei Wochen.
+          {t("analysis.noData")}
         </p>
       )}
 
@@ -332,26 +333,28 @@ export default function AnalysisTab({
         <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-3">
             <StatTile
-              label="Auswertbare Metriken"
+              label={t("analysis.usableMetrics")}
               value={data.metrics_analysed.length}
               hint={
                 data.metrics_excluded_for_quality.length > 0
-                  ? `${data.metrics_excluded_for_quality.length} wegen zu dünner Datenlage ausgeblendet`
-                  : "alle Metriken erfüllen die Mindestanforderungen"
+                  ? t("analysis.excludedForQuality", {
+                      count: data.metrics_excluded_for_quality.length,
+                    })
+                  : t("analysis.allMetricsQualify")
               }
             />
             <StatTile
-              label="Signifikante Zusammenhänge"
+              label={t("analysis.significantRelationships")}
               value={data.correlations.filter((c) => c.significant).length}
-              hint={`von ${data.correlations.length} geprüften Paaren`}
+              hint={t("analysis.ofPairsChecked", { count: data.correlations.length })}
             />
             <StatTile
-              label="Auffällige Tage"
+              label={t("analysis.unusualDays")}
               value={Object.values(data.anomalies).reduce(
                 (n, a) => n + a.anomalies.length,
                 0,
               )}
-              hint="außerhalb deines persönlichen Normalbereichs"
+              hint={t("analysis.outsideNormal")}
             />
           </div>
 
@@ -372,8 +375,7 @@ export default function AnalysisTab({
         <div className="space-y-5">
           {correlations.length === 0 ? (
             <EmptyNote>
-              Keine Zusammenhänge, die die gewählten Filter erfüllen. Das ist ein
-              gültiges Ergebnis — nicht jede Metrik hängt mit einer anderen zusammen.
+              {t("analysis.noneMatchFilters")}
             </EmptyNote>
           ) : (
             <>
@@ -397,11 +399,11 @@ export default function AnalysisTab({
               {data.lagged_correlations.length > 0 && (
                 <div>
                   <h2 className="mb-1 text-sm font-bold text-slate-900">
-                    Zeitversetzte Zusammenhänge
+                    {t("analysis.laggedTitle")}
                   </h2>
                   <p className="mb-2 text-xs text-slate-500">
                     Werte eines Tages im Vergleich mit einer anderen Metrik einige Tage
-                    später. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.
+                    {t("analysis.laggedTail")}
                   </p>
                   <div className="space-y-1.5">
                     {data.lagged_correlations.slice(0, 8).map((l) => (
@@ -411,12 +413,12 @@ export default function AnalysisTab({
                       >
                         <span className="font-medium text-slate-700">
                           {l.metric_a} → {l.metric_b}{" "}
-                          <span className="text-slate-400">+{l.lag_days} Tage</span>
+                          <span className="text-slate-400">{t("analysis.lagDays", { count: l.lag_days })}</span>
                         </span>
                         <span className="flex items-center gap-2">
                           <StrengthBar value={l.coefficient} />
                           <span className="w-28 text-right text-slate-500">
-                            {l.coefficient > 0 ? "gleichläufig" : "gegenläufig"} ·{" "}
+                            {l.coefficient > 0 ? t("analysis.sameDirection") : t("analysis.oppositeDirection")} ·{" "}
                             {l.strength_pct.toFixed(0)} % · n={l.sample_size}
                           </span>
                         </span>
@@ -433,9 +435,9 @@ export default function AnalysisTab({
       {data && section === "trends" && (
         <div className="space-y-3">
           {Object.keys(data.trends).length === 0 ? (
-            <EmptyNote>Zu wenige Tage für eine Trendaussage.</EmptyNote>
+            <EmptyNote>{t("analysis.tooFewForTrend")}</EmptyNote>
           ) : (
-            Object.entries(data.trends).map(([metric, t]) => (
+            Object.entries(data.trends).map(([metric, trend]) => (
               <article
                 key={metric}
                 className="rounded-2xl border border-slate-200 bg-white p-4"
@@ -444,21 +446,24 @@ export default function AnalysisTab({
                   <h3 className="text-sm font-bold text-slate-900">{metric}</h3>
                   <span
                     className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
-                      t.direction === "steigend"
+                      trend.direction === "rising"
                         ? "bg-blue-50 text-blue-800"
-                        : t.direction === "fallend"
+                        : trend.direction === "falling"
                           ? "bg-red-50 text-red-800"
                           : "bg-slate-100 text-slate-600"
                     }`}
                   >
-                    {t.direction}
+                    {trend.direction}
                   </span>
                 </div>
-                <Sparkline values={t.moving_average_7d} />
-                <p className="mt-2 text-xs text-slate-600">{t.interpretation}</p>
+                <Sparkline values={trend.moving_average_7d} />
+                <p className="mt-2 text-xs text-slate-600">{trend.interpretation}</p>
                 <p className="mt-1 text-[11px] text-slate-400">
-                  Mittelwert {t.mean} · Bestimmtheitsmaß R² {t.r_squared} · n=
-                  {t.sample_size} Tage
+                  {t("analysis.trendStats", {
+                    mean: trend.mean,
+                    r2: trend.r_squared,
+                    n: trend.sample_size,
+                  })}
                 </p>
               </article>
             ))
@@ -469,7 +474,7 @@ export default function AnalysisTab({
       {data && section === "anomalies" && (
         <div className="space-y-3">
           {Object.keys(data.anomalies).length === 0 ? (
-            <EmptyNote>Zu wenige Tage, um einen persönlichen Normalbereich zu bestimmen.</EmptyNote>
+            <EmptyNote>{t("analysis.tooFewForNormalRange")}</EmptyNote>
           ) : (
             Object.entries(data.anomalies).map(([metric, a]) => (
               <article
@@ -485,7 +490,7 @@ export default function AnalysisTab({
                         key={x.date}
                         className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]"
                       >
-                        <span className="font-mono text-slate-600">{fmtDate(x.date)}</span>
+                        <span className="font-mono text-slate-600">{formatDate(x.date)}</span>
                         <span className="text-slate-700">
                           {x.value} — {x.direction}
                         </span>
@@ -494,8 +499,7 @@ export default function AnalysisTab({
                   </ul>
                 )}
                 <p className="mt-2 text-[11px] text-slate-400">
-                  Grundlage: Median und mittlere absolute Abweichung über {a.sample_size}{" "}
-                  Tage. Auffälligkeit bedeutet ungewöhnlich für dich, nicht
+                  {t("analysis.anomalyBasis", { days: a.sample_size })}{" "}
                   gesundheitlich bedenklich.
                 </p>
               </article>
@@ -507,7 +511,7 @@ export default function AnalysisTab({
       {data && section === "routines" && (
         <div className="space-y-3">
           {Object.keys(data.routines).length === 0 ? (
-            <EmptyNote>Mindestens zwei Wochen Daten nötig, um Wochenmuster zu erkennen.</EmptyNote>
+            <EmptyNote>{t("analysis.tooFewForWeekly")}</EmptyNote>
           ) : (
             Object.entries(data.routines).map(([metric, r]) => (
               <article
@@ -538,7 +542,7 @@ export default function AnalysisTab({
               <thead className="bg-slate-50 text-left">
                 <tr>
                   <th className="px-3 py-2 font-semibold text-slate-600">Metrik</th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">Tage</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">{t("analysis.colDays")}</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Abdeckung</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Status</th>
                 </tr>
@@ -559,7 +563,7 @@ export default function AnalysisTab({
                             : "bg-slate-200 text-slate-600"
                         }`}
                       >
-                        {q.sufficient ? "ausreichend" : "zu dünn"}
+                        {q.sufficient ? t("analysis.sufficient") : t("analysis.tooThin")}
                       </span>
                     </td>
                   </tr>
@@ -621,26 +625,27 @@ function StrengthBar({ value }: { value: number }) {
 
 /** Diverging legend — required because colour carries polarity. */
 function HeatmapLegend() {
+  const t = useT();
   const stops: { color: string; label: string }[] = [
-    { color: NEG[0], label: "stark gegenläufig" },
+    { color: NEG[0], label: t("analysis.scaleStrongOpposite") },
     { color: NEG[1], label: "" },
     { color: NEG[2], label: "" },
-    { color: NEUTRAL, label: "kein Zusammenhang" },
+    { color: NEUTRAL, label: t("analysis.scaleNone") },
     { color: POS[2], label: "" },
     { color: POS[1], label: "" },
-    { color: POS[0], label: "stark gleichläufig" },
+    { color: POS[0], label: t("analysis.scaleStrongSame") },
   ];
   return (
     <div className="flex items-center gap-2 text-[11px] text-slate-500">
       <span>−100 %</span>
-      <span className="flex overflow-hidden rounded" role="img" aria-label="Farbskala von stark gegenläufig über kein Zusammenhang zu stark gleichläufig">
+      <span className="flex overflow-hidden rounded" role="img" aria-label={t("analysis.scaleLabel")}>
         {stops.map((s, i) => (
           <span key={i} className="h-3 w-6" style={{ background: s.color }} />
         ))}
       </span>
       <span>+100 %</span>
       <span className="ml-1">
-        gegenläufig ← → gleichläufig
+        {t("analysis.scaleEnds")}
       </span>
     </div>
   );
@@ -653,6 +658,7 @@ function Heatmap({
   metrics: string[];
   lookup: Map<string, Correlation>;
 }) {
+  const t = useT();
   if (metrics.length < 2) return null;
   const cell = 46;
   const labelW = 150;
@@ -665,7 +671,7 @@ function Heatmap({
         <HeatmapLegend />
       </div>
       <p className="mb-3 text-xs text-slate-500">
-        Jede Zelle zeigt die Stärke des Zusammenhangs in Prozent. Leere Zellen bedeuten
+        {t("analysis.matrixHint")}{" "}
         zu wenige gemeinsame Tage.
       </p>
       <div className="overflow-x-auto">
@@ -771,9 +777,10 @@ function Heatmap({
 }
 
 function TopFindings({ correlations }: { correlations: Correlation[] }) {
+  const t = useT();
   return (
     <div>
-      <h2 className="mb-2 text-sm font-bold text-slate-900">Auffälligste Zusammenhänge</h2>
+      <h2 className="mb-2 text-sm font-bold text-slate-900">{t("analysis.strongestTitle")}</h2>
       <div className="space-y-2">
         {correlations.map((c) => (
           <div
@@ -787,7 +794,7 @@ function TopFindings({ correlations }: { correlations: Correlation[] }) {
               <span className="flex items-center gap-2 text-xs">
                 <StrengthBar value={c.coefficient} />
                 <span className="font-bold text-slate-700">
-                  {c.direction === "positiv" ? "gleichläufig" : "gegenläufig"}{" "}
+                  {c.direction === "positive" ? t("analysis.sameDirection") : t("analysis.oppositeDirection")}{" "}
                   {c.strength_pct.toFixed(0)} %
                 </span>
               </span>
@@ -815,6 +822,7 @@ function CorrelationCard({
   provenance: Insights["provenance"];
   quality: Record<string, Quality>;
 }) {
+  const { t, formatDate, formatDateTime } = useI18n();
   return (
     <article className="rounded-2xl border border-slate-200 bg-white">
       <button
@@ -828,7 +836,7 @@ function CorrelationCard({
         <span className="flex items-center gap-2 text-xs">
           <StrengthBar value={c.coefficient} />
           <span className="font-bold text-slate-700">
-            {c.direction === "positiv" ? "gleichläufig" : "gegenläufig"}{" "}
+            {c.direction === "positive" ? t("analysis.sameDirection") : t("analysis.oppositeDirection")}{" "}
             {c.strength_pct.toFixed(0)} %
           </span>
           {!c.significant && (
@@ -850,13 +858,13 @@ function CorrelationCard({
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700">Datenbasis</h4>
+            <h4 className="font-bold text-slate-700">{t("analysis.provenanceTitle")}</h4>
             <ul className="mt-0.5 space-y-0.5 text-slate-600">
               <li>Gemeinsame Tage: {c.sample_size}</li>
               <li>
-                Zeitraum: {fmtDate(provenance.window_start)} – {fmtDate(provenance.window_end)}
+                Zeitraum: {formatDate(provenance.window_start)} – {formatDate(provenance.window_end)}
               </li>
-              <li>Datenquellen: {provenance.sources.join(", ") || "—"}</li>
+              <li>{t("analysis.sources", { list: provenance.sources.join(", ") || "—" })}</li>
               <li>
                 Abdeckung: {quality[c.metric_a]?.coverage_pct ?? "?"} % /{" "}
                 {quality[c.metric_b]?.coverage_pct ?? "?"} %
@@ -871,19 +879,18 @@ function CorrelationCard({
               <li>Spearman (Rang): {c.spearman}</li>
               <li>
                 p-Wert: {c.p_value} —{" "}
-                {c.significant ? "signifikant (α = 0,05)" : "nicht signifikant"}
+                {c.significant ? t("analysis.significant") : t("analysis.notSignificant")}
               </li>
               <li>Analyseversion: {provenance.analysis_version}</li>
-              <li>Berechnet: {new Date(provenance.computed_at).toLocaleString("de-DE")}</li>
+              <li>Berechnet: {formatDateTime(provenance.computed_at)}</li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700">Einschränkungen</h4>
+            <h4 className="font-bold text-slate-700">{t("analysis.limitsTitle")}</h4>
             <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-slate-600">
               <li>
-                Ein Zusammenhang ist keine Ursache. Beide Werte können von einem dritten,
-                nicht erfassten Faktor abhängen.
+                {t("analysis.limitsBody")}
               </li>
               {c.caveats.map((caveat) => (
                 <li key={caveat}>{caveat}</li>
@@ -897,6 +904,7 @@ function CorrelationCard({
 }
 
 function Sparkline({ values }: { values: (number | null)[] }) {
+  const t = useT();
   const points = values
     .map((v, i) => ({ v, i }))
     .filter((p): p is { v: number; i: number } => p.v !== null);
@@ -923,7 +931,7 @@ function Sparkline({ values }: { values: (number | null)[] }) {
       className="mt-2 h-12 w-full"
       preserveAspectRatio="none"
       role="img"
-      aria-label="Gleitender 7-Tage-Mittelwert"
+      aria-label={t("analysis.sparklineLabel")}
     >
       <path d={path} fill="none" stroke="#0d5c3a" strokeWidth="2" />
     </svg>
@@ -962,12 +970,13 @@ function WeekdayChart({
 }
 
 function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
+  const { t, formatDate, formatDateTime } = useI18n();
   return (
     <p className="text-[11px] text-slate-400">
-      Zeitraum {fmtDate(provenance.window_start)} – {fmtDate(provenance.window_end)} ·
-      Quellen: {provenance.sources.join(", ") || "—"} · Analyseversion{" "}
+      Zeitraum {formatDate(provenance.window_start)} – {formatDate(provenance.window_end)} ·
+      {t("analysis.footerSources", { list: provenance.sources.join(", ") || "—" })}{" "}
       {provenance.analysis_version} · berechnet{" "}
-      {new Date(provenance.computed_at).toLocaleString("de-DE")}
+      {formatDateTime(provenance.computed_at)}
     </p>
   );
 }

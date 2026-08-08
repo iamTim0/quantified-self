@@ -60,7 +60,7 @@ def test_ui_explorer_tab_custom_views():
     new_view_input = {
         "title": "Sleep vs Strain",
         "chart_type": "line",
-        "metrics": ["sleep_score", "strain"],
+        "metrics": ["oura_sleep_score", "whoop_strain"],
     }
 
     # Simulate clicking 'Neue Ansicht speichern' button
@@ -80,7 +80,7 @@ def test_ui_quality_tab_actions():
         "selectedGap": None,
         "conflicts": [
             {
-                "metric_type": "step_count",
+                "metric_type": "steps",
                 "candidates": [
                     {"source_id": "apple_health", "value": 8500.0},
                     {"source_id": "dawarich", "value": 8200.0},

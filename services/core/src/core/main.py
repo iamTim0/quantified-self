@@ -22,7 +22,16 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from shared_schemas.metrics import (
+    CANONICAL_KEYS,
+    DYNAMIC_NAMESPACES,
+    METRIC_ALIASES,
+    METRIC_CATALOG,
+    UnknownMetricTypeError,
+    canonical_metric_type,
+    describe,
+)
 from sqlalchemy import delete, distinct, func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
@@ -138,6 +147,23 @@ class ManualDataPointRequest(BaseModel):
     timestamp: datetime
     value: float | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("metric_type")
+    @classmethod
+    def canonicalise_metric_type(cls, v: str) -> str:
+        """Map the row onto a registered metric, or reject it.
+
+        Unlike the NATS path this one *does* rewrite aliases, because the idempotency
+        key for a manual row is derived downstream from the validated value rather than
+        by the caller. A CSV whose column header is `carbs` therefore lands in
+        `nutrition_carbohydrates` instead of founding a metric of its own — which is the
+        whole point of mapping a spreadsheet into the platform. A name that matches
+        nothing is a 422 naming the `custom_` namespace, rather than silent acceptance.
+        """
+        try:
+            return canonical_metric_type(v)
+        except UnknownMetricTypeError as exc:
+            raise ValueError(str(exc)) from None
 
 
 class BatchImportRequest(BaseModel):
@@ -777,7 +803,7 @@ async def change_password(
     user = res.scalars().first()
 
     if not user:
-        raise HTTPException(status_code=404, detail="Benutzerkonto nicht gefunden.")
+        raise HTTPException(status_code=404, detail="User account not found.")
 
     if not pwd_context.verify(req.current_password, user.password_hash):
         raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch.")
@@ -815,7 +841,7 @@ async def change_password(
 
     return {
         "status": "success",
-        "message": "Passwort wurde erfolgreich geändert. Bitte melde dich erneut an.",
+        "message": "Password changed. Please sign in again.",
         "sessions_revoked": True,
     }
 
@@ -931,7 +957,7 @@ async def _validate_provider_issuer(issuer: str) -> None:
     except OidcError as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Issuer konnte nicht verifiziert werden: {exc.detail}",
+            detail=f"The issuer could not be verified: {exc.detail}",
         ) from exc
 
 
@@ -945,7 +971,7 @@ async def admin_create_oidc_provider(
         select(OidcProvider).where(OidcProvider.slug == req.slug)
     )
     if existing.scalars().first():
-        raise HTTPException(status_code=409, detail="Ein Anbieter mit diesem Slug existiert bereits.")
+        raise HTTPException(status_code=409, detail="A provider with this slug already exists.")
 
     await _validate_provider_issuer(req.issuer)
 
@@ -985,7 +1011,7 @@ async def admin_update_oidc_provider(
     res = await session.execute(select(OidcProvider).where(OidcProvider.slug == slug))
     provider = res.scalars().first()
     if not provider:
-        raise HTTPException(status_code=404, detail="Anbieter nicht gefunden.")
+        raise HTTPException(status_code=404, detail="Provider not found.")
 
     if req.issuer.rstrip("/") != provider.issuer:
         await _validate_provider_issuer(req.issuer)
@@ -1032,7 +1058,7 @@ async def admin_delete_oidc_provider(
     res = await session.execute(select(OidcProvider).where(OidcProvider.slug == slug))
     provider = res.scalars().first()
     if not provider:
-        raise HTTPException(status_code=404, detail="Anbieter nicht gefunden.")
+        raise HTTPException(status_code=404, detail="Provider not found.")
 
     linked = await session.execute(
         select(func.count())
@@ -1043,8 +1069,8 @@ async def admin_delete_oidc_provider(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Dieser Anbieter wird noch von Konten verwendet. Deaktiviere ihn, "
-                "statt ihn zu löschen."
+                "Accounts still use this provider. Disable it instead of "
+                "deleting it."
             ),
         )
 
@@ -1211,14 +1237,14 @@ async def complete_oidc_login(
         raise HTTPException(
             status_code=403,
             detail=(
-                "Der Anbieter hat diese E-Mail-Adresse nicht als verifiziert bestätigt. "
-                "Bitte melde dich mit E-Mail und Passwort an und verknüpfe den Anbieter "
-                "in den Einstellungen."
+                "The provider did not confirm this email address as verified. "
+                "Sign in with your email address and password, then link the "
+                "provider in the settings."
             ),
         )
     if not identity.email:
         raise HTTPException(
-            status_code=403, detail="Der Anbieter hat keine E-Mail-Adresse übermittelt."
+            status_code=403, detail="The provider did not supply an email address."
         )
 
     existing_res = await session.execute(select(User).where(User.email == identity.email))
@@ -1231,14 +1257,15 @@ async def complete_oidc_login(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Für diese E-Mail-Adresse existiert bereits ein Konto. Melde dich mit "
-                "E-Mail und Passwort an und verknüpfe den Anbieter in den Einstellungen."
+                "An account already exists for this email address. Sign in with "
+                "your email address and password, then link the provider in the "
+                "settings."
             ),
         )
 
     if not provider.allow_signup or not settings.ALLOW_REGISTRATION:
         raise HTTPException(
-            status_code=403, detail="Registrierung über diesen Anbieter ist deaktiviert."
+            status_code=403, detail="Sign-up through this provider is disabled."
         )
 
     tenant_id = str(uuid.uuid4())
@@ -1524,8 +1551,8 @@ async def unlink_identity(
         raise HTTPException(
             status_code=409,
             detail=(
-                "Das ist die einzige Anmeldemöglichkeit für dieses Konto. Lege zuerst "
-                "ein Passwort fest oder verknüpfe einen weiteren Anbieter."
+                "This is the only way to sign in to this account. Set a password "
+                "first, or link another provider."
             ),
         )
 
@@ -1619,6 +1646,21 @@ async def revoke_share(
 
 # ─── Core Metric Endpoints ───────────────────────────────────
 
+def _definition_payload(metric_type: str) -> dict[str, Any] | None:
+    """Registry definition for a stored metric name, or ``None`` if it has none.
+
+    A tenant can hold rows written before a catalog entry was renamed or removed, and
+    those rows must still list and still chart. Returning ``None`` says "this is data
+    without a current definition", which a caller can render; omitting the metric would
+    make it look like the data were gone.
+    """
+    try:
+        return describe(metric_type).model_dump(mode="json")
+    except UnknownMetricTypeError:
+        return None
+
+
+
 @app.get("/api/v1/data/metrics")
 async def query_metrics(
     metric_type: str | None = Query(None, description="Filter by metric type (e.g. sleep_score, steps)"),
@@ -1672,11 +1714,38 @@ async def query_metrics(
     }
 
 
+@app.get("/api/v1/data/metrics/catalog")
+async def get_metric_catalog():
+    """The metric registry: every metric the platform defines, with unit and meaning.
+
+    Tenant-independent on purpose — this is the platform's vocabulary, not a tenant's
+    data, so it needs no tenant filter and reveals nothing about anyone. Tenant-scoped
+    questions ("which of these do I actually have?") are `/metrics/types`.
+
+    The dashboard ships a generated copy of this catalog for rendering, so it does not
+    have to wait on a request to know a unit. The endpoint exists for everything else:
+    API clients, the CSV mapper's target list, and confirming what a deployed Core
+    actually accepts.
+    """
+    return {
+        "metrics": [METRIC_CATALOG[key].model_dump(mode="json") for key in CANONICAL_KEYS],
+        "aliases": dict(sorted(METRIC_ALIASES.items())),
+        "namespaces": [ns.model_dump(mode="json") for ns in DYNAMIC_NAMESPACES],
+    }
+
+
 @app.get("/api/v1/data/metrics/types")
 async def list_metric_types(
     session: AsyncSession = Depends(get_session),
 ):
-    """List all distinct metric types stored for the authenticated tenant."""
+    """List all distinct metric types stored for the authenticated tenant.
+
+    Each name is returned with its registry definition, so a caller does not have to
+    hold a second copy of the catalog to know that `energy_active` is kilocalories and
+    sums rather than averages. Names under a dynamic namespace get a synthesised
+    definition; rows written before a catalog change get a null one rather than
+    disappearing from the list.
+    """
     tenant_id = get_current_tenant_id()
     stmt = (
         select(distinct(DataPoint.metric_type))
@@ -1684,11 +1753,12 @@ async def list_metric_types(
         .order_by(DataPoint.metric_type.asc())
     )
     res = await session.execute(stmt)
-    metric_types = res.scalars().all()
+    metric_types = list(res.scalars().all())
 
     return {
         "tenant_id": tenant_id,
-        "metric_types": list(metric_types),
+        "metric_types": metric_types,
+        "definitions": {name: _definition_payload(name) for name in metric_types},
     }
 
 
@@ -1705,6 +1775,7 @@ async def get_metrics_summary(
             func.avg(DataPoint.value).label("avg_value"),
             func.min(DataPoint.value).label("min_value"),
             func.max(DataPoint.value).label("max_value"),
+            func.sum(DataPoint.value).label("sum_value"),
             func.max(DataPoint.timestamp).label("latest_timestamp"),
         )
         .where(DataPoint.tenant_id == tenant_id)
@@ -1717,12 +1788,26 @@ async def get_metrics_summary(
 
     summary = {}
     for row in rows:
+        definition = _definition_payload(row.metric_type)
+        # Rounding follows the metric rather than a blanket one decimal: a step count
+        # with a fractional part is noise, a coordinate rounded to 0.1° is a different
+        # town.
+        digits = definition["precision"] if definition else 1
+
+        def _round(value) -> float | None:
+            return round(float(value), digits) if value is not None else None
+
         summary[row.metric_type] = {
             "count": row.count,
-            "average": round(float(row.avg_value), 1) if row.avg_value is not None else None,
-            "min": round(float(row.min_value), 1) if row.min_value is not None else None,
-            "max": round(float(row.max_value), 1) if row.max_value is not None else None,
+            "average": _round(row.avg_value),
+            "min": _round(row.min_value),
+            "max": _round(row.max_value),
+            # Which of average and total is the meaningful one is a property of the
+            # metric (`definition.aggregation`), so both are returned and the caller
+            # picks: averaging a day's step counts answers a question nobody asked.
+            "sum": _round(row.sum_value),
             "latest_timestamp": row.latest_timestamp.isoformat() if row.latest_timestamp else None,
+            "definition": definition,
         }
 
     return {
@@ -1985,7 +2070,7 @@ async def get_import_plan(
 
     if req.start and req.end:
         window = _validated_window(req.start, req.end)
-        window_reason = "Vom Nutzer gewählter Zeitraum."
+        window_reason = "Period chosen by the user."
     else:
         window, window_reason = compute_sync_window(
             now=now,
@@ -2138,17 +2223,17 @@ async def configure_connector(
                     headers={"Content-Type": "application/x-www-form-urlencoded"},
                 )
                 if resp.status_code == 401:
-                    raise HTTPException(status_code=401, detail="Yazio Login fehlgeschlagen: Ungültige E-Mail oder Passwort.")
+                    raise HTTPException(status_code=401, detail="Yazio sign-in failed: wrong email address or password.")
                 if not resp.is_success:
                     raise HTTPException(status_code=resp.status_code, detail=f"Yazio Login fehlgeschlagen: {resp.text}")
                 token_data = resp.json()
                 raw_token = token_data.get("access_token", "")
                 if not raw_token:
-                    raise HTTPException(status_code=400, detail="Yazio OAuth Antwort enthielt keinen access_token.")
+                    raise HTTPException(status_code=400, detail="The Yazio OAuth response contained no access_token.")
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Fehler bei Yazio OAuth Verbindung: {e}")
+                raise HTTPException(status_code=500, detail=f"Yazio OAuth connection failed: {e}")
 
     config_data: dict[str, Any] = {
         "status": req.status,
@@ -2179,7 +2264,7 @@ async def configure_connector(
     else:
         raise HTTPException(
             status_code=400,
-            detail="Zugangsdaten / Access Token sind für die Erst-Einrichtung erforderlich."
+            detail="Credentials or an access token are required for the initial setup."
         )
 
     # OAuth refresh grant. Encrypted at rest like the access token, and carried
@@ -2274,7 +2359,7 @@ async def configure_connector(
 
     return {
         "status": "success",
-        "message": f"Connector {req.source_type} erfolgreich aktualisiert.",
+        "message": f"Connector {req.source_type} updated.",
         "source_id": source_id,
         "tenant_id": tenant_id,
         "source_type": req.source_type,
@@ -2353,7 +2438,7 @@ async def plan_and_enqueue_sync(
 
     if start and end:
         window = _validated_window(start, end)
-        window_reason = "Vom Nutzer gewählter Zeitraum."
+        window_reason = "Period chosen by the user."
     else:
         window, window_reason = compute_sync_window(
             now=now,
@@ -2624,8 +2709,8 @@ async def get_connector_token(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    "Die Zugangsdaten für diesen Connector sind abgelaufen und "
-                    "konnten nicht erneuert werden. Bitte neu verbinden."
+                    "The credentials for this connector have expired and could "
+                    "not be renewed. Please connect it again."
                 ),
             ) from exc
 
@@ -2736,7 +2821,7 @@ async def create_api_key_endpoint(
     return {
         "status": "success",
         "api_key": raw_key,
-        "warning": "Dieser Schlüssel wird nur einmal angezeigt. Bitte sicher speichern.",
+        "warning": "This key is shown only once. Store it somewhere safe.",
         **_serialize_api_key(record),
     }
 
@@ -2825,7 +2910,7 @@ async def rotate_api_key(
     return {
         "status": "rotated",
         "api_key": raw_key,
-        "warning": "Der alte Schlüssel bleibt aktiv, bis er widerrufen wird.",
+        "warning": "The old key stays active until it is revoked.",
         "previous_key_id": old_key.id,
         **_serialize_api_key(replacement),
     }
@@ -2943,7 +3028,7 @@ async def create_explorer_view(
 
     return {
         "status": "success",
-        "message": "Ansicht erfolgreich in PostgreSQL gespeichert.",
+        "message": "View saved.",
         "view_id": view_id,
         "tenant_id": tenant_id,
         "name": req.name,
@@ -2966,14 +3051,14 @@ async def delete_explorer_view(
     view = res.scalars().first()
 
     if not view:
-        raise HTTPException(status_code=404, detail="Ansicht nicht gefunden oder keine Berechtigung.")
+        raise HTTPException(status_code=404, detail="View not found, or not yours.")
 
     await session.delete(view)
     await session.commit()
 
     return {
         "status": "success",
-        "message": f"Ansicht {view_id} erfolgreich aus PostgreSQL gelöscht.",
+        "message": f"View {view_id} deleted.",
         "view_id": view_id,
     }
 

@@ -68,7 +68,7 @@ def test_transform_health_auto_export_metrics():
     step_event = events[0]
     assert step_event["tenant_id"] == tenant_id
     assert step_event["source_id"] == source_id
-    assert step_event["metric_type"] == "step_count"
+    assert step_event["metric_type"] == "steps"
     assert step_event["value"] == 1250.0
     assert step_event["metadata"]["device_source"] == "Apple Watch"
     assert "idempotency_key" in step_event
@@ -103,15 +103,28 @@ def test_transform_health_auto_export_sleep():
     }
 
     events = transform_health_auto_export_json(payload, tenant_id, source_id)
-    # 1 main sleep_duration + 4 stages (deep, rem, core, awake) = 5 events
+    # 1 main sleep_duration + 4 stages (deep, rem, core/light, awake) = 5 events
     assert len(events) == 5
 
-    metric_types = [e["metric_type"] for e in events]
-    assert "sleep_duration" in metric_types
-    assert "sleep_deep_duration" in metric_types
-    assert "sleep_rem_duration" in metric_types
-    assert "sleep_core_duration" in metric_types
-    assert "sleep_awake_duration" in metric_types
+    by_metric = {e["metric_type"]: e for e in events}
+    assert set(by_metric) == {
+        "sleep_duration",
+        "sleep_duration_deep",
+        "sleep_duration_rem",
+        "sleep_duration_light",
+        "sleep_duration_awake",
+    }
+
+    # The payload declares `units: "hr"` and the registry defines sleep in minutes, so
+    # the hours are converted rather than stored as if they were minutes. This is the
+    # bug the registry was built to stop: one phone exporting hours and another minutes
+    # into a single series, with nothing recording which was which.
+    assert by_metric["sleep_duration"]["value"] == 480.0
+    assert by_metric["sleep_duration_deep"]["value"] == 90.0
+    assert by_metric["sleep_duration_light"]["value"] == 240.0
+    # The reading as the phone sent it survives alongside the converted one.
+    assert by_metric["sleep_duration"]["metadata"]["provider_value"] == 8.0
+    assert by_metric["sleep_duration"]["metadata"]["units"] == "hr"
 
 
 def test_transform_health_auto_export_workouts():
@@ -139,11 +152,21 @@ def test_transform_health_auto_export_workouts():
     # activeEnergy, totalDistance, duration, avgHeartRate -> 4 workout events
     assert len(events) == 4
 
-    w_types = [e["metric_type"] for e in events]
-    assert "workout_active_energy" in w_types
-    assert "workout_distance" in w_types
-    assert "workout_duration" in w_types
-    assert "workout_avg_heart_rate" in w_types
+    by_metric = {e["metric_type"]: e for e in events}
+    assert set(by_metric) == {
+        "workout_energy",
+        "workout_distance",
+        "workout_duration",
+        "workout_heart_rate_average",
+    }
+
+    # `duration` arrives as a bare 2700 with no declared unit. Health Auto Export means
+    # seconds, and the workout does run 08:00-08:45, so it must become 45 minutes and
+    # not 2700 of them.
+    assert by_metric["workout_duration"]["value"] == 45.0
+    # Already in the registry's units, so untouched.
+    assert by_metric["workout_energy"]["value"] == 450.0
+    assert by_metric["workout_distance"]["value"] == 5.5
 
 
 def test_transform_invalid_payload():

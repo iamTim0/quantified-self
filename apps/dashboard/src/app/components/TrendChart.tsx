@@ -16,6 +16,8 @@ import {
 import { Line, Bar } from "react-chartjs-2";
 import { RefreshCw, BarChart2, TrendingUp, AreaChart, Flame, Moon, Calendar, Filter } from "lucide-react";
 
+import { useT } from "../lib/i18n/provider";
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -51,6 +53,7 @@ export default function TrendChart({
   fatValues = [],
   onRefresh,
 }: TrendChartProps) {
+  const t = useT();
   const [chartType, setChartType] = useState<"line" | "bar" | "area">("area");
   const [datasetCategory, setDatasetCategory] = useState<"nutrition" | "bio">("nutrition");
 
@@ -112,7 +115,7 @@ export default function TrendChart({
     labels: filtered.labels,
     datasets: [
       {
-        label: "Kalorien (kcal)",
+        label: t("chart.calories"),
         data: filtered.cal,
         borderColor: "#0d5c3a",
         backgroundColor: chartType === "area" ? "rgba(13, 92, 58, 0.15)" : "rgba(13, 92, 58, 0.8)",
@@ -124,7 +127,7 @@ export default function TrendChart({
         yAxisID: "yKcal",
       },
       {
-        label: "Protein (g)",
+        label: t("chart.protein"),
         data: filtered.prot,
         borderColor: "#10b981",
         backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.12)" : "rgba(16, 185, 129, 0.8)",
@@ -136,7 +139,7 @@ export default function TrendChart({
         yAxisID: "yGrams",
       },
       {
-        label: "Kohlenhydrate (g)",
+        label: t("chart.carbs"),
         data: filtered.carb,
         borderColor: "#f59e0b",
         backgroundColor: chartType === "area" ? "rgba(245, 158, 11, 0.12)" : "rgba(245, 158, 11, 0.8)",
@@ -148,7 +151,7 @@ export default function TrendChart({
         yAxisID: "yGrams",
       },
       {
-        label: "Fett (g)",
+        label: t("chart.fat"),
         data: filtered.fat,
         borderColor: "#06b6d4",
         backgroundColor: chartType === "area" ? "rgba(6, 182, 212, 0.12)" : "rgba(6, 182, 212, 0.8)",
@@ -166,7 +169,7 @@ export default function TrendChart({
     labels: filtered.labels,
     datasets: [
       {
-        label: "Sleep Score",
+        label: t("chart.sleepScore"),
         data: filtered.sleep,
         borderColor: "#0d5c3a",
         backgroundColor: chartType === "area" ? "rgba(13, 92, 58, 0.15)" : "rgba(13, 92, 58, 0.8)",
@@ -177,7 +180,7 @@ export default function TrendChart({
         yAxisID: "yScore",
       },
       {
-        label: "Readiness Score",
+        label: t("chart.readinessScore"),
         data: filtered.readiness,
         borderColor: "#10b981",
         backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.8)",
@@ -284,7 +287,7 @@ export default function TrendChart({
                 }`}
               >
                 <Flame className="w-3.5 h-3.5" />
-                <span>Yazio Ernährung</span>
+                <span>{t("chart.categoryNutrition")}</span>
               </button>
               <button
                 onClick={() => setDatasetCategory("bio")}
@@ -295,7 +298,7 @@ export default function TrendChart({
                 }`}
               >
                 <Moon className="w-3.5 h-3.5" />
-                <span>Schlaf & Bio-Scores</span>
+                <span>{t("chart.categoryBio")}</span>
               </button>
             </div>
           </div>
@@ -305,17 +308,17 @@ export default function TrendChart({
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-1 text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">
             <Calendar className="w-3.5 h-3.5 text-[#0d5c3a]" />
-            <span>Zeitraum:</span>
+            <span>{t("chart.period")}</span>
           </div>
 
           <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs">
             {[
-              { id: "7d", label: "7 Tage" },
-              { id: "14d", label: "14 Tage" },
-              { id: "30d", label: "30 Tage" },
-              { id: "90d", label: "90 Tage" },
-              { id: "all", label: "Gesamt" },
-              { id: "custom", label: "Datum..." },
+              { id: "7d", label: t("quality.windowDays", { count: 7 }) },
+              { id: "14d", label: t("quality.windowDays", { count: 14 }) },
+              { id: "30d", label: t("quality.windowDays", { count: 30 }) },
+              { id: "90d", label: t("quality.windowDays", { count: 90 }) },
+              { id: "all", label: t("chart.presetAll") },
+              { id: "custom", label: t("chart.presetCustom") },
             ].map((preset) => (
               <button
                 key={preset.id}
@@ -339,7 +342,7 @@ export default function TrendChart({
                 onChange={(e) => setCustomStart(e.target.value)}
                 className="bg-white border border-slate-200 text-slate-800 rounded-xl px-2.5 py-1.5 outline-none focus:border-[#0d5c3a] text-[11px]"
               />
-              <span className="text-slate-400">bis</span>
+              <span className="text-slate-400">{t("chart.rangeTo")}</span>
               <input
                 type="date"
                 value={customEnd}
@@ -356,7 +359,7 @@ export default function TrendChart({
               className={`p-2 rounded-xl transition-all ${
                 chartType === "area" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
-              title="Flächendiagramm"
+              title={t("chart.typeArea")}
             >
               <AreaChart className="w-4 h-4" />
             </button>
@@ -365,7 +368,7 @@ export default function TrendChart({
               className={`p-2 rounded-xl transition-all ${
                 chartType === "line" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
-              title="Liniendiagramm"
+              title={t("chart.typeLine")}
             >
               <TrendingUp className="w-4 h-4" />
             </button>
@@ -374,7 +377,7 @@ export default function TrendChart({
               className={`p-2 rounded-xl transition-all ${
                 chartType === "bar" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
               }`}
-              title="Balkendiagramm"
+              title={t("chart.typeBar")}
             >
               <BarChart2 className="w-4 h-4" />
             </button>
@@ -383,7 +386,7 @@ export default function TrendChart({
           <button
             onClick={onRefresh}
             className="p-2 text-xs font-semibold rounded-xl bg-neutral-800 hover:bg-neutral-700 text-white transition-colors"
-            title="Diagramm aktualisieren"
+            title={t("chart.refresh")}
           >
             <RefreshCw className="w-3.5 h-3.5" />
           </button>
@@ -401,7 +404,7 @@ export default function TrendChart({
         ) : (
           <div className="w-full h-full flex flex-col items-center justify-center text-xs text-neutral-500 space-y-2">
             <Flame className="w-8 h-8 text-neutral-700" />
-            <p>Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.</p>
+            <p>{t("chart.emptyPeriod")}</p>
           </div>
         )}
       </div>

@@ -44,10 +44,32 @@ Externe Quelle -> Importer -> qs.ingest.yazio -> Core -> data_points
 ## Daten abrufen
 
 ```http
-GET /api/v1/data/metrics?metric_type=nutrition_calories_kcal&start_time=<iso>&end_time=<iso>&limit=1000
+GET /api/v1/data/metrics?metric_type=nutrition_energy&start_time=<iso>&end_time=<iso>&limit=1000
 Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten aus dem Transformer.
+Filtere optional nach weiteren `metric_type` Werten:
+
+| `metric_type` | Bedeutung | Einheit |
+| --- | --- | --- |
+| `nutrition_energy` | Kalorien des Tages | `kcal` |
+| `nutrition_protein` | Protein des Tages | `g` |
+| `nutrition_carbohydrates` | Kohlenhydrate des Tages | `g` |
+| `nutrition_fat` | Fett des Tages | `g` |
+| `nutrition_fiber` | Ballaststoffe des Tages | `g` |
+| `nutrition_meal_energy` | Kalorien je Mahlzeit; die Mahlzeit steht in `metadata.meal_category` | `kcal` |
+| `nutrition_item_energy` | Kalorien je Eintrag | `kcal` |
+| `nutrition_item_amount` | Menge eines Eintrags ohne Kalorienangabe | `g` |
+| `nutrition_recipe_portions` | Anzahl Rezeptportionen | `count` |
+
+`nutrition_energy` ist dieselbe Metrik, unter der auch Apple Health seine
+Nahrungsenergie ablegt - beide Quellen landen in einer Serie.
+
+Mahlzeiten sind keine eigenen Metriken mehr. Früher entstand pro
+Mahlzeitenbezeichnung ein eigener Name (`breakfast_calories`, `lunch_calories`, ...),
+abhängig davon, welche Bezeichnungen der Anbieter gerade lieferte. Die Mahlzeit ist
+eine Eigenschaft des Messwerts und steht deshalb in `metadata.meal_category`.
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).

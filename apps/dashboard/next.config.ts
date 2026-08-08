@@ -61,6 +61,31 @@ const nextConfig: NextConfig = {
   // is what the browser tests in CI use.
   output: "standalone",
   allowedDevOrigins: allowedOriginsList,
+  /**
+   * `next dev` only: route this origin's `/api/*` to the Gateway.
+   *
+   * The UI has no configured API origin in development, so `getApiBase()` falls
+   * back to `window.location.origin` — which is correct in production, where
+   * Traefik owns the origin and routes `/api` to the Gateway, and was nothing at
+   * all in development, where the origin is the dev server. Every call answered
+   * 404 from Next: `/api/v1/auth/config`, `/api/v1/auth/me`, the OIDC provider
+   * list. The login screen could not even find out whether sign-up was open.
+   *
+   * A rewrite rather than pointing the UI at `http://127.0.0.1:8000` with
+   * NEXT_PUBLIC_API_URL, because that swaps the production code path for a
+   * different one: an absolute cross-origin base needs CORS, and cookies set by
+   * `127.0.0.1` are not sent from a page on `localhost` — SameSite treats them
+   * as different sites. Same-origin here means development exercises what
+   * production does.
+   *
+   * Never in a build: `next build` sets NODE_ENV=production, so the published
+   * image contains no proxy and Traefik keeps doing this job.
+   */
+  rewrites: async () => {
+    if (process.env.NODE_ENV !== "development") return [];
+    const gateway = process.env.DEV_GATEWAY_URL ?? "http://127.0.0.1:8000";
+    return [{ source: "/api/:path*", destination: `${gateway}/api/:path*` }];
+  },
   // The legal texts moved to /legal/*. Keep the old path working for bookmarks and
   // any link already published.
   redirects: async () => [

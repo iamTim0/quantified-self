@@ -45,9 +45,30 @@ All importers must follow a standard file layout:
 Once data is transformed into internal metric formats, events MUST be published to NATS using the subject pattern:
 `qs.ingest.<source_type>`
 
+### Metric Names and Units
+An importer does not choose its own metric names. Every `metric_type` MUST be a canonical
+name from the shared registry in
+`packages/shared-schemas/src/shared_schemas/metrics.py`, resolved through
+`canonical_metric_type()`, and every value MUST be converted into the unit that registry
+defines for it (`convert()`). Core rejects anything else on the way in.
+
+Two consequences worth stating outright:
+
+- Two sources reporting the same quantity write the **same** name. The name says what was
+  measured — never who measured it, and never in which unit.
+- Providers whose metric set depends on the user's own setup emit under a registered
+  *dynamic namespace* (`home_assistant_`, `apple_health_`) rather than inventing bare
+  names.
+
+See [Metriken](metrics.md) for the rules, the full catalog and how to add an entry.
+
 ### Idempotency
 All ingestion events require a deterministic `idempotency_key` to ensure duplicate events are safely ignored downstream. The key must be generated as follows:
 `idempotency_key = SHA256(tenant_id + source_id + metric_type + timestamp)`
+
+Resolve the canonical metric name **before** deriving the key. Because the name is part of
+the hash, canonicalising afterwards stores a point under a name its key does not describe,
+and the same reading is imported again on the next run instead of deduplicating.
 
 ### Testing Requirements
 - Unit tests must mock external API calls in `client.py`.

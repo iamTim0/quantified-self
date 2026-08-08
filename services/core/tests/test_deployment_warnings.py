@@ -178,7 +178,7 @@ def test_the_account_warning_tells_the_user_to_change_it_elsewhere_too(monkeypat
     )
     warning = module.account_warnings(password_hash=stand_in)[0]
     assert warning.severity == "critical"
-    assert "anderswo" in warning.action
+    assert "anywhere else" in warning.action
 
 
 # ─── the endpoint, and who sees what ─────────────────────────

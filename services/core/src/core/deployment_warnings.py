@@ -54,6 +54,9 @@ class Warning_:
     detail: str
     action: str
     docs: str | None = None
+    #: Values the dashboard substitutes into its own translation of this warning.
+    #: Only needed where the wording contains one; see ``development_environment``.
+    params: dict[str, str] | None = None
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -85,18 +88,15 @@ def account_warnings(*, password_hash: str | None) -> list[Warning_]:
         Warning_(
             code="password_published",
             severity="critical",
-            title="Dieses Passwort ist öffentlich bekannt",
+            title="This password is publicly known",
             detail=(
-                "Der Hash dieses Passworts stand in einer veröffentlichten Quelle "
-                "— es war der Entwicklungs-Zugang, den frühere Versionen dieses "
-                "Projekts mitgeliefert haben. bcrypt verzögert einen Angriff, es "
-                "verhindert ihn nicht. Wer den Hash hat, kann das Passwort offline "
-                "durchprobieren, so lange er möchte."
+                "The hash of this password appeared in a published source — it "
+                "was the development account earlier versions of this project "
+                "shipped. bcrypt delays an attack, it does not prevent one: "
+                "whoever holds the hash can try passwords offline for as long "
+                "as they like."
             ),
-            action=(
-                "Passwort jetzt ändern — und falls es anderswo verwendet wird, "
-                "dort ebenfalls."
-            ),
+            action="Change the password now — and anywhere else it is used.",
             docs="/docs/features/authentication/",
         )
     ]
@@ -128,15 +128,14 @@ def deployment_warnings(
             Warning_(
                 code="insecure_jwt_secret",
                 severity="critical",
-                title="JWT_SECRET ist ein veröffentlichter Standardwert",
+                title="JWT_SECRET is a published default",
                 detail=(
-                    "Sitzungen werden mit einem Schlüssel signiert, der im "
-                    "Quellcode dieses Projekts steht. Wer ihn kennt, kann sich "
-                    "ein Token für jedes Konto und jeden Arbeitsbereich "
-                    "ausstellen."
+                    "Sessions are signed with a key that is printed in this "
+                    "project's own source. Anyone who knows it can issue a "
+                    "token for any account and any workspace."
                 ),
-                action=f"Einen eigenen Wert setzen: {_GENERATE}",
-                docs="/docs/operations/#erforderliche-konfiguration",
+                action=f"Set a value of your own: {_GENERATE}",
+                docs="/docs/operations/",
             )
         )
 
@@ -145,19 +144,18 @@ def deployment_warnings(
             Warning_(
                 code="insecure_encryption_key",
                 severity="critical",
-                title="ENCRYPTION_KEY ist ein veröffentlichter Standardwert",
+                title="ENCRYPTION_KEY is a published default",
                 detail=(
-                    "Die hinterlegten Connector-Zugangsdaten sind damit für "
-                    "jeden entschlüsselbar, der diesen Schlüssel kennt — und er "
-                    "steht im Quellcode."
+                    "Every stored connector credential can be decrypted by "
+                    "anyone who knows this key — and it is in the source."
                 ),
                 action=(
-                    "Erst umschlüsseln, dann umstellen: "
+                    "Re-encrypt first, then switch: "
                     "python -m core.rotate_encryption_key --old … --new … "
-                    "Ein Wechsel ohne diesen Schritt macht alle gespeicherten "
-                    "Tokens dauerhaft unlesbar."
+                    "Changing it without that step makes every stored token "
+                    "permanently unreadable."
                 ),
-                docs="/docs/operations/#encryption_key-wechseln",
+                docs="/docs/operations/",
             )
         )
 
@@ -168,13 +166,13 @@ def deployment_warnings(
             Warning_(
                 code="insecure_internal_secret",
                 severity="critical",
-                title="INTERNAL_SERVICE_SECRET ist ein veröffentlichter Standardwert",
+                title="INTERNAL_SERVICE_SECRET is a published default",
                 detail=(
-                    "Damit kann sich jeder als interner Dienst ausweisen und "
-                    "entschlüsselte Connector-Zugangsdaten abrufen."
+                    "With it, anyone can present themselves as an internal "
+                    "service and fetch decrypted connector credentials."
                 ),
-                action=f"Einen eigenen Wert setzen: {_GENERATE}",
-                docs="/docs/operations/#erforderliche-konfiguration",
+                action=f"Set a value of your own: {_GENERATE}",
+                docs="/docs/operations/",
             )
         )
 
@@ -183,16 +181,16 @@ def deployment_warnings(
             Warning_(
                 code="registration_open",
                 severity="warning",
-                title="Selbstregistrierung ist offen",
+                title="Self-service sign-up is open",
                 detail=(
-                    "Jede Person, die diese Adresse kennt, kann sich ein Konto "
-                    "und einen eigenen Arbeitsbereich anlegen."
+                    "Anyone who knows this address can create an account and "
+                    "a workspace of their own."
                 ),
                 action=(
-                    "ALLOW_REGISTRATION=false setzen. Das erste Konto legt "
-                    "python -m core.create_owner an."
+                    "Set ALLOW_REGISTRATION=false. The first account is "
+                    "created with python -m core.create_owner."
                 ),
-                docs="/docs/operations/#das-erste-konto-anlegen",
+                docs="/docs/operations/",
             )
         )
 
@@ -201,15 +199,15 @@ def deployment_warnings(
             Warning_(
                 code="cookies_not_secure",
                 severity="warning",
-                title="Sitzungs-Cookies ohne Secure-Flag",
+                title="Session cookies without the Secure flag",
                 detail=(
-                    "Die Cookies werden auch über unverschlüsselte Verbindungen "
-                    "gesendet und sind dort mitlesbar."
+                    "The cookies are sent over unencrypted connections too, "
+                    "where anyone on the path can read them."
                 ),
                 action=(
-                    "COOKIE_SECURE=true setzen. Für lokale Entwicklung ist das "
-                    "unproblematisch: Browser behandeln localhost und 127.0.0.1 "
-                    "als vertrauenswürdig und akzeptieren Secure-Cookies dort."
+                    "Set COOKIE_SECURE=true. Harmless for local development: "
+                    "browsers treat localhost and 127.0.0.1 as trustworthy "
+                    "and accept Secure cookies there."
                 ),
                 docs="/docs/features/authentication/",
             )
@@ -222,15 +220,15 @@ def deployment_warnings(
             Warning_(
                 code="development_environment",
                 severity="info",
-                title=f"ENVIRONMENT ist „{environment}“",
+                title=f"ENVIRONMENT is “{environment}”",
                 detail=(
-                    "Deshalb starten die Dienste trotz der obigen Punkte. Mit "
-                    "einem produktiven ENVIRONMENT verweigern Core und Gateway "
-                    "den Start, solange ein Wert ein veröffentlichter Standard "
-                    "ist."
+                    "That is why the services start despite the points above. "
+                    "With a production-like ENVIRONMENT, Core and the Gateway "
+                    "refuse to start while any value is a published default."
                 ),
-                action="Für ein echtes Deployment ENVIRONMENT=production setzen.",
-                docs="/docs/operations/#erforderliche-konfiguration",
+                action="Set ENVIRONMENT=production for a real deployment.",
+                docs="/docs/operations/",
+                params={"environment": environment},
             )
         )
 

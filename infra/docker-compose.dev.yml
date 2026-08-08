@@ -1,0 +1,191 @@
+# Development overlay: the same stack as docker-compose.yml, but reading its code
+# from the checkout instead of from the image.
+#
+#     docker compose -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d
+#
+# or, the same thing, `task dev:docker`.
+#
+# Why this file exists. The base compose file builds every service into an image
+# and the dashboard into a Next production build, so changing a line of code meant
+# `docker compose build` before it had any effect. That is right for a stack you
+# run and wrong for one you work on. The alternative was the split mode
+# (`task dev:local`, backends on the host), which costs a second address, a second
+# set of prerequisites, and the UI proxy's known refusal to hydrate `next dev`
+# (see services/api-gateway/src/gateway/main.py). This overlay keeps one address --
+# Traefik on :8080 serves the UI, /api and /docs -- and still picks up edits.
+#
+# What each service does with a mount differs, because the images differ:
+#
+#   * Core, Gateway, Analysis start a uvicorn app, so they get `--reload` and the
+#     edit is live. `--reload-dir` is set explicitly; the working directory of the
+#     Core and Analysis images also contains .venv, and watching a virtualenv is
+#     both pointless and slow.
+#   * The importers are `python -m <name>.main` asyncio loops with no reloader.
+#     They get the mount, so `docker compose restart <service>` applies a change in
+#     a second or two rather than a rebuild.
+#   * The dashboard runs `next dev` from the `dev` stage of its Dockerfile, and is
+#     the one service where a mount does NOT give you hot reload -- see the note
+#     on that service below. Apply a UI change with
+#     `docker compose ... restart dashboard`.
+#   * The docs container already mounted the repository in the base file and needs
+#     nothing here.
+#
+# PYTHONPATH is set on the services whose images install the project into a
+# virtualenv (Core, Analysis): an installed copy of the package would otherwise sit
+# in site-packages next to the mount, and which one wins is not something to leave
+# to chance. PYTHONPATH is searched before site-packages, so the mount wins.
+
+services:
+  core:
+    volumes:
+      - ../services/core/src:/app/services/core/src
+      # Migrations are run by hand (`task db:migrate`), but reading them from the
+      # checkout means a new revision does not need a rebuild to exist in here.
+      - ../services/core/alembic:/app/services/core/alembic
+    environment:
+      - PYTHONPATH=/app/services/core/src
+    command:
+      - uvicorn
+      - core.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8001"
+      - --reload
+      - --reload-dir
+      - /app/services/core/src
+
+  analysis:
+    volumes:
+      - ../services/analysis/src:/app/services/analysis/src
+    environment:
+      - PYTHONPATH=/app/services/analysis/src
+    command:
+      - uvicorn
+      - analysis.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8010"
+      - --reload
+      - --reload-dir
+      - /app/services/analysis/src
+
+  api-gateway:
+    volumes:
+      - ../services/api-gateway/src:/app/src
+    command:
+      - uvicorn
+      - gateway.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+      - --reload
+      - --reload-dir
+      - /app/src
+
+  # The importers build from the repository root (they need
+  # packages/shared-schemas), so their working directory inside the image mirrors
+  # the repository layout -- /app/services/importers/<name> -- rather than being a
+  # bare /app. The mount targets follow that, and PYTHONPATH is set for the same
+  # reason it is on Core: `uv sync` installs the package into .venv, and the mount
+  # has to win over that copy.
+
+  yazio-importer:
+    volumes:
+      - ../services/importers/yazio/src:/app/services/importers/yazio/src
+    environment:
+      - PYTHONPATH=/app/services/importers/yazio/src
+
+  dawarich-importer:
+    volumes:
+      - ../services/importers/dawarich/src:/app/services/importers/dawarich/src
+    environment:
+      - PYTHONPATH=/app/services/importers/dawarich/src
+
+  whoop-importer:
+    volumes:
+      - ../services/importers/whoop/src:/app/services/importers/whoop/src
+    environment:
+      - PYTHONPATH=/app/services/importers/whoop/src
+
+  apple-health-importer:
+    volumes:
+      - ../services/importers/apple_health/src:/app/services/importers/apple_health/src
+    environment:
+      - PYTHONPATH=/app/services/importers/apple_health/src
+
+  streak-importer:
+    volumes:
+      - ../services/importers/streak/src:/app/services/importers/streak/src
+    environment:
+      - PYTHONPATH=/app/services/importers/streak/src
+
+  home-assistant-importer:
+    volumes:
+      - ../services/importers/home_assistant/src:/app/services/importers/home_assistant/src
+    environment:
+      - PYTHONPATH=/app/services/importers/home_assistant/src
+
+  weather-importer:
+    volumes:
+      - ../services/importers/weather/src:/app/services/importers/weather/src
+    environment:
+      - PYTHONPATH=/app/services/importers/weather/src
+
+  calendar-importer:
+    volumes:
+      - ../services/importers/calendar/src:/app/services/importers/calendar/src
+    environment:
+      - PYTHONPATH=/app/services/importers/calendar/src
+
+  # No hot reload here, and the mount is still worth having.
+  #
+  # Measured on a Windows host, not assumed: Turbopack watches with inotify, and a
+  # bind mount of a host directory delivers no inotify events into the container.
+  # The container reads the changed file correctly the moment it is asked -- a
+  # `tail` inside the container shows the edit immediately -- but the watcher never
+  # learns that it happened, so the dev server keeps serving its cached build. A
+  # newly added route answers 404 indefinitely, and an edited one keeps returning
+  # the old markup. It fails silently, which is the part worth knowing.
+  #
+  # Next's `watchOptions.pollIntervalMs` is the documented answer to exactly this
+  # and was tried first: it reaches Turbopack's watcher (`watch.pollIntervalMs` in
+  # server/dev/hot-reloader-turbopack.js) and made no difference at all -- a
+  # changed route was still not picked up after 45 seconds at a 1s interval. It was
+  # removed again rather than left in place looking like a solution.
+  #
+  # So: `docker compose ... restart dashboard` applies a UI change, in about ten
+  # seconds, because the server re-reads everything at startup. The mount is what
+  # makes that a restart instead of a rebuild. For sustained UI work, run
+  # `next dev` natively on the host, where the file events work.
+  dashboard:
+    build:
+      target: dev
+    volumes:
+      - ../apps/dashboard:/app
+      # These two stay out of the bind mount. node_modules holds Linux builds of
+      # native binaries -- a host checkout on Windows or macOS has the wrong ones,
+      # and on a machine that never ran `bun install` it has none at all. .next is
+      # the Turbopack cache, which is written constantly and is far faster on a
+      # container volume than across a host filesystem boundary.
+      #
+      # The cost of naming them: a volume is filled from the image once, when it is
+      # created, and is not refreshed by a later rebuild. After changing
+      # package.json or bun.lock, recreate it -- `task dev:docker:reset`.
+      - dashboard_node_modules:/app/node_modules
+      - dashboard_next_cache:/app/.next
+    environment:
+      # Where next.config.ts's development rewrite sends /api. It defaults to
+      # loopback, which inside this container is the dev server itself.
+      #
+      # Traefik routes /api to the Gateway before the dashboard ever sees it, so on
+      # :8080 this changes nothing. It is what makes the container's own :3000
+      # work too, which is the address the dev server prints in its own logs.
+      - DEV_GATEWAY_URL=http://api-gateway:8000
+      - NEXT_TELEMETRY_DISABLED=1
+
+volumes:
+  dashboard_node_modules:
+  dashboard_next_cache:

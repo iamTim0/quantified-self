@@ -1,0 +1,614 @@
+/**
+ * English messages — and the shape every other catalogue has to match.
+ *
+ * Keys are flat and read `area.thing`, because a flat object gives `keyof` a union
+ * of every key for free: a typo in `t("sidebar.dahsboard")` is a compile error, and
+ * so is a key this file has and `catalog-de.ts` does not.
+ *
+ * `{name}` placeholders are substituted by `translate()` in `provider.tsx`. Counts
+ * that change the wording get two keys, `*_one` and `*_other`, chosen at the call
+ * site — enough for German and English, and honest about not being a plural engine.
+ *
+ * Order follows the interface: shared words first, then the shell, then one section
+ * per screen.
+ */
+
+export const en = {
+  // ── Shared ─────────────────────────────────────────────────────────────────
+  "common.cancel": "Cancel",
+  "common.save": "Save",
+  "common.saving": "Saving…",
+  "common.close": "Close",
+  "common.delete": "Delete",
+  "common.loading": "Loading…",
+  "common.pleaseWait": "Please wait…",
+  "common.retry": "Try again",
+  "common.pending": "Pending",
+  "common.none": "None",
+  "common.unknown": "Unknown",
+  "common.error": "Error",
+  "common.days_one": "{count} day",
+  "common.days_other": "{count} days",
+
+  // ── Language switcher ──────────────────────────────────────────────────────
+  "lang.label": "Language",
+  "lang.switchTo": "Switch to {language}",
+
+  // ── Sidebar ────────────────────────────────────────────────────────────────
+  "sidebar.menu": "Menu",
+  "sidebar.general": "General",
+  "sidebar.overview": "Dashboard",
+  "sidebar.explorer": "Data explorer",
+  "sidebar.quality": "Data quality",
+  "sidebar.analysis": "Analysis",
+  "sidebar.connectors": "Connectors",
+  "sidebar.share": "Share & export",
+  "sidebar.docs": "Documentation",
+  "sidebar.docsTitle": "Open the platform documentation",
+  "sidebar.settings": "Settings",
+  "sidebar.logout": "Sign out",
+  "sidebar.promoTitle": "Live Quantified Self",
+  "sidebar.promoBody": "Connect Yazio, WHOOP and Apple Health for continuous analysis.",
+  "sidebar.promoAction": "Manage connectors",
+
+  // ── Top header ─────────────────────────────────────────────────────────────
+  "header.autoRefresh": "Refreshes automatically every 30 seconds",
+  "header.docs": "Documentation",
+  "header.refresh": "Refresh",
+  "header.refreshTitle": "Reload the whole page",
+  "header.share": "Export & share",
+  "header.addConnector": "Add connector",
+
+  // ── Legal footer and legal pages ───────────────────────────────────────────
+  "footer.nav": "Legal and documentation",
+  "footer.imprint": "Legal notice",
+  "footer.privacy": "Privacy policy",
+  "footer.docs": "Documentation",
+  "footer.source": "Source code",
+  "footer.sourceVersion": "Source code (v{version})",
+  "footer.sourceCommit": "Source code ({commit})",
+  "legal.nav": "Legal",
+  "legal.backToApp": "Back to the application",
+  "legal.disclaimer":
+    "These texts are a template and are no substitute for legal advice. Have them reviewed by a qualified party before production use.",
+  "legal.translationNote":
+    "This is a courtesy translation. The German version is the legally binding one.",
+  "legal.germanVersion": "German version",
+
+  // ── Sign in / sign up ──────────────────────────────────────────────────────
+  "auth.tagline": "Your personal health and analytics platform.",
+  "auth.welcomeBack": "Welcome back",
+  "auth.createAccount": "Create account",
+  "auth.name": "Name",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.signIn": "Sign in",
+  "auth.signUp": "Create account",
+  "auth.noAccount": "No account yet?",
+  "auth.haveAccount": "Already registered?",
+  "auth.toSignUp": "Sign up now",
+  "auth.toSignIn": "Sign in here",
+  "auth.registrationClosed": "Sign-up has been disabled by the administrator.",
+  "auth.or": "or",
+  "auth.redirecting": "Redirecting…",
+  "auth.signInWith": "Sign in with {provider}",
+  "auth.providerUnavailable": "Signing in through this provider is not possible.",
+  "auth.failed": "Authentication failed",
+  "auth.useExistingAccount": "Sign in with this email address instead.",
+  "auth.callbackWorking": "Completing sign-in…",
+  "auth.callbackFailed": "Sign-in could not be completed.",
+  "auth.callbackRetry": "Back to sign-in",
+
+  // ── Sign-in callback ────────────────────────────────────────────────────
+  "auth.callbackTitle": "Sign-in failed",
+  "auth.callbackDone": "Signed in. Redirecting…",
+  "auth.callbackIncomplete": "The provider's response was incomplete.",
+
+  // ── Sharing ─────────────────────────────────────────────────────────────
+  "share.title": "Share data",
+  "share.intro":
+    "Give coaches, doctors or partners secure read access to your health data.",
+  "share.emailPlaceholder": "recipient@example.com",
+  "share.submit": "Send invitation",
+  "share.submitting": "Sharing…",
+  "share.failed": "Sharing failed.",
+  "share.success": "Data shared with {email}.",
+  "share.activeTitle": "Active shares",
+  "share.revoke": "Revoke share",
+
+  // ── System warnings ─────────────────────────────────────────────────────
+  "warnings.region": "System warnings",
+  "warnings.severity.critical": "Critical",
+  "warnings.severity.warning": "Warning",
+  "warnings.severity.info": "Note",
+  "warnings.openDocs": "Open the documentation",
+  "warnings.dismiss": "Hide for this session",
+  "warnings.dismissTitle": "Hide for this session — back on the next load",
+  "warning.password_published.title": "This password is publicly known",
+  "warning.password_published.detail":
+    "The hash of this password appeared in a published source — it was the development account earlier versions of this project shipped. bcrypt delays an attack, it does not prevent one: whoever holds the hash can try passwords offline for as long as they like.",
+  "warning.password_published.action":
+    "Change the password now — and anywhere else it is used.",
+  "warning.insecure_jwt_secret.title": "JWT_SECRET is a published default",
+  "warning.insecure_jwt_secret.detail":
+    "Sessions are signed with a key that is printed in this project's own source. Anyone who knows it can issue a token for any account and any workspace.",
+  "warning.insecure_jwt_secret.action": "Set a value of your own: {generate}",
+  "warning.insecure_encryption_key.title":
+    "ENCRYPTION_KEY is a published default",
+  "warning.insecure_encryption_key.detail":
+    "Every stored connector credential can be decrypted by anyone who knows this key — and it is in the source.",
+  "warning.insecure_encryption_key.action":
+    "Re-encrypt first, then switch: python -m core.rotate_encryption_key --old … --new … Changing it without that step makes every stored token permanently unreadable.",
+  "warning.insecure_internal_secret.title":
+    "INTERNAL_SERVICE_SECRET is a published default",
+  "warning.insecure_internal_secret.detail":
+    "With it, anyone can present themselves as an internal service and fetch decrypted connector credentials.",
+  "warning.insecure_internal_secret.action":
+    "Set a value of your own: {generate}",
+  "warning.registration_open.title": "Self-service sign-up is open",
+  "warning.registration_open.detail":
+    "Anyone who knows this address can create an account and a workspace of their own.",
+  "warning.registration_open.action":
+    "Set ALLOW_REGISTRATION=false. The first account is created with python -m core.create_owner.",
+  "warning.cookies_not_secure.title":
+    "Session cookies without the Secure flag",
+  "warning.cookies_not_secure.detail":
+    "The cookies are sent over unencrypted connections too, where anyone on the path can read them.",
+  "warning.cookies_not_secure.action":
+    "Set COOKIE_SECURE=true. Harmless for local development: browsers treat localhost and 127.0.0.1 as trustworthy and accept Secure cookies there.",
+  "warning.development_environment.title": "ENVIRONMENT is “{environment}”",
+  "warning.development_environment.detail":
+    "That is why the services start despite the points above. With a production-like ENVIRONMENT, Core and the Gateway refuse to start while any value is a published default.",
+  "warning.development_environment.action":
+    "Set ENVIRONMENT=production for a real deployment.",
+
+  // ── Overview ────────────────────────────────────────────────────────────
+  "overview.title": "Dashboard",
+  "overview.subtitle":
+    "Aggregated analysis of the sensors and trackers you have connected.",
+  "overview.empty": "No data points stored yet.",
+  "overview.emptyAction": "Connect a source and import data",
+  "overview.loadingChart": "Loading the chart…",
+  "overview.loadingMap": "Loading the map…",
+  "header.welcome": "Welcome back, {name}",
+
+  // ── Data quality ────────────────────────────────────────────────────────
+  "quality.eyebrow": "Data quality centre",
+  "quality.title": "Data quality",
+  "quality.subtitle":
+    "Find gaps, conflicting sources and the next concrete step towards analyses you can rely on.",
+  "quality.window": "Time window",
+  "quality.windowDays": "{count} days",
+  "quality.gapsTitle": "Data gaps",
+  "quality.gapsDetail": "{metrics} metrics in the {days}-day window",
+  "quality.conflictsTitle": "Conflicting sources",
+  "quality.conflictsDetail": "Deviations above 5 %",
+  "quality.conflictsNone": "No competing sources worth a second look.",
+  "quality.conflictsHelp":
+    "Check the units and which source should be the primary one.",
+  "quality.recommendationComplete": "The data looks complete.",
+  "quality.recommendationMinor":
+    "Small gaps: usable for analysis, but check the trends.",
+  "quality.recommendationSerious":
+    "Check the connector, its token and how often it syncs before drawing conclusions.",
+  "quality.explainTitle": "What do these numbers mean?",
+  "quality.explainBody":
+    "Gaps weaken every trend and correlation drawn from the data. A source conflict means two integrations report different values for the same period. Stabilise the data first, interpret correlations second.",
+  "quality.explainDocs": "Documentation on data quality",
+  "quality.largestGaps": "Largest data gaps",
+  "quality.largestGapsHint":
+    "Consecutive missing days. “Backfill” opens the import dialog with exactly this period filled in.",
+  "quality.noGaps": "No data gaps found in the {days}-day window.",
+  "quality.moreRanges": "… and {count} more ranges",
+  "quality.backfillTitle": "Backfill missing data",
+  "quality.backfillSource": "Backfill {source}",
+  "quality.backfillHint":
+    "The import dialog proposes the period that is missing and skips what is already stored.",
+  "quality.conflictsNoneLong": "No contradictory measurements found.",
+  "quality.conflictsSome":
+    "{count} measurements differ noticeably between sources.",
+  "quality.conflictsAdvice":
+    "Where sources conflict, pick the most reliable one per metric and check the unit in the importer's transformer.",
+
+  // ── Charts and map ──────────────────────────────────────────────────────
+  "chart.calories": "Calories (kcal)",
+  "chart.protein": "Protein (g)",
+  "chart.carbs": "Carbohydrates (g)",
+  "chart.fat": "Fat (g)",
+  "chart.sleepScore": "Sleep score",
+  "chart.readinessScore": "Readiness score",
+  "chart.categoryNutrition": "Nutrition",
+  "chart.categoryBio": "Sleep & bio scores",
+  "chart.period": "Period:",
+  "chart.presetAll": "All",
+  "chart.presetCustom": "Dates…",
+  "chart.rangeTo": "to",
+  "chart.typeArea": "Area chart",
+  "chart.typeLine": "Line chart",
+  "chart.typeBar": "Bar chart",
+  "chart.refresh": "Refresh the chart",
+  "chart.emptyPeriod": "No data points in the selected period.",
+  "chart.emptyFilter": "No data points for the current filter.",
+  "map.tilesFailed":
+    "The map could not be loaded. Falling back to the plain view.",
+  "map.today": "Today",
+  "map.showTiles": "Load the map",
+  "map.hideTiles": "Hide the map",
+  "map.showTilesTitle": "Loads map tiles from an external provider",
+  "map.hideTilesTitle": "Back to the plain view",
+  "map.privacyLead":
+    "No location data is sent to a map provider. Loading the tiles makes the part of the map you are looking at visible to that provider.",
+  "map.deferred": "is only loaded once you ask for it.",
+  "map.empty": "No GPS points in the selected period.",
+
+  // ── Map privacy detail ──────────────────────────────────────────────────
+  "map.privacyDetail":
+    "No location data is sent to a map provider. When the map loads, your browser requests tiles from the provider directly, which makes the part of the map you are looking at visible to them.",
+  "map.headline": "GPS locations & route",
+
+  // ── Metric cards ────────────────────────────────────────────────────────
+  "cards.calories": "Ø calories",
+  "cards.protein": "Ø protein",
+  "cards.carbs": "Ø carbohydrates",
+  "cards.fat": "Ø fat",
+  "cards.locations": "Locations / GPS",
+  "cards.sleepScore": "Ø sleep score",
+  "cards.readiness": "Ø readiness",
+  "cards.steps": "Ø steps",
+  "cards.unitPoints": "points",
+  "cards.unitSteps": "steps",
+  "cards.range": "Range: {min} – {max} {unit}",
+
+  // ── Connectors ──────────────────────────────────────────────────────────
+  "connectors.title": "Connectors",
+  "connectors.subtitle":
+    "Manage your data sources and their credentials, and watch the event broker live.",
+  "connectors.desc.yazio":
+    "Calories, macronutrients (protein, carbohydrates, fat) and the meal diary.",
+  "connectors.desc.dawarich":
+    "GPS locations and movement traces, stored with a PostGIS spatial index.",
+  "connectors.desc.whoop":
+    "Heart-rate variability, sleep stages and the strain score.",
+  "connectors.desc.apple_health":
+    "Steps, active energy, resting heart rate and sleep stages via Health Auto Export.",
+  "connectors.desc.streak":
+    "Strength training from Streak 2.0: exercises, sets, reps and weight.",
+  "connectors.desc.home_assistant":
+    "Temperature, humidity, light and sound sensors.",
+  "connectors.desc.weather":
+    "Temperature, air pressure, precipitation and the UV index.",
+  "connectors.desc.calendar":
+    "ICS feeds: appointments, meeting duration and busy hours per day.",
+  "connectors.nameWeather": "Weather",
+  "connectors.nameCalendar": "Calendar",
+  "connectors.confirmDelete":
+    "Really remove the {source} connection and the credentials stored with it?",
+  "connectors.passive": "Passive connector",
+  "connectors.active": "Active connector",
+  "connectors.passiveHint": "Passive · receives data",
+  "connectors.activeHint": "Active · polls the service",
+  "connectors.soon": "Coming soon",
+  "connectors.docsFor": "Open the documentation for {name}",
+  "connectors.openDocs": "Open the documentation",
+  "connectors.authError": "Auth error (401)",
+  "connectors.authErrorShort": "HTTP 401 auth error",
+  "connectors.editCredentials": "Edit the credentials",
+  "connectors.disconnect": "Disconnect and delete this connector",
+  "connectors.connectNow": "Connect now",
+  "connectors.loadingDetails": "Loading connectors and queue details…",
+  "connectors.colSource": "Connection / source",
+  "connectors.colTransfer": "Data transfer",
+  "connectors.everyHours": "Every {hours} h ({days} days lookback)",
+  "connectors.renewToken": "Renew the token",
+  "connectors.edit": "Edit",
+  "connectors.emptyList": "No connectors configured yet.",
+  "connectors.addFirst": "Add the first connector",
+
+  // ── Connector state ─────────────────────────────────────────────────────
+  "connectors.ready": "Ready",
+
+  // ── Connector actions ───────────────────────────────────────────────────
+  "connectors.import": "Import",
+
+  // ── API keys and external sign-in ───────────────────────────────────────
+  "apikeys.loadFailed": "The keys could not be loaded.",
+  "apikeys.createFailed": "The key could not be created.",
+  "apikeys.confirmRevoke":
+    "Really revoke key {prefix}…? Devices using it stop being able to send data immediately.",
+  "apikeys.copyFailed": "Copying did not work — please select it by hand.",
+  "apikeys.headerHint":
+    "A separate X-Tenant-ID header is not needed: the tenant is derived from the key itself. Older apps may keep sending X-Api-Key.",
+  "apikeys.docs": "Documentation on API keys",
+  "apikeys.shownOnce": "This key is shown only once",
+  "apikeys.copy": "Copy to the clipboard",
+  "apikeys.storeNow":
+    "Store it in the app now. Once this closes it cannot be shown again — only revoked and replaced.",
+  "apikeys.none":
+    "No key for {provider} yet. Create one to start receiving data.",
+  "apikeys.created": "Created {date}",
+  "apikeys.expires": "expires {date}",
+  "apikeys.lastUsed": "last used {date}",
+  "apikeys.neverUsed": "never used",
+  "apikeys.statusActive": "active",
+  "apikeys.statusRevoked": "revoked",
+  "apikeys.rotateTitle":
+    "Create a successor; this key stays valid until it is revoked",
+  "apikeys.revokeTitle": "Invalidate immediately",
+  "apikeys.namePlaceholder": "e.g. iPhone",
+  "apikeys.noExpiry": "No expiry",
+  "apikeys.rotationHint":
+    "Several active keys are intended: that is how you rotate without interrupting the data flow. Revoke the old one once the",
+  "oidc.forbidden": "Only owners and administrators can manage providers.",
+  "oidc.loadFailed": "The providers could not be loaded.",
+  "oidc.saveFailed": "Saving failed.",
+  "oidc.deleteFailed": "Deleting failed.",
+  "oidc.title": "External sign-in providers",
+  "oidc.subtitle": "OpenID Connect. Providers are disabled by default.",
+  "oidc.add": "Add a provider",
+  "oidc.loading": "Loading providers…",
+  "oidc.enabled": "enabled",
+  "oidc.hasSecret": "Client secret stored",
+  "oidc.noSecret": "No client secret (public client)",
+  "oidc.editing": "Editing {slug}",
+  "oidc.newProvider": "New provider",
+  "oidc.fieldSlug": "Slug (URL part)",
+  "oidc.fieldDisplayName": "Display name",
+  "oidc.fieldIssuer": "Issuer",
+  "oidc.fieldClientId": "Client ID",
+  "oidc.fieldClientSecret": "Client secret",
+  "oidc.fieldRedirectUri": "Redirect URI",
+  "oidc.fieldScopes": "Scopes",
+  "oidc.secretUnchanged": "•••••••• (leave unchanged)",
+  "oidc.toggleEnabled": "Enabled",
+  "oidc.toggleEnabledHint": "Appears on the sign-in screen.",
+
+  // ── Profile and import ──────────────────────────────────────────────────
+  "profile.subtitle":
+    "Manage your account, security settings and one-click data deletion.",
+  "profile.passwordMismatch": "The new passwords do not match.",
+  "profile.passwordFailed": "Changing the password failed.",
+  "profile.passwordChanged": "Password changed.",
+  "profile.wipeFailed": "Deleting the data points failed.",
+  "profile.wipeDone": "Deleted {count} data points from this workspace.",
+  "profile.deleteAccountFailed": "Deleting the account failed.",
+  "profile.gdprTitle": "One-click deletion (GDPR Art. 17)",
+  "profile.gdprBadge": "Right to erasure active",
+  "profile.gdprBody":
+    "Under GDPR Article 17 you can delete every data point stored on this platform, or your whole account, in one click.",
+  "profile.wipeButton": "Delete all data points",
+  "profile.deleteAccountButton": "Delete account and all data",
+  "profile.changePassword": "Change password",
+  "profile.confirm": "Confirm",
+  "profile.changing": "Changing…",
+  "profile.encryptionNote":
+    "Connector tokens are encrypted with Fernet AES-256 before they are stored.",
+  "profile.signOut": "Sign out of this account",
+  "profile.wipeConfirmTitle": "Delete all data points?",
+  "profile.wipeConfirmBody":
+    "This deletes every imported data point in your workspace.",
+  "profile.wipeConfirmAction": "Yes, delete all data points",
+  "profile.wipeRunning": "Deleting data…",
+  "profile.deleteAccountTitle": "Delete the whole account?",
+  "profile.deleteAccountBody":
+    "This irreversibly deletes every data point, connector token and share belonging to your account (GDPR Art. 17).",
+  "profile.deleteAccountAction": "Delete irreversibly",
+  "profile.deleteAccountRunning": "Deleting the account…",
+  "profile.privacyLead":
+    "Which data is processed, on what basis, and how to delete it",
+  "import.days": "{count} days",
+  "import.planFailed": "The import plan could not be loaded.",
+  "import.startFailed": "The import could not be started.",
+  "import.nothingToDo": "Nothing to do — the period is already complete.",
+  "import.queued": "Import queued.",
+  "import.subtitle": "Check and adjust the period before the import starts.",
+  "import.close": "Close the dialog",
+  "import.smartHint":
+    "Periods that are already complete are skipped. Only the",
+  "import.forceLabel": "Force everything",
+  "import.forceHint":
+    "but the run takes longer and uses more of the provider's rate limit. It is marked as force in the import log.",
+  "import.noAnalysis": "No analysis available yet.",
+  "import.tooIrregular": "The existing data is too irregular for a confident",
+  "import.willSkip": "Will be skipped",
+  "import.willImport": "Will be imported",
+  "import.nothingToImportShort": "Nothing to import.",
+  "import.start": "Start the import",
+  "import.nothingToImport": "Nothing to import",
+
+  // ── Import duration ─────────────────────────────────────────────────────
+  "import.hours": "{count} h",
+
+  // ── Data explorer ───────────────────────────────────────────────────────
+  "explorer.refresh": "Refresh the data",
+  "explorer.savedViews": "Saved views",
+  "explorer.saveCurrent": "Save the current view",
+  "explorer.deleteView": "Delete this view",
+  "explorer.noViews":
+    "No saved views yet. Configure the filters and press “Save the current view”.",
+  "explorer.source": "Source:",
+  "explorer.allSources": "All sources",
+  "explorer.period": "Period:",
+  "explorer.dailySum": "Daily total",
+  "explorer.dailyAverage": "Daily average",
+  "explorer.selectedMetrics": "Selected metrics ({count}):",
+  "explorer.selectAll": "Select all",
+  "explorer.searchPlaceholder":
+    "Full-text search across the raw data (food name, category, metric name or JSON metadata…)",
+  "explorer.colSource": "Source",
+  "explorer.colValue": "Value",
+  "explorer.empty": "No data points for the current query.",
+
+  // ── Remaining OIDC and profile fields ───────────────────────────────────
+  "oidc.emptyState":
+    "No provider configured yet. Signing in with an email address and password works regardless.",
+  "oidc.toggleSignup": "Allow sign-up",
+  "oidc.toggleSignupHint":
+    "Creates a new account when the identity is unknown.",
+  "oidc.toggleVerified": "Require a verified email",
+  "oidc.toggleVerifiedHint":
+    "Recommended. Without verification an address is not an identity.",
+  "oidc.issuerHint":
+    "The issuer is checked when saving: the discovery document has to be reachable and name the same issuer.",
+  "profile.currentPassword": "Current password",
+  "profile.newPassword": "New password",
+
+  // ── Connector dialog ────────────────────────────────────────────────────
+  "modal.catNutrition": "Nutrition & diary",
+  "modal.desc.yazio":
+    "Active: the importer fetches meals, calories and nutrients from your Yazio diary.",
+  "modal.desc.whoop":
+    "Active: the importer fetches recovery score, HRV, sleep stages, resting heart rate and strain.",
+  "modal.desc.apple_health":
+    "Passive: Health Auto Export sends steps, heart rate, sleep stages and workouts to your webhook.",
+  "modal.desc.streak":
+    "Passive: Streak 2.0 sends workouts, sets, reps and weights to your REST webhook.",
+  "modal.desc.dawarich":
+    "Active: the importer fetches locations, GPS points and movement traces from your Dawarich server.",
+  "modal.desc.home_assistant":
+    "Active: reads temperature, humidity, light and any other exposed sensor state.",
+  "modal.desc.weather":
+    "Active: imports local weather time series through an Open-Meteo compatible API.",
+  "modal.desc.calendar":
+    "Active: imports the appointments you expose and the busy time per day.",
+  "modal.needEmailPassword":
+    "Please enter both an email address and a password.",
+  "modal.needYazioToken": "Please enter a Yazio bearer access token.",
+  "modal.needDawarichKey": "Please enter the Dawarich API key.",
+  "modal.needCalendarUrl":
+    "Please enter the URL of your calendar feed (.ics).",
+  "modal.calendarUrlScheme":
+    "The calendar URL has to start with http:// or https://.",
+  "modal.calendarUrlSuspect":
+    "This URL does not look like an .ics feed. Either give a valid ICS URL or add an API key.",
+  "modal.needBaseUrl": "Please enter the HTTPS base URL of the provider API.",
+  "modal.needApiKey": "Please enter a valid API key for {provider}.",
+  "modal.needApiKeyOrGenerate":
+    "Please enter a valid API key for {provider}, or generate one.",
+  "modal.saved": "{provider} settings saved.",
+  "modal.saveFailed": "The configuration could not be saved.",
+  "modal.networkError": "Network error: {message}",
+  "modal.serverUnreachable": "server unreachable",
+  "modal.backToChoice": "Back to the list",
+  "modal.pickSource": "Choose a data source",
+  "modal.editProvider": "Edit {provider}",
+  "modal.connectProvider": "Connect {provider}",
+  "modal.guideFor": "Open the guide for {provider}",
+  "modal.pickHint":
+    "Pick an importer. The badge says whether it polls a service itself or receives data from it:",
+  "modal.available": "Available",
+  "modal.activeShort": "Active · polls",
+  "modal.passiveShort": "Passive · receives",
+  "modal.passiveTitle": "Passive importer · data is delivered to you",
+  "modal.activeTitle": "Active importer · polls the service itself",
+  "modal.passiveBody":
+    "You store the webhook address and the header key. The external service sends new data as it happens; no sync interval is needed.",
+  "modal.activeBody":
+    "You store the credentials. The importer polls the external service on the configured interval and period.",
+  "modal.credentialsStored": "Credentials are stored (Fernet AES-256)",
+  "modal.keepCredentials": "Keep the stored credentials…",
+  "modal.keepUnchanged": "•••••••• (leave unchanged)",
+  "modal.keepCredentialsShort": "•••••••• (keep the credentials)",
+  "modal.pasteYazioToken": "Paste your Yazio bearer token here",
+  "modal.keepApiKey": "•••••••• (keep the API key)",
+  "modal.pasteDawarichKey": "Paste your Dawarich API key here",
+  "modal.icsHint":
+    "Public and private ICS feeds (Outlook, Google, Nextcloud) all work; the URL is stored encrypted and never logged.",
+  "modal.apiKeyOptional": "(optional, for API calendars only)",
+  "modal.apiKeyOptionalPlaceholder":
+    "Only needed if your provider offers no ICS feed",
+  "modal.intervalSection": "Edit the polling interval and period",
+  "modal.everyHour": "Every hour",
+  "modal.everyNHours": "Every {count} hours",
+  "modal.everyNHoursDefault": "Every {count} hours (default)",
+  "modal.daily": "Daily (24 h)",
+  "modal.weekly": "Weekly (168 h)",
+  "modal.importPeriod": "Import period",
+  "modal.lastNDays": "Last {count} days",
+  "modal.lastNDaysDefault": "Last {count} days (default)",
+  "modal.passiveFlowLead": "Passive data flow:",
+  "modal.passiveFlowBody":
+    "Once saved, the configured app sends data to the URL shown above. New data is processed without anyone polling for it.",
+  "modal.back": "Back",
+  "modal.saving": "Saving…",
+  "modal.saveSettings": "Save the settings",
+  "modal.saveConnection": "Save the connection",
+
+  // ── Connector categories ────────────────────────────────────────────────
+  "modal.catRecovery": "Recovery & sleep",
+  "modal.catVitals": "Fitness & vitals",
+  "modal.catStrength": "Strength training",
+  "modal.catLocation": "Location & GPS",
+  "modal.catSmartHome": "Smart home",
+  "modal.catEnvironment": "Environment",
+  "modal.catRoutine": "Routine & stress",
+
+  // ── Analysis ────────────────────────────────────────────────────────────
+  "analysis.tabOverview": "Overview",
+  "analysis.tabCorrelations": "Relationships",
+  "analysis.tabAnomalies": "Outliers",
+  "analysis.tabQuality": "Data quality",
+  "analysis.loadFailed": "The analyses could not be loaded.",
+  "analysis.computing": "Computing the analyses…",
+  "analysis.title": "Relationships & patterns",
+  "analysis.subtitleTail": "Relationships — not causes.",
+  "analysis.minStrength": "Minimum strength",
+  "analysis.all": "all",
+  "analysis.howToRead": "How to read these analyses",
+  "analysis.noData":
+    "There is no data to analyse yet. Set up a connector and import at least two weeks.",
+  "analysis.excludedForQuality":
+    "{count} hidden because the data is too thin",
+  "analysis.allMetricsQualify": "every metric meets the minimum requirements",
+  "analysis.significantRelationships": "Significant relationships",
+  "analysis.ofPairsChecked": "of {count} pairs checked",
+  "analysis.unusualDays": "Unusual days",
+  "analysis.outsideNormal": "outside your own normal range",
+  "analysis.noneMatchFilters":
+    "No relationships match the filters. That is a valid result — not every metric relates to another.",
+  "analysis.laggedTitle": "Time-shifted relationships",
+  "analysis.laggedTail":
+    "later. A sequence in time is no evidence of a cause.",
+  "analysis.lagDays": "+{count} days",
+  "analysis.sameDirection": "same direction",
+  "analysis.oppositeDirection": "opposite direction",
+  "analysis.tooFewForTrend": "Too few days for a statement about a trend.",
+  "analysis.trendStats": "Mean {mean} · R² {r2} · n={n} days",
+  "analysis.tooFewForNormalRange":
+    "Too few days to establish a personal normal range.",
+  "analysis.anomalyBasis":
+    "Based on the median and mean absolute deviation over {days} days. Unusual means unusual for you, not",
+  "analysis.tooFewForWeekly":
+    "At least two weeks of data are needed to see weekly patterns.",
+  "analysis.colDays": "Days",
+  "analysis.sufficient": "sufficient",
+  "analysis.tooThin": "too thin",
+  "analysis.scaleStrongOpposite": "strongly opposite",
+  "analysis.scaleNone": "no relationship",
+  "analysis.scaleStrongSame": "strongly aligned",
+  "analysis.scaleLabel":
+    "Colour scale from strongly opposite through no relationship to strongly aligned",
+  "analysis.scaleEnds": "opposite ← → aligned",
+  "analysis.matrixHint":
+    "Each cell shows the strength of the relationship as a percentage. Empty cells mean",
+  "analysis.strongestTitle": "Strongest relationships",
+  "analysis.provenanceTitle": "Data basis",
+  "analysis.sources": "Sources: {list}",
+  "analysis.significant": "significant (α = 0.05)",
+  "analysis.notSignificant": "not significant",
+  "analysis.limitsTitle": "Limitations",
+  "analysis.limitsBody":
+    "A relationship is not a cause. Both values may depend on a third factor nobody recorded.",
+  "analysis.sparklineLabel": "Rolling 7-day mean",
+  "analysis.footerSources": "Sources: {list} · analysis version",
+  "analysis.computedAt": "Computed: {when}",
+
+  // ── Analysis tiles ──────────────────────────────────────────────────────
+  "analysis.usableMetrics": "Metrics that can be analysed",
+
+  // ── Analysis sections ───────────────────────────────────────────────────
+  "analysis.tabTrends": "Trends",
+  "analysis.tabRoutines": "Routines",
+  // --- end of catalogue ---
+} satisfies Record<string, string>;
+
+export type MessageKey = keyof typeof en;

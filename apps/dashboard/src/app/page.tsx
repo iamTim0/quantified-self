@@ -16,6 +16,7 @@ import AnalysisTab from "./components/AnalysisTab";
 import LegalFooter from "./components/LegalFooter";
 import SystemWarnings from "./components/SystemWarnings";
 import { SummaryMetrics } from "./components/MetricCards";
+import { METRIC_CATALOG } from "./lib/metrics/catalog";
 import { SessionUser, endSession, fetchSession } from "./lib/session";
 import { apiFetch } from "./lib/api";
 
@@ -307,77 +308,44 @@ export default function DashboardPage() {
 
           setChartLabels(timestamps);
 
-          // Calorie Values: Prioritize daily summary 'calories' or 'yazio_calories'.
-          // Fall back to sum of 'consumed_item_calories' ONLY if summary is missing to prevent double counting.
-          setCalorieValues(
-            timestamps.map((ts) => {
-              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
-                (p.metric_type === "calories" || p.metric_type === "yazio_calories") && formatDate(p.timestamp) === ts
-              );
-              if (summaryPt) return summaryPt.value || 0;
+          type Point = { metric_type: string; timestamp: string; value: number };
 
-              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
-                p.metric_type === "consumed_item_calories" && formatDate(p.timestamp) === ts
-              );
-              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
-            })
-          );
+          /** Daily value for a metric: the day's own total if there is one, else the
+           * sum of its per-item readings.
+           *
+           * Both are canonical names now, so the chain that used to read
+           * `"carbohydrates" || "yazio_carbs" || "carbs"` is gone — that fan-out was
+           * the dashboard guessing at what the importers might have called things,
+           * and two of those three names were never emitted by anything. Legacy rows
+           * are still picked up, but through the registry's alias list rather than a
+           * hand-kept guess.
+           */
+          const dailySeries = (dailyKey: string, itemKey?: string) => {
+            const dailyNames = [dailyKey, ...(METRIC_CATALOG[dailyKey]?.aliases ?? [])];
+            const itemNames = itemKey
+              ? [itemKey, ...(METRIC_CATALOG[itemKey]?.aliases ?? [])]
+              : [];
 
-          setProteinValues(
-            timestamps.map((ts) => {
-              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
-                (p.metric_type === "protein" || p.metric_type === "yazio_protein") && formatDate(p.timestamp) === ts
-              );
-              if (summaryPt) return summaryPt.value || 0;
+            return timestamps.map((ts) => {
+              const onDay = points.filter((p: Point) => formatDate(p.timestamp) === ts);
 
-              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
-                p.metric_type === "consumed_item_protein" && formatDate(p.timestamp) === ts
-              );
-              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
-            })
-          );
+              const daily = onDay.find((p: Point) => dailyNames.includes(p.metric_type));
+              if (daily) return daily.value || 0;
 
-          setCarbValues(
-            timestamps.map((ts) => {
-              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
-                (p.metric_type === "carbohydrates" || p.metric_type === "yazio_carbs" || p.metric_type === "carbs") && formatDate(p.timestamp) === ts
-              );
-              if (summaryPt) return summaryPt.value || 0;
+              // Only when the day has no total of its own: summing both would count
+              // every meal twice.
+              return onDay
+                .filter((p: Point) => itemNames.includes(p.metric_type))
+                .reduce((acc: number, p: Point) => acc + (p.value || 0), 0);
+            });
+          };
 
-              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
-                p.metric_type === "consumed_item_carbs" && formatDate(p.timestamp) === ts
-              );
-              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
-            })
-          );
-
-          setFatValues(
-            timestamps.map((ts) => {
-              const summaryPt = points.find((p: { metric_type: string; timestamp: string }) =>
-                (p.metric_type === "fat" || p.metric_type === "yazio_fat") && formatDate(p.timestamp) === ts
-              );
-              if (summaryPt) return summaryPt.value || 0;
-
-              const itemPts = points.filter((p: { metric_type: string; timestamp: string }) =>
-                p.metric_type === "consumed_item_fat" && formatDate(p.timestamp) === ts
-              );
-              return itemPts.reduce((acc: number, p: { value: number }) => acc + (p.value || 0), 0);
-            })
-          );
-
-          setSleepValues(
-            timestamps.map((ts) => {
-              const pt = points.find((p: { metric_type: string; timestamp: string }) => p.metric_type === "sleep_score" && formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
-            })
-          );
-
-          setReadinessValues(
-            timestamps.map((ts) => {
-              const pt = points.find((p: { metric_type: string; timestamp: string }) => p.metric_type === "readiness_score" && formatDate(p.timestamp) === ts);
-              return pt ? pt.value : 0;
-            })
-          );
+          setCalorieValues(dailySeries("nutrition_energy", "nutrition_item_energy"));
+          setProteinValues(dailySeries("nutrition_protein"));
+          setCarbValues(dailySeries("nutrition_carbohydrates"));
+          setFatValues(dailySeries("nutrition_fat"));
+          setSleepValues(dailySeries("sleep_duration"));
+          setReadinessValues(dailySeries("whoop_recovery_score"));
         }
       } catch (err) {
         console.error("Failed to load dashboard data:", err);

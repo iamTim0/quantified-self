@@ -166,7 +166,7 @@ async def fetch_and_publish(
         await report_sync_result_to_core(
             task,
             status="idle",
-            message=f"{published_count} Standortpunkte aus Dawarich übertragen.",
+            message=f"{published_count} location point(s) published from Dawarich.",
             points_received=published_count,
         )
     except DawarichUnauthorizedError:
@@ -176,7 +176,7 @@ async def fetch_and_publish(
     except (DawarichRateLimitError, DawarichApiError) as e:
         logger.error("[req_id=%s] Failed to fetch Dawarich points: %s", task.request_id, e)
         await report_sync_result_to_core(
-            task, status="error", message=f"Dawarich API Fehler: {e}"[:500]
+            task, status="error", message=f"Dawarich API error: {e}"[:500]
         )
 
 

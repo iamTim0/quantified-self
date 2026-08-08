@@ -4,6 +4,16 @@ import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas.metrics import canonical_metric_type
+
+# Resolved through the registry rather than spelled out as literals: if one of these
+# is ever renamed in packages/shared-schemas/src/shared_schemas/metrics.py with the old
+# name kept as an alias, this importer follows the rename instead of quietly writing an
+# orphaned series -- and an unregistered name fails at import, not in production.
+METRIC_POINT = canonical_metric_type("location_point")
+METRIC_LATITUDE = canonical_metric_type("location_latitude")
+METRIC_LONGITUDE = canonical_metric_type("location_longitude")
+
 
 def generate_idempotency_key(
     tenant_id: str, source_id: str, metric_type: str, timestamp: str
@@ -77,12 +87,12 @@ def transform_dawarich_points(
         dp_point = {
             "tenant_id": tenant_id,
             "source_id": source_id,
-            "metric_type": "location_point",
+            "metric_type": METRIC_POINT,
             "timestamp": ts_iso,
             "value": 1.0,
             "metadata": metadata,
             "idempotency_key": generate_idempotency_key(
-                tenant_id, source_id, "location_point", ts_iso
+                tenant_id, source_id, METRIC_POINT, ts_iso
             ),
         }
         data_points.append(dp_point)
@@ -91,12 +101,12 @@ def transform_dawarich_points(
         dp_lat = {
             "tenant_id": tenant_id,
             "source_id": source_id,
-            "metric_type": "location_latitude",
+            "metric_type": METRIC_LATITUDE,
             "timestamp": ts_iso,
             "value": lat,
             "metadata": metadata,
             "idempotency_key": generate_idempotency_key(
-                tenant_id, source_id, "location_latitude", ts_iso
+                tenant_id, source_id, METRIC_LATITUDE, ts_iso
             ),
         }
         data_points.append(dp_lat)
@@ -105,12 +115,12 @@ def transform_dawarich_points(
         dp_lon = {
             "tenant_id": tenant_id,
             "source_id": source_id,
-            "metric_type": "location_longitude",
+            "metric_type": METRIC_LONGITUDE,
             "timestamp": ts_iso,
             "value": lon,
             "metadata": metadata,
             "idempotency_key": generate_idempotency_key(
-                tenant_id, source_id, "location_longitude", ts_iso
+                tenant_id, source_id, METRIC_LONGITUDE, ts_iso
             ),
         }
         data_points.append(dp_lon)

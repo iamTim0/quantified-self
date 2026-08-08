@@ -10,20 +10,31 @@ without a parseable timestamp is skipped rather than invented.
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
+
+logger = logging.getLogger(__name__)
+
 SOURCE_TYPE = "weather"
 
-# Provider variable -> canonical metric name.
+# Provider variable -> canonical metric name from the shared registry
+# (packages/shared-schemas/src/shared_schemas/metrics.py). The names used to carry
+# their unit as a suffix -- `weather_temperature_c`, `weather_wind_speed_kmh` -- which
+# is exactly what the registry replaced: the unit is a property of the metric, and
+# putting it in the name meant a unit change silently became a second metric.
+# Open-Meteo already delivers these variables in the registry's units, so nothing here
+# needs converting.
 METRIC_NAMES = {
-    "temperature_2m": "weather_temperature_c",
-    "apparent_temperature": "weather_apparent_temperature_c",
-    "relative_humidity_2m": "weather_humidity_pct",
-    "precipitation": "weather_precipitation_mm",
-    "surface_pressure": "weather_pressure_hpa",
-    "wind_speed_10m": "weather_wind_speed_kmh",
-    "cloud_cover": "weather_cloud_cover_pct",
+    "temperature_2m": "weather_temperature",
+    "apparent_temperature": "weather_temperature_apparent",
+    "relative_humidity_2m": "weather_humidity",
+    "precipitation": "weather_precipitation",
+    "surface_pressure": "weather_pressure",
+    "wind_speed_10m": "weather_wind_speed",
+    "cloud_cover": "weather_cloud_cover",
     "uv_index": "weather_uv_index",
 }
 
@@ -86,9 +97,19 @@ def transform(
                 }
             )
 
-        # Providers that already deliver a single named metric per row.
+        # Providers that already deliver a single named metric per row. The name comes
+        # from outside, so it goes through the registry rather than straight into the
+        # database -- an unrecognised one is dropped with a log line instead of minting
+        # a metric nobody can interpret.
         if "metric_type" in record and "value" in record:
-            metric = str(record["metric_type"])
+            try:
+                metric = canonical_metric_type(str(record["metric_type"]))
+            except UnknownMetricTypeError:
+                logger.warning(
+                    "Skipping unregistered metric_type %r from the weather provider",
+                    record["metric_type"],
+                )
+                continue
             try:
                 value = float(record["value"])
             except (TypeError, ValueError):

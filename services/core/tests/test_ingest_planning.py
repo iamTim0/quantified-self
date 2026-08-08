@@ -89,7 +89,7 @@ def test_first_sync_uses_the_full_lookback():
     )
     assert window.end == now
     assert window.start == now - timedelta(days=30)
-    assert "Erstimport" in reason
+    assert "First import" in reason
 
 
 def test_subsequent_sync_resumes_with_overlap():
@@ -101,7 +101,7 @@ def test_subsequent_sync_resumes_with_overlap():
     )
     assert window.start == last - timedelta(hours=2)
     assert window.end == now
-    assert "Überlappung" in reason
+    assert "overlap" in reason
 
 
 def test_window_is_clamped_to_configured_lookback():
@@ -114,7 +114,7 @@ def test_window_is_clamped_to_configured_lookback():
         last_success_end=BASE,
     )
     assert window.start == now - timedelta(days=30)
-    assert "Lookback" in reason
+    assert "lookback" in reason
 
 
 def test_window_extends_to_cover_a_known_gap():
@@ -130,7 +130,7 @@ def test_window_extends_to_cover_a_known_gap():
         earliest_known_gap=gap_at,
     )
     assert window.start == gap_at
-    assert "Datenlücke" in reason
+    assert "oldest known gap" in reason
 
 
 def test_window_never_inverts_when_last_success_is_in_the_future():
@@ -201,7 +201,7 @@ async def test_fully_covered_range_is_skipped():
 
     assert plan.missing == []
     assert plan.recommended is None
-    assert "bereits vollständig vorhanden" in plan.reason
+    assert "already complete" in plan.reason
     assert plan.covered
 
 
@@ -226,7 +226,7 @@ async def test_trailing_gap_narrows_the_import_to_the_new_range():
     assert plan.recommended is not None
     assert plan.recommended.start == BASE + timedelta(days=5)
     assert plan.recommended.end == BASE + timedelta(days=8)
-    assert "Importiert wird nur der neue Zeitraum" in plan.reason
+    assert "Only the new period" in plan.reason
 
 
 @pytest.mark.asyncio
@@ -269,7 +269,7 @@ async def test_heavily_fragmented_data_falls_back_to_full_import():
 
     assert plan.confidence == "low"
     assert plan.missing == [window]
-    assert "unregelmäßig" in plan.reason
+    assert "too irregular" in plan.reason
 
 
 @pytest.mark.asyncio
@@ -286,7 +286,7 @@ async def test_force_mode_skips_nothing_and_warns():
     assert plan.covered == []
     assert plan.missing == [window]
     assert plan.recommended == window
-    assert "Verarbeitungsaufwand" in plan.reason
+    assert "costs the work" in plan.reason
 
 
 @pytest.mark.asyncio

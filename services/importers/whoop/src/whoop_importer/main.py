@@ -170,7 +170,7 @@ async def fetch_and_publish(
         await report_sync_result_to_core(
             task,
             status="idle",
-            message=f"{published_count} Datenpunkte aus WHOOP übertragen.",
+            message=f"{published_count} data point(s) published from WHOOP.",
             points_received=published_count,
         )
     except WhoopUnauthorizedError:
@@ -180,7 +180,7 @@ async def fetch_and_publish(
     except (WhoopRateLimitError, WhoopApiError) as e:
         logger.error("[req_id=%s] Failed to fetch WHOOP metrics: %s", task.request_id, e)
         await report_sync_result_to_core(
-            task, status="error", message=f"WHOOP API Fehler: {e}"[:500]
+            task, status="error", message=f"WHOOP API error: {e}"[:500]
         )
 
 

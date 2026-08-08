@@ -16,6 +16,7 @@ theme:
 nav:
   - Start: index.md
   - Architektur: architecture.md
+  - Metriken: metrics.md
   - Release & Deployment: deployment.md
   - Betrieb: operations.md
   - Fehlerbehebung: troubleshooting.md

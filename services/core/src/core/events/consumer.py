@@ -10,6 +10,12 @@ Two things the previous version did not do:
 * It logged duplicates but counted nothing, so there was no way to tell whether a
   sync had actually contributed anything. Counts now accumulate on the ``SyncRun``
   that triggered the sync, which is also what the adaptive-window logic reads.
+
+It is also where ``metric_type`` is checked against the shared registry. This is the
+one path every importer's data passes through, and it previously wrote
+``data.get("metric_type")`` unexamined -- so a typo, a provider's renamed field or a
+new HealthKit type became a metric of its own, and the ``max_length=128`` check on the
+HTTP path did not apply here at all.
 """
 
 import asyncio
@@ -19,6 +25,7 @@ import uuid
 from datetime import datetime, timezone
 
 import nats
+from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 
@@ -53,6 +60,37 @@ async def process_message(msg):
             await msg.ack()
             return
 
+        # INVARIANT: CanonicalMetricNames — only names the registry defines, or names
+        # under a registered dynamic namespace, reach the database. Acked rather than
+        # redelivered: an unregistered name is a code or configuration problem that
+        # redelivery cannot fix, and the event would otherwise loop forever.
+        raw_metric_type = data.get("metric_type")
+        try:
+            metric_type = canonical_metric_type(str(raw_metric_type or ""))
+        except UnknownMetricTypeError as exc:
+            logger.error(
+                "Rejected event for tenant=%s: %s. Acking to prevent redelivery.",
+                tenant_id,
+                exc,
+            )
+            await msg.ack()
+            return
+
+        if metric_type != raw_metric_type:
+            # The importer hashed the alias, so its key does not describe the name we
+            # would store. Rewriting one without the other is how a series ends up with
+            # two rows per reading.
+            logger.error(
+                "Rejected event for tenant=%s: metric_type %r is a legacy alias of %r; "
+                "the importer must canonicalise before deriving the idempotency key. "
+                "Acking to prevent redelivery.",
+                tenant_id,
+                raw_metric_type,
+                metric_type,
+            )
+            await msg.ack()
+            return
+
         ts_raw = data.get("timestamp")
         if isinstance(ts_raw, str):
             ts_val = datetime.fromisoformat(ts_raw)
@@ -66,7 +104,7 @@ async def process_message(msg):
                 id=str(uuid.uuid4()),
                 tenant_id=tenant_id,
                 source_id=data.get("source_id"),
-                metric_type=data.get("metric_type"),
+                metric_type=metric_type,
                 timestamp=ts_val,
                 value=data.get("value"),
                 metadata_=data.get("metadata"),
@@ -110,7 +148,7 @@ async def process_message(msg):
                     cfg = dict(ds.config or {})
                     cfg["sync_status"] = "idle"
                     cfg["last_sync_at"] = datetime.now(timezone.utc).isoformat()
-                    cfg["last_sync_message"] = "Erfolgreich Datenpunkte importiert."
+                    cfg["last_sync_message"] = "Data points imported."
                     ds.config = cfg
 
             await session.commit()

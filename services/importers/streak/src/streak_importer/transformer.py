@@ -1,4 +1,13 @@
-"""Transformer for Streak 2.0 Gym Log JSON into Standardized DataPoints."""
+"""Transformer for Streak 2.0 Gym Log JSON into Standardized DataPoints.
+
+The metrics moved from `workout_*` to `strength_*` when the shared registry
+(packages/shared-schemas/src/shared_schemas/metrics.py) was introduced. They had
+been sharing a prefix with Apple Health's and WHOOP's cardio-session aggregates
+without sharing their meaning: `strength_set_heart_rate_max` is the peak pulse
+within one set of an exercise, `workout_heart_rate_max` the peak across a whole
+session, and the two reading as variants of each other is precisely the confusion
+the registry exists to remove.
+"""
 
 import hashlib
 from datetime import datetime, timezone
@@ -90,12 +99,12 @@ def transform_streak_export_json(
                 dp_weight = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "workout_set_weight_kg",
+                    "metric_type": "strength_set_weight",
                     "timestamp": set_ts,
                     "value": weight_val,
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"workout_set_weight_kg_{set_id}", set_ts
+                        tenant_id, source_id, f"strength_set_weight_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -108,12 +117,12 @@ def transform_streak_export_json(
                 dp_reps = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "workout_set_reps",
+                    "metric_type": "strength_set_reps",
                     "timestamp": set_ts,
                     "value": reps_val,
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"workout_set_reps_{set_id}", set_ts
+                        tenant_id, source_id, f"strength_set_reps_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -127,12 +136,12 @@ def transform_streak_export_json(
                     dp_vol = {
                         "tenant_id": tenant_id,
                         "source_id": source_id,
-                        "metric_type": "workout_set_volume",
+                        "metric_type": "strength_set_volume",
                         "timestamp": set_ts,
                         "value": set_vol,
                         "metadata": base_metadata,
                         "idempotency_key": generate_idempotency_key(
-                            tenant_id, source_id, f"workout_set_volume_{set_id}", set_ts
+                            tenant_id, source_id, f"strength_set_volume_{set_id}", set_ts
                         ),
                         "source_type": "streak",
                     }
@@ -143,12 +152,12 @@ def transform_streak_export_json(
                 dp_pulse = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "workout_set_heart_rate_max",
+                    "metric_type": "strength_set_heart_rate_max",
                     "timestamp": set_ts,
                     "value": float(max_pulse),
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"workout_set_heart_rate_max_{set_id}", set_ts
+                        tenant_id, source_id, f"strength_set_heart_rate_max_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -166,24 +175,24 @@ def transform_streak_export_json(
             dp_w_vol = {
                 "tenant_id": tenant_id,
                 "source_id": source_id,
-                "metric_type": "workout_total_volume",
+                "metric_type": "strength_session_volume",
                 "timestamp": workout_ts,
                 "value": total_workout_volume,
                 "metadata": workout_summary_meta,
                 "idempotency_key": generate_idempotency_key(
-                    tenant_id, source_id, "workout_total_volume", workout_ts
+                    tenant_id, source_id, "strength_session_volume", workout_ts
                 ),
                 "source_type": "streak",
             }
             dp_w_sets = {
                 "tenant_id": tenant_id,
                 "source_id": source_id,
-                "metric_type": "workout_total_sets",
+                "metric_type": "strength_session_sets",
                 "timestamp": workout_ts,
                 "value": float(total_workout_sets),
                 "metadata": workout_summary_meta,
                 "idempotency_key": generate_idempotency_key(
-                    tenant_id, source_id, "workout_total_sets", workout_ts
+                    tenant_id, source_id, "strength_session_sets", workout_ts
                 ),
                 "source_type": "streak",
             }

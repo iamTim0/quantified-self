@@ -63,10 +63,15 @@ setzen, falls die automatische Erkennung nicht passt.
 
 | Metrik | Bedeutung |
 | --- | --- |
-| `calendar_event_count` | Anzahl der Termine pro Tag |
-| `calendar_busy_minutes` | Summe belegter Minuten pro Tag |
-| `calendar_busy_hours` | Summe belegter Stunden pro Tag |
-| `calendar_meeting_duration_minutes` | Dauer eines einzelnen Termins |
+| `calendar_event_count` | Anzahl der Termine pro Tag (`count`) |
+| `calendar_busy_duration` | Summe belegter Zeit pro Tag (`min`) |
+| `calendar_meeting_duration` | Dauer eines einzelnen Termins (`min`) |
+
+`calendar_busy_hours` gibt es nicht mehr. Die Metrik trug dieselbe Zahl wie
+`calendar_busy_minutes`, nur in einer anderen Einheit - allein deshalb, weil die
+Einheit im Namen stand. Die Korrelationsanalyse meldete die beiden folgerichtig als
+perfekt korrelierte Serien. Die Einheit steht jetzt in der Registry, eine Metrik
+genügt, und die Darstellung in Stunden ist Sache der Oberfläche.
 
 Pro-Termin-Datenpunkte werden über UID und ggf. `RECURRENCE-ID` eindeutig
 identifiziert. Zwei verschiedene Termine zur selben Minute kollidieren daher nicht.
@@ -74,7 +79,7 @@ identifiziert. Zwei verschiedene Termine zur selben Minute kollidieren daher nic
 ## Daten abrufen
 
 ```http
-GET /api/v1/data/metrics?metric_type=calendar_busy_hours&start_time=<iso>&end_time=<iso>
+GET /api/v1/data/metrics?metric_type=calendar_busy_duration&start_time=<iso>&end_time=<iso>
 Authorization: Bearer <jwt>
 ```
 
@@ -103,3 +108,5 @@ nicht erforderlich.
 - [iCalendar.org](https://icalendar.org/) für Standardressourcen und Validatoren.
 - [RFC 5545 / iCalendar Überblick](https://en.wikipedia.org/wiki/ICalendar) als
   Einstieg in Felder wie `VEVENT`, `DTSTART` und `DTEND`.
+
+Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
