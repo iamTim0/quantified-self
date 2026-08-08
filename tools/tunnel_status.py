@@ -48,7 +48,8 @@ def main():
     is_named_tunnel = bool(tunnel_token) or "Starting Named Cloudflare Tunnel" in logs or "Registered tunnel connection" in logs or "Starting tunnel" in logs
 
     if is_named_tunnel:
-        domain = "https://quantified-self.example.com"
+        # From the environment: the tunnel's hostname belongs to whoever runs it.
+        domain = os.environ.get("PUBLIC_BASE_URL", "").rstrip("/") or "https://<your-tunnel-host>"
         print("\n======================================================================")
         print("  NAMED CLOUDFLARE TUNNEL IS ACTIVE!")
         print("======================================================================")

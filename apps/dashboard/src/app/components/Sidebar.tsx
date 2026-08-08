@@ -85,8 +85,11 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
             GENERAL
           </span>
           <nav className="space-y-1">
+            {/* Relative on purpose: Traefik serves the docs container under /docs
+                on this same host, so an absolute URL only ever named one
+                particular deployment -- and put its owner's domain in the source. */}
             <a
-              href="https://quantified-self.example.com/docs/"
+              href="/docs/"
               target="_blank"
               rel="noreferrer"
               className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"

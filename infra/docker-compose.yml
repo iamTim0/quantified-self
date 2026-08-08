@@ -39,7 +39,7 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
       - NATS_URL=nats://nats:4222
-      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     networks:
       - qs-network
 
@@ -89,10 +89,10 @@ services:
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - ENVIRONMENT=dev
-      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
       - "traefik.http.routers.gateway.entrypoints=web"
       - "traefik.http.routers.gateway.priority=10"
       - "traefik.http.services.gateway.loadbalancer.server.port=8000"
@@ -169,7 +169,7 @@ services:
       - PORT=8006
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.streak-ingest.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
+      - "traefik.http.routers.streak-ingest.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
       - "traefik.http.routers.streak-ingest.entrypoints=web"
       - "traefik.http.routers.streak-ingest.priority=100"
       - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
@@ -204,7 +204,7 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
       - "traefik.http.routers.dashboard.entrypoints=web"
       - "traefik.http.routers.dashboard.priority=1"
       - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
@@ -219,7 +219,7 @@ services:
       - ..:/docs-workspace:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"

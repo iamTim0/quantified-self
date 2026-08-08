@@ -8,8 +8,9 @@ A SaaS-ready, microservice-based personal data analytics platform.
 
 ## Documentation
 
-📖 **<https://quantified-self.example.com/docs/>** — hosted from this repository
-(`docs/`, built with Material for MkDocs and served as a separate container).
+Built from `docs/` with Material for MkDocs and served as its own container. A
+deployment publishes it at `/docs` on the same host as the dashboard; the
+hostname comes from `PUBLIC_HOST` and is not baked into the repository.
 
 Locally: `task docs:serve` → <http://127.0.0.1:8003>
 
@@ -165,6 +166,8 @@ task docs:serve                  # Documentation at http://localhost:8003
 | `DATABASE_URL` | PostgreSQL connection string | required |
 | `NATS_URL` | NATS JetStream URL | required |
 | `ENVIRONMENT` | `production` makes the secret checks below fatal instead of a warning | recommended |
+| `PUBLIC_HOST` | Hostname Traefik serves on. Deliberately absent from this repository | required |
+| `ALLOW_REGISTRATION` | Self-registration. **Defaults to `false`** — create the first account with `python -m core.create_owner` | optional |
 | `JWT_SECRET` | Signs user access tokens | **required — the default is published here** |
 | `INTERNAL_SERVICE_SECRET` | Signs internal service credentials; identical on Core and every importer | **required** |
 | `ENCRYPTION_KEY` | Fernet key for connector credentials at rest | **required — read the note below first** |

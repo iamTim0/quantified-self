@@ -189,7 +189,12 @@ jobs:
           # Gateway defaults ENVIRONMENT to production (it is the edge; strict is
           # the right default there). CI is not production, and there is no .env
           # on the runner.
-          ENVIRONMENT=dev SCHEDULER_ENABLED=false uv run --directory services/core \
+          #
+          # ALLOW_REGISTRATION: off by default now, and the browser tests create
+          # their own accounts through the signup endpoint, because rule 10 says
+          # a test may not assume a pre-existing one.
+          ENVIRONMENT=dev SCHEDULER_ENABLED=false ALLOW_REGISTRATION=true \
+            uv run --directory services/core \
             uvicorn core.main:app --host 127.0.0.1 --port 8001 --log-level warning \
             > /tmp/core.log 2>&1 &
 
@@ -201,7 +206,8 @@ jobs:
           wait_for "Next" http://127.0.0.1:3000 /tmp/next.log
 
           # The Gateway last: it proxies both of the above.
-          ENVIRONMENT=dev \
+          # The Gateway refuses /auth/signup on its own, independently of Core.
+          ENVIRONMENT=dev ALLOW_REGISTRATION=true \
           CORE_SERVICE_URL=http://127.0.0.1:8001 \
           DASHBOARD_URL=http://127.0.0.1:3000 \
           uv run --directory services/api-gateway \
@@ -249,6 +255,12 @@ jobs:
       # why that split.
       - name: Lint specifications
         run: python .agents/scripts/lint_specs.py
+
+      # AGENTS.md rule 14. Seconds to run, and the only moment it can still
+      # help: once a personal address, a deployment hostname or a password hash
+      # is committed, no later commit takes it out of the history.
+      - name: Check for personal information
+        run: python .agents/scripts/check_private_info.py
 
   test-importers:
     name: Importers
@@ -315,17 +327,17 @@ jobs:
           # the deployed stack (docs live under /docs on the same host) but have
           # no file on disk, so they are excluded after resolution.
           #
-          # The deployment host is excluded because a link checker on every push
-          # should not fail when the environment happens to be down -- that is
-          # what uptime monitoring is for. It returned 530 (Cloudflare: origin
-          # unreachable) on the run that prompted this change.
+          # example.com is excluded because it is the placeholder that replaced a
+          # real deployment hostname. No deployment host appears in this
+          # repository any more: it comes from PUBLIC_HOST at deploy time, so
+          # publishing the repository does not publish where it runs.
           args: >-
             --no-progress --max-concurrency 4
             --root-dir ${{ github.workspace }}
             --exclude-path site/
             --exclude '^https?://localhost'
             --exclude '^https?://127\.0\.0\.1'
-            --exclude 'quantified-self\.hoffschroeer\.dev'
+            --exclude '^https?://example\.com'
             --exclude 'file://.*/legal/'
             'docs/**/*.md' 'README.md'
           fail: true

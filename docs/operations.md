@@ -33,7 +33,8 @@ task docs:build        # MkDocs --strict
 | `ENCRYPTION_KEY` | Fernet-Schlüssel für Connector-Zugangsdaten | **ja** |
 | `ACCESS_TOKEN_TTL_MINUTES` | Laufzeit Zugriffstoken (Standard 720) | nein |
 | `REFRESH_TOKEN_TTL_DAYS` | Laufzeit Erneuerungstoken (Standard 30) | nein |
-| `ALLOW_REGISTRATION` | Selbstregistrierung erlauben | nein |
+| `ALLOW_REGISTRATION` | Selbstregistrierung erlauben. **Standard `false`** — das erste Konto legt `python -m core.create_owner` an | nein |
+| `PUBLIC_HOST` | Hostname, unter dem Traefik ausliefert. Steht bewusst nirgends im Repository | ja |
 | `ALLOWED_ORIGINS` | CORS-Ursprünge des Gateways | ja |
 | `MAP_TILE_HOSTS` | erlaubte Kachel-Hosts in der CSP | nein |
 
@@ -90,6 +91,37 @@ Abbruch ist also gefahrlos.
     dieselbe Datenbank zwischenzeitlich mit unterschiedlicher Konfiguration
     betrieben wurde. Diese Zugangsdaten sind nicht wiederherstellbar; sie müssen im
     Dashboard neu hinterlegt werden. Danach läuft die Umschlüsselung durch.
+
+### Das erste Konto anlegen
+
+`ALLOW_REGISTRATION` steht standardmäßig auf `false`. Eine persönliche
+Analyseplattform, die für jeden offen ist, sollte eine Entscheidung sein und
+nicht das, was passiert, wenn man nichts konfiguriert. Damit gibt es allerdings
+zunächst keinen Weg hinein — dafür ist dieser Befehl da:
+
+```bash
+docker compose -f docker-compose.coolify.yml run --rm core \
+  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
+```
+
+Das Passwort wird abgefragt, nicht als Argument übergeben: Kommandozeilen landen
+in der Shell-History, in `ps` und in CI-Logs. Für automatisierte Einrichtung geht
+`QS_OWNER_PASSWORD` als Umgebungsvariable. Mindestlänge sind 12 Zeichen — dieses
+Konto ist der gesamte Zugang, und wer es anlegt, kann frei wählen.
+
+Ein zweiter Aufruf mit derselben Adresse **überschreibt nichts**, sondern bricht
+ab. Ein Passwort zurückzusetzen ist `--reset-password` und damit eine bewusste
+Anweisung; das beendet zugleich alle bestehenden Sitzungen des Kontos.
+
+Bewusst ein Befehl und kein Startschritt: Regel 9 verbietet Diensten das Anlegen
+von Daten beim Hochfahren, und warum, steht in der Geschichte dieses Repositories
+— `infra/db/init.sql` legte früher ein Konto mit einem mitgeliefertem
+Passwort-Hash an, sodass jeder Klon dieselben Zugangsdaten für dieselbe Adresse
+enthielt.
+
+Wer Selbstregistrierung tatsächlich will, setzt `ALLOW_REGISTRATION=true` — und
+sollte wissen, dass die Anwendung dann für jeden offensteht, der die Adresse
+kennt.
 
 ## Deployment
 

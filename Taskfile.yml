@@ -99,6 +99,14 @@ tasks:
     requires:
       vars: [SERVICE]
 
+  check:private:
+    desc: "Fail if a tracked file contains personal or environment-specific information"
+    # AGENTS.md rule 14. This repository is meant to be published, and a
+    # committed email address, deployment hostname, local path or password hash
+    # cannot be taken back out by a later commit.
+    cmds:
+      - python .agents/scripts/check_private_info.py
+
   fizz:lint:
     desc: "Structural check of the Fizzbee specs — runs anywhere, including plain Windows"
     # Not a model checker: it explores no state space. It catches the mistakes

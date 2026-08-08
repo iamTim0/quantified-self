@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const parseAllowedOrigins = (): string[] => {
-  const origins = new Set<string>(["localhost", "127.0.0.1", "quantified-self.example.com"]);
+  // Only loopback is hardcoded. A deployment's own hostname arrives through
+  // the environment variables read below -- baking one in meant the operator's
+  // personal domain lived in the source of a repository meant to be published.
+  const origins = new Set<string>(["localhost", "127.0.0.1"]);
   const envVars = [
     process.env.ALLOWED_DEV_ORIGINS,
     process.env.ALLOWED_ORIGINS,

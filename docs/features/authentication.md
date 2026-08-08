@@ -190,6 +190,17 @@ Anbieter registriert sein.
 Die Gegenrichtung — der Anbieter beendet die Sitzung und teilt uns das mit —
 beschreibt [Back-Channel-Logout](oidc.md#back-channel-logout).
 
+## Registrierung ist standardmäßig geschlossen
+
+`ALLOW_REGISTRATION` steht auf `false`. Das erste Konto wird mit
+`python -m core.create_owner` angelegt; der vollständige Ablauf steht unter
+[Das erste Konto anlegen](../operations.md#das-erste-konto-anlegen).
+
+Zwei Eigenschaften des Befehls sind Absicht: das Passwort kommt aus einer
+Eingabeaufforderung und nie aus einem Argument, und ein zweiter Aufruf mit
+derselben Adresse bricht ab, statt das vorhandene Passwort stillschweigend zu
+ersetzen.
+
 ## Serverseitiger Route-Guard
 
 Ein Deep-Link auf `/profile` ohne Sitzung rendert nicht mehr erst das Grundgerüst,

@@ -44,7 +44,11 @@ class Settings(BaseSettings):
     # "derive a deterministic dev value" — see core.security.tokens.
     INTERNAL_SERVICE_SECRET: str = ""
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
-    ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
+    # Off by default: this is a personal analytics platform, and a public
+    # deployment with open signup is a decision, not a default. Create the
+    # first account with `python -m core.create_owner`; turn this on only
+    # for a deployment that is meant to accept strangers.
+    ALLOW_REGISTRATION: bool = False
 
     # Periodic sync scheduling. On by default: `poll_interval_hours` was
     # configurable, displayed, and read by nothing that started a sync, so every

@@ -61,7 +61,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY; re-encrypt stored credentials before changing it - see docs/operations.md}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
-      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     networks:
       - qs-network
 
@@ -114,10 +114,10 @@ services:
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
-      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
       - "traefik.http.routers.gateway.entrypoints=web"
       - "traefik.http.routers.gateway.priority=10"
       - "traefik.http.services.gateway.loadbalancer.server.port=8000"
@@ -137,7 +137,7 @@ services:
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api-gateway:8000}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
       - "traefik.http.routers.dashboard.entrypoints=web"
       - "traefik.http.routers.dashboard.priority=1"
       - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
@@ -154,7 +154,7 @@ services:
     restart: always
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=(Host(`quantified-self.example.com`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"

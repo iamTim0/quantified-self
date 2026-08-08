@@ -25,6 +25,15 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 11. **Tenant & User Separation**: Tenants represent workspace/organization containers (`tenants` table). Users represent individual accounts (`users` table with `email`, `password_hash`, `tenant_id`, `role`). JWT claims MUST contain `user_id`, `tenant_id`, and `role`.
 12. **Zero Plaintext Secrets in Broker or Logs**: Access tokens/secrets MUST NEVER be sent in plaintext over NATS Message Broker events, logged to stdout/stderr, or stored unencrypted. All secrets are encrypted at rest with Fernet AES-256 using a shared secret `ENCRYPTION_KEY` (with a deterministic `DEFAULT_DEV_KEY` fallback for local dev).
 13. **End-to-End Correlation ID (`X-Request-ID`)**: Every HTTP request originating at Gateway or client MUST be tagged with a unique `X-Request-ID`. All downstream microservices (Core, Importers, Analysis) MUST propagate `X-Request-ID` in HTTP headers, NATS events, and log outputs (`[req_id=...]`).
+14. **No Personal or Environment-Specific Information in the Repository**: This repository is intended to be published. Nothing committed to it may identify the person who runs it, the machine it was written on, or where it is deployed. Specifically forbidden anywhere in tracked files — source, tests, fixtures, documentation, compose files, commit messages, planning notes:
+    - **Real email addresses.** Use `@example.com` or `@example.test`. The one exception is the author line in `LICENSE`, which is a copyright notice and belongs there.
+    - **Real password hashes**, even "just a dev account". `infra/db/init.sql` once seeded an owner with a committed bcrypt hash for a real address; every clone carried the credentials for that account.
+    - **Deployment hostnames and public URLs.** These come from `PUBLIC_HOST` / `PUBLIC_BASE_URL` at deploy time. A hostname in the source tells a reader of the public repository exactly what to point their tools at.
+    - **Absolute local filesystem paths** (`C:\Users\…`, `/home/…`, `/Users/…`). Use repository-relative paths.
+    - **Real personal data of any kind** — names in placeholders, actual health data, actual location traces, screenshots containing either.
+    - **Agent working state.** Per-run scratch directories and AI planning artifacts are not project documentation and MUST NOT be committed, least of all wired into the published documentation nav. Durable outputs belong in `specs/`, `AGENT_PROGRESS.md` or `docs/` under their own names.
+
+    Development *defaults* for secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, …) are a deliberate exception: they are published on purpose so local development needs no configuration, and production refuses to start on them. Everything above is not that — it is information about a particular person and a particular deployment, and no mechanism downstream can undo committing it.
 
 ---
 
@@ -88,6 +97,9 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ Tests that depend on pre-existing database state or pre-run seed commands.
 - ❌ Skipping Fizzbee specifications for new, complex distributed coordination.
 - ❌ Sharing mutable state between microservices.
+- ❌ A real email address, deployment hostname, absolute local path or personal name anywhere in a tracked file (rule 14).
+- ❌ Committing agent scratch directories or AI planning documents, and never into the published docs nav.
+- ❌ Self-registration enabled by default. `ALLOW_REGISTRATION` is `False`; the first account is created with `python -m core.create_owner`.
 
 ## Documentation Requirements for New Features
 
