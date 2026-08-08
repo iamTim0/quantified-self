@@ -185,8 +185,11 @@ jobs:
           # `fromJSON('')` over in the build job with "Unexpected end of JSON
           # input", pointing at a line that is not the problem.
           include=$(python tools/build_images.py --matrix)
-          echo "include=$include" >> "$GITHUB_OUTPUT"
-          echo "count=$(printf '%s' "$include" | jq 'length')" >> "$GITHUB_OUTPUT"
+          count=$(printf '%s' "$include" | jq 'length')
+          {
+            echo "include=$include"
+            echo "count=$count"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Resolve the registry and the ref
         id: registry
