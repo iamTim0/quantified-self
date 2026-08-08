@@ -5,20 +5,41 @@ Software es weitergibt und welche Pflichten daraus folgen. Sie ist eine
 Bestandsaufnahme, **keine Rechtsberatung** — die Stellen, an denen es darauf
 ankommt, sind unten ausdrücklich als solche markiert.
 
-## Eigener Code: MIT
+## Eigener Code: AGPL-3.0
 
-`LICENSE` im Repository-Wurzelverzeichnis, MIT. Damit das nicht nur dort steht:
+`LICENSE` im Repository-Wurzelverzeichnis: GNU Affero General Public License,
+Version 3, im Wortlaut der FSF, mit einer Copyright-Zeile davor. Damit das nicht
+nur dort steht:
 
 - alle dreizehn `pyproject.toml` und die `package.json` des Dashboards deklarieren
-  `license = "MIT"`,
-- alle dreizehn Images tragen `org.opencontainers.image.licenses=MIT` als
-  OCI-Label (gesetzt in `.github/workflows/release.yml`),
+  `license = "AGPL-3.0-only"`,
+- alle dreizehn Images tragen `org.opencontainers.image.licenses=AGPL-3.0-only`
+  als OCI-Label,
 - das Deployment-Bundle jedes Releases enthält `LICENSE`.
 
-MIT heißt: jeder darf den Code nehmen, ändern, verkaufen. Auch jemand, der damit
-denselben Dienst anbietet. Das ist eine Entscheidung, keine Nachlässigkeit — aber
-wer sie später ändern will, sollte wissen, dass jede bereits veröffentlichte
-Version für immer MIT bleibt.
+Vorher war das Projekt MIT lizenziert. Der Wechsel war möglich, weil zu diesem
+Zeitpunkt **niemand** eine Kopie erhalten hatte: das Repository war privat, die
+GHCR-Packages waren privat, und das eine Release `v0.1.0` wurde gelöscht. MIT ist
+eine Rechteeinräumung an Empfänger — ohne Empfänger gibt es nichts, was bindet. Die
+Commit-Historie kennt genau einen Autor, also war auch keine Zustimmung Dritter
+nötig.
+
+!!! warning "§13 ist eine Pflicht für den Betreiber, nicht nur für Weitergeber"
+    Wer die Software über ein Netzwerk benutzbar macht, muss den Nutzern den
+    **Corresponding Source der laufenden Version** anbieten. Ein Link auf den
+    Default-Branch genügt dafür nicht — deployter Stand und Branch-Spitze laufen
+    beim nächsten Merge auseinander.
+
+    Deshalb bekommt das Dashboard-Image die Version und den Commit als Build-Argument
+    (`SOURCE_VERSION`, `SOURCE_COMMIT`, gesetzt vom Release-Workflow), und der Footer
+    verlinkt genau diesen Stand. Ein lokaler Build ohne diese Argumente verlinkt das
+    Repository. Wer das Image selbst baut und öffentlich betreibt, muss die
+    Argumente setzen oder den Link anders korrekt füllen.
+
+Die AGPL erlaubt Selbstbetrieb und Veränderung uneingeschränkt. Wer den Dienst
+für andere betreibt und den Code dafür ändert, muss diese Änderungen offenlegen.
+Für die Abhängigkeiten ist das unkritisch: alle sind MIT, BSD-2-Clause, ISC oder
+Apache-2.0, und Apache-2.0 ist mit GPLv3 vereinbar (mit v2 wäre es das nicht).
 
 ## Weitergegebene fremde Software
 
@@ -57,7 +78,7 @@ Lizenztext bei der Weitergabe verlangt. Die Texte liegen unter
 | Komponente | Lizenz | Was das bedeutet |
 | --- | --- | --- |
 | TimescaleDB | Apache-2 **und** TSL | Genutzt wird ausschließlich `create_hypertable` — das liegt im Apache-2-Teil. Die TSL-Features (Compression, Continuous Aggregates, Retention Policies) sind derzeit **nicht** im Einsatz. |
-| PostGIS | GPL-2.0 | Läuft als eigener PostgreSQL-Prozess und wird über SQL erreicht. Das berührt den MIT-Code nicht; GPL kennt keine Netzwerk-Klausel (die hat die AGPL). |
+| PostGIS | GPL-2.0 | Läuft als eigener PostgreSQL-Prozess und wird über SQL erreicht — getrennte Programme, keine Verlinkung. Mit AGPL-3.0 ist GPL-2.0-only ohnehin nur so vereinbar, nicht im selben Prozess. |
 | NATS, cloudflared, gRPC, asyncpg | Apache-2.0 | Verlangen die Weitergabe vorhandener `NOTICE`-Dateien — erfüllt, weil die Images die Pakete samt ihrer Lizenzdateien enthalten. |
 | Traefik, Material for MkDocs, Bun, Next.js, React | MIT | Hinweis muss mitreisen; siehe oben. |
 | Leaflet | BSD-2-Clause | Wie MIT, mit ausdrücklicher Klausel — steht in `THIRD-PARTY-NOTICES.txt`. |
@@ -83,12 +104,10 @@ die praktisch riskantesten, und keiner davon ist eine Lizenzfrage im engeren Sin
    und belastbare Auskunfts-, Export- und Löschwege. Tenant-Trennung und
    verschlüsselte Connector-Zugangsdaten sind die halbe Miete, die andere Hälfte
    ist Papier. **Auch das ist ein Anwaltsthema, nicht ein Code-Thema.**
-3. **Die eigene Lizenz.** MIT erlaubt jedem, denselben Dienst zu betreiben. Wer das
-   nicht will, entscheidet sich üblicherweise für AGPL-3.0 (Selbstbetrieb bleibt
-   frei, Änderungen eines Wettbewerbers müssen offen sein) oder eine
-   source-available Lizenz wie BSL 1.1, die das Anbieten als Dienst befristet
-   einschränkt und danach in eine offene Lizenz übergeht. **Diese Wahl ist nur so
-   lange kostenlos, wie das Repository privat ist.**
+3. **Die eigene Lizenz** ist entschieden: AGPL-3.0. Selbstbetrieb bleibt für jeden
+   frei, aber wer den Dienst betreibt und den Code dafür ändert, muss die Änderungen
+   offenlegen. Der Preis dafür ist §13, siehe oben — die Pflicht trifft auch den
+   eigenen Betrieb.
 4. **WHOOP.** Offizielle Developer-API (`api.prod.whoop.com/developer`) — die
    Nutzung läuft unter deren Developer-Terms, kommerzielle Nutzung braucht dort
    üblicherweise eine Freigabe.

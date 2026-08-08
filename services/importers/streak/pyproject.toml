@@ -1,7 +1,7 @@
 [project]
 name = "streak-importer"
 version = "0.1.0"
-license = "MIT"
+license = "AGPL-3.0-only"
 description = "Quantified Self Streak 2.0 Gym Log Importer Service"
 readme = "README.md"
 requires-python = ">=3.11"

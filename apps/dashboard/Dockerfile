@@ -42,6 +42,19 @@ COPY . ./
 #     docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com .
 ARG NEXT_PUBLIC_API_URL=""
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
+# Which source this build corresponds to. AGPL-3.0 §13 requires that anyone
+# interacting with the program over a network is offered the Corresponding Source
+# of *the version they are using*, so the footer has to name it rather than point
+# vaguely at the default branch. Unlike NEXT_PUBLIC_API_URL these belong at build
+# time: they describe the artefact, not the host it runs on, so baking them is
+# correct. The release workflow passes both; a local build leaves them empty and
+# the footer falls back to the repository itself.
+ARG SOURCE_VERSION=""
+ARG SOURCE_COMMIT=""
+ENV NEXT_PUBLIC_SOURCE_VERSION=$SOURCE_VERSION
+ENV NEXT_PUBLIC_SOURCE_COMMIT=$SOURCE_COMMIT
+
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN bun run build

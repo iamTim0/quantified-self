@@ -245,8 +245,15 @@ The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, i
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE). Every package manifest declares it, every image
-carries it as an OCI label, and each release bundle ships the file.
+AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Timo Hoffschröer. Every
+package manifest declares it, every image carries it as an OCI label, and each
+release bundle ships the file.
+
+Self-hosting and modification are unrestricted. Running a *modified* version as a
+network service obliges you to publish those modifications, and §13 obliges any
+operator to offer users the Corresponding Source of the running version — which is
+why the dashboard footer links the exact version it was built from rather than the
+default branch.
 
 Third-party obligations are tracked rather than assumed: the Python images carry
 their dependencies' licence files inside the venv they copy, and the dashboard image
@@ -254,7 +261,7 @@ ships `apps/dashboard/THIRD-PARTY-NOTICES.txt`, generated from the production
 dependency closure plus the two self-hosted OFL webfonts, with `bun run notices
 --check` in CI so it cannot drift. What is worth knowing before offering this as a
 service to other people — Yazio's app credentials, health data under Art. 9 GDPR,
-the licence choice itself — is in [Lizenzen](docs/licensing.md).
+the §13 source obligation — is in [Lizenzen](docs/licensing.md).
 
 ## Documentation Site
 

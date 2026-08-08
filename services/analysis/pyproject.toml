@@ -1,7 +1,7 @@
 [project]
 name = "qs-analysis-service"
 version = "0.1.0"
-license = "MIT"
+license = "AGPL-3.0-only"
 description = "Analysis Service for Quantified Self"
 dependencies = [
     "fastapi>=0.110.0",

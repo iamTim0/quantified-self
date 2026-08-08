@@ -288,9 +288,21 @@ jobs:
           # without trusting a mutable tag.
           tags="${name}:${VERSION}"$'\n'"${name}:sha-${GITHUB_SHA::7}"
 
+          # The dashboard needs to know which source it was built from: AGPL-3.0 §13
+          # makes the running version's Corresponding Source something the UI has to
+          # offer, and only this job knows the version and the commit. Empty for
+          # every other image, so no build receives an argument it does not declare.
+          args=""
+          if [ "$IMAGE" = "dashboard" ]; then
+            args="SOURCE_VERSION=${VERSION}"$'\n'"SOURCE_COMMIT=${GITHUB_SHA}"
+          fi
+
           {
             echo "list<<EOF"
             echo "$tags"
+            echo "EOF"
+            echo "build_args<<EOF"
+            echo "$args"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "$tags"
@@ -304,6 +316,7 @@ jobs:
           platforms: ${{ inputs.platforms }}
           push: ${{ needs.guard.outputs.push == 'true' }}
           tags: ${{ steps.tags.outputs.list }}
+          build-args: ${{ steps.tags.outputs.build_args }}
           # Scoped per image: a single shared scope has all thirteen builds
           # evicting each other's layers, which is slower than no cache at all.
           cache-from: type=gha,scope=${{ matrix.image }}
@@ -318,7 +331,7 @@ jobs:
             org.opencontainers.image.version=${{ needs.guard.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.licenses=AGPL-3.0-only
 
       - name: Attest provenance
         if: needs.guard.outputs.push == 'true'
