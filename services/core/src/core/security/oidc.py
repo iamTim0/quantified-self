@@ -33,6 +33,7 @@ import logging
 import secrets
 from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 import httpx
 import jwt
@@ -123,6 +124,37 @@ async def fetch_discovery(issuer: str) -> dict[str, Any]:
     return document
 
 
+def end_session_url(
+    discovery: dict[str, Any], *, post_logout_redirect_uri: str, client_id: str
+) -> str | None:
+    """The provider's RP-initiated logout URL, or None if it does not offer one.
+
+    Logging out here previously ended only the local session. The provider's stays
+    live, so the next "sign in with…" click completes instantly with no prompt and
+    the user reasonably concludes that logging out did nothing.
+
+    `end_session_endpoint` is optional in OpenID Connect. Returning None rather
+    than guessing a URL matters: a fabricated logout endpoint would send the user
+    to a 404 on someone else's domain.
+    """
+    endpoint = discovery.get("end_session_endpoint")
+    if not endpoint:
+        return None
+
+    # No id_token_hint. Passing one would identify the user to the provider in a
+    # URL that lands in browser history and any intermediate log; the tradeoff is
+    # that some providers will ask the user to confirm which account to sign out
+    # of, which is the safer failure.
+    query = urlencode(
+        {
+            "client_id": client_id,
+            "post_logout_redirect_uri": post_logout_redirect_uri,
+        }
+    )
+    separator = "&" if "?" in endpoint else "?"
+    return f"{endpoint}{separator}{query}"
+
+
 def clear_discovery_cache() -> None:
     """Drop cached discovery documents and JWKS clients (config change, tests)."""
     _discovery_cache.clear()
@@ -137,7 +169,6 @@ def build_authorization_request(
     scopes: str,
 ) -> AuthorizationRequest:
     """Assemble the provider URL the browser should be sent to."""
-    from urllib.parse import urlencode
 
     state = secrets.token_urlsafe(32)
     nonce = secrets.token_urlsafe(32)

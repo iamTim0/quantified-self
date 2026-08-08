@@ -155,11 +155,19 @@ export default function DashboardPage() {
     // Sign out locally first so the UI cannot keep rendering protected content
     // while the network call is still in flight.
     const signOut = resetToSignedOut;
+    let endSessionUrl: string | null = null;
     try {
-      await endSession(API_BASE);
+      endSessionUrl = await endSession(API_BASE);
     } finally {
       signOut();
-      router.push("/");
+      if (endSessionUrl) {
+        // The user signed in through an identity provider, whose session is
+        // still live. A full navigation, not a client route: the next hop is
+        // the provider's origin, and it redirects back here afterwards.
+        window.location.assign(endSessionUrl);
+      } else {
+        router.push("/");
+      }
     }
   }, [API_BASE, resetToSignedOut, router]);
 

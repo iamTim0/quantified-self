@@ -83,10 +83,10 @@ export async function fetchSession(apiBase: string): Promise<SessionUser | null>
  * end up signed out of this browser even if the network is down, and the caller
  * resets its own UI state regardless.
  */
-export async function endSession(apiBase: string): Promise<void> {
+export async function endSession(apiBase: string): Promise<string | null> {
   const csrf = readCookie(CSRF_COOKIE);
   try {
-    await fetch(`${apiBase}/api/v1/auth/logout`, {
+    const res = await fetch(`${apiBase}/api/v1/auth/logout`, {
       method: "POST",
       credentials: "include",
       headers: {
@@ -94,9 +94,20 @@ export async function endSession(apiBase: string): Promise<void> {
         ...(csrf ? { [CSRF_HEADER]: csrf } : {}),
       },
       body: JSON.stringify({ all_sessions: false }),
-      keepalive: true,
+      // Deliberately not keepalive: the response is now worth reading. A user
+      // who signed in through an identity provider still has a live session
+      // *there*, and Core returns the provider's RP-initiated logout URL so the
+      // browser can finish the job.
     });
+
+    // 204 means there is no provider session to end — the common case.
+    if (res.status === 200) {
+      const body = await res.json().catch(() => null);
+      const url: unknown = body?.end_session_url;
+      return typeof url === "string" && url ? url : null;
+    }
   } catch {
     // Ignored on purpose — see docstring.
   }
+  return null;
 }

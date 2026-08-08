@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # API are on different subdomains of one registrable domain.
     COOKIE_DOMAIN: str | None = None
 
+    # Where an identity provider sends the browser after RP-initiated logout.
+    # Must be registered with the provider; an unregistered value is usually
+    # rejected outright, which is the safe failure.
+    POST_LOGOUT_REDIRECT_URI: str = "http://127.0.0.1:8000/"
+
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 
 settings = Settings()

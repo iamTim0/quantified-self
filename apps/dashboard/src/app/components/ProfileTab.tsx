@@ -19,6 +19,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import OidcProviderAdmin from "./OidcProviderAdmin";
 
 interface ProfileTabProps {
   apiBase: string;
@@ -469,6 +470,12 @@ export default function ProfileTab({
           </div>
         </div>
       )}
+
+      {/* Owner/admin only in practice: the endpoint returns 403 for a member and
+          the component renders that as an explanation rather than an error. */}
+      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+        <OidcProviderAdmin apiBase={apiBase} />
+      </div>
 
       <div className="pt-2">
         <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">

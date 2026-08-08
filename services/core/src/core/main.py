@@ -19,6 +19,7 @@ from typing import Any, Literal
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, distinct, func, or_, select
@@ -90,6 +91,7 @@ from core.security.oidc import (
     OidcError,
     apply_claims_mapping,
     build_authorization_request,
+    end_session_url,
     exchange_code,
     fetch_discovery,
     is_redirect_uri_allowed,
@@ -601,13 +603,79 @@ async def logout(
     )
     await session.commit()
 
+    # If the user signed in through an identity provider, offer the provider's
+    # RP-initiated logout URL so the caller can finish the job there. Ending only
+    # the local session leaves the provider's alive, so the next "sign in with…"
+    # completes instantly with no prompt and logging out looks like it did
+    # nothing.
+    #
+    # Returned rather than acted on: this is a 204 API call, and only the browser
+    # can perform a top-level navigation to another origin.
+    end_session: str | None = None
+    if user_id and tenant_id:
+        end_session = await _provider_end_session_url(session, user_id, tenant_id)
+
     # Clear the cookies unconditionally. Logout must leave the browser signed out
     # even when the presented credential was already expired or unparseable --
     # otherwise a stale cookie survives and the next page load looks signed in,
     # which is precisely the bug this endpoint exists to prevent.
-    out = Response(status_code=204)
+    if end_session:
+        out = JSONResponse(status_code=200, content={"end_session_url": end_session})
+    else:
+        out = Response(status_code=204)
     clear_session_cookies(out)
     return out
+
+
+async def _provider_end_session_url(
+    session: AsyncSession, user_id: str, tenant_id: str
+) -> str | None:
+    """The provider logout URL for this user's linked identity, if there is one.
+
+    Best-effort throughout: a provider that is unreachable, has been deleted, or
+    offers no `end_session_endpoint` must not stop the local logout from
+    completing. Failing here would mean a provider outage prevents users from
+    signing out.
+    """
+    try:
+        identity = (
+            await session.execute(
+                select(UserIdentity)
+                .where(
+                    UserIdentity.user_id == user_id,
+                    UserIdentity.tenant_id == tenant_id,
+                )
+                .order_by(UserIdentity.created_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        if identity is None:
+            return None
+
+        provider = (
+            await session.execute(
+                select(OidcProvider).where(
+                    OidcProvider.slug == identity.provider_slug,
+                    OidcProvider.enabled.is_(True),
+                )
+            )
+        ).scalars().first()
+        if provider is None:
+            return None
+
+        discovery = await fetch_discovery(provider.issuer)
+        return end_session_url(
+            discovery,
+            post_logout_redirect_uri=settings.POST_LOGOUT_REDIRECT_URI,
+            client_id=provider.client_id,
+        )
+    except Exception:
+        logger.warning(
+            "[req_id=%s] Could not resolve an RP-initiated logout URL",
+            get_current_request_id(),
+            exc_info=True,
+        )
+        return None
 
 
 @app.get("/api/v1/auth/me")
@@ -746,6 +814,195 @@ async def list_oidc_providers(session: AsyncSession = Depends(get_session)):
         select(OidcProvider).where(OidcProvider.enabled.is_(True)).order_by(OidcProvider.display_name)
     )
     return {"providers": [_serialize_provider(p) for p in res.scalars().all()]}
+
+
+# ─── OIDC provider administration ───────────────────────────
+#
+# Providers were configurable only by inserting a database row by hand, which
+# meant nobody without psql access could add one and there was no audit of who
+# changed what. These endpoints are owner-only and live under /api/v1/data/ so
+# the Gateway proxies them like any other authenticated route.
+
+
+class OidcProviderRequest(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    display_name: str = Field(..., min_length=1, max_length=128)
+    issuer: str = Field(..., min_length=8, max_length=512)
+    client_id: str = Field(..., min_length=1, max_length=512)
+    client_secret: str | None = Field(
+        None, max_length=2048, description="Stored encrypted; omit when editing to keep"
+    )
+    scopes: str = Field("openid email profile", max_length=512)
+    redirect_uri: str = Field(..., min_length=8, max_length=512)
+    claims_mapping: dict[str, Any] = Field(default_factory=dict)
+    enabled: bool = False
+    allow_signup: bool = False
+    require_verified_email: bool = True
+
+
+def _admin_provider_view(provider: OidcProvider) -> dict[str, Any]:
+    """Full configuration minus the secret, which is never returned."""
+    return {
+        "id": provider.id,
+        "slug": provider.slug,
+        "display_name": provider.display_name,
+        "issuer": provider.issuer,
+        "client_id": provider.client_id,
+        "has_client_secret": bool(provider.encrypted_client_secret),
+        "scopes": provider.scopes,
+        "redirect_uri": provider.redirect_uri,
+        "claims_mapping": provider.claims_mapping or {},
+        "enabled": provider.enabled,
+        "allow_signup": provider.allow_signup,
+        "require_verified_email": provider.require_verified_email,
+        "updated_at": provider.updated_at.isoformat() if provider.updated_at else None,
+    }
+
+
+@app.get("/api/v1/data/oidc/providers")
+async def admin_list_oidc_providers(
+    session: AsyncSession = Depends(get_session),
+    _principal: Principal = Depends(require_role("owner", "admin")),
+):
+    """Every provider, enabled or not, with the secret redacted."""
+    res = await session.execute(select(OidcProvider).order_by(OidcProvider.display_name))
+    return {"providers": [_admin_provider_view(p) for p in res.scalars().all()]}
+
+
+async def _validate_provider_issuer(issuer: str) -> None:
+    """Refuse to save a provider whose discovery document does not check out.
+
+    Saving first and discovering later means the failure surfaces to a user
+    halfway through a login, with nothing but a 502 to go on.
+    """
+    try:
+        await fetch_discovery(issuer)
+    except OidcError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Issuer konnte nicht verifiziert werden: {exc.detail}",
+        ) from exc
+
+
+@app.post("/api/v1/data/oidc/providers", status_code=201)
+async def admin_create_oidc_provider(
+    req: OidcProviderRequest,
+    session: AsyncSession = Depends(get_session),
+    _principal: Principal = Depends(require_role("owner", "admin")),
+):
+    existing = await session.execute(
+        select(OidcProvider).where(OidcProvider.slug == req.slug)
+    )
+    if existing.scalars().first():
+        raise HTTPException(status_code=409, detail="Ein Anbieter mit diesem Slug existiert bereits.")
+
+    await _validate_provider_issuer(req.issuer)
+
+    provider = OidcProvider(
+        slug=req.slug,
+        display_name=req.display_name,
+        issuer=req.issuer.rstrip("/"),
+        client_id=req.client_id,
+        encrypted_client_secret=encrypt_secret(req.client_secret)
+        if req.client_secret
+        else None,
+        scopes=req.scopes,
+        redirect_uri=req.redirect_uri,
+        claims_mapping=req.claims_mapping,
+        enabled=req.enabled,
+        allow_signup=req.allow_signup,
+        require_verified_email=req.require_verified_email,
+    )
+    session.add(provider)
+    await session.commit()
+    logger.info(
+        "[req_id=%s] OIDC provider %s created (enabled=%s)",
+        get_current_request_id(),
+        provider.slug,
+        provider.enabled,
+    )
+    return _admin_provider_view(provider)
+
+
+@app.put("/api/v1/data/oidc/providers/{slug}")
+async def admin_update_oidc_provider(
+    slug: str,
+    req: OidcProviderRequest,
+    session: AsyncSession = Depends(get_session),
+    _principal: Principal = Depends(require_role("owner", "admin")),
+):
+    res = await session.execute(select(OidcProvider).where(OidcProvider.slug == slug))
+    provider = res.scalars().first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Anbieter nicht gefunden.")
+
+    if req.issuer.rstrip("/") != provider.issuer:
+        await _validate_provider_issuer(req.issuer)
+
+    provider.display_name = req.display_name
+    provider.issuer = req.issuer.rstrip("/")
+    provider.client_id = req.client_id
+    provider.scopes = req.scopes
+    provider.redirect_uri = req.redirect_uri
+    provider.claims_mapping = req.claims_mapping
+    provider.enabled = req.enabled
+    provider.allow_signup = req.allow_signup
+    provider.require_verified_email = req.require_verified_email
+    provider.updated_at = datetime.now(timezone.utc)
+
+    # An omitted secret keeps the stored one. Clearing it on every edit would mean
+    # re-entering the secret to toggle a checkbox.
+    if req.client_secret:
+        provider.encrypted_client_secret = encrypt_secret(req.client_secret)
+
+    await session.commit()
+    logger.info(
+        "[req_id=%s] OIDC provider %s updated (enabled=%s)",
+        get_current_request_id(),
+        provider.slug,
+        provider.enabled,
+    )
+    return _admin_provider_view(provider)
+
+
+@app.delete("/api/v1/data/oidc/providers/{slug}", status_code=204)
+async def admin_delete_oidc_provider(
+    slug: str,
+    session: AsyncSession = Depends(get_session),
+    _principal: Principal = Depends(require_role("owner", "admin")),
+):
+    """Remove a provider.
+
+    Linked identities are left in place deliberately. Deleting them would silently
+    orphan accounts that have no password -- an OIDC-only user would simply lose
+    access with no way back. Disabling the provider is the reversible action;
+    deletion is for one that was never used.
+    """
+    res = await session.execute(select(OidcProvider).where(OidcProvider.slug == slug))
+    provider = res.scalars().first()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Anbieter nicht gefunden.")
+
+    linked = await session.execute(
+        select(func.count())
+        .select_from(UserIdentity)
+        .where(UserIdentity.provider_slug == slug)
+    )
+    if (linked.scalar() or 0) > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Dieser Anbieter wird noch von Konten verwendet. Deaktiviere ihn, "
+                "statt ihn zu löschen."
+            ),
+        )
+
+    await session.delete(provider)
+    await session.commit()
+    logger.info(
+        "[req_id=%s] OIDC provider %s deleted", get_current_request_id(), slug
+    )
+    return Response(status_code=204)
 
 
 class OidcStartRequest(BaseModel):
