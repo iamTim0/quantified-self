@@ -48,10 +48,21 @@ ALLOWED_EMAIL_DOMAINS = (
 ALLOWED_EMAIL_TLDS = (".test", ".invalid", ".example", ".localhost")
 
 # The author line of a copyright notice is a name on purpose.
-SKIP_FILES = {"LICENSE"}
+#
+# The same goes for *other people's* copyright notices, which is why the licence
+# texts the dashboard image redistributes are listed here. `nanoid` and `postcss`
+# both carry their author's address in that line, and reproducing the notice
+# verbatim is the entire purpose of the file -- redacting it would defeat the
+# obligation the file exists to satisfy. Neither is information about who runs this
+# repository or where, which is what rule 14 is about.
+SKIP_FILES = {
+    "LICENSE",
+    "apps/dashboard/THIRD-PARTY-NOTICES.txt",
+}
 
-# Binary-ish and vendored trees git may still track.
-SKIP_PREFIXES = ("site/", "node_modules/", ".venv/")
+# Binary-ish and vendored trees git may still track, plus the upstream font licences
+# vendored verbatim under apps/dashboard/licenses/.
+SKIP_PREFIXES = ("site/", "node_modules/", ".venv/", "apps/dashboard/licenses/")
 
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
 LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\Users\\[A-Za-z0-9._-]+|/home/[a-z0-9._-]+|/Users/[A-Za-z0-9._-]+)")

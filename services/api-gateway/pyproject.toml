@@ -1,6 +1,7 @@
 [project]
 name = "qs-api-gateway"
 version = "0.1.0"
+license = "MIT"
 description = "API Gateway for Quantified Self"
 dependencies = [
     "fastapi>=0.110.0",

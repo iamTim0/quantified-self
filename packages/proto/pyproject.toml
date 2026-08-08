@@ -8,6 +8,7 @@
 [project]
 name = "qs-proto"
 version = "0.1.0"
+license = "MIT"
 description = "Generated Protobuf and gRPC stubs for the Quantified Self platform"
 dependencies = [
     "grpcio>=1.62.0",

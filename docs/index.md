@@ -28,6 +28,7 @@ Im Docker-Setup wird die Dokumentation über Traefik unter `/docs` geroutet und 
 | [Authentifizierung](features/authentication.md) | Sitzungen, Cookies, Logout, Route-Guard |
 | [Externe Anmeldung (OIDC)](features/oidc.md) | Anbieterverwaltung, Kontenverknüpfung, Back-Channel-Logout |
 | [API-Keys](features/api-keys.md) | Tenant-gebundene eingehende Schlüssel |
+| [Lizenzen](licensing.md) | Eigene Lizenz, weitergegebene Fremdsoftware, was ein Dienst für andere ändert |
 | [Fehlerbehebung](troubleshooting.md) | Häufige Fehlerbilder und was sie bedeuten |
 
 !!! danger "Vor dem ersten produktiven Deployment"

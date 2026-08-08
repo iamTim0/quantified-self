@@ -46,6 +46,11 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN bun run build
 
+# Regenerated here rather than trusted from the checkout, so the notices describe
+# the tree that was actually installed. --check in CI keeps the committed copy
+# honest; see scripts/generate-notices.ts for why this file has to exist at all.
+RUN bun run notices
+
 FROM oven/bun:1-alpine AS runner
 
 WORKDIR /app
@@ -62,6 +67,18 @@ ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+
+# MIT, BSD-2-Clause and ISC each require their copyright notice to accompany a
+# copy, and an image is a copy. The full node_modules used to satisfy that by
+# accident with its 271 licence files; standalone tracing copies JavaScript only,
+# so this file carries them instead -- including the two self-hosted webfonts,
+# which no dependency tree ever accounted for.
+# The project's own licence is not copied here -- the build context is
+# apps/dashboard and LICENSE lives at the repository root, out of reach. Every
+# image carries it as an OCI label instead
+# (org.opencontainers.image.licenses, set in the release workflow), and this
+# file's header names it.
+COPY --from=builder /app/THIRD-PARTY-NOTICES.txt ./THIRD-PARTY-NOTICES.txt
 
 # next.config.ts is not copied, and standalone does not need it: the resolved
 # configuration is baked into .next/required-server-files.json, so the security

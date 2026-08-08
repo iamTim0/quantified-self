@@ -19,6 +19,7 @@ nav:
   - Release & Deployment: deployment.md
   - Betrieb: operations.md
   - Fehlerbehebung: troubleshooting.md
+  - Lizenzen: licensing.md
   - Importer:
       - Standard: importer-standard.md
       - Überblick: importers/index.md

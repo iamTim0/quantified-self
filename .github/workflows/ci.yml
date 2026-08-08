@@ -316,6 +316,12 @@ jobs:
       # a lockfile that no longer matches package.json a failed build here rather
       # than an unbuildable image discovered at release time.
       - run: bun install --frozen-lockfile
+      # The image ships THIRD-PARTY-NOTICES.txt to satisfy the MIT/BSD/ISC
+      # requirement that a copyright notice accompanies a copy. A dependency change
+      # that does not regenerate it makes that file a false statement, so the drift
+      # is a build failure rather than something to notice later.
+      - name: Third-party notices current
+        run: bun run notices --check
       - name: Type check
         run: bun run tsc --noEmit
       - name: Lint

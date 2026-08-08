@@ -1,6 +1,7 @@
 [project]
 name = "qs-shared-schemas"
 version = "0.1.0"
+license = "MIT"
 description = "Shared Pydantic Schemas for Quantified Self"
 dependencies = [
     "pydantic>=2.6.0"

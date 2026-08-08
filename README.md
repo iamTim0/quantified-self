@@ -243,6 +243,19 @@ Deduplication happens at the database level using a 64-character SHA256 `idempot
 $$\text{SHA256}(\text{tenant\_id} + ":" + \text{source\_id} + ":" + \text{metric\_type} + ":" + \text{timestamp})$$
 The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
 
+## Licence
+
+MIT — see [LICENSE](LICENSE). Every package manifest declares it, every image
+carries it as an OCI label, and each release bundle ships the file.
+
+Third-party obligations are tracked rather than assumed: the Python images carry
+their dependencies' licence files inside the venv they copy, and the dashboard image
+ships `apps/dashboard/THIRD-PARTY-NOTICES.txt`, generated from the production
+dependency closure plus the two self-hosted OFL webfonts, with `bun run notices
+--check` in CI so it cannot drift. What is worth knowing before offering this as a
+service to other people — Yazio's app credentials, health data under Art. 9 GDPR,
+the licence choice itself — is in [Lizenzen](docs/licensing.md).
+
 ## Documentation Site
 
 Importer and feature documentation is maintained as Markdown under `docs/` and built with MkDocs + Material for MkDocs. In Docker Compose, Traefik routes the docs service under `/docs`, separate from the product dashboard. Use `task docs:serve` for local authoring and `task docs:build` for strict static-site validation.

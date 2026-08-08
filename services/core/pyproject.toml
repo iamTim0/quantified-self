@@ -1,6 +1,7 @@
 [project]
 name = "qs-core-service"
 version = "0.1.0"
+license = "MIT"
 description = "Core Data Service for Quantified Self"
 authors = [{name = "Author"}]
 dependencies = [
