@@ -1660,6 +1660,11 @@ def _definition_payload(metric_type: str) -> dict[str, Any] | None:
         return None
 
 
+def _round(value: float | None, digits: int) -> float | None:
+    """Round an aggregate to the precision the metric declares."""
+    return round(float(value), digits) if value is not None else None
+
+
 
 @app.get("/api/v1/data/metrics")
 async def query_metrics(
@@ -1794,18 +1799,15 @@ async def get_metrics_summary(
         # town.
         digits = definition["precision"] if definition else 1
 
-        def _round(value) -> float | None:
-            return round(float(value), digits) if value is not None else None
-
         summary[row.metric_type] = {
             "count": row.count,
-            "average": _round(row.avg_value),
-            "min": _round(row.min_value),
-            "max": _round(row.max_value),
+            "average": _round(row.avg_value, digits),
+            "min": _round(row.min_value, digits),
+            "max": _round(row.max_value, digits),
             # Which of average and total is the meaningful one is a property of the
             # metric (`definition.aggregation`), so both are returned and the caller
             # picks: averaging a day's step counts answers a question nobody asked.
-            "sum": _round(row.sum_value),
+            "sum": _round(row.sum_value, digits),
             "latest_timestamp": row.latest_timestamp.isoformat() if row.latest_timestamp else None,
             "definition": definition,
         }
