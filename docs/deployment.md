@@ -62,7 +62,16 @@ ghcr.io/iamtim0/quantified-self/core:latest       # wandernd, nie bei Pre-Releas
 ```
 
 `sha-…` ist der Tag, der ein veröffentlichtes Image ohne Vertrauen in einen
-verschiebbaren Namen auf einen Quellstand zurückführt. Zusätzlich schreibt der
+verschiebbaren Namen auf einen Quellstand zurückführt.
+
+Die beiden **wandernden** Tags setzt ein eigener Job (`promote`), erst nachdem
+alle dreizehn Images gebaut sind. Der Grund ist `fail-fast: false`: schlägt das
+zwölfte Image fehl, sind die anderen zwölf längst gepusht. Würden sie `latest`
+gleich mitziehen, zeigte `latest` für zwölf Images auf die neue Version und für
+das dreizehnte auf die alte — ein Stack, den niemand zusammengestellt und niemand
+getestet hat. Zusätzlich wandern sie nur bei einem Lauf vom Default-Branch: ein
+Lauf aus einem nicht gemergten Branch veröffentlicht `1.0.0` und `sha-…`, bewegt
+aber nichts, worauf ein Deployment zeigt. Zusätzlich schreibt der
 Workflow für jedes Image eine signierte Build-Provenance in die Registry
 (`actions/attest-build-provenance`), prüfbar mit:
 
@@ -120,11 +129,16 @@ lässt die CI fehlschlagen, statt einfach nie veröffentlicht zu werden.
 ### Erstinstallation
 
 ```bash
-# 1. Bundle des Releases holen und auspacken.
-curl -fsSL https://github.com/iamTim0/quantified-self/releases/latest/download/quantified-self-1.0.0-deploy.tar.gz | tar -xz
+# 1. Bundle des Releases holen und auspacken. Die Versions-URL, nicht
+#    /releases/latest/download/ — der Alias zeigt auf das neueste Release und
+#    sucht dort genau diesen Dateinamen, läuft also ins 404, sobald etwas
+#    Neueres erscheint.
+curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
 cd quantified-self-1.0.0
 
-# 2. Konfiguration ausfüllen: PUBLIC_HOST und die drei Secrets.
+# 2. Konfiguration ausfüllen: PUBLIC_HOST, die drei Secrets und
+#    POSTGRES_PASSWORD. Letzteres ist nur jetzt wählbar — PostgreSQL setzt es
+#    beim Initialisieren des leeren Volumes in Schritt 4.
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # je Secret einmal
 $EDITOR .env
 
@@ -176,6 +190,8 @@ hinaus steuern diese das Deployment selbst:
 | `QS_STREAK_PORT` | `8006` | Eingehende Streak-Daten (zusätzlich als `/ingest` über Traefik geroutet). |
 | `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | Traefik-Dashboard, **nur auf Loopback** gebunden. |
 | `POSTGRES_PASSWORD` | `qs_dev_password` | Nur im Compose-Netz erreichbar. Siehe Hinweis unten. |
+| `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST}` | CORS-Ursprünge des Gateways. Der Standard ist die eigene Origin — **nicht** `*`: das Gateway läuft mit `allow_credentials=True`, und ein Wildcard lässt Starlette jede fragende Origin zurückspiegeln. |
+| `TUNNEL_TOKEN` | leer | Nur für `--profile tunnel`. Leer lassen, wenn kein Cloudflare-Tunnel benutzt wird. |
 
 `POSTGRES_PASSWORD` ist bewusst kein `:?`-Pflichtwert wie die drei Secrets:
 PostgreSQL setzt das Passwort **einmalig** beim Initialisieren eines leeren

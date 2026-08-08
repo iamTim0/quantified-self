@@ -117,7 +117,34 @@ else
   echo
   echo "--- what the deployment says about itself ---"
   body=$(curl -s -b "$jar" --max-time 20 "$BASE/api/v1/data/system/warnings")
-  findings=$(printf '%s' "$body" | python -c "
+
+  # `python`, not `python3`, was a false pass on the most valuable check in this
+  # script: Debian and Ubuntu ship no `python` alias, the "command not found" went
+  # to /dev/null, `findings` came out empty, and empty was read as "nothing to
+  # report" -- so a deployment running on published default secrets was graded
+  # clean. It matters more now that the release bundle ships this script to hosts
+  # that have Docker and nothing else.
+  PY=""
+  for candidate in python3 python; do
+    if command -v "$candidate" > /dev/null 2>&1; then
+      PY="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$PY" ]; then
+    # Not silently ok, and not a failure of the deployment either: the check could
+    # not run. Graded like the cookie check -- only where the result would have
+    # been graded anyway -- and the raw report is printed so it is still readable
+    # by eye.
+    if [ "$GRADE_CONFIG" = true ]; then
+      bad "configuration" "not checked: no python3 here to read the report"
+    else
+      ok "configuration" "not checked: no python3 here, and not graded over http"
+    fi
+    note "raw: $(printf '%s' "$body" | head -c 300)"
+  else
+    findings=$(printf '%s' "$body" | "$PY" -c "
 import json, sys
 try:
     ws = json.load(sys.stdin)['warnings']
@@ -126,16 +153,16 @@ except Exception:
 for w in ws:
     print(f\"[{w['severity']}] {w['code']}: {w['title']}\")
     print(f\"    -> {w['action']}\")
-" 2>/dev/null)
-
-  if [ -z "$findings" ]; then
-    ok "configuration" "nothing to report"
-  else
-    printf '%s\n' "$findings" | sed 's/^/        /'
-    if [ "$GRADE_CONFIG" = true ]; then
-      bad "configuration" "the deployment is reporting problems"
+")
+    if [ -z "$findings" ]; then
+      ok "configuration" "nothing to report"
     else
-      ok "configuration" "reported above, not graded over http"
+      printf '%s\n' "$findings" | sed 's/^/        /'
+      if [ "$GRADE_CONFIG" = true ]; then
+        bad "configuration" "the deployment is reporting problems"
+      else
+        ok "configuration" "reported above, not graded over http"
+      fi
     fi
   fi
   rm -f "$jar"

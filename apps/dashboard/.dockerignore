@@ -1,5 +1,29 @@
+# The builder stage does `COPY . ./`, and `next build` autoloads .env, .env.local
+# and .env.production from the project directory, then inlines every NEXT_PUBLIC_*
+# value it finds into the client bundle -- which is served publicly as JavaScript.
+# A local env file in this directory therefore did not just get copied into an
+# image, it got published. .gitignore allows `.env*` and `*.pem` to live here, so
+# they have to be excluded explicitly, as the three importer contexts that also
+# use `COPY . .` already do.
+.env
+.env.*
+!.env.example
+*.pem
+
 node_modules
 .next
 .git
 *.log
 .DS_Store
+
+# Not needed to build, and Playwright's output can be large.
+e2e
+test-results
+playwright-report
+blob-report
+tsconfig.tsbuildinfo
+
+# The stale lockfile that made this image unbuildable. Keeping it out of the
+# context means a future edit cannot accidentally install from it again.
+pnpm-lock.yaml
+pnpm-workspace.yaml

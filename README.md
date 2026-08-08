@@ -34,10 +34,11 @@ checkout, no toolchain. See [Release & Deployment](docs/deployment.md) for the f
 procedure, and for the `ENCRYPTION_KEY` ordering trap.
 
 ```bash
-curl -fsSL https://github.com/iamTim0/quantified-self/releases/latest/download/quantified-self-1.0.0-deploy.tar.gz | tar -xz
+curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
 cd quantified-self-1.0.0
 
-# Fill in PUBLIC_HOST and the three secrets. Compose refuses to start without them.
+# Fill in PUBLIC_HOST and the three secrets — compose refuses to start without
+# them — and POSTGRES_PASSWORD, which is only choosable before the first start.
 $EDITOR .env
 
 docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variable

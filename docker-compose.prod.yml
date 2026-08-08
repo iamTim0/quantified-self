@@ -174,7 +174,12 @@ services:
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      # Defaults to this deployment's own origin, not `*`. The file this replaced
+      # defaulted to `*`, and the Gateway's CORS middleware runs with
+      # allow_credentials=True -- a wildcard there makes Starlette echo whichever
+      # origin asks, so any page on the internet could make credentialed calls to
+      # this API. Set it explicitly for a multi-origin setup; comma-separated.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://${PUBLIC_HOST:-localhost}}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
@@ -209,8 +214,21 @@ services:
     environment:
       - NODE_ENV=production
     labels:
+      # A catch-all on the host, at the lowest priority: everything that no other
+      # router claims belongs to the UI.
+      #
+      # It used to match `Path('/') || PathPrefix('/_next')`, which covers two of
+      # the twelve routes the app actually builds. `/explorer`, `/connectors`,
+      # `/analysis`, `/quality`, `/profile`, `/dashboard`, `/legal/*` and
+      # `/auth/callback` matched no router at all and returned Traefik's 404 --
+      # so client-side navigation worked, but every reload, every bookmark and the
+      # OIDC redirect back to `/auth/callback` did not. Publishing port 3000
+      # papered over it for anyone hitting the container directly.
+      #
+      # Priority is explicit on all four routers because Traefik otherwise orders
+      # by rule length, which would make this long host expression outrank `/api`.
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.rule=Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)"
       - "traefik.http.routers.dashboard.entrypoints=web"
       - "traefik.http.routers.dashboard.priority=1"
       - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
@@ -392,12 +410,20 @@ services:
 
   # Optional. Only starts with `--profile tunnel`, because an empty TUNNEL_TOKEN
   # made the container restart-loop on every deployment that had no tunnel.
+  #
+  # `:-` and not `:?`, even though the token is required for this service to work:
+  # a profile keeps a service from *starting*, but interpolation happens while the
+  # file is being read, for every service in it. With `:?` here, `docker compose
+  # config` and `up -d` both failed with "required variable TUNNEL_TOKEN is
+  # missing" on every deployment that does not use a tunnel -- which is to say the
+  # guard did not protect the tunnel, it blocked the whole stack. cloudflared
+  # itself refuses to start on an empty token, which is the right place for it.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
     profiles: ["tunnel"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN to use the tunnel profile}
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
     depends_on:
       - traefik
     networks:

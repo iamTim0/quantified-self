@@ -203,8 +203,11 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     labels:
+      # Catch-all at the lowest priority; see docker-compose.prod.yml for why this
+      # is not `Path('/') || PathPrefix('/_next')` -- that matched two of the
+      # twelve routes the app builds, and 404'd every reload and the OIDC callback.
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.rule=Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)"
       - "traefik.http.routers.dashboard.entrypoints=web"
       - "traefik.http.routers.dashboard.priority=1"
       - "traefik.http.services.dashboard.loadbalancer.server.port=3000"

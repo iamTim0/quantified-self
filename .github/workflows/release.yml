@@ -79,6 +79,7 @@ jobs:
       registry: ${{ steps.registry.outputs.prefix }}
       push: ${{ steps.registry.outputs.push }}
       matrix: ${{ steps.matrix.outputs.include }}
+      default_branch: ${{ steps.registry.outputs.default_branch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -178,20 +179,34 @@ jobs:
           python tools/build_images.py --check
           echo "include=$(python tools/build_images.py --matrix)" >> "$GITHUB_OUTPUT"
 
-      - name: Resolve the registry prefix
+      - name: Resolve the registry and the ref
         id: registry
         env:
+          GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           # Lowercased because GHCR rejects uppercase in a repository path, and
           # $GITHUB_REPOSITORY preserves whatever case the owner and repo have.
           echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
           if [ "$DRY_RUN" = "true" ]; then
             echo "push=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Dry run: images will be built and thrown away."
           else
             echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Whether this was dispatched from the default branch. Only that branch
+          # may move `latest` and the minor tag: those point deployments at code,
+          # and a run from an unmerged branch with its own green CI could otherwise
+          # aim them at something that is not in main.
+          default=$(gh api "repos/${GITHUB_REPOSITORY}" --jq .default_branch)
+          if [ "$GITHUB_REF_NAME" = "$default" ]; then
+            echo "default_branch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "default_branch=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Dispatched from '${GITHUB_REF_NAME}', not '${default}'. The version and sha- tags will be published; latest and the minor tag will not move."
           fi
 
   build:
@@ -242,26 +257,21 @@ jobs:
           REPO: ${{ needs.guard.outputs.registry }}
           IMAGE: ${{ matrix.image }}
           VERSION: ${{ needs.guard.outputs.version }}
-          MINOR: ${{ needs.guard.outputs.minor }}
-          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
-          TAG_LATEST: ${{ inputs.tag_latest }}
         run: |
           set -euo pipefail
           name="${REPO}/${IMAGE}"
 
-          # The exact version, and the commit, always. `sha-` is what makes a
-          # published image traceable back to a source tree without trusting a
-          # mutable tag.
+          # Immutable tags only. The moving ones -- latest and the minor -- are
+          # applied by the `promote` job once every image has been built, because
+          # of what fail-fast: false means here: if the twelfth image fails, the
+          # other twelve have already been pushed. Moving `latest` from inside this
+          # job left it pointing at the new version for twelve images and the
+          # previous one for the thirteenth, which is a stack nobody assembled and
+          # nobody tested.
+          #
+          # `sha-` is what makes a published image traceable back to a source tree
+          # without trusting a mutable tag.
           tags="${name}:${VERSION}"$'\n'"${name}:sha-${GITHUB_SHA::7}"
-
-          # A moving minor tag (1.2) is only meaningful for a real release;
-          # pointing it at an rc would hand pre-release code to anyone tracking it.
-          if [ "$PRERELEASE" != "true" ]; then
-            tags="${tags}"$'\n'"${name}:${MINOR}"
-            if [ "$TAG_LATEST" = "true" ]; then
-              tags="${tags}"$'\n'"${name}:latest"
-            fi
-          fi
 
           {
             echo "list<<EOF"
@@ -319,11 +329,73 @@ jobs:
           path: digests/
           retention-days: 1
 
+  promote:
+    name: Move the floating tags
+    needs: [guard, build]
+    # `needs` alone is the gate: a failed matrix leg fails `build`, which skips
+    # this job, which is the entire point of separating it. Nothing floats until
+    # all thirteen images of this version exist.
+    if: needs.guard.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Add latest and the minor tag
+        env:
+          REGISTRY: ${{ needs.guard.outputs.registry }}
+          MATRIX: ${{ needs.guard.outputs.matrix }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          MINOR: ${{ needs.guard.outputs.minor }}
+          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+          TAG_LATEST: ${{ inputs.tag_latest }}
+          DEFAULT_BRANCH: ${{ needs.guard.outputs.default_branch }}
+        run: |
+          set -euo pipefail
+
+          extra=()
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "::notice::${VERSION} is a pre-release: nothing floats to it."
+          elif [ "$DEFAULT_BRANCH" != "true" ]; then
+            echo "::notice::Not the default branch: nothing floats to ${VERSION}."
+          else
+            extra+=("$MINOR")
+            [ "$TAG_LATEST" = "true" ] && extra+=("latest")
+          fi
+
+          if [ ${#extra[@]} -eq 0 ]; then
+            echo "No floating tags to move. The version and sha- tags are published."
+            exit 0
+          fi
+
+          # imagetools re-points a tag at an existing manifest; it neither rebuilds
+          # nor re-uploads a layer, and it keeps the multi-architecture index and
+          # the attestations intact, because those are addressed by digest.
+          for image in $(printf '%s' "$MATRIX" | jq -r '.[].image'); do
+            name="${REGISTRY}/${image}"
+            args=()
+            for tag in "${extra[@]}"; do
+              args+=(--tag "${name}:${tag}")
+            done
+            echo "==> ${name}: ${extra[*]}"
+            docker buildx imagetools create "${args[@]}" "${name}:${VERSION}"
+          done
+
+          echo "Moved ${extra[*]} to ${VERSION} for every image." >> "$GITHUB_STEP_SUMMARY"
+
   release:
     name: GitHub Release
-    needs: [guard, build]
-    # Only when every image made it. A release whose notes list thirteen images
-    # while eleven exist is worse than no release.
+    needs: [guard, build, promote]
+    # Only when every image made it and its tags are final. A release whose notes
+    # list thirteen images while eleven exist is worse than no release.
     if: needs.guard.outputs.push == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -350,11 +422,15 @@ jobs:
           # source, no toolchain, no git. This is the difference between "clone
           # the repository and build" and "download 4 KB and start".
           bundle="quantified-self-${VERSION}"
-          mkdir -p "$bundle/infra/db"
+          mkdir -p "$bundle/infra/db" "$bundle/tools"
 
           cp docker-compose.prod.yml "$bundle/"
           # Mounted by the postgres service at this exact relative path.
           cp infra/db/init.sql "$bundle/infra/db/"
+          # The deployment guide's verification step calls this, and a bundle
+          # deploy has no checkout to call it from. curl and a shell are all it
+          # needs (python3, if present, additionally decodes the self-report).
+          cp tools/smoke_deployment.sh "$bundle/tools/"
 
           # A .env with the version pinned and the three secrets left empty on
           # purpose: compose refuses to start until they are set, which is the
@@ -380,6 +456,12 @@ jobs:
           INTERNAL_SERVICE_SECRET=
           ENCRYPTION_KEY=
 
+          # Set this BEFORE the first start. PostgreSQL writes the password once,
+          # while initialising an empty data directory; afterwards this line is
+          # only what Core connects with, and changing it locks Core out instead of
+          # changing anything. Empty means the published default qs_dev_password.
+          POSTGRES_PASSWORD=
+
           # Self-registration stays closed; create the first account with
           # \`docker compose run --rm core python -m core.create_owner\`.
           ALLOW_REGISTRATION=false
@@ -393,7 +475,9 @@ jobs:
 
           Full guide: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deployment.md
 
-              # 1. Fill in PUBLIC_HOST and the three secrets.
+              # 1. Fill in PUBLIC_HOST, the three secrets and POSTGRES_PASSWORD.
+              #    The database password is only choosable now: PostgreSQL sets
+              #    it while initialising the empty volume in step 3.
               \$EDITOR .env
 
               # 2. Names any variable that is still missing.
@@ -410,6 +494,9 @@ jobs:
               # 5. There is no default account, and sign-up is closed.
               docker compose -f docker-compose.prod.yml run --rm core \\
                 python -m core.create_owner --email you@example.com --workspace "My Data"
+
+              # 6. Check it from the outside.
+              bash tools/smoke_deployment.sh https://your-host.example
 
           To upgrade, change QS_VERSION in .env, then repeat steps 3 and 4.
           To roll back, set the previous version and repeat step 3 — but read the
@@ -439,7 +526,10 @@ jobs:
             echo "is in [the deployment guide](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deployment.md)."
             echo
             echo '```bash'
-            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/quantified-self-${VERSION}-deploy.tar.gz | tar -xz"
+            # The versioned URL, not /releases/latest/download/: that alias
+            # resolves to the newest release and then looks for this exact asset
+            # name inside it, so it 404s the moment anything newer ships.
+            echo "curl -fsSL ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/quantified-self-${VERSION}-deploy.tar.gz | tar -xz"
             echo "cd quantified-self-${VERSION}"
             echo '```'
             echo
