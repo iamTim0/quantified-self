@@ -56,6 +56,14 @@ def _setup_importer_logging():
 _setup_importer_logging()
 logger = logging.getLogger(__name__)
 
+# In-process guard against two tasks for the same tenant overlapping *inside this
+# worker*. It is not the distributed lock it may look like: a second replica has
+# its own copy and knows nothing about this one.
+#
+# Correctness no longer rests on it. Core refuses to enqueue a connector that
+# already has a queued or running SyncRun (see core/scheduler.py:has_in_flight_run),
+# so the duplicate task is never published in the first place. This stays as a
+# cheap local backstop for a redelivered message.
 active_syncs: set[str] = set()
 
 

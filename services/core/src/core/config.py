@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
     ALLOW_REGISTRATION: bool = True  # Set ALLOW_REGISTRATION=false in .env to disable signups
 
+    # Periodic sync scheduling. On by default: `poll_interval_hours` was
+    # configurable, displayed, and read by nothing that started a sync, so every
+    # import had to be triggered by hand. Set false to run Core purely on-demand
+    # (a second Core process used only for its HTTP API, say).
+    SCHEDULER_ENABLED: bool = True
+
     # ── Session cookies ──────────────────────────────────────────────────────
     # Browser sessions are carried in httpOnly cookies so that a cross-site
     # scripting flaw cannot read the credential. Defaults are the secure ones:

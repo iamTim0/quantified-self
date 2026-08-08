@@ -7,11 +7,12 @@ and secure encrypted connector configuration management.
 Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
+import asyncio
 import json
 import logging
 import os
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -48,6 +49,7 @@ from core.db.session import get_session
 from core.db.tenant import get_current_tenant_id
 from core.events.consumer import start_consumer
 from core.grpc.server import serve_grpc
+from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
 from core.ingest_planning import (
     BucketCount,
     TimeRange,
@@ -165,6 +167,10 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.exception("gRPC server failed to start; Analysis Service reads will fail")
 
+    scheduler_task = None
+    if settings.SCHEDULER_ENABLED:
+        scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
+
     try:
         nc = await start_consumer()
         app.state.nats_client = nc
@@ -173,8 +179,36 @@ async def lifespan(app: FastAPI):
     except Exception:
         yield
     finally:
+        if scheduler_task is not None:
+            scheduler_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await scheduler_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
+
+
+async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
+    """Enqueue one due connector, on its own session and tenant scope.
+
+    A separate session per connector so one failure cannot roll back another's
+    SyncRun row, and the tenant context is bound explicitly because there is no
+    request to derive it from -- the scheduler acts for every tenant in turn.
+    """
+    token = _current_tenant_id.set(connector.tenant_id)
+    try:
+        async with async_session_maker() as session:
+            source = await session.get(DataSource, connector.source_id)
+            if source is None:
+                return
+            await plan_and_enqueue_sync(
+                session,
+                connector.tenant_id,
+                source,
+                mode="smart",
+                trigger="scheduled",
+            )
+    finally:
+        _current_tenant_id.reset(token)
 
 
 
@@ -1735,30 +1769,48 @@ async def trigger_sync_post(
     )
 
 
-@app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
-async def trigger_sync(
-    source_type: str,
-    session: AsyncSession = Depends(get_session),
-    start: datetime | None = Query(None),
-    end: datetime | None = Query(None),
-    mode: Literal["smart", "force"] = Query("smart"),
-):
-    """Trigger an on-demand sync for a connector.
+async def plan_and_enqueue_sync(
+    session: AsyncSession,
+    tenant_id: str,
+    source: DataSource,
+    *,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    mode: Literal["smart", "force"] = "smart",
+    trigger: str = "manual",
+) -> dict[str, Any]:
+    """Plan a sync window, record the run, and publish the task.
 
-    Core decides the window rather than the importer: it owns the sync history the
-    decision depends on. In smart mode the window is narrowed to what is actually
-    missing; in force mode the full range is sent and the extra work is recorded on
-    the run so the audit trail shows it was deliberate.
+    Extracted from the HTTP handler so the scheduler can enqueue exactly the same
+    way a button press does -- same window derivation, same SyncRun row, same NATS
+    subject. A second, parallel implementation for scheduled runs is how the two
+    quietly drift apart.
     """
-    tenant_id = get_current_tenant_id()
-
-    source = await _resolve_source(session, tenant_id, source_type)
-    if not source:
-        raise HTTPException(status_code=404, detail="Connector not configured")
-
     config = source.config or {}
+    source_type = source.source_type
     now = datetime.now(timezone.utc)
     req_id = str(uuid.uuid4())
+
+    # Core is the single authority on whether a connector is already busy. The
+    # importers each kept a process-local `active_syncs` set, which stops nothing
+    # once a second replica exists -- both would accept the same task. Refusing to
+    # enqueue here means the duplicate never reaches them, whatever they run.
+    # `force` is exempt: an explicit user override should not be blocked by a run
+    # that may itself be stuck.
+    if mode != "force" and await has_in_flight_run(
+        session, tenant_id, source_type, now=now
+    ):
+        logger.info(
+            "[req_id=%s] Sync for %s not enqueued: a run is already in flight.",
+            req_id,
+            source_type,
+        )
+        return {
+            "status": "already_running",
+            "source_type": source_type,
+            "tenant_id": tenant_id,
+            "request_id": req_id,
+        }
 
     if start and end:
         window = _validated_window(start, end)
@@ -1783,7 +1835,7 @@ async def trigger_sync(
         source_type=source_type,
         request_id=req_id,
         mode=mode,
-        trigger="manual",
+        trigger=trigger,
         window_start=effective.start,
         window_end=effective.end,
         window_reason=f"{window_reason} {plan.reason}".strip()[:255],
@@ -1845,6 +1897,32 @@ async def trigger_sync(
         "source_type": source_type,
         "tenant_id": tenant_id
     }
+
+
+@app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
+async def trigger_sync(
+    source_type: str,
+    session: AsyncSession = Depends(get_session),
+    start: datetime | None = Query(None),
+    end: datetime | None = Query(None),
+    mode: Literal["smart", "force"] = Query("smart"),
+):
+    """Trigger an on-demand sync for a connector.
+
+    Core decides the window rather than the importer: it owns the sync history the
+    decision depends on. In smart mode the window is narrowed to what is actually
+    missing; in force mode the full range is sent and the extra work is recorded on
+    the run so the audit trail shows it was deliberate.
+    """
+    tenant_id = get_current_tenant_id()
+
+    source = await _resolve_source(session, tenant_id, source_type)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    return await plan_and_enqueue_sync(
+        session, tenant_id, source, start=start, end=end, mode=mode, trigger="manual"
+    )
 
 
 @app.get("/api/v1/data/sources")
