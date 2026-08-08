@@ -68,3 +68,9 @@ yarn-error.log*
 
 # Fizzbee parser output (regenerated next to each spec on every run)
 /specs/*.json
+
+# Playwright artefacts (traces, screenshots, HTML report)
+/apps/dashboard/test-results/
+/apps/dashboard/playwright-report/
+/apps/dashboard/blob-report/
+/apps/dashboard/.playwright/

@@ -114,6 +114,80 @@ jobs:
           --with pytest --with pytest-asyncio --with httpx
           pytest tests -q
 
+  browser:
+    name: Browser (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: timescale/timescaledb-ha:pg16
+        env:
+          POSTGRES_USER: qs_dev
+          POSTGRES_PASSWORD: qs_dev_password
+          POSTGRES_DB: quantified_self
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U qs_dev -d quantified_self"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Apply migrations
+        run: uv run --directory services/core alembic upgrade head
+
+      - run: npm ci --no-audit --no-fund
+        working-directory: apps/dashboard
+
+      # A production build, not `next dev`. The Gateway proxies the UI by
+      # buffering each response, and Turbopack's dev streaming does not survive
+      # that -- the page arrives but never hydrates. `next start` is also what
+      # actually gets deployed, so it is the right thing to test.
+      - name: Build dashboard
+        run: npx next build
+        working-directory: apps/dashboard
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: apps/dashboard
+
+      - name: Start the stack
+        run: |
+          # SCHEDULER_ENABLED=false: a background tick firing mid-test would add
+          # SyncRun rows the assertions do not expect.
+          SCHEDULER_ENABLED=false uv run --directory services/core \
+            uvicorn core.main:app --host 127.0.0.1 --port 8001 --log-level warning &
+          npx next start --port 3000 --dir apps/dashboard &
+          until curl -sf http://127.0.0.1:8001/health > /dev/null; do sleep 1; done
+          until curl -sf http://127.0.0.1:3000 > /dev/null; do sleep 1; done
+          # The Gateway last: it proxies both of the above.
+          CORE_SERVICE_URL=http://127.0.0.1:8001 \
+          DASHBOARD_URL=http://127.0.0.1:3000 \
+          uv run --directory services/api-gateway \
+            uvicorn gateway.main:app --host 127.0.0.1 --port 8000 --log-level warning &
+          until curl -sf http://127.0.0.1:8000/health > /dev/null; do sleep 1; done
+          echo "stack up"
+
+      - name: Browser tests
+        run: npx playwright test
+        working-directory: apps/dashboard
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/dashboard/playwright-report/
+            apps/dashboard/test-results/
+          retention-days: 7
+
   lint-specs:
     name: Spec lint
     runs-on: ubuntu-latest

@@ -205,10 +205,11 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Name</label>
+                <label htmlFor="auth-name" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Name</label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                   <input 
+                    id="auth-name"
                     type="text" 
                     value={name}
                     onChange={e => setName(e.target.value)}
@@ -221,10 +222,11 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             )}
             
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">E-Mail</label>
+              <label htmlFor="auth-email" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">E-Mail</label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
+                  id="auth-email"
                   type="email" 
                   value={email}
                   onChange={e => setEmail(e.target.value)}
@@ -236,10 +238,11 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             </div>
 
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Passwort</label>
+              <label htmlFor="auth-password" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">Passwort</label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input 
+                  id="auth-password"
                   type="password" 
                   value={password}
                   onChange={e => setPassword(e.target.value)}
