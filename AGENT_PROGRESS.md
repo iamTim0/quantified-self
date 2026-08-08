@@ -172,7 +172,7 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 17 | Privacy policy and imprint | P3 | `completed` |
 | 19 | Continuous integration | P1 | `completed` (green as of `7e6f0d0`) |
 | 20 | Session credentials in `httpOnly` cookies + CSRF | P0 | `completed` |
-| 21 | Fizzbee CLI installed and specs model-checked | P1 | `in_progress` — CLI works, 1 of 12 specs verified; see §10 |
+| 21 | Fizzbee CLI installed and specs model-checked | P1 | `completed` — all 12 verified in 33 s; see §10 |
 | 22 | Server-side route guard (Next 16 `proxy.ts`) | P2 | `open` |
 | 23 | Rotate committed default secrets | P0 (deploy) | `open` — deployment action, see §10 |
 
@@ -396,7 +396,7 @@ streak 13, weather 14, whoop 13, yazio 11.
 | No RP-initiated OIDC logout | minor | Logging out ends the local session only, not the provider session. |
 | `active_syncs` lock is process-local | duplicate work under replicas | Idempotency absorbs it; noted in `docs/operations.md`. |
 | No browser-level tests | frontend regressions | Still no jest/vitest/playwright. Frontend is covered only by `tsc`, ESLint and `next build`. |
-| Fizzbee CLI unavailable | weaker guarantee | Specs carry executable Python models asserting the invariants over exhaustive short traces; `task fizz:check` was never run. |
+| ~~Fizzbee CLI unavailable~~ | resolved | All 12 specs model-check in 33 s. `task fizz:lint` runs anywhere including Windows; `task fizz:check` needs WSL 22.04+ or the container, since Fizzbee ships no Windows binary and needs glibc 2.34+. |
 | WHOOP token refresh | manual step | No refresh-token flow; an expired OAuth token must be replaced by hand. |
 
 ---
@@ -493,6 +493,45 @@ so a runaway spec fails as itself.
 | ESLint | 25 problems, all pre-existing; 0 in any file added or rewritten (was 26) |
 | `next build` | 11 routes |
 | GitHub Actions | green |
+
+### Fizzbee: finished, and where the check now runs
+
+All 12 specifications verify — 33 s for the full set, locally and in CI.
+
+Getting there needed two more rounds after the syntax repairs. Seven specs
+reported `DEADLOCK detected`, which is Fizzbee flagging a state with no enabled
+action; for a model of a workflow that finishes, that is the intended end, so
+`deadlock_detection` is off with the trade-off documented in `specs/fizz.yaml`.
+Then the two liveness specs timed out at 180 s: monotonic counters
+(`next_idempotency_key`, `retry_count`) mint a never-before-seen state on every
+step, so the graph never closes. Safety checking tolerates that because it only
+reads the current state; liveness needs the whole graph. Bounded, they run in
+0.3 s.
+
+`distributed_ingestion` then failed liveness for a genuine reason worth keeping
+in mind: weak fairness only obliges an action to fire while it is *continuously*
+enabled, and `CoreConsume` needs the broker up, so the checker found a lasso
+where the network flaps forever and the queue never drains. True, but a claim
+about the network rather than the consumer. `fair<strong>` states the property
+actually worth ruling out.
+
+**Where it runs, and why not on every push.** The model check verifies the
+*models*, not the implementation — a green run says the design is internally
+consistent, not that the code matches it. Its cost is lumpy: a 340 MB archive and
+a badly bounded spec that can run for minutes. Paying that on a push that touched
+a React component buys nothing. So:
+
+| Check | Runs | Cost |
+|---|---|---|
+| `lint_specs.py` (structural) | every push, and locally on Windows | seconds |
+| `verify_specs.py` (model check) | changes under `specs/`, manual dispatch, weekly cron | ~1 min |
+
+The path filter is enough to enforce AGENTS.md rule 5 — a spec cannot be added or
+changed without triggering it — and the weekly cron catches a spec that stops
+terminating after a Fizzbee release. Counterexample traces upload as artifacts on
+failure. The failure mode this guards against is the one that already happened:
+before this work the specs had never been run at all, so nobody noticed they used
+syntax the parser rejects and that two assertions had a body of `return True`.
 
 ### Next steps
 
