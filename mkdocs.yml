@@ -38,17 +38,6 @@ nav:
       - Authentifizierung & Sessions: features/authentication.md
       - Externe Anmeldung (OIDC): features/oidc.md
       - Tenant-gebundene API-Keys: features/api-keys.md
-  - Superpowers:
-      - Plans:
-          - Dashboard Explorer Connectors: superpowers/plans/2026-07-26-dashboard-explorer-connectors.md
-          - Log Aggregation: superpowers/plans/2026-07-26-log-aggregation.md
-          - Request Driven Importers: superpowers/plans/2026-07-26-request-driven-importers.md
-          - Yazio Importer: superpowers/plans/2026-07-26-yazio-importer.md
-      - Specs:
-          - Dashboard Data Explorer Connectors: superpowers/specs/2026-07-26-dashboard-data-explorer-connectors-design.md
-          - Log Aggregation: superpowers/specs/2026-07-26-log-aggregation-design.md
-          - Request Driven Importers: superpowers/specs/2026-07-26-request-driven-importers-design.md
-          - Yazio Importer: superpowers/specs/2026-07-26-yazio-importer-design.md
 markdown_extensions:
   - admonition
   - toc:

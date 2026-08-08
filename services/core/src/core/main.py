@@ -2081,8 +2081,14 @@ async def configure_connector(
                 resp = await client.post(
                     oauth_url,
                     data={
-                        "client_id": "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c",
-                        "client_secret": "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o",
+                        # Yazio's own mobile-app OAuth client, not a secret of
+                        # ours: it ships inside a published app and we could not
+                        # rotate it. It was hardcoded here *and* in the importer;
+                        # the importer's copy moved to configuration and this one
+                        # was missed, which is exactly why a second copy of a
+                        # credential-shaped string is worth removing.
+                        "client_id": settings.YAZIO_CLIENT_ID,
+                        "client_secret": settings.YAZIO_CLIENT_SECRET,
                         "grant_type": "password",
                         "username": email,
                         "password": password,

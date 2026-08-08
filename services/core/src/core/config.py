@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # API are on different subdomains of one registrable domain.
     COOKIE_DOMAIN: str | None = None
 
+    # Yazio's mobile-app OAuth client, used when a user configures the Yazio
+    # connector with an email and password: Core exchanges them for a token so
+    # the password itself is never stored. Public by construction — it ships
+    # inside Yazio's app and is not ours to rotate. Configuration rather than a
+    # literal so a deployment with its own registered client can substitute it,
+    # and so the value exists in exactly one place. See services/importers/yazio.
+    YAZIO_CLIENT_ID: str = "1_4hiybetvfksgw40o0sog4s884kwc840wwso8go4k8c04goo4c"
+    YAZIO_CLIENT_SECRET: str = "6rok2m65xuskgkgogw40wkkk8sw0osg84s8cggsc4woos4s8o"
+
     # Where an identity provider sends the browser after RP-initiated logout.
     # Must be registered with the provider; an unregistered value is usually
     # rejected outright, which is the safe failure.

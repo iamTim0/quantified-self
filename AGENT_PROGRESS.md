@@ -887,6 +887,40 @@ is tested as a pure function. What that leaves uncovered is one
 | `mkdocs build --strict` | clean |
 | Migration rollback | `008` down and up again |
 
+### Audit of what the repository actually commits
+
+Prompted by the question of whether the agent tooling belongs in git at all.
+
+**Removed.** `docs/superpowers/` — implementation plans written for an AI worker,
+wired into the MkDocs nav and therefore published on the public documentation
+site. §1 recorded them as 74% of the docs by line count and flagged the problem;
+this is the pass that acts on it. Also `.superpowers/`, the per-run scratch
+directory, six files of which carried the absolute path of the machine that
+produced them. Both are now ignored. The durable outputs of that work already
+live under their own names: specifications in `specs/`, decisions here,
+behaviour in `docs/`.
+
+**Kept, deliberately.** `.agents/` is not agent leftovers, it is build tooling:
+`lint_specs.py` runs in CI on every push, `verify_specs.py` drives the model
+checker, and `pre_command_guard.py` / `validate_docs.py` are the lifecycle hooks
+all three clients share. `.claude/` and `.codex/` are thin files pointing at it,
+using `$CLAUDE_PROJECT_DIR` rather than any absolute path. Personal overrides go
+to `.claude/settings.local.json`, which is already ignored. None of it contains a
+secret, and removing it would mean the checks stop running.
+
+**Secret scan of every tracked file** — token shapes (`gh[pousr]_`, `sk-`, `xox`,
+`AKIA`, PEM private keys, JWTs), bcrypt hashes, and assignment-style
+`secret`/`token`/`password` literals. No live credential. The bcrypt hashes are
+two identical test fixtures; the password literals are test fixtures and UI
+placeholders.
+
+It did find one real thing: `services/core/src/core/main.py` had **its own copy**
+of the Yazio OAuth client secret. Moving the importer's copy to configuration
+earlier in this pass had left this one behind — which is the argument for the
+change, not against it. Both now read `settings.YAZIO_CLIENT_*`, so there is one
+place to look. The value is still Yazio's public mobile-app client, and still not
+ours to rotate.
+
 ### What is still open
 
 1. **The secrets themselves are still the published defaults.** Everything that

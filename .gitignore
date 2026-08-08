@@ -74,3 +74,19 @@ yarn-error.log*
 /apps/dashboard/playwright-report/
 /apps/dashboard/blob-report/
 /apps/dashboard/.playwright/
+
+# Agent working state and planning artefacts.
+#
+# `.superpowers/` is per-run scratch: task briefs and reports, several of them
+# carrying the absolute paths of whoever's machine produced them.
+#
+# `docs/superpowers/` was worse — implementation plans written for an AI worker,
+# wired into the MkDocs nav and therefore published on the public documentation
+# site. They describe internal structure, are dated, and go stale silently
+# because nothing builds or tests them.
+#
+# The durable outputs of that work belong in the repository under their own
+# names: specifications in `specs/`, decisions in AGENT_PROGRESS.md, and
+# behaviour in `docs/`.
+/.superpowers/
+/docs/superpowers/
