@@ -1,0 +1,14 @@
+# This importer's Dockerfile uses `COPY . .`, so without this file the image
+# contained `tests/`, `.pytest_cache/` and -- on a developer machine -- the whole
+# local `.venv/`, which also shadowed the interpreter's own site-packages.
+.venv
+venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+tests
+*.egg-info
+.env
+.env.*
+!.env.example

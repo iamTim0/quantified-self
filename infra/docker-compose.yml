@@ -88,14 +88,17 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - STREAK_IMPORTER_URL=http://streak-importer:8006
+      # Defaults to 127.0.0.1:8005, which in this container is the Gateway itself,
+      # so POST /api/v1/ingest/apple-health proxied to nothing.
+      - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
-      - "traefik.http.routers.gateway.entrypoints=web"
-      - "traefik.http.routers.gateway.priority=10"
-      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.routers.api.priority=10"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
     networks:
       - qs-network
 
@@ -169,10 +172,10 @@ services:
       - PORT=8006
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.streak-ingest.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
-      - "traefik.http.routers.streak-ingest.entrypoints=web"
-      - "traefik.http.routers.streak-ingest.priority=100"
-      - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
+      - "traefik.http.routers.ingest.rule=PathPrefix(`/ingest`)"
+      - "traefik.http.routers.ingest.entrypoints=web"
+      - "traefik.http.routers.ingest.priority=30"
+      - "traefik.http.services.ingest.loadbalancer.server.port=8006"
     networks:
       - qs-network
   home-assistant-importer:
@@ -203,11 +206,14 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     labels:
+      # `workspace`, priority 1: the UI is whatever no other route claimed. The
+      # four roles and why they are shaped this way are documented once, in
+      # docker-compose.prod.yml.
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
-      - "traefik.http.routers.dashboard.entrypoints=web"
-      - "traefik.http.routers.dashboard.priority=1"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+      - "traefik.http.routers.workspace.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.workspace.entrypoints=web"
+      - "traefik.http.routers.workspace.priority=1"
+      - "traefik.http.services.workspace.loadbalancer.server.port=3000"
     networks:
       - qs-network
 
@@ -219,7 +225,7 @@ services:
       - ..:/docs-workspace:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
@@ -228,13 +234,23 @@ services:
     networks:
       - qs-network
 
+  # Behind a profile, so `task dev:up` no longer starts it: without a token this
+  # container exited and `restart: unless-stopped` restarted it forever, on every
+  # dev machine that does not use a tunnel. `task dev:tunnel` names the service
+  # explicitly, which activates its profile.
+  #
+  # The token goes through the environment, which is where cloudflared looks for
+  # it. As a command-line flag it did not survive an empty value: Compose drops
+  # the empty word, so `--token` arrived with nothing after it and the CLI failed
+  # to parse its own arguments.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
+    profiles: ["tunnel"]
     restart: unless-stopped
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
     depends_on:
       - traefik
       - api-gateway

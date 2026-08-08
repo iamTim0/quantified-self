@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dashboard
 
-## Getting Started
+The Next.js UI for the Quantified Self platform. This file replaced the
+`create-next-app` boilerplate, which listed four package managers and a font
+Vercel ships with its template — none of which applies here.
 
-First, run the development server:
+## One package manager: Bun
+
+`bun.lock` is the only lockfile, and the same tool reads it in development, in CI
+and in the image. That is deliberate: this app previously had a
+`package-lock.json` *and* a `pnpm-lock.yaml`, CI installed from the first and the
+Dockerfile from the second, and the pnpm one had gone stale — three dependencies
+were added to `package.json` without regenerating it. The image was therefore
+unbuildable for some time, and nothing failed, because nothing built it.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+bun install               # honours bun.lock
+bun run dev               # dev server on :3000
+bun run build             # production build
+bun run tsc --noEmit      # type check
+bun run lint              # eslint
+bunx playwright test      # browser tests — needs the stack up, see below
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+From the repository root, `task dashboard` runs the dev server and `task lint:all`
+runs the type check and linter alongside the Python ones.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+`trustedDependencies` in `package.json` lists the two packages whose install
+scripts must run (`sharp`, `unrs-resolver`). Bun blocks lifecycle scripts unless a
+package is named there; without it, image optimisation and ESLint's resolver get
+installed but not built.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## The browser tests need a real stack
 
-## Learn More
+There is no `webServer` block in `playwright.config.ts` on purpose: this needs
+Postgres, Core, Next *and* the Gateway, and the Gateway has to start last because
+it proxies the other two. The tests run against the **Gateway's** origin, not the
+Next server's, because that single origin is what makes the session cookies behave
+as they do in production.
 
-To learn more about Next.js, take a look at the following resources:
+`.github/workflows/ci.yml` (the `browser` job) is the executable description of
+that sequence; the docstring at the top of `playwright.config.ts` is the short one.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## What is worth knowing before editing
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **This is not the Next.js you may know.** Read the relevant guide under
+  `node_modules/next/dist/docs/` before writing code; see `AGENTS.md` here.
+- `NEXT_PUBLIC_*` is inlined at **build** time. The published image is built
+  without `NEXT_PUBLIC_API_URL` so the UI calls `window.location.origin`, which is
+  Traefik, which routes `/api` to the Gateway — one image for every deployment.
+  Setting that variable on a running container does nothing.
+- `src/proxy.ts` is the server-side route guard (Next 16's `middleware.ts`).
+- `next.config.ts` sets `output: "standalone"`; the image ships the traced server
+  (20 MB) instead of `node_modules` (522 MB).

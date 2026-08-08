@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     #
     # Defaults to development rather than production so that a laptop, the test
     # suite and CI all work with no configuration. The deployment does not rely on
-    # anyone remembering to change this: docker-compose.coolify.yml sets
+    # anyone remembering to change this: docker-compose.prod.yml sets
     # ENVIRONMENT=production and uses ${VAR:?...} so an unset secret stops the
     # deploy outright.
     ENVIRONMENT: str = "development"

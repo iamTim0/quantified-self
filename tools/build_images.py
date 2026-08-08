@@ -1,0 +1,194 @@
+"""The list of published container images, and a way to build them locally.
+
+One manifest, two consumers: `.github/workflows/release.yml` reads it with
+`--matrix` to generate its build matrix, and a developer runs it directly to build
+the same thirteen images on their machine. Written as one list rather than two
+because a duplicated list of thirteen entries drifts -- a new importer gets added
+to the compose file and the Taskfile and then silently never gets published.
+
+    python tools/build_images.py                  # build all of them
+    python tools/build_images.py core dashboard   # build some of them
+    python tools/build_images.py --matrix         # the GitHub Actions matrix
+    python tools/build_images.py --check          # every Dockerfile is listed?
+
+Building locally is worth doing before cutting a release: the release workflow is
+the first thing that ever builds all of these together, and a Dockerfile can rot
+without any test noticing. The dashboard's had -- its pnpm lockfile went stale
+while CI installed with npm, so the image had been unbuildable for some time and
+nothing said so.
+
+Contexts differ per image and are not cosmetic. Core and Analysis build from the
+repository root because they depend on `packages/proto` through a path dependency,
+which cannot resolve from outside the build context; the docs image needs
+`mkdocs.yml` and `docs/`; everything else builds from its own directory.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import subprocess
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Registry path for the published images. The version is a tag on top of this:
+# ghcr.io/<owner>/<repo>/<name>:<version>. The release workflow derives the prefix
+# from $GITHUB_REPOSITORY instead, so a fork publishes to its own packages.
+DEFAULT_IMAGE_PREFIX = "ghcr.io/iamtim0/quantified-self"
+
+
+@dataclass(frozen=True)
+class Image:
+    name: str
+    context: str
+    dockerfile: str
+    # Buildx cache mode for the release workflow. `max` caches every intermediate
+    # layer and `min` only the final ones, and the choice is a budget: the Actions
+    # cache is 10 GB per repository with least-recently-used eviction, so thirteen
+    # `max` scopes overflow it and then evict each other in an order nobody
+    # controls -- which is slower than caching less on purpose. `max` therefore
+    # goes to the three images whose builds are long (a full Next.js production
+    # build, two `uv sync` resolutions against packages/proto) and `min` to the ten
+    # importers, whose layers are small and quick to rebuild.
+    cache: str = "min"
+
+
+IMAGES: tuple[Image, ...] = (
+    Image("core", ".", "services/core/Dockerfile", cache="max"),
+    Image("analysis", ".", "services/analysis/Dockerfile", cache="max"),
+    Image("api-gateway", "services/api-gateway", "services/api-gateway/Dockerfile"),
+    Image("dashboard", "apps/dashboard", "apps/dashboard/Dockerfile", cache="max"),
+    Image("docs", ".", "infra/docs.Dockerfile"),
+    Image("importer-yazio", "services/importers/yazio", "services/importers/yazio/Dockerfile"),
+    Image("importer-whoop", "services/importers/whoop", "services/importers/whoop/Dockerfile"),
+    Image("importer-dawarich", "services/importers/dawarich", "services/importers/dawarich/Dockerfile"),
+    Image(
+        "importer-apple-health",
+        "services/importers/apple_health",
+        "services/importers/apple_health/Dockerfile",
+    ),
+    Image("importer-streak", "services/importers/streak", "services/importers/streak/Dockerfile"),
+    Image(
+        "importer-home-assistant",
+        "services/importers/home_assistant",
+        "services/importers/home_assistant/Dockerfile",
+    ),
+    Image("importer-weather", "services/importers/weather", "services/importers/weather/Dockerfile"),
+    Image("importer-calendar", "services/importers/calendar", "services/importers/calendar/Dockerfile"),
+)
+
+# Dockerfiles that exist but are deliberately not published: the Fizzbee model
+# checker is a development tool and runs nowhere near a deployment.
+UNPUBLISHED_DOCKERFILES = frozenset({"infra/fizzbee.Dockerfile"})
+
+
+def matrix() -> list[dict[str, str]]:
+    """The `strategy.matrix.include` value for the release workflow."""
+    return [
+        {
+            "image": image.name,
+            "context": image.context,
+            "dockerfile": image.dockerfile,
+            "cache": image.cache,
+        }
+        for image in IMAGES
+    ]
+
+
+def find_unlisted_dockerfiles() -> list[str]:
+    """Dockerfiles in the repository that this manifest does not build.
+
+    A new importer arrives with a Dockerfile and a compose entry, and forgetting
+    this file means it is simply never published -- with no error, because nothing
+    else knows the image was supposed to exist.
+    """
+    listed = {image.dockerfile for image in IMAGES} | set(UNPUBLISHED_DOCKERFILES)
+    found: list[str] = []
+
+    for path in (*REPO_ROOT.glob("**/Dockerfile"), *REPO_ROOT.glob("**/*.Dockerfile")):
+        relative = path.relative_to(REPO_ROOT).as_posix()
+        if any(part in relative for part in ("node_modules/", ".venv/", "site/")):
+            continue
+        if relative not in listed:
+            found.append(relative)
+
+    return sorted(found)
+
+
+def build(selected: list[str], *, prefix: str, version: str) -> int:
+    docker = shutil.which("docker")
+    if docker is None:
+        print("docker is not on PATH", file=sys.stderr)
+        return 2
+
+    images = [i for i in IMAGES if not selected or i.name in selected]
+    unknown = sorted(set(selected) - {i.name for i in IMAGES})
+    if unknown:
+        print(f"unknown image(s): {', '.join(unknown)}", file=sys.stderr)
+        print(f"known: {', '.join(i.name for i in IMAGES)}", file=sys.stderr)
+        return 2
+
+    failures: list[str] = []
+    for index, image in enumerate(images, start=1):
+        tag = f"{prefix}/{image.name}:{version}"
+        print(f"[{index}/{len(images)}] {tag}", flush=True)
+        result = subprocess.run(
+            [docker, "build", "-f", image.dockerfile, "-t", tag, image.context],
+            cwd=REPO_ROOT,
+            # One failing image must not abort the other twelve; the point of a
+            # local run is to find out which ones are broken, not the first one.
+            check=False,
+        )
+        if result.returncode != 0:
+            failures.append(image.name)
+            print(f"  FAILED: {image.name}", file=sys.stderr, flush=True)
+
+    print()
+    if failures:
+        print(f"{len(failures)} of {len(images)} failed: {', '.join(failures)}", file=sys.stderr)
+        return 1
+
+    print(f"{len(images)} image(s) built as {prefix}/<name>:{version}")
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("images", nargs="*", help="image names to build; default is all")
+    parser.add_argument("--matrix", action="store_true", help="print the GitHub Actions matrix")
+    parser.add_argument(
+        "--check", action="store_true", help="fail if a Dockerfile is not in the manifest"
+    )
+    parser.add_argument("--prefix", default=DEFAULT_IMAGE_PREFIX, help="registry prefix for tags")
+    parser.add_argument("--version", default="local", help="tag to build as")
+    args = parser.parse_args()
+
+    if args.matrix:
+        print(json.dumps(matrix()))
+        return 0
+
+    if args.check:
+        unlisted = find_unlisted_dockerfiles()
+        if unlisted:
+            print("Dockerfiles that are built by nothing:", file=sys.stderr)
+            for path in unlisted:
+                print(f"  {path}", file=sys.stderr)
+            print(
+                "\nAdd them to IMAGES in tools/build_images.py so the release "
+                "publishes them, or to UNPUBLISHED_DOCKERFILES if they are "
+                "development-only.",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"{len(IMAGES)} image(s) in the manifest; every Dockerfile accounted for.")
+        return 0
+
+    return build(args.images, prefix=args.prefix, version=args.version)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

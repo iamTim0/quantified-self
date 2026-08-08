@@ -117,27 +117,69 @@ else
   echo
   echo "--- what the deployment says about itself ---"
   body=$(curl -s -b "$jar" --max-time 20 "$BASE/api/v1/data/system/warnings")
-  findings=$(printf '%s' "$body" | python -c "
+
+  # Graded in the shell, not in Python. This check used to run `python`, which
+  # Debian and Ubuntu do not alias, with the error going to /dev/null -- and the
+  # resulting empty output was read as "nothing to report", so a deployment running
+  # on published default secrets was graded clean. Reaching for python3 instead
+  # only moved the problem: this script is shipped in the release bundle to hosts
+  # that are documented as needing Docker and nothing else, and failing a healthy
+  # deployment because the operator's machine has no interpreter is not better.
+  #
+  # The verdict therefore comes from the response itself, which needs no tools. An
+  # empty `warnings` array is the one shape that means "clean"; anything else is
+  # either a finding or an answer this script does not understand, and neither is a
+  # pass.
+  case "$body" in
+    *'"warnings":[]'* | *'"warnings": []'*) config_state=clean ;;
+    *'"severity"'*)                        config_state=problems ;;
+    *)                                     config_state=unreadable ;;
+  esac
+
+  # Python only formats, when it happens to be there. Without it the raw body is
+  # printed instead -- less pleasant to read, and it says the same thing.
+  if [ "$config_state" = problems ]; then
+    py=""
+    for candidate in python3 python; do
+      if command -v "$candidate" > /dev/null 2>&1; then
+        py="$candidate"
+        break
+      fi
+    done
+
+    pretty=""
+    if [ -n "$py" ]; then
+      pretty=$(printf '%s' "$body" | "$py" -c "
 import json, sys
-try:
-    ws = json.load(sys.stdin)['warnings']
-except Exception:
-    print('UNPARSEABLE'); raise SystemExit
-for w in ws:
+for w in json.load(sys.stdin)['warnings']:
     print(f\"[{w['severity']}] {w['code']}: {w['title']}\")
     print(f\"    -> {w['action']}\")
 " 2>/dev/null)
+    fi
 
-  if [ -z "$findings" ]; then
-    ok "configuration" "nothing to report"
-  else
-    printf '%s\n' "$findings" | sed 's/^/        /'
-    if [ "$GRADE_CONFIG" = true ]; then
-      bad "configuration" "the deployment is reporting problems"
+    if [ -n "$pretty" ]; then
+      printf '%s\n' "$pretty" | sed 's/^/        /'
     else
-      ok "configuration" "reported above, not graded over http"
+      note "raw: $body"
     fi
   fi
+
+  case "$config_state" in
+    clean)
+      ok "configuration" "nothing to report"
+      ;;
+    problems)
+      if [ "$GRADE_CONFIG" = true ]; then
+        bad "configuration" "the deployment is reporting problems"
+      else
+        ok "configuration" "reported above, not graded over http"
+      fi
+      ;;
+    unreadable)
+      note "raw: $body"
+      bad "configuration" "could not read the deployment's own report"
+      ;;
+  esac
   rm -f "$jar"
 fi
 

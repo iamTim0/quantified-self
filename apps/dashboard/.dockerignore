@@ -1,5 +1,26 @@
+# The builder stage does `COPY . ./`, and `next build` autoloads .env, .env.local
+# and .env.production from the project directory, then inlines every NEXT_PUBLIC_*
+# value it finds into the client bundle -- which is served publicly as JavaScript.
+# A local env file in this directory therefore did not just get copied into an
+# image, it got published. .gitignore allows `.env*` and `*.pem` to live here, so
+# they have to be excluded explicitly, as the three importer contexts that also
+# use `COPY . .` already do.
+.env
+.env.*
+*.pem
+
 node_modules
 .next
 .git
 *.log
 .DS_Store
+
+# Not needed to build, and Playwright's output can be large. playwright.config.ts
+# goes with e2e: leaving it behind means `next build` type-checks a config whose
+# testDir no longer exists in the context.
+e2e
+playwright.config.ts
+test-results
+playwright-report
+blob-report
+tsconfig.tsbuildinfo

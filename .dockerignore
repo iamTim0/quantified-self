@@ -1,0 +1,55 @@
+# Build context for the root-context images: Core, Analysis and the docs site.
+#
+# Without this file every one of those builds uploaded the whole repository to the
+# daemon -- including `node_modules/` (hundreds of MB), every service's `.venv/`,
+# the Playwright artefacts and the local `.env`. That is slow, it invalidates the
+# cache on any unrelated file change, and a local `.env` inside a build context is
+# one careless `COPY . .` away from being baked into a published image.
+#
+# Deliberately a denylist rather than an allowlist: the three Dockerfiles that use
+# this context copy explicit paths, so anything missed here costs upload time, not
+# correctness.
+
+# Version control and CI
+.git
+.gitignore
+.github
+.agents
+.claude
+.codex
+.superpowers
+
+# Python environments and caches
+**/.venv
+**/venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/*.egg-info
+
+# Node
+**/node_modules
+**/.next
+**/.pnpm-store
+
+# Local configuration and secrets. `.env.example` is the committed template and is
+# intentionally not excluded.
+.env
+.env.*
+!.env.example
+
+# Test and build output
+**/test-results
+**/playwright-report
+**/blob-report
+site/
+specs/out/
+logs/
+
+# Editor and OS noise
+.idea
+.vscode
+**/.DS_Store
+**/*.swp
