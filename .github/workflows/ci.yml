@@ -160,20 +160,61 @@ jobs:
 
       - name: Start the stack
         run: |
+          set -euo pipefail
+
+          # Every wait is bounded. An unbounded `until curl` loop turns a service
+          # that failed to start into a job that hangs until its 20-minute
+          # timeout, with no indication of which service or why -- which is
+          # exactly what happened the first time this ran.
+          wait_for() {
+            local name=$1 url=$2 log=$3
+            for _ in $(seq 1 60); do
+              if curl -sf "$url" > /dev/null; then
+                echo "$name is up"
+                return 0
+              fi
+              sleep 1
+            done
+            echo "::error::$name did not come up within 60s ($url)"
+            echo "--- $log ---"
+            cat "$log" || true
+            return 1
+          }
+
           # SCHEDULER_ENABLED=false: a background tick firing mid-test would add
           # SyncRun rows the assertions do not expect.
           SCHEDULER_ENABLED=false uv run --directory services/core \
-            uvicorn core.main:app --host 127.0.0.1 --port 8001 --log-level warning &
-          npx next start --port 3000 --dir apps/dashboard &
-          until curl -sf http://127.0.0.1:8001/health > /dev/null; do sleep 1; done
-          until curl -sf http://127.0.0.1:3000 > /dev/null; do sleep 1; done
+            uvicorn core.main:app --host 127.0.0.1 --port 8001 --log-level warning \
+            > /tmp/core.log 2>&1 &
+
+          # `next start` takes the directory positionally; there is no --dir flag,
+          # and passing one made it exit immediately.
+          ( cd apps/dashboard && npx next start --port 3000 > /tmp/next.log 2>&1 & )
+
+          wait_for "Core" http://127.0.0.1:8001/health /tmp/core.log
+          wait_for "Next" http://127.0.0.1:3000 /tmp/next.log
+
           # The Gateway last: it proxies both of the above.
           CORE_SERVICE_URL=http://127.0.0.1:8001 \
           DASHBOARD_URL=http://127.0.0.1:3000 \
           uv run --directory services/api-gateway \
-            uvicorn gateway.main:app --host 127.0.0.1 --port 8000 --log-level warning &
-          until curl -sf http://127.0.0.1:8000/health > /dev/null; do sleep 1; done
-          echo "stack up"
+            uvicorn gateway.main:app --host 127.0.0.1 --port 8000 --log-level warning \
+            > /tmp/gateway.log 2>&1 &
+
+          wait_for "Gateway" http://127.0.0.1:8000/health /tmp/gateway.log
+
+          # The UI must be reachable *through* the Gateway, not just directly.
+          # That is the origin the tests use, and the proxy is the part most
+          # likely to be misconfigured.
+          wait_for "Dashboard via Gateway" http://127.0.0.1:8000/ /tmp/gateway.log
+
+      - name: Service logs
+        if: failure()
+        run: |
+          for f in /tmp/core.log /tmp/gateway.log /tmp/next.log; do
+            echo "===== $f ====="
+            tail -50 "$f" || true
+          done
 
       - name: Browser tests
         run: npx playwright test
