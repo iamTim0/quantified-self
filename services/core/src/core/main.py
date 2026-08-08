@@ -56,6 +56,13 @@ from core.ingest_planning import (
     compute_sync_window,
     plan_import,
 )
+from core.oauth_refresh import (
+    RefreshError,
+    apply_refresh,
+    can_refresh,
+    needs_refresh,
+    refresh_credential,
+)
 from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
 from core.security.auth import (
     AuthenticationMiddleware,
@@ -98,6 +105,7 @@ from core.security.tokens import (
 )
 from core.tracing import (
     RequestTracingMiddleware,
+    get_current_request_id,
     setup_tracing_logger,
 )
 
@@ -1599,6 +1607,22 @@ class ConfigureConnectorRequest(BaseModel):
     lookback_days: int = Field(30, ge=1, le=365, description="Lookback window in days")
     config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
 
+    # The OAuth refresh grant, for providers whose access token is short-lived.
+    # WHOOP's lasts about an hour against a six-hour poll interval, so without
+    # these the connector works once and then needs a token pasted in by hand
+    # again. All three are required together -- a refresh token with no client
+    # credentials cannot be exchanged for anything.
+    refresh_token: str | None = Field(
+        None, description="OAuth refresh token, stored encrypted", max_length=2048
+    )
+    client_id: str | None = Field(None, max_length=256)
+    client_secret: str | None = Field(
+        None, description="OAuth client secret, stored encrypted", max_length=512
+    )
+    expires_in: int | None = Field(
+        None, ge=1, le=60 * 60 * 24 * 365, description="Access token lifetime in seconds"
+    )
+
 
 @app.post("/api/v1/data/sources/configure")
 async def configure_connector(
@@ -1690,8 +1714,55 @@ async def configure_connector(
             detail="Zugangsdaten / Access Token sind für die Erst-Einrichtung erforderlich."
         )
 
+    # OAuth refresh grant. Encrypted at rest like the access token, and carried
+    # over when the user edits the connector without re-entering it -- otherwise
+    # changing the poll interval would silently strip the connector's ability to
+    # refresh and it would die at the next expiry.
+    if req.refresh_token:
+        config_data["encrypted_refresh_token"] = encrypt_secret(req.refresh_token.strip())
+    elif existing and existing.config and "encrypted_refresh_token" in existing.config:
+        config_data["encrypted_refresh_token"] = existing.config["encrypted_refresh_token"]
+
+    if req.client_secret:
+        config_data["encrypted_client_secret"] = encrypt_secret(req.client_secret.strip())
+    elif existing and existing.config and "encrypted_client_secret" in existing.config:
+        config_data["encrypted_client_secret"] = existing.config["encrypted_client_secret"]
+
+    if req.client_id:
+        config_data["client_id"] = req.client_id.strip()
+    elif existing and existing.config and existing.config.get("client_id"):
+        config_data["client_id"] = existing.config["client_id"]
+
+    if req.expires_in:
+        config_data["token_expires_at"] = (
+            datetime.now(timezone.utc) + timedelta(seconds=req.expires_in)
+        ).isoformat()
+    elif (
+        not raw_token
+        and existing
+        and existing.config
+        and existing.config.get("token_expires_at")
+    ):
+        # Keep the recorded expiry only if the access token itself was kept. A new
+        # token with an old expiry would be refreshed immediately, or worse,
+        # treated as valid long after it died.
+        config_data["token_expires_at"] = existing.config["token_expires_at"]
+
     if req.config:
-        clean_config = {k: v for k, v in req.config.items() if k not in ("yazio_email", "yazio_password")}
+        clean_config = {
+            k: v
+            for k, v in req.config.items()
+            # Never let a client write the encrypted fields directly; they are
+            # derived above from the plaintext inputs.
+            if k
+            not in (
+                "yazio_email",
+                "yazio_password",
+                "encrypted_token",
+                "encrypted_refresh_token",
+                "encrypted_client_secret",
+            )
+        }
         config_data.update(clean_config)
 
     if existing:
@@ -2061,6 +2132,40 @@ async def get_connector_token(
             },
         }
 
+    # Refresh here, ahead of expiry, rather than letting the importer discover the
+    # problem as a 401. WHOOP access tokens last about an hour while the connector
+    # polls every six, so without this the connector worked for one hour after
+    # somebody pasted a token by hand and then failed silently until they did it
+    # again. Core does it because rotating a credential means writing the new one
+    # back encrypted, and only Core may touch the database (rules 1 and 8).
+    now = datetime.now(timezone.utc)
+    config = source.config or {}
+    if needs_refresh(config, now=now) and can_refresh(source_type, config):
+        req_id = get_current_request_id()
+        try:
+            refreshed = await refresh_credential(source_type, config, req_id=req_id)
+        except RefreshError as exc:
+            # Surface it as an unusable connector rather than handing back a token
+            # already known to be expired.
+            logger.warning(
+                "[req_id=%s] Could not refresh %s credential: %s",
+                req_id,
+                source_type,
+                exc,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Die Zugangsdaten für diesen Connector sind abgelaufen und "
+                    "konnten nicht erneuert werden. Bitte neu verbinden."
+                ),
+            ) from exc
+
+        source.config = apply_refresh(config, refreshed)
+        await session.commit()
+        config = source.config
+        encrypted_token = config["encrypted_token"]
+
     try:
         decrypted_token = decrypt_secret(encrypted_token)
         return {
@@ -2068,11 +2173,19 @@ async def get_connector_token(
             "source_id": str(source.id),
             "source_type": source_type,
             "access_token": decrypted_token,
-            "status": source.config.get("status", "active"),
+            "status": config.get("status", "active"),
             "config": {
                 k: v
-                for k, v in (source.config or {}).items()
-                if k not in {"encrypted_token", "masked_token"}
+                for k, v in config.items()
+                # The refresh token and client secret never leave this service --
+                # the importer gets only the short-lived access token (rule 12).
+                if k
+                not in {
+                    "encrypted_token",
+                    "masked_token",
+                    "encrypted_refresh_token",
+                    "encrypted_client_secret",
+                }
             },
         }
     except DecryptionError:
