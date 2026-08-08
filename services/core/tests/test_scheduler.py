@@ -209,7 +209,13 @@ async def test_run_once_enqueues_due_connectors_and_survives_one_failing():
 
         async def enqueue(connector: DueConnector) -> None:
             seen.append(connector.source_type)
-            if connector.source_type == "oura":
+            # Keyed on this test's tenant as well as the source type. `run_once`
+            # scans every tenant, so keying on the source type alone made the
+            # arithmetic below depend on no other tenant in the database having an
+            # oura connector that happened to be due -- which broke the moment one
+            # did (AGENTS.md rule 10: no test may assume the state of the database
+            # around it).
+            if connector.tenant_id == tenant_id and connector.source_type == "oura":
                 raise RuntimeError("simulated importer configuration error")
 
         enqueued = await run_once(enqueue, now=NOW)

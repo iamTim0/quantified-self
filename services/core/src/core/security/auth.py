@@ -25,6 +25,7 @@ Maps to Fizzbee Invariants:
 - TenantHeaderAlwaysInjected
 - RevokedTokenRejected
 - ServiceTokenScopedToInternalPaths
+- AcceptedLogoutLeavesNothingItCoveredAlive
 """
 
 from __future__ import annotations
@@ -117,16 +118,55 @@ def require_role(*allowed_roles: str):
     return _dependency
 
 
-async def _is_token_revoked(jti: str) -> bool:
-    """Check the logout denylist. Fails closed if the database is unreachable."""
-    from core.db.models import RevokedAccessToken
+async def _revocation_reason(claims: dict) -> str | None:
+    """Why this token must be refused, or None if it stands.
+
+    Two independent mechanisms, because one cannot do the other's job:
+
+    * the ``jti`` denylist ends *this* session, and is the only thing that can —
+      the token is otherwise indistinguishable from any other;
+    * ``users.sessions_valid_from`` ends *every* session, which the denylist
+      cannot express, since a ``jti`` is only ever learned by being presented.
+
+    Both fail closed: an exception here propagates rather than being swallowed
+    into "not revoked", so a database outage cannot silently re-enable every
+    logged-out token.
+    """
+    from core.db.models import RevokedAccessToken, User
     from core.db.session import async_session_maker
 
+    jti = claims["jti"]
     async with async_session_maker() as session:
-        result = await session.execute(
+        revoked = await session.execute(
             select(RevokedAccessToken.jti).where(RevokedAccessToken.jti == jti)
         )
-        return result.scalar_one_or_none() is not None
+        if revoked.scalar_one_or_none() is not None:
+            return "Token has been revoked"
+
+        issued_at = claims.get("iat")
+        if issued_at is None:
+            return None
+
+        cutoff = (
+            await session.execute(
+                select(User.sessions_valid_from).where(
+                    User.id == claims["user_id"],
+                    User.tenant_id == claims["tenant_id"],
+                )
+            )
+        ).scalar_one_or_none()
+        # No row means no cutoff to apply. Deliberately not "reject": tokens are
+        # minted for users that no test necessarily materialises, and turning a
+        # missing row into a 401 here would be a much larger behaviour change than
+        # this column is for. /auth/me already refuses a deleted account.
+        if cutoff is None:
+            return None
+
+        # PyJWT hands back `iat` as an integer of seconds.
+        if datetime.fromtimestamp(int(issued_at), tz=timezone.utc) < cutoff:
+            return "Session has been ended"
+
+    return None
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -244,8 +284,9 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 "X-Tenant-ID does not match the authenticated tenant", status_code=403
             )
 
-        if await _is_token_revoked(claims["jti"]):
-            raise TokenError("Token has been revoked")
+        reason = await _revocation_reason(claims)
+        if reason:
+            raise TokenError(reason)
 
         return Principal(
             kind="user",

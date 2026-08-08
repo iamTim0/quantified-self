@@ -15,6 +15,7 @@ import uuid
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal
+from urllib.parse import parse_qs
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
@@ -96,7 +97,9 @@ from core.security.oidc import (
     fetch_discovery,
     is_redirect_uri_allowed,
     verify_id_token,
+    verify_logout_token,
 )
+from core.security.secret_audit import audit_secrets
 from core.security.tokens import (
     TokenError,
     create_access_token,
@@ -164,6 +167,17 @@ async def lifespan(app: FastAPI):
     if getattr(app.state, "testing", False):
         yield
         return
+
+    # Before anything else, and deliberately not caught: a Core signing real
+    # sessions with a secret published in this repository should fail to start,
+    # not start and log about it.
+    audit_secrets(
+        environment=settings.ENVIRONMENT,
+        jwt_secret=settings.JWT_SECRET,
+        encryption_key=settings.ENCRYPTION_KEY,
+        internal_secret=settings.INTERNAL_SERVICE_SECRET,
+        service="core",
+    )
 
     # The gRPC server is how the Analysis Service reads data (AGENTS.md rule 3).
     # It starts before the NATS consumer and outside that try block on purpose:
@@ -323,7 +337,20 @@ async def _issue_session(
 async def _revoke_all_sessions(
     session: AsyncSession, *, tenant_id: str, user_id: str, reason: str
 ) -> None:
-    """Invalidate every refresh token for a user (password change, key compromise)."""
+    """Invalidate every session for a user (password change, compromise, federated logout).
+
+    Both halves are needed and the second was missing. Revoking the refresh
+    tokens stops new access tokens being minted, but says nothing about the ones
+    already in circulation: they carry their own signature and expiry and were
+    accepted for the rest of their twelve hours. "Revoke all sessions" therefore
+    did not end any session already in use — only the ability to renew it.
+
+    The denylist cannot close that gap, because it keys on ``jti`` and a ``jti``
+    is only ever learned by being presented. ``users.sessions_valid_from`` covers
+    every outstanding token at once, and :func:`core.security.auth._revocation_reason`
+    compares it against each token's ``iat``.
+    """
+    now = datetime.now(timezone.utc)
     await session.execute(
         sa_update(RefreshToken)
         .where(
@@ -331,10 +358,15 @@ async def _revoke_all_sessions(
             RefreshToken.tenant_id == tenant_id,
             RefreshToken.revoked_at.is_(None),
         )
-        .values(revoked_at=datetime.now(timezone.utc))
+        .values(revoked_at=now)
+    )
+    await session.execute(
+        sa_update(User)
+        .where(User.id == user_id, User.tenant_id == tenant_id)
+        .values(sessions_valid_from=now)
     )
     logger.info(
-        "Revoked all refresh tokens for user=%s tenant=%s reason=%s",
+        "Revoked all sessions for user=%s tenant=%s reason=%s",
         user_id,
         tenant_id,
         reason,
@@ -1282,6 +1314,119 @@ async def _oidc_session_response(
         "provider": provider_slug,
         "account_created": linked,
     }
+
+
+@app.post("/api/v1/auth/oidc/{slug}/backchannel-logout")
+async def oidc_backchannel_logout(
+    slug: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """End every local session for an identity the provider has signed out.
+
+    The other direction to RP-initiated logout. Here the session ends *at the
+    provider* — the user signs out of Google, an administrator disables the
+    account, a device is deprovisioned — and the provider POSTs a signed logout
+    token to us out of band. Nothing consumed it before, so the local session
+    survived until its own expiry: up to thirty days after the identity behind it
+    was withdrawn.
+
+    The caller is a server, not a browser, and holds no session with us, so the
+    endpoint is necessarily unauthenticated (it is covered by the
+    ``/api/v1/auth/oidc/`` exemption in the auth middleware). Everything rests on
+    :func:`verify_logout_token`; see ``specs/oidc_backchannel_logout.fizz`` for
+    the check list stated as an invariant.
+
+    Maps to Fizzbee Invariants:
+    - AcceptedTokenWasGenuine
+    - AcceptedLogoutLeavesNothingItCoveredAlive
+    - ProviderLogoutEventuallyEndsEverySession
+    """
+    provider = await _load_enabled_provider(session, slug)
+
+    # Parsed by hand rather than with `Form(...)`, which would pull in
+    # python-multipart for one field. The specification mandates exactly this
+    # content type, so accepting anything else would be a favour to nobody.
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip()
+    if content_type != "application/x-www-form-urlencoded":
+        raise HTTPException(
+            status_code=400,
+            detail="A logout token must be posted as application/x-www-form-urlencoded",
+        )
+
+    fields = parse_qs((await request.body()).decode("utf-8", errors="replace"))
+    tokens = fields.get("logout_token") or []
+    if len(tokens) != 1 or not tokens[0]:
+        raise HTTPException(status_code=400, detail="Exactly one logout_token is required")
+
+    try:
+        discovery = await fetch_discovery(provider.issuer)
+        named = verify_logout_token(
+            logout_token=tokens[0],
+            discovery=discovery,
+            client_id=provider.client_id,
+            issuer=provider.issuer,
+        )
+    except OidcError as exc:
+        # 400 means "do not retry, this token is wrong"; 503 means "we could not
+        # check, come back". Collapsing the two would either make a key-server
+        # blip permanent or make a forged token a source of retries forever.
+        logger.warning(
+            "[req_id=%s] Rejected a back-channel logout for %s: %s",
+            get_current_request_id(),
+            slug,
+            exc.detail,
+        )
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
+
+    if not named.subject:
+        # Only `sid` was supplied. Our access tokens are not bound to a provider
+        # session id, so there is nothing to match it against, and guessing would
+        # mean ending sessions the provider did not name. Operators must leave
+        # `backchannel_logout_session_required` off at the provider, which obliges
+        # it to send `sub`.
+        raise HTTPException(
+            status_code=400,
+            detail="This deployment requires a sub claim; sid-only logout is not supported",
+        )
+
+    identity = (
+        await session.execute(
+            select(UserIdentity).where(
+                UserIdentity.provider_slug == slug,
+                UserIdentity.subject == named.subject,
+            )
+        )
+    ).scalars().first()
+
+    if identity is None:
+        # Nothing linked to that subject. 200 rather than 404: the provider is
+        # telling us something true, we simply have nothing to do about it, and a
+        # 404 would have it retry an event that will never apply. It is also not
+        # this endpoint's job to disclose which subjects have accounts here.
+        logger.info(
+            "[req_id=%s] Back-channel logout for %s named an unknown subject",
+            get_current_request_id(),
+            slug,
+        )
+        return Response(status_code=200, headers={"Cache-Control": "no-store"})
+
+    await _revoke_all_sessions(
+        session,
+        tenant_id=identity.tenant_id,
+        user_id=identity.user_id,
+        reason="oidc_backchannel_logout",
+    )
+    await session.commit()
+
+    logger.info(
+        "[req_id=%s] Back-channel logout from %s ended every session for user=%s tenant=%s",
+        get_current_request_id(),
+        slug,
+        identity.user_id,
+        identity.tenant_id,
+    )
+    return Response(status_code=200, headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/v1/data/oidc/identities")

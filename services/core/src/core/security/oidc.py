@@ -31,6 +31,7 @@ import base64
 import hashlib
 import logging
 import secrets
+import time
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -281,6 +282,109 @@ def verify_id_token(
         email_verified=bool(claims.get("email_verified", False)),
         name=claims.get("name") or claims.get("given_name"),
         raw_claims=claims,
+    )
+
+
+# ─── Back-channel logout ─────────────────────────────────────
+
+# The event a logout token must carry. Its absence is what distinguishes a logout
+# token from any other token the provider signs.
+BACKCHANNEL_LOGOUT_EVENT = "http://schemas.openid.net/event/backchannel-logout"
+
+# How old a logout token may be. The specification recommends remembering `jti`
+# values to reject replays; re-revoking an already revoked session is idempotent,
+# so a replay only matters if it can reach past a *subsequent* legitimate sign-in
+# and end that session too. A freshness window closes exactly that case without a
+# second denylist table to write, index and prune. Generous enough for clock skew
+# and a provider's retry, short enough that a captured token is worthless by the
+# time anybody could sign in again.
+LOGOUT_TOKEN_MAX_AGE_SECONDS = 120
+
+
+@dataclass(frozen=True)
+class LogoutSubject:
+    """Who a validated logout token is about."""
+
+    subject: str | None
+    session_id: str | None
+
+
+def verify_logout_token(
+    *,
+    logout_token: str,
+    discovery: dict[str, Any],
+    client_id: str,
+    issuer: str,
+    now: float | None = None,
+) -> LogoutSubject:
+    """Validate an OIDC Back-Channel Logout token and return who it names.
+
+    This is the only thing standing between an unauthenticated, internet-facing
+    endpoint and the ability to end anyone's session, so every clause below is
+    load-bearing. ``specs/oidc_backchannel_logout.fizz`` states the check list as
+    an invariant: remove one and the model checker produces the defect that then
+    gets through.
+
+    Raises:
+        OidcError: with 400 for a token that is invalid, and 503 when the
+            provider's keys cannot be reached — a distinction the caller passes
+            on, so the provider retries the second and does not retry the first.
+    """
+    jwks_uri = discovery["jwks_uri"]
+    if jwks_uri not in _jwk_clients:
+        _jwk_clients[jwks_uri] = PyJWKClient(jwks_uri, cache_keys=True)
+
+    try:
+        signing_key = _jwk_clients[jwks_uri].get_signing_key_from_jwt(logout_token)
+    except Exception as exc:
+        # Cannot verify, so cannot act. Fail closed and let the provider retry:
+        # acting on an unverifiable token would let anyone who can reach this
+        # endpoint end any session by posting plausible JSON during an outage.
+        raise OidcError(
+            f"Could not resolve the signing key: {type(exc).__name__}", 503
+        ) from exc
+
+    try:
+        claims = jwt.decode(
+            logout_token,
+            signing_key.key,
+            algorithms=ALLOWED_ALGORITHMS,
+            audience=client_id,
+            issuer=issuer.rstrip("/"),
+            leeway=CLOCK_SKEW_SECONDS,
+            # `exp` is deliberately absent: it is optional in a logout token, and
+            # requiring it would reject conformant providers. Freshness is
+            # enforced below on `iat`, which is mandatory.
+            options={"require": ["iss", "aud", "iat", "jti"]},
+        )
+    except jwt.PyJWTError as exc:
+        logger.warning("OIDC logout token rejected: %s", type(exc).__name__)
+        raise OidcError("The logout token could not be validated", 400) from exc
+
+    # A `nonce` means this is an ID token. Without this check, an ID token
+    # captured during a *login* could be replayed here as a logout.
+    if "nonce" in claims:
+        raise OidcError("A logout token must not carry a nonce", 400)
+
+    events = claims.get("events")
+    if not isinstance(events, dict) or not isinstance(
+        events.get(BACKCHANNEL_LOGOUT_EVENT), dict
+    ):
+        raise OidcError("The token is not a back-channel logout event", 400)
+
+    reference = time.time() if now is None else now
+    age = reference - float(claims["iat"])
+    if age > LOGOUT_TOKEN_MAX_AGE_SECONDS + CLOCK_SKEW_SECONDS:
+        raise OidcError("The logout token is too old", 400)
+
+    subject = claims.get("sub")
+    session_id = claims.get("sid")
+    if not subject and not session_id:
+        raise OidcError("The logout token names neither a subject nor a session", 400)
+
+    return LogoutSubject(
+        subject=str(subject) if subject else None,
+        session_id=str(session_id) if session_id else None,
     )
 
 

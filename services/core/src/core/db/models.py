@@ -58,6 +58,20 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
     role: Mapped[str] = mapped_column(String, nullable=False, default="owner")  # 'owner', 'admin', 'member'
+    # Access tokens issued before this instant are rejected.
+    #
+    # The denylist in ``revoked_access_tokens`` keys on ``jti``, which works for
+    # "log this session out" and cannot express "log *every* session out": we only
+    # learn a jti when its token is presented, so there is no list to add. Without
+    # this column, revoking all sessions revoked only the refresh tokens, and every
+    # outstanding access token stayed valid for the rest of its twelve hours —
+    # after a password change, after a credential compromise, and after a provider
+    # told us the identity behind the session no longer exists.
+    #
+    # Null means "no cutoff", which is every account that has never had one.
+    sessions_valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

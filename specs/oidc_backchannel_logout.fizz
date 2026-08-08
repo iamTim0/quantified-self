@@ -1,0 +1,233 @@
+# Fizzbee specification for OIDC Back-Channel Logout (OpenID Connect Back-Channel
+# Logout 1.0).
+#
+# RP-initiated logout already works: the user clicks "sign out" here and we send
+# them to the provider to end that session too. This is the other direction. The
+# user ends the session *at the provider* -- signs out of Google, an administrator
+# disables the account, a device is deprovisioned -- and the provider POSTs a
+# signed logout token to us out of band. Until now nothing consumed it, so the
+# local session survived until its own expiry: up to thirty days after the
+# identity behind it was withdrawn.
+#
+# Two things make this worth specifying rather than just writing.
+#
+# The first is that the caller is not a browser and holds no session with us, so
+# the endpoint is necessarily unauthenticated. Everything that decides whether to
+# act rests on validating the token itself, and "which checks are load-bearing" is
+# exactly the kind of list that quietly loses an entry. `AcceptedTokenWasGenuine`
+# below is written so that deleting any single clause from the handler's check
+# list produces a counterexample naming that defect.
+#
+# The second is delivery. The provider sends once, retries on failure, and gives
+# up eventually. Our verification fails closed when the provider's JWKS is
+# unreachable, which means a correct implementation *rejects* deliveries during an
+# outage. Fail-closed plus retry has to still converge, or the feature is a
+# liveness bug dressed as a security control -- which is what the `eventually
+# always` assertion pins down.
+
+MAX_SESSIONS = 2
+
+# Every way a logout token can be wrong. Each maps to one clause in the handler.
+#
+# "stale" is the replay case and carries a design decision: the specification
+# recommends remembering `jti` values to reject replays, but re-revoking already
+# revoked sessions is idempotent and harmless, so a replay only matters if it can
+# reach *past* a subsequent legitimate sign-in and kill that session too. A
+# freshness window on `iat` closes exactly that, without a second denylist table
+# to write, index and prune. `ReplayCannotKillALaterSession` is what makes that
+# claim checkable rather than an assertion in a comment.
+DEFECTS = [
+    "bad_signature",
+    "wrong_issuer",
+    "wrong_audience",
+    "has_nonce",
+    "no_logout_event",
+    "stale",
+]
+
+
+# Deliberately no accepted/rejected counters. They were the first thing written
+# here and they broke the model: a counter makes every rejected delivery a *new*
+# state, so a run could spend the whole `maxActions` budget refusing forged
+# tokens, hit the frontier, and stutter forever with the genuine notification
+# still outstanding -- a liveness counterexample that says nothing about the
+# handler. Rejecting a token changes nothing observable, so it changes nothing
+# here either, and a rejection is a self-loop that costs no budget.
+
+
+action Init:
+    sessions = []               # session ids usable right now
+    # Sessions the provider has ordered ended. Never cleared: it is the record of
+    # what the notification covered, and the properties below are stated against
+    # it rather than against "the sessions that existed at the time", which is not
+    # something a later state can reconstruct.
+    ordered_revoked = set([])
+    next_session = 0
+    # The provider's own session for this subject. Ours may only exist under it.
+    provider_session_open = True
+    # Set when the provider has ended its session and owes us a notification.
+    logout_pending = False
+    logout_ever_emitted = False
+    # The provider's signing keys. Unreachable means we cannot verify a signature,
+    # and therefore cannot safely act on anything the token says.
+    jwks_available = True
+    jwks_ever_failed = False
+    # Violation flag. There is deliberately only one: a separate
+    # "a replay killed a later session" flag was here and could never fail on its
+    # own, because accepting a stale token sets this one first and the checker
+    # stops at the first violation. An assertion that cannot be the one to fire is
+    # decoration, and two of those have already shipped in this directory.
+    accepted_a_bad_token = False
+
+
+atomic action SignIn:
+    # A session here only ever exists on the back of a provider session.
+    require provider_session_open
+    require len(sessions) < MAX_SESSIONS
+    next_session = next_session + 1
+    sessions.append("s_" + str(next_session))
+
+
+atomic action ProviderLogout:
+    # The user signed out at the provider, or the provider revoked the account.
+    #
+    # Once per run. Not a modelling shortcut but a requirement of the liveness
+    # property: `eventually always` asks for a point after which the condition
+    # holds forever, and a provider free to log out again at any time means the
+    # condition is falsified again at any time, so no such point exists. One
+    # logout, checked to completion, is the property actually worth stating --
+    # and the re-login below still exercises the replay case.
+    require provider_session_open
+    require not logout_ever_emitted
+    provider_session_open = False
+    logout_pending = True
+    logout_ever_emitted = True
+    for s in sessions:
+        ordered_revoked.add(s)
+
+
+atomic action ProviderSessionRestored:
+    # The user signs in at the provider again. This is what makes replay
+    # interesting: without it, a replayed logout token has nothing left to kill.
+    require not provider_session_open
+    require not logout_pending
+    provider_session_open = True
+
+
+atomic fair<strong> action DeliverGenuineLogout:
+    # The provider delivers, and retries until it succeeds -- hence strong
+    # fairness. Without it the model admits a run where the notification is simply
+    # never delivered, which says nothing about our handler.
+    require logout_pending
+
+    if not jwks_available:
+        # Fail closed. Acting on an unverifiable token would let anyone who can
+        # reach this endpoint end any user's session by posting plausible JSON
+        # during an outage. Rejecting costs a retry; the liveness assertion below
+        # is what proves the retry is enough.
+        #
+        # Note what this branch does *not* do: clear `logout_pending`. Marking the
+        # notification handled because we could not check it is the bug this whole
+        # specification is arranged to catch.
+        pass
+    else:
+        # Every session for the subject, not just one. The token may carry `sid`
+        # to name a single session, but our access tokens are not bound to an
+        # `sid`, so honouring it would mean claiming a precision we do not have.
+        # Over-revoking logs a second browser out early; under-revoking leaves a
+        # session alive that the user believes is gone.
+        sessions.clear()
+        logout_pending = False
+
+
+atomic action DeliverDefectiveLogout:
+    # Anything that is not a genuine, current logout token for this provider:
+    # forged, replayed, or an ID token being passed off as one.
+    defect = oneof(DEFECTS)
+
+    # The handler's validation, one clause per rule. Written out rather than
+    # collapsed into `defect == "none"` on purpose: this is the list the
+    # implementation must match, and deleting a clause here makes
+    # AcceptedTokenWasGenuine fail with that defect named in the counterexample.
+    signature_ok = defect != "bad_signature"
+    issuer_ok = defect != "wrong_issuer"
+    audience_ok = defect != "wrong_audience"
+    # A `nonce` claim means this is an ID token. Accepting one would let a token
+    # captured during a *login* be replayed as a logout.
+    no_nonce = defect != "has_nonce"
+    is_logout_event = defect != "no_logout_event"
+    fresh = defect != "stale"
+
+    accepted = (
+        jwks_available
+        and signature_ok
+        and issuer_ok
+        and audience_ok
+        and no_nonce
+        and is_logout_event
+        and fresh
+    )
+
+    if accepted:
+        accepted_a_bad_token = True
+        sessions.clear()
+    else:
+        # Nothing observable changes, so nothing changes here. See the note above
+        # Init: a counter would make this a state transition and break liveness.
+        pass
+
+
+atomic action JwksUnavailable:
+    # At most one outage per run, for the same budget reason as ProviderLogout: a
+    # provider whose keys flap indefinitely can consume every action before the
+    # notification is ever delivered. One outage, recovered from, is the case the
+    # liveness property is about.
+    require jwks_available
+    require not jwks_ever_failed
+    jwks_available = False
+    jwks_ever_failed = True
+
+
+atomic fair<strong> action JwksRestored:
+    # Fair because an outage that never ends is not a property of this handler.
+    # Drop the fairness and the liveness assertion below correctly fails: a
+    # fail-closed verifier plus a permanently unreachable provider means the
+    # session never goes away.
+    require not jwks_available
+    jwks_available = True
+
+
+always assertion AcceptedTokenWasGenuine:
+    # No session may be ended by a token that failed any validation rule. This is
+    # the whole security argument for an unauthenticated endpoint.
+    return not accepted_a_bad_token
+
+
+always assertion AcceptedLogoutLeavesNothingItCoveredAlive:
+    # The safety half. While the notification is still in flight the session
+    # legitimately keeps working -- we have not been told anything yet. Once a
+    # delivery has been accepted, every session the provider named must be gone,
+    # not just the first one found.
+    if logout_pending:
+        return True
+    for s in sessions:
+        if s in ordered_revoked:
+            return False
+    return True
+
+
+eventually always assertion ProviderLogoutEventuallyEndsEverySession:
+    # The liveness half, and the reason fail-closed verification is defensible: a
+    # delivery refused during a JWKS outage must be retried, and the retries must
+    # converge.
+    #
+    # This is the assertion with teeth. Have the handler treat an unverifiable
+    # delivery as handled -- clear `logout_pending` in the `not jwks_available`
+    # branch, which is the tempting way to stop a provider retrying at us -- and
+    # the ordered session stays usable forever and this fails. Remove the strong
+    # fairness from JwksRestored and it fails too, correctly: a fail-closed
+    # verifier and a provider that never comes back is a session that never ends.
+    for s in sessions:
+        if s in ordered_revoked:
+            return False
+    return True
