@@ -174,6 +174,12 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 20 | Session credentials in `httpOnly` cookies + CSRF | P0 | `completed` |
 | 21 | Fizzbee CLI installed and specs model-checked | P1 | `completed` — all 12 verified in 33 s; see §10 |
 | 22 | Server-side route guard (Next 16 `proxy.ts`) | P2 | `open` |
+| 24 | Analysis as a separate service reading via Core gRPC | P1 | `completed` |
+| 25 | Sync scheduler driven by `poll_interval_hours` | P1 | `completed` |
+| 26 | Core-side sync authority (replaces process-local `active_syncs`) | P1 | `completed` |
+| 27 | WHOOP OAuth token refresh | P2 | `completed` |
+| 28 | OIDC provider admin UI + RP-initiated logout | P2 | `completed` |
+| 29 | Browser-level tests (Playwright) | P1 | `completed` |
 | 23 | Rotate committed default secrets | P0 (deploy) | `open` — deployment action, see §10 |
 
 ---
@@ -390,14 +396,14 @@ streak 13, weather 14, whoop 13, yazio 11.
 |---|---|---|
 | Tokens in `localStorage`, not `httpOnly` cookies | XSS can steal a session | Unchanged. Needs cookies plus a Next 16 `proxy.ts`. Access-token TTL of 12 h limits the window. |
 | **Committed default secrets** | **Highest remaining risk** | `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have defaults in the repository; `.env` is committed; Yazio OAuth client credentials are hardcoded in `client.py`; `init.sql` seeds an owner with a committed bcrypt hash. Documented in `docs/operations.md`, **not fixed** — rotating them is a deployment action, not a code change. |
-| `services/analysis/` still a placeholder | none functionally | Analyses run in Core and are served over REST. The service has no gRPC client and is in no compose file. Cores gRPC server remains a stub. Documented in `docs/architecture.md`. |
-| No scheduler | Imports are manual | `poll_interval_hours` sizes the window; nothing triggers a run automatically. |
-| OIDC has no admin UI | operational friction | Providers are configured by inserting a row. The flow itself is complete and tested. |
-| No RP-initiated OIDC logout | minor | Logging out ends the local session only, not the provider session. |
-| `active_syncs` lock is process-local | duplicate work under replicas | Idempotency absorbs it; noted in `docs/operations.md`. |
-| No browser-level tests | frontend regressions | Still no jest/vitest/playwright. Frontend is covered only by `tsc`, ESLint and `next build`. |
+| ~~`services/analysis/` a placeholder~~ | resolved | It is a real deployable in both compose files. The analyses moved there; it reads through Core's gRPC API and holds no database connection, enforced by an AST test. |
+| ~~No scheduler~~ | resolved | Core ticks every 5 minutes, single-flight across replicas via a Postgres advisory lock. `SCHEDULER_ENABLED=false` disables it. |
+| ~~OIDC has no admin UI~~ | resolved | Owner/admin CRUD plus a settings panel. The client secret is never returned and is preserved across edits. |
+| ~~No RP-initiated OIDC logout~~ | resolved | Logout returns the provider's `end_session_url` when its discovery document offers one. Back-channel logout is still not implemented. |
+| ~~`active_syncs` lock is process-local~~ | resolved | Core refuses to enqueue a connector with a run already in flight, so the duplicate never reaches an importer. Stale runs expire after 6 h. |
+| ~~No browser-level tests~~ | resolved | 7 Playwright tests drive Chromium against a real stack, covering sign in → reload → sign out → reload, cookie invisibility to JS, cross-tab logout and CSRF. |
 | ~~Fizzbee CLI unavailable~~ | resolved | All 12 specs model-check in 33 s. `task fizz:lint` runs anywhere including Windows; `task fizz:check` needs WSL 22.04+ or the container, since Fizzbee ships no Windows binary and needs glibc 2.34+. |
-| WHOOP token refresh | manual step | No refresh-token flow; an expired OAuth token must be replaced by hand. |
+| ~~WHOOP token refresh~~ | resolved | Core refreshes ahead of expiry and persists the rotated refresh token encrypted. A rejected refresh surfaces as 409 "reconnect required". |
 
 ---
 
@@ -566,3 +572,143 @@ In the order I would take them.
 Docker Desktop and WSL both became unresponsive during this session — `wsl --shutdown`
 itself hung, which is why the remaining specs were verified in CI rather than locally.
 A reboot should clear it. Nothing in the repository depends on that state.
+
+---
+
+## 11. Fourth Pass — closing the architectural gaps
+
+Seven items, all of which had been recorded as known limitations rather than
+fixed. Each is now implemented and verified.
+
+### The analyses were in the wrong service
+
+AGENTS.md rule 3 says Analysis reads from Core over gRPC and owns no database
+connection. Core's gRPC server was an eleven-line `pass` stub, so that transport
+did not exist — which is the actual reason the analyses ended up inside Core.
+Nothing could have been built against it.
+
+`CoreDataService` now serves `QueryDataPoints`, `GetDataPoint`,
+`ListMetricTypes` and a new `ListDataSources`. Every handler filters on
+`tenant_id` and validates it as a UUID before it reaches SQL, and every call
+requires an internal service credential — the port being "internal" is not a
+boundary, which is the same assumption that once let a bare `X-Tenant-ID` header
+read any tenant.
+
+The statistics are unchanged; `insights.py` and its 37 tests moved to
+`services/analysis`, which obtains every input through gRPC. That rule is
+enforced rather than asserted: a test parses each module's AST and fails if any
+imports `sqlalchemy`, `asyncpg`, `psycopg` or `alembic`. An architectural rule
+that is only written down gets broken quietly — nothing else would fail.
+
+Two details worth keeping: `DataSourceSummary` has no field a connector
+credential could travel in, and a Core outage is a 503 rather than an empty
+result set, because "no correlations found" and "we could not read the data"
+must not look identical to the dashboard.
+
+### Nothing triggered an import
+
+`poll_interval_hours` was stored, displayed and used to size a window, and read
+by nothing that started a sync. Core schedules now, because Core owns both the
+connector config and the sync history the decision needs.
+
+The tick reuses `plan_and_enqueue_sync`, extracted from the HTTP handler, so a
+scheduled run takes the same path as a manual one. A separate implementation for
+scheduled runs is how the two silently diverge.
+
+It takes a **transaction-scoped** Postgres advisory lock so two replicas cannot
+both schedule — transaction-scoped specifically so a crashed replica releases it
+when its connection dies, rather than stopping all scheduling until someone
+restarts the database.
+
+### The sync lock was process-local
+
+Each importer kept an `active_syncs` set, which stops nothing once a second
+replica exists. Rather than push a distributed lock into eight importers, Core
+refuses to enqueue a connector that already has a queued or running `SyncRun`, so
+the duplicate is never published. Stale runs expire after six hours: without
+that, one importer crash wedges its connector permanently while the UI shows
+"running" forever.
+
+### WHOOP tokens expired after an hour
+
+WHOOP access tokens last about an hour against a six-hour poll interval, so the
+connector worked once and then 401'd until somebody pasted a new token in. Core
+refreshes ahead of expiry — reacting to a 401 means every import starts with a
+guaranteed-failed request against a provider that rate-limits auth failures.
+
+Three cases lose a credential if handled naively, each now tested: WHOOP rotates
+the refresh token and invalidates the old one; a response carrying no new refresh
+token must keep the existing one; and editing a connector's poll interval must
+carry the refresh grant over.
+
+### OIDC: no admin UI, no provider logout
+
+Providers were configurable only by inserting a row. Owner/admin CRUD plus a
+settings panel now cover it, and saving validates the issuer's discovery document
+first — validating later means the misconfiguration surfaces mid-login with a 502
+as the only clue. A provider with linked accounts cannot be deleted, only
+disabled: deleting it would lock out an OIDC-only account with no password.
+
+Logout returns the provider's `end_session_url` so the browser can end that
+session too. Deliberately without `id_token_hint`, which would put the user's
+identity in a URL that lands in browser history and proxy logs.
+
+### Browser tests
+
+Seven Playwright tests drive Chromium against a real stack — Postgres, Core, the
+Gateway and a production Next build — with the Gateway as the origin, because it
+proxies both the UI and the API and that single-origin arrangement is what makes
+the cookies behave as they do in production.
+
+Three findings from writing them:
+
+- `next dev` does not survive the Gateway's buffering proxy; the page arrives and
+  never hydrates. `next start` does, and is what deploys.
+- `page.request` shares the browser's cookie jar, so creating the account through
+  it left the browser already signed in and the login form never rendered.
+- Playwright's API request context will not send a `Secure` cookie over http,
+  which made "a protected call after logout is refused" pass **vacuously** — 401
+  whether or not logout worked. Those calls now run inside the page, with a
+  companion test asserting 200 while signed in.
+
+### Bugs found by the tooling, not by tests
+
+Ruff's F821 caught two `NameError`s that no test would have: the scheduler's
+enqueue callback used two unimported names (every scheduled sync would have
+failed silently inside a `try/except` meant to stop one bad connector aborting a
+tick), and the federated logout handler used `JSONResponse` without importing it.
+Both now have tests that exercise the real path.
+
+### Verified
+
+| Check | Result |
+|---|---|
+| Core | 164 |
+| Gateway | 10 |
+| Analysis | 47 |
+| Spec invariant tests | 36 |
+| End-to-end | 19 |
+| Importers (8 services) | 137 |
+| Browser (Playwright) | 7 |
+| **Total** | **420 passed, 0 failed** |
+| Fizzbee | 12 of 12 specifications verified |
+| Ruff | 82 (unchanged from baseline) |
+| ESLint | 25 problems, all pre-existing; 0 in any new file |
+| `tsc --noEmit` | clean |
+| `mkdocs build --strict` | clean |
+| Docker images | `services/core` and `services/analysis` both build |
+
+### What is still open
+
+1. **Rotate the committed secrets** (roadmap #23). Unchanged and still the
+   highest risk: `JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY`, the
+   hardcoded Yazio client credentials, and the seeded owner hash in `init.sql`.
+   Rotating `ENCRYPTION_KEY` needs a re-encryption migration planned first.
+2. **Server-side route guard** (roadmap #22). Cookies made it possible; a
+   protected page still renders its shell before `/api/v1/auth/me` answers. No
+   data leaks — the flash does.
+3. **Back-channel OIDC logout.** If the session is ended at the provider, the
+   local one survives until it expires.
+4. **The Gateway's UI proxy buffers responses**, which is why `next dev` does not
+   work behind it. Fine for the production build; worth revisiting if anyone
+   wants to develop through the Gateway.

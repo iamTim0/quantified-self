@@ -29,9 +29,9 @@ Datenbank.** Kein anderer Dienst importiert einen Datenbanktreiber.
 | Dienst | Aufgabe | Datenbankzugriff |
 | --- | --- | --- |
 | `services/api-gateway/` | Einstiegspunkt, JWT-Prüfung, Header-Injektion, Reverse Proxy | nein |
-| `services/core/` | REST-API, Ingest-Consumer, Analysen, Importplanung | **ja, exklusiv** |
+| `services/core/` | REST-API, gRPC-Leseschnittstelle, Ingest-Consumer, Importplanung, Scheduler | **ja, exklusiv** |
 | `services/importers/*` | Abruf bzw. Empfang externer Daten | nein |
-| `services/analysis/` | Platzhalter, siehe Einschränkungen | nein |
+| `services/analysis/` | Korrelationen, Trends, Auffälligkeiten, Routinen | nein, liest über gRPC von Core |
 | `apps/dashboard/` | Next.js-Oberfläche | nein |
 
 ## Datenfluss beim Import
@@ -105,12 +105,44 @@ Migrationen laufen ausschließlich über Alembic in `services/core/alembic/` und
 müssen ein funktionierendes `downgrade()` enthalten. Die CI prüft das, indem sie
 nach dem Upgrade einen Rollback und ein erneutes Upgrade ausführt.
 
+## Analysen: eigener Dienst, Lesezugriff nur über gRPC
+
+Die Analysen liefen früher in Core und lasen SQL direkt im Request-Handler.
+`services/analysis/` war ein Platzhalter, und Cores gRPC-Server ein Stub — es gab
+also gar keinen Transport, über den ein eigener Dienst hätte lesen können.
+
+Heute gilt:
+
+- Core betreibt `CoreDataService` auf Port `50051` mit `QueryDataPoints`,
+  `GetDataPoint`, `ListMetricTypes` und `ListDataSources`.
+- Jeder Aufruf braucht ein internes Service-Credential; jede Abfrage filtert nach
+  `tenant_id`, das vorher als UUID validiert wird.
+- `DataSourceSummary` trägt nur `id` und `source_type`. Es gibt bewusst kein Feld,
+  in dem ein Connector-Zugangsdatum die Dienstgrenze überqueren könnte.
+- Der Analysedienst hält **keine** Datenbankverbindung. Ein Test liest den AST
+  jedes Moduls und schlägt fehl, sobald dort ein Datenbanktreiber importiert wird.
+
+Die Oberfläche ruft `/api/v1/analysis/insights` auf; das Gateway leitet dorthin
+weiter.
+
+## Zeitgesteuerte Importe
+
+`poll_interval_hours` steuerte früher nur die Fenstergröße — ausgelöst wurde nie
+etwas. Core betreibt jetzt einen Scheduler, weil nur Core beides kennt, was die
+Entscheidung braucht: die Connector-Konfiguration und die Importhistorie.
+
+- Alle fünf Minuten wird geprüft, welche Connectoren fällig sind.
+- Ein Tick nimmt einen transaktionsgebundenen Postgres-Advisory-Lock, damit bei
+  mehreren Core-Instanzen nur eine plant.
+- Ein Connector mit bereits laufendem Import wird übersprungen. Nach sechs Stunden
+  gilt ein Lauf als verwaist, sonst würde ein abgestürzter Importer seinen
+  Connector dauerhaft blockieren.
+- Abschalten mit `SCHEDULER_ENABLED=false`.
+
+Damit ist auch die frühere prozesslokale `active_syncs`-Sperre in den Importern
+nicht mehr tragend: Core stellt den doppelten Auftrag gar nicht erst ein.
+
 ## Bekannte Einschränkungen
 
-- **`services/analysis/` ist ein Platzhalter.** Es enthält keinen gRPC-Client, in
-  keiner Compose-Datei ist es eingetragen, und Cores gRPC-Server ist ein Stub.
-  Die Analysen laufen derzeit in Core (`core/insights.py`) und werden per REST
-  ausgeliefert.
-- **Es gibt keinen Scheduler.** Syncs werden ausgelöst, wenn ein Connector
-  konfiguriert wird oder jemand einen Import startet. `poll_interval_hours` steuert
-  die Fenstergröße, nicht eine automatische Ausführung.
+- Analysen können bei sehr dünner Datenlage ausgelassen werden. Das ist Absicht:
+  ein schwach belegter Zusammenhang ist irreführender als gar keiner.

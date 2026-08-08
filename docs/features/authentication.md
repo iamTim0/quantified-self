@@ -148,6 +148,25 @@ Logout meldet nicht wieder an.**
     genau deshalb war man nach dem Logout sofort wieder angemeldet. Für lokale
     Entwicklung bitte regulär registrieren und anmelden.
 
+### Abmelden beim Anbieter
+
+Wer sich über einen externen Anbieter angemeldet hat, hat dort eine zweite,
+eigene Sitzung. Wird nur die lokale beendet, führt der nächste Klick auf
+„Anmelden mit …" ohne Rückfrage sofort wieder hinein — die Abmeldung sieht dann
+wirkungslos aus.
+
+Ist im Discovery-Dokument ein `end_session_endpoint` hinterlegt, antwortet
+`/api/v1/auth/logout` deshalb mit `200` und einem `end_session_url`, dem die
+Oberfläche folgt. Ohne verknüpften Anbieter bleibt es beim `204`.
+
+Bewusst **ohne** `id_token_hint`: der würde die Identität der Nutzerin in eine URL
+schreiben, die im Browserverlauf und in jedem Proxy-Log landet. Der Preis ist,
+dass manche Anbieter nachfragen, welches Konto abgemeldet werden soll — das ist
+der harmlosere Fehlerfall.
+
+Das Ziel nach der Abmeldung stellt `POST_LOGOUT_REDIRECT_URI` ein. Es muss beim
+Anbieter registriert sein.
+
 ## Passwortänderung
 
 `POST /api/v1/auth/change-password` ändert das Passwort des **aufrufenden** Nutzers
@@ -169,5 +188,5 @@ Logout und Token-Erneuerung sind darüber nachvollziehbar.
   nach der Prüfung.
 - Externe Anmeldung über OIDC ist verfügbar, aber standardmäßig deaktiviert; siehe
   [Externe Anmeldung (OIDC)](oidc.md).
-- Rollen (`owner`, `admin`, `member`) werden bisher nur für die Verwaltung der
-  API-Keys ausgewertet.
+- Rollen (`owner`, `admin`, `member`) werden für die Verwaltung der API-Keys und
+  der Anmeldeanbieter ausgewertet.

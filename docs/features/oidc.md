@@ -4,6 +4,27 @@ Zusätzlich zu E-Mail und Passwort kann die Anmeldung über beliebige
 OpenID-Connect-Anbieter erfolgen. **Google ist dabei nur eine Konfigurationszeile**
 — es gibt keinen anbieterspezifischen Code.
 
+## Anbieter verwalten
+
+Unter **Profil → Externe Anmeldeanbieter** können Inhaber und Administratoren
+Anbieter anlegen, bearbeiten, aktivieren und löschen. Vorher ging das nur durch
+Einfügen einer Zeile in `oidc_providers` — ein funktionierendes Feature, das
+niemand ohne Datenbankzugang einschalten konnte.
+
+Zwei Eigenschaften des Client Secrets sind bewusst so gewählt:
+
+- Die API gibt es nie zurück. Die Liste zeigt nur, *ob* eines hinterlegt ist.
+- Bleibt das Feld beim Bearbeiten leer, bleibt das gespeicherte erhalten. Sonst
+  müsste man es erneut eintippen, nur um ein Häkchen umzustellen.
+
+Beim Speichern wird das Discovery-Dokument des Issuers geprüft. Wird erst später
+geprüft, taucht der Konfigurationsfehler mitten in einer Anmeldung auf — mit einem
+`502` als einzigem Hinweis.
+
+Ein Anbieter, mit dem bereits Konten verknüpft sind, lässt sich nicht löschen, nur
+deaktivieren: Löschen würde ein Konto ohne Passwort aussperren. Deaktivieren ist
+reversibel.
+
 ## Ablauf
 
 Authorization Code Flow mit PKCE (S256):
@@ -110,9 +131,12 @@ Tenant-ID protokolliert; Tokens, Codes und Secrets niemals.
 
 ## Einschränkungen
 
-- Es gibt noch keine Oberfläche zum Anlegen von Anbietern — die Zeile wird derzeit
-  direkt in der Datenbank gepflegt.
 - Ein Konto, das ausschließlich über einen Anbieter angelegt wurde, hat kein
   lokales Passwort. Bis eines gesetzt wird, ist der Anbieter der einzige Zugang.
-- Abgemeldet wird nur lokal. Eine Single-Logout-Abmeldung beim Anbieter (RP-initiated
-  logout) ist nicht implementiert.
+- Die Abmeldung beim Anbieter setzt voraus, dass dessen Discovery-Dokument einen
+  `end_session_endpoint` nennt — der ist in OpenID Connect optional. Fehlt er,
+  endet nur die lokale Sitzung. Siehe
+  [Abmelden beim Anbieter](authentication.md#abmelden-beim-anbieter).
+- Back-Channel-Logout (der Anbieter meldet uns die Abmeldung) ist nicht
+  implementiert. Wird die Sitzung beim Anbieter beendet, bleibt die lokale bis zu
+  ihrem Ablauf bestehen.

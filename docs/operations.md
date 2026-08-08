@@ -105,6 +105,13 @@ Verschlüsselungsschlüssel ist ein Backup der Connector-Zugangsdaten wertlos.
 - Importer sind zustandslos und laufen in NATS-Queue-Groups; mehrere Repliken
   teilen die Last automatisch.
 - Cores Ingest-Consumer nutzt ebenfalls eine Queue-Group.
-- Der Sperrmechanismus gegen parallele Syncs (`active_syncs`) ist **prozesslokal**.
-  Bei mehreren Repliken eines Importers verhindert er keine Doppelläufe mehr; die
-  Idempotenz fängt das ab, aber es entsteht unnötige Last.
+- Doppelläufe verhindert **Core**, nicht der Importer: ein Connector mit bereits
+  eingereihtem oder laufendem `SyncRun` wird nicht erneut eingeplant. Die
+  `active_syncs`-Menge in den Importern ist nur noch ein lokaler Puffer gegen eine
+  erneut zugestellte Nachricht — sie war nie eine verteilte Sperre, und bei
+  mehreren Repliken hätte sie nichts verhindert.
+- Der Scheduler ist über einen transaktionsgebundenen Postgres-Advisory-Lock
+  single-flight. Mehrere Core-Repliken sind damit unbedenklich: pro Tick plant
+  genau eine. Stirbt sie, gibt die Verbindung den Lock frei.
+- Der Analysedienst ist zustandslos und hält keine Datenbankverbindung; er
+  skaliert unabhängig von Core.
