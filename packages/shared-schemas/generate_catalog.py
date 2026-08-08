@@ -150,18 +150,6 @@ export function describeMetric(raw: string, locale: "de" | "en" = "de"): {
 
   return { label: readable || name, unit: "", aggregation: "average", precision: 1 };
 }
-
-/** The value under whichever of `keys` the tenant actually has data for. */
-export function firstPresent<T>(
-  source: Record<string, T | undefined>,
-  keys: readonly string[],
-): T | undefined {
-  for (const key of keys) {
-    const hit = source[key];
-    if (hit !== undefined) return hit;
-  }
-  return undefined;
-}
 """
 
 
