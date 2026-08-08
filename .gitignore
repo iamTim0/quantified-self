@@ -86,7 +86,7 @@ yarn-error.log*
 # because nothing builds or tests them.
 #
 # The durable outputs of that work belong in the repository under their own
-# names: specifications in `specs/`, decisions in AGENT_PROGRESS.md, and
-# behaviour in `docs/`.
+# names: specifications in `specs/`, behaviour in `docs/`, and the reasoning for
+# a change in the commit that made it.
 /.superpowers/
 /docs/superpowers/

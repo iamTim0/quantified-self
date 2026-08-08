@@ -128,13 +128,90 @@ kennt.
 `docker-compose.coolify.yml` beschreibt den Produktions-Stack: Traefik, Gateway,
 Core, Dashboard, Dokumentation und die acht Importer.
 
+### Schritt für Schritt unter eigener Domain
+
+**1. Variablen setzen.** Ohne die drei Secrets bricht `docker compose` ab, bevor
+ein Container startet — das ist Absicht, siehe oben. `PUBLIC_HOST` ist der
+Hostname, unter dem Traefik ausliefert; er steht bewusst nirgends im Repository.
+
+```bash
+export PUBLIC_HOST=deine-domain.example
+export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export INTERNAL_SERVICE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+export ALLOWED_ORIGINS=https://$PUBLIC_HOST
+```
+
+In Coolify gehören dieselben Werte in die Environment-Variablen der Anwendung.
+Steht schon Nutzdaten in der Datenbank, ist `ENCRYPTION_KEY` **nicht** frei
+wählbar — dann zuerst [umschlüsseln](#encryption_key-wechseln).
+
+**2. Konfiguration prüfen, bevor etwas startet.** Fehlt eine Variable, sagt das
+hier welche:
+
+```bash
+docker compose -f docker-compose.coolify.yml config >/dev/null && echo "ok"
+```
+
+**3. Starten und migrieren.**
+
 ```bash
 docker compose -f docker-compose.coolify.yml up -d --build
 docker compose -f docker-compose.coolify.yml run --rm core alembic upgrade head
 ```
 
-Migrationen laufen bewusst als eigener Schritt und nicht beim Start eines Dienstes:
-mehrere gleichzeitig startende Repliken würden sonst gegeneinander migrieren.
+Migrationen laufen bewusst als eigener Schritt und nicht beim Start eines
+Dienstes: mehrere gleichzeitig startende Repliken würden sonst gegeneinander
+migrieren.
+
+**4. Erstes Konto anlegen** — Selbstregistrierung ist aus, siehe
+[Das erste Konto anlegen](#das-erste-konto-anlegen).
+
+```bash
+docker compose -f docker-compose.coolify.yml run --rm core \
+  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
+```
+
+### Testen
+
+`tools/smoke_deployment.sh` prüft ein Deployment von außen — erreichbar,
+verschlossen, und was es selbst über seine Konfiguration sagt:
+
+```bash
+bash tools/smoke_deployment.sh https://$PUBLIC_HOST
+
+# Mit Zugangsdaten zusätzlich Anmeldung, ein tenant-bezogener Lesezugriff
+# und die Selbstauskunft:
+OWNER_EMAIL=du@example.com OWNER_PASSWORD='…' \
+  bash tools/smoke_deployment.sh https://$PUBLIC_HOST
+```
+
+Geprüft wird:
+
+| Prüfung | Erwartung |
+| --- | --- |
+| `/health` | `200` |
+| `/` | `200` — Dashboard |
+| `/docs/` | die Dokumentation, am Seiteninhalt erkannt und nicht nur am Statuscode |
+| `POST /api/v1/auth/signup` | **`403`** — sonst steht die Anwendung jedem offen, der die Adresse kennt |
+| `/api/v1/data/metrics` ohne Sitzung | `401` |
+| `/api/v1/internal/…` | **nicht** `200` — dort liegen entschlüsselte Connector-Zugangsdaten |
+| Anmeldung + Lesezugriff | `200` |
+| `/api/v1/data/system/warnings` | leer |
+
+Der letzte Punkt ist der aussagekräftigste: er fragt die Anwendung, was sie
+selbst an ihrer Konfiguration auszusetzen hat. Ein korrekt eingerichtetes
+Produktions-Deployment meldet dort nichts.
+
+!!! note "Über `http://` sind zwei Ergebnisse erwartbar"
+    Secure-Cookies können über unverschlüsseltes HTTP nicht übertragen werden. Ein
+    Deployment, das nur per `http` erreichbar ist, braucht daher
+    `COOKIE_SECURE=false` — und meldet dann `cookies_not_secure`. Das Skript
+    bewertet die Selbstauskunft deshalb nur bei `https`-Adressen und gibt sie
+    ansonsten bloß aus.
+
+    `/docs/` schlägt außerdem fehl, wenn Traefik und der Docs-Container nicht
+    laufen: dann antwortet dort das Dashboard.
 
 ### Netzwerkgrenzen
 

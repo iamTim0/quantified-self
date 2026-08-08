@@ -31,7 +31,7 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
     - **Deployment hostnames and public URLs.** These come from `PUBLIC_HOST` / `PUBLIC_BASE_URL` at deploy time. A hostname in the source tells a reader of the public repository exactly what to point their tools at.
     - **Absolute local filesystem paths** (`C:\Users\…`, `/home/…`, `/Users/…`). Use repository-relative paths.
     - **Real personal data of any kind** — names in placeholders, actual health data, actual location traces, screenshots containing either.
-    - **Agent working state.** Per-run scratch directories and AI planning artifacts are not project documentation and MUST NOT be committed, least of all wired into the published documentation nav. Durable outputs belong in `specs/`, `AGENT_PROGRESS.md` or `docs/` under their own names.
+    - **Agent working state.** Per-run scratch directories and AI planning artifacts are not project documentation and MUST NOT be committed, least of all wired into the published documentation nav. Durable outputs belong in `specs/` (specifications), `docs/` (behaviour and operation) or a commit message (why a change was made) — under their own names, in the form the project already uses. A running log of what an agent did is not one of those: it duplicates the git history in a shape nothing verifies.
 
     Development *defaults* for secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, …) are a deliberate exception: they are published on purpose so local development needs no configuration, and production refuses to start on them. Everything above is not that — it is information about a particular person and a particular deployment, and no mechanism downstream can undo committing it.
 

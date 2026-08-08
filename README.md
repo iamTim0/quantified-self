@@ -25,6 +25,33 @@ Start here:
 | [API-Keys](docs/features/api-keys.md) | Tenant-bound inbound keys |
 | [Fehlerbehebung](docs/troubleshooting.md) | Common failures and what they mean |
 
+## Deploying it
+
+Four steps, and the stack refuses to start if you skip the first — see
+[Betrieb](docs/operations.md#schritt-fur-schritt-unter-eigener-domain) for the
+detail and for the `ENCRYPTION_KEY` ordering trap.
+
+```bash
+export PUBLIC_HOST=your-host.example
+export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export INTERNAL_SERVICE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
+export ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+
+docker compose -f docker-compose.coolify.yml config >/dev/null   # names any missing variable
+docker compose -f docker-compose.coolify.yml up -d --build
+docker compose -f docker-compose.coolify.yml run --rm core alembic upgrade head
+docker compose -f docker-compose.coolify.yml run --rm core \
+  python -m core.create_owner --email you@example.com --workspace "My Data"
+```
+
+Then check it from the outside — reachable, closed, and what it reports about its
+own configuration:
+
+```bash
+OWNER_EMAIL=you@example.com OWNER_PASSWORD='…' \
+  bash tools/smoke_deployment.sh https://$PUBLIC_HOST
+```
+
 > **Before deploying:** `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY`
 > ship with development defaults that are committed to this repository. The
 > production stack now refuses to start without real values, and `ENCRYPTION_KEY`

@@ -118,7 +118,6 @@
 
 ## 🔵 Phase 9: Verification & Governance (Required)
 
-- [ ] Maintain `AGENT_PROGRESS.md` with status, decisions, risks, blockers, changed files and test results.
 - [ ] Use Sub-Agents for independent importer, integration, test and documentation reviews when available; critically validate their results.
 - [ ] Verify Core-only database ownership, gRPC Analysis access, NATS importer flow, tenant filters, idempotency, `X-Request-ID`, secret handling and no shared mutable state.
 - [ ] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
