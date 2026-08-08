@@ -72,4 +72,15 @@ def test_matrix_shape_matches_what_the_workflow_reads():
     """release.yml consumes this with fromJSON into strategy.matrix.include."""
     entries = matrix()
     assert len(entries) == len(IMAGES)
-    assert all(set(entry) == {"image", "context", "dockerfile"} for entry in entries)
+    assert all(set(entry) == {"image", "context", "dockerfile", "cache"} for entry in entries)
+
+
+def test_cache_modes_are_valid_and_bounded():
+    """`cache` goes straight into buildx's cache-to, and the budget is 10 GB.
+
+    Only two values mean anything to buildx, and `max` on all thirteen would
+    overflow the Actions cache — which is the failure this field exists to avoid,
+    so a future edit that sets them all to max should fail here.
+    """
+    assert {image.cache for image in IMAGES} <= {"min", "max"}
+    assert sum(image.cache == "max" for image in IMAGES) <= 4

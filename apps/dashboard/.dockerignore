@@ -7,7 +7,6 @@
 # use `COPY . .` already do.
 .env
 .env.*
-!.env.example
 *.pem
 
 node_modules
@@ -16,8 +15,11 @@ node_modules
 *.log
 .DS_Store
 
-# Not needed to build, and Playwright's output can be large.
+# Not needed to build, and Playwright's output can be large. playwright.config.ts
+# goes with e2e: leaving it behind means `next build` type-checks a config whose
+# testDir no longer exists in the context.
 e2e
+playwright.config.ts
 test-results
 playwright-report
 blob-report

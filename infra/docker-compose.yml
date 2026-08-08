@@ -231,13 +231,23 @@ services:
     networks:
       - qs-network
 
+  # Behind a profile, so `task dev:up` no longer starts it: without a token this
+  # container exited and `restart: unless-stopped` restarted it forever, on every
+  # dev machine that does not use a tunnel. `task dev:tunnel` names the service
+  # explicitly, which activates its profile.
+  #
+  # The token goes through the environment, which is where cloudflared looks for
+  # it. As a command-line flag it did not survive an empty value: Compose drops
+  # the empty word, so `--token` arrived with nothing after it and the CLI failed
+  # to parse its own arguments.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
+    profiles: ["tunnel"]
     restart: unless-stopped
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    command: tunnel --no-autoupdate run
     depends_on:
       - traefik
       - api-gateway

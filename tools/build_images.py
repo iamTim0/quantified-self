@@ -46,13 +46,22 @@ class Image:
     name: str
     context: str
     dockerfile: str
+    # Buildx cache mode for the release workflow. `max` caches every intermediate
+    # layer and `min` only the final ones, and the choice is a budget: the Actions
+    # cache is 10 GB per repository with least-recently-used eviction, so thirteen
+    # `max` scopes overflow it and then evict each other in an order nobody
+    # controls -- which is slower than caching less on purpose. `max` therefore
+    # goes to the three images whose builds are long (a full Next.js production
+    # build, two `uv sync` resolutions against packages/proto) and `min` to the ten
+    # importers, whose layers are small and quick to rebuild.
+    cache: str = "min"
 
 
 IMAGES: tuple[Image, ...] = (
-    Image("core", ".", "services/core/Dockerfile"),
-    Image("analysis", ".", "services/analysis/Dockerfile"),
+    Image("core", ".", "services/core/Dockerfile", cache="max"),
+    Image("analysis", ".", "services/analysis/Dockerfile", cache="max"),
     Image("api-gateway", "services/api-gateway", "services/api-gateway/Dockerfile"),
-    Image("dashboard", "apps/dashboard", "apps/dashboard/Dockerfile"),
+    Image("dashboard", "apps/dashboard", "apps/dashboard/Dockerfile", cache="max"),
     Image("docs", ".", "infra/docs.Dockerfile"),
     Image("importer-yazio", "services/importers/yazio", "services/importers/yazio/Dockerfile"),
     Image("importer-whoop", "services/importers/whoop", "services/importers/whoop/Dockerfile"),
@@ -80,7 +89,12 @@ UNPUBLISHED_DOCKERFILES = frozenset({"infra/fizzbee.Dockerfile"})
 def matrix() -> list[dict[str, str]]:
     """The `strategy.matrix.include` value for the release workflow."""
     return [
-        {"image": image.name, "context": image.context, "dockerfile": image.dockerfile}
+        {
+            "image": image.name,
+            "context": image.context,
+            "dockerfile": image.dockerfile,
+            "cache": image.cache,
+        }
         for image in IMAGES
     ]
 

@@ -179,7 +179,15 @@ services:
       # allow_credentials=True -- a wildcard there makes Starlette echo whichever
       # origin asks, so any page on the internet could make credentialed calls to
       # this API. Set it explicitly for a multi-origin setup; comma-separated.
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://${PUBLIC_HOST:-localhost}}
+      #
+      # Both schemes, because a deployment is not always https at the browser:
+      # a tunnel or an upstream proxy may terminate TLS and forward http, and
+      # QS_HTTP_PORT is plain http by design. An origin that is not listed fails
+      # closed -- Starlette omits the header and the browser drops the response --
+      # so the cost of guessing the scheme wrong is a feature that silently does
+      # not work. The UI itself is unaffected either way: it calls its own origin,
+      # and same-origin requests are not CORS.
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://${PUBLIC_HOST:-localhost},http://${PUBLIC_HOST:-localhost}}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
@@ -416,14 +424,21 @@ services:
   # file is being read, for every service in it. With `:?` here, `docker compose
   # config` and `up -d` both failed with "required variable TUNNEL_TOKEN is
   # missing" on every deployment that does not use a tunnel -- which is to say the
-  # guard did not protect the tunnel, it blocked the whole stack. cloudflared
-  # itself refuses to start on an empty token, which is the right place for it.
+  # guard did not protect the tunnel, it blocked the whole stack.
+  #
+  # The token then goes through the environment rather than the command line,
+  # because an empty one did not survive as a flag: Compose drops the empty word,
+  # `--token` arrives with nothing after it, and cloudflared fails parsing its own
+  # arguments -- inside a restarting container, which is a worse error than the one
+  # this replaced. cloudflared reads TUNNEL_TOKEN natively.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
     profiles: ["tunnel"]
     restart: unless-stopped
-    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:-}
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+    command: tunnel --no-autoupdate run
     depends_on:
       - traefik
     networks:

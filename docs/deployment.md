@@ -71,9 +71,10 @@ gleich mitziehen, zeigte `latest` für zwölf Images auf die neue Version und f�
 das dreizehnte auf die alte — ein Stack, den niemand zusammengestellt und niemand
 getestet hat. Zusätzlich wandern sie nur bei einem Lauf vom Default-Branch: ein
 Lauf aus einem nicht gemergten Branch veröffentlicht `1.0.0` und `sha-…`, bewegt
-aber nichts, worauf ein Deployment zeigt. Zusätzlich schreibt der
-Workflow für jedes Image eine signierte Build-Provenance in die Registry
-(`actions/attest-build-provenance`), prüfbar mit:
+aber nichts, worauf ein Deployment zeigt.
+
+Für jedes Image schreibt der Workflow außerdem eine signierte Build-Provenance in
+die Registry (`actions/attest-build-provenance`), prüfbar mit:
 
 ```bash
 gh attestation verify --owner iamTim0 \
@@ -190,8 +191,8 @@ hinaus steuern diese das Deployment selbst:
 | `QS_STREAK_PORT` | `8006` | Eingehende Streak-Daten (zusätzlich als `/ingest` über Traefik geroutet). |
 | `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | Traefik-Dashboard, **nur auf Loopback** gebunden. |
 | `POSTGRES_PASSWORD` | `qs_dev_password` | Nur im Compose-Netz erreichbar. Siehe Hinweis unten. |
-| `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST}` | CORS-Ursprünge des Gateways. Der Standard ist die eigene Origin — **nicht** `*`: das Gateway läuft mit `allow_credentials=True`, und ein Wildcard lässt Starlette jede fragende Origin zurückspiegeln. |
-| `TUNNEL_TOKEN` | leer | Nur für `--profile tunnel`. Leer lassen, wenn kein Cloudflare-Tunnel benutzt wird. |
+| `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | CORS-Ursprünge des Gateways. Der Standard ist die eigene Origin in beiden Schemata — **nicht** `*`: das Gateway läuft mit `allow_credentials=True`, und ein Wildcard lässt Starlette jede fragende Origin zurückspiegeln. Beide Schemata, weil vor dem Stack ein Proxy oder Tunnel TLS beenden kann und `QS_HTTP_PORT` bewusst http ist. |
+| `TUNNEL_TOKEN` | leer | Nur mit `--profile tunnel`. Leer lassen, wenn kein Cloudflare-Tunnel benutzt wird — ohne Profil startet der Container gar nicht. |
 
 `POSTGRES_PASSWORD` ist bewusst kein `:?`-Pflichtwert wie die drei Secrets:
 PostgreSQL setzt das Passwort **einmalig** beim Initialisieren eines leeren

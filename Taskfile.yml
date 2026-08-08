@@ -17,6 +17,9 @@ tasks:
       - docker compose -f infra/docker-compose.yml logs -f
 
   dev:tunnel:
+    # cloudflared sits behind the `tunnel` profile, so `dev:up` no longer starts
+    # it. Naming the service explicitly activates its profile, which is what makes
+    # this task the way in.
     desc: "Start Cloudflare Tunnel and display public HTTPS endpoint URL"
     cmds:
       - docker compose --env-file .env -f infra/docker-compose.yml up -d cloudflared
