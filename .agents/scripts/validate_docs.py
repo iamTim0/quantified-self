@@ -21,6 +21,28 @@ def get_modified_files() -> list[str]:
     except Exception:
         return []
 
+CODE_ROOTS = ("services/", "packages/", "specs/")
+
+# Extensions that carry behaviour worth documenting. Everything else under those
+# roots -- `.dockerignore`, a lockfile, a cache -- cannot need a README change,
+# and warning about it teaches the reader to ignore this check.
+CODE_SUFFIXES = (".py", ".ts", ".tsx", ".js", ".jsx", ".proto", ".fizz", ".sql")
+
+IGNORED_PARTS = ("__pycache__", ".pytest_cache", ".ruff_cache", ".venv", "node_modules")
+
+
+def is_code(path: str) -> bool:
+    if not path.startswith(CODE_ROOTS):
+        return False
+    if any(part in path for part in IGNORED_PARTS):
+        return False
+    return path.endswith(CODE_SUFFIXES)
+
+
+def is_doc(path: str) -> bool:
+    return path.endswith(".md") or "docs" in path
+
+
 def validate_markdown_links(filepath: str) -> list[str]:
     """Validates that local markdown relative links point to existing files."""
     if not os.path.exists(filepath):
@@ -61,9 +83,9 @@ def main() -> None:
     is_codex = data.get("hook_event_name") == "Stop"
 
     modified = get_modified_files()
-    
-    code_changes = [f for f in modified if f.startswith("services/") or f.startswith("packages/") or f.startswith("specs/")]
-    doc_changes = [f for f in modified if f.endswith(".md") or "docs" in f]
+
+    code_changes = [f for f in modified if is_code(f)]
+    doc_changes = [f for f in modified if is_doc(f)]
 
     issues = []
 
@@ -79,7 +101,13 @@ def main() -> None:
         # If new importer or service added, require README update
         new_services = [f for f in code_changes if "importers/" in f or "services/" in f]
         if new_services:
-            issues.append(f"Code changes detected in microservices ({len(new_services)} files), but README.md, CLAUDE.md or GEMINI.md were not updated.")
+            listed = ", ".join(sorted(new_services)[:4])
+            more = "" if len(new_services) <= 4 else f" (+{len(new_services) - 4} more)"
+            issues.append(
+                f"Uncommitted source changes with no documentation change anywhere: "
+                f"{listed}{more}. Update the relevant page under docs/, or README.md "
+                f"if it changes how the project is run."
+            )
 
     # Response for Stop hook or PostToolUse
     if issues:
