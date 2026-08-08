@@ -92,10 +92,10 @@ services:
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
-      - "traefik.http.routers.gateway.entrypoints=web"
-      - "traefik.http.routers.gateway.priority=10"
-      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.routers.api.priority=10"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
     networks:
       - qs-network
 
@@ -169,10 +169,10 @@ services:
       - PORT=8006
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.streak-ingest.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
-      - "traefik.http.routers.streak-ingest.entrypoints=web"
-      - "traefik.http.routers.streak-ingest.priority=100"
-      - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
+      - "traefik.http.routers.ingest.rule=PathPrefix(`/ingest`)"
+      - "traefik.http.routers.ingest.entrypoints=web"
+      - "traefik.http.routers.ingest.priority=30"
+      - "traefik.http.services.ingest.loadbalancer.server.port=8006"
     networks:
       - qs-network
   home-assistant-importer:
@@ -203,14 +203,14 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
     labels:
-      # Catch-all at the lowest priority; see docker-compose.prod.yml for why this
-      # is not `Path('/') || PathPrefix('/_next')` -- that matched two of the
-      # twelve routes the app builds, and 404'd every reload and the OIDC callback.
+      # `workspace`, priority 1: the UI is whatever no other route claimed. The
+      # four roles and why they are shaped this way are documented once, in
+      # docker-compose.prod.yml.
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)"
-      - "traefik.http.routers.dashboard.entrypoints=web"
-      - "traefik.http.routers.dashboard.priority=1"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+      - "traefik.http.routers.workspace.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.workspace.entrypoints=web"
+      - "traefik.http.routers.workspace.priority=1"
+      - "traefik.http.services.workspace.loadbalancer.server.port=3000"
     networks:
       - qs-network
 
@@ -222,7 +222,7 @@ services:
       - ..:/docs-workspace:ro
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"

@@ -24,8 +24,3 @@ test-results
 playwright-report
 blob-report
 tsconfig.tsbuildinfo
-
-# The stale lockfile that made this image unbuildable. Keeping it out of the
-# context means a future edit cannot accidentally install from it again.
-pnpm-lock.yaml
-pnpm-workspace.yaml

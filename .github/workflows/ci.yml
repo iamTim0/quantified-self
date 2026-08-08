@@ -134,14 +134,20 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-      - uses: actions/setup-node@v4
+      # Bun, not Node. The dashboard had two lockfiles that disagreed -- CI
+      # installed with `npm ci` from package-lock.json while the Dockerfile
+      # installed with pnpm from a pnpm-lock.yaml that had gone stale, so the
+      # image was unbuildable and CI could not notice. One lockfile now, bun.lock,
+      # and the same tool reads it here and in the image.
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
+          # Matches the `oven/bun:1-alpine` the image is built on.
+          bun-version: "1.x"
 
       - name: Apply migrations
         run: uv run --directory services/core alembic upgrade head
 
-      - run: npm ci --no-audit --no-fund
+      - run: bun install --frozen-lockfile
         working-directory: apps/dashboard
 
       # A production build, not `next dev`. The Gateway proxies the UI by
@@ -149,13 +155,13 @@ jobs:
       # that -- the page arrives but never hydrates. `next start` is also what
       # actually gets deployed, so it is the right thing to test.
       - name: Build dashboard
-        run: npx next build
+        run: bun run build
         working-directory: apps/dashboard
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: bunx playwright install --with-deps chromium
         working-directory: apps/dashboard
 
       - name: Start the stack
@@ -200,7 +206,7 @@ jobs:
 
           # `next start` takes the directory positionally; there is no --dir flag,
           # and passing one made it exit immediately.
-          ( cd apps/dashboard && npx next start --port 3000 > /tmp/next.log 2>&1 & )
+          ( cd apps/dashboard && bunx next start --port 3000 > /tmp/next.log 2>&1 & )
 
           wait_for "Core" http://127.0.0.1:8001/health /tmp/core.log
           wait_for "Next" http://127.0.0.1:3000 /tmp/next.log
@@ -230,7 +236,7 @@ jobs:
           done
 
       - name: Browser tests
-        run: npx playwright test
+        run: bunx playwright test
         working-directory: apps/dashboard
 
       - uses: actions/upload-artifact@v4
@@ -303,17 +309,20 @@ jobs:
         working-directory: apps/dashboard
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "22"
-      - run: npm ci --no-audit --no-fund
+          bun-version: "1.x"
+      # --frozen-lockfile is the point of this step, not a detail: it is what makes
+      # a lockfile that no longer matches package.json a failed build here rather
+      # than an unbuildable image discovered at release time.
+      - run: bun install --frozen-lockfile
       - name: Type check
-        run: npx tsc --noEmit
+        run: bun run tsc --noEmit
       - name: Lint
-        run: npx eslint src
+        run: bun run eslint src
         continue-on-error: true
       - name: Build
-        run: npx next build
+        run: bun run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 

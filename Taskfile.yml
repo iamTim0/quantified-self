@@ -189,8 +189,8 @@ tasks:
     desc: "Run linters across Python & Next.js dashboard"
     cmds:
       - uv run --with ruff ruff check services/ specs/
-      - npx pnpm --prefix apps/dashboard lint
-      - npx pnpm --prefix apps/dashboard exec tsc --noEmit
+      - bun run --cwd apps/dashboard lint
+      - bun run --cwd apps/dashboard tsc --noEmit
 
   run:core:
     desc: "Run Core Data Service on port 8001"
@@ -258,7 +258,7 @@ tasks:
       PYTHONUTF8: "1"
     cmds:
       - >-
-        npx --yes concurrently
+        bunx concurrently
         --names "yazio,apple-health,calendar,dawarich,home-assistant,streak,weather,whoop"
         --prefix-colors "yellow,cyan,red,blue,green,yellow,cyan,red"
         --handle-input
@@ -282,9 +282,9 @@ tasks:
       - uv run --with mkdocs --with mkdocs-material mkdocs build --strict
 
   dashboard:
-    desc: "Run the Next.js Web User Dashboard dev server on port 3000 using pnpm"
+    desc: "Run the Next.js Web User Dashboard dev server on port 3000 (Bun)"
     cmds:
-      - npx pnpm --prefix apps/dashboard dev
+      - bun run --cwd apps/dashboard dev
 
   dev:local:
     desc: "Start Postgres, NATS, and Traefik containers, run DB migrations, and launch all local microservices concurrently"
@@ -299,7 +299,7 @@ tasks:
       PYTHONUTF8: "1"
     cmds:
       - >-
-        npx --yes concurrently
+        bunx concurrently
         --names "core,gateway,yazio,apple-health,calendar,dawarich,home-assistant,streak,weather,whoop,dash"
         --prefix-colors "blue,green,yellow,cyan,red,blue,green,yellow,cyan,red,magenta"
         --handle-input
@@ -313,7 +313,7 @@ tasks:
         "uv run --directory services/importers/streak python -m streak_importer.main"
         "uv run --directory services/importers/weather python -m weather_importer.main"
         "uv run --directory services/importers/whoop python -m whoop_importer.main"
-        "npx pnpm --prefix apps/dashboard dev"
+        "bun run --cwd apps/dashboard dev"
 
 
   new:importer:

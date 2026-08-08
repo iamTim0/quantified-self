@@ -127,7 +127,8 @@ flowchart TD
 | **ORM & DB Drivers** | SQLAlchemy 2.0, asyncpg | Async database access |
 | **Message Broker** | NATS JetStream | Asynchronous, durable data ingestion |
 | **RPC & Serialization**| gRPC, Protobuf (`buf`) | Fast, typed internal communication |
-| **Dependency Mgmt** | `uv` | Fast Python package management |
+| **Frontend** | Next.js 16, React 19, Bun | Dashboard UI; Bun installs, builds and runs it |
+| **Dependency Mgmt** | `uv` (Python), Bun (dashboard) | One lockfile per language, read by one tool |
 | **Orchestration** | Docker Compose | Local development, testing and production |
 | **CI / Release** | GitHub Actions, GHCR | Gates on every push; images and releases published manually |
 | **Task Runner** | Taskfile | Cross-language script execution |
@@ -171,7 +172,7 @@ quantified-self/
 - Docker & Docker Compose
 - `uv` (Python dependency manager)
 - Taskfile (`go-task`)
-- Node.js 22 & pnpm 9+
+- [Bun](https://bun.sh) 1.x — the dashboard's only package manager and its runtime
 
 ### Clone & Setup
 ```bash

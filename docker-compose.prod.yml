@@ -75,6 +75,38 @@ services:
     networks:
       - qs-network
 
+  # ─── Routing ───────────────────────────────────────────────────────────────
+  # Four routes, one per role, and the rules below are the whole story:
+  #
+  #   priority  route       rule                                service
+  #   ────────  ─────────   ─────────────────────────────────   ──────────────
+  #         30  ingest      PathPrefix(`/ingest`)               streak-importer
+  #         20  docs        PathPrefix(`/docs`)                 docs
+  #         10  api         PathPrefix(`/api`) || Path(`/health`)  api-gateway
+  #          1  workspace   PathPrefix(`/`)                     dashboard
+  #
+  # Higher priority wins, so each route only has to describe what it owns and the
+  # workspace takes everything left over. That is what a UI is: the default.
+  #
+  # It replaced four composed rules that each repeated a host expression and then
+  # enumerated paths -- and got them wrong. The dashboard's rule was
+  # `Path('/') || PathPrefix('/_next')`, which is two of the twelve routes the app
+  # builds, so `/explorer`, `/connectors`, `/auth/callback` and every reload
+  # returned Traefik's 404 while client-side navigation worked. Enumerating the
+  # pages of a single-page app in a proxy is a list that goes stale on the next
+  # feature; a catch-all cannot.
+  #
+  # No Host() clause anywhere. Every rule used to carry
+  # `(Host(`${PUBLIC_HOST}`) || Host(`localhost`)) &&`, which is four copies of one
+  # deployment fact, and the `|| Host(localhost)` made it decide almost nothing
+  # anyway. Hostname enforcement belongs to whatever terminates TLS in front of
+  # this -- the tunnel, Coolify's ingress, a reverse proxy -- and every route here
+  # requires a session or an API key regardless. PUBLIC_HOST keeps its job of
+  # naming the deployment; it just no longer has to be pasted into proxy rules.
+  #
+  # Priorities are explicit because Traefik otherwise orders by rule length, which
+  # would make `PathPrefix('/')` outrank nothing and depend on how the other rules
+  # happen to be spelled.
   traefik:
     image: traefik:v3.1
     container_name: qs-traefik
@@ -196,11 +228,13 @@ services:
       retries: 12
       start_period: 20s
     labels:
+      # `api`, priority 10. /health is the second clause only because it is a
+      # top-level path that monitoring and tools/smoke_deployment.sh already use.
       - "traefik.enable=true"
-      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
-      - "traefik.http.routers.gateway.entrypoints=web"
-      - "traefik.http.routers.gateway.priority=10"
-      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.routers.api.priority=10"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
     networks:
       - qs-network
 
@@ -222,24 +256,12 @@ services:
     environment:
       - NODE_ENV=production
     labels:
-      # A catch-all on the host, at the lowest priority: everything that no other
-      # router claims belongs to the UI.
-      #
-      # It used to match `Path('/') || PathPrefix('/_next')`, which covers two of
-      # the twelve routes the app actually builds. `/explorer`, `/connectors`,
-      # `/analysis`, `/quality`, `/profile`, `/dashboard`, `/legal/*` and
-      # `/auth/callback` matched no router at all and returned Traefik's 404 --
-      # so client-side navigation worked, but every reload, every bookmark and the
-      # OIDC redirect back to `/auth/callback` did not. Publishing port 3000
-      # papered over it for anyone hitting the container directly.
-      #
-      # Priority is explicit on all four routers because Traefik otherwise orders
-      # by rule length, which would make this long host expression outrank `/api`.
+      # `workspace`, priority 1: the UI is whatever no other route claimed.
       - "traefik.enable=true"
-      - "traefik.http.routers.dashboard.rule=Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)"
-      - "traefik.http.routers.dashboard.entrypoints=web"
-      - "traefik.http.routers.dashboard.priority=1"
-      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+      - "traefik.http.routers.workspace.rule=PathPrefix(`/`)"
+      - "traefik.http.routers.workspace.entrypoints=web"
+      - "traefik.http.routers.workspace.priority=1"
+      - "traefik.http.services.workspace.loadbalancer.server.port=3000"
     networks:
       - qs-network
 
@@ -250,8 +272,10 @@ services:
     image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/docs:${QS_VERSION:-latest}
     restart: always
     labels:
+      # `docs`, priority 20. A separate service, so a separate route; the
+      # middleware strips /docs because the site is built to be served at a root.
       - "traefik.enable=true"
-      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
@@ -358,13 +382,19 @@ services:
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8006
     labels:
-      # Inbound ingestion also has a Traefik route, so an external tracker can
-      # post to https://<host>/ingest without a second open port.
+      # `ingest`, priority 30: the short URL an external tracker posts to,
+      # without needing a second open port.
+      #
+      # The rule used to also carry `PathPrefix(`/api/v1/ingest/streak`)`, which
+      # overlapped the api route and shadowed it at priority 100. It is gone:
+      # the Gateway proxies that path to this importer itself, which is also
+      # where the request gets its X-Request-ID. Either way the importer
+      # authenticates the API key on its own -- the Gateway adds no auth here.
       - "traefik.enable=true"
-      - "traefik.http.routers.streak-ingest.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
-      - "traefik.http.routers.streak-ingest.entrypoints=web"
-      - "traefik.http.routers.streak-ingest.priority=100"
-      - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
+      - "traefik.http.routers.ingest.rule=PathPrefix(`/ingest`)"
+      - "traefik.http.routers.ingest.entrypoints=web"
+      - "traefik.http.routers.ingest.priority=30"
+      - "traefik.http.services.ingest.loadbalancer.server.port=8006"
     networks:
       - qs-network
 

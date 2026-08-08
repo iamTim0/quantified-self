@@ -105,8 +105,10 @@ in diesem Repository Packages und Releases schreiben.
 ### Vor dem Release lokal prüfen
 
 Die dreizehn Images werden nirgends sonst zusammen gebaut, und ein Dockerfile kann
-verrotten, ohne dass ein Test es merkt — genau das war beim Dashboard passiert,
-dessen pnpm-Lockfile veraltet war, während die CI mit npm installierte. Deshalb:
+verrotten, ohne dass ein Test es merkt — genau das war beim Dashboard passiert: es
+hatte zwei Lockfiles, die CI installierte aus `package-lock.json`, das Dockerfile
+aus einem veralteten `pnpm-lock.yaml`. Inzwischen gibt es nur `bun.lock` und ein
+Werkzeug, das es überall liest. Trotzdem gilt:
 
 ```bash
 task images:build                    # alle dreizehn, wie im Release-Workflow
@@ -199,6 +201,39 @@ PostgreSQL setzt das Passwort **einmalig** beim Initialisieren eines leeren
 Volumes. Ein neuer Wert gegen ein bestehendes Volume ändert nichts am Passwort in
 der Datenbank — er macht nur, dass Core sich nicht mehr verbinden kann. Wer es
 ändern will, tut das zuerst per `ALTER USER` in `psql` und dann hier.
+
+### Routing: vier Rollen
+
+Traefik verteilt nach Rolle, nicht nach aufgezählten Pfaden. Vier Regeln, jede mit
+genau einer Aussage:
+
+| Priorität | Route | Regel | Dienst |
+| --- | --- | --- | --- |
+| 30 | `ingest` | ``PathPrefix(`/ingest`)`` | Streak-Importer |
+| 20 | `docs` | ``PathPrefix(`/docs`)`` | Dokumentation |
+| 10 | `api` | ``PathPrefix(`/api`) \|\| Path(`/health`)`` | API-Gateway |
+| 1 | `workspace` | ``PathPrefix(`/`)`` | Dashboard |
+
+Höhere Priorität gewinnt. Jede Route beschreibt nur, was ihr gehört; der
+**Workspace nimmt alles Übrige** — denn genau das ist eine UI: der Standardfall.
+
+Vorher stand in jeder Regel derselbe Host-Ausdruck und dahinter eine Aufzählung von
+Pfaden. Die des Dashboards lautete ``Path(`/`) || PathPrefix(`/_next`)`` und traf
+damit 2 der 12 Routen, die die App tatsächlich baut: `/explorer`, `/connectors`,
+`/auth/callback` und jeder Reload liefen in Traefiks 404, während Navigation im
+Browser funktionierte. Die Seiten einer Single-Page-App im Proxy aufzuzählen ist
+eine Liste, die beim nächsten Feature veraltet — ein Catch-all nicht.
+
+**Kein `Host()` mehr.** Der Ausdruck war viermal dieselbe Deployment-Tatsache, und
+das angehängte ``|| Host(`localhost`)`` entschied ohnehin fast nichts. Hostnamen
+durchsetzen gehört dorthin, wo TLS endet: Tunnel, Coolify-Ingress oder Reverse
+Proxy. `PUBLIC_HOST` behält seine Aufgabe (Traefik-Auslieferung, CORS-Standard) —
+es muss nur nicht mehr in Proxy-Regeln kopiert werden.
+
+Ebenfalls entfallen ist ``PathPrefix(`/api/v1/ingest/streak`)`` in der
+Ingest-Regel: dieser Pfad überlagerte bei Priorität 100 die API-Route, und das
+Gateway leitet ihn selbst an den Importer weiter — dort bekommt er zugleich seine
+`X-Request-ID`. Authentifiziert wird der API-Key in beiden Fällen vom Importer.
 
 ### Netzwerkgrenzen
 

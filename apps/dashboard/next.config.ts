@@ -49,6 +49,17 @@ const tileImageHosts = (
 ).trim();
 
 const nextConfig: NextConfig = {
+  // What the published container runs. Next traces the modules the server
+  // actually reaches and writes a self-contained bundle to `.next/standalone`:
+  // 20 MB, `sharp` included, against 522 MB of installed node_modules. The image
+  // used to ship the latter, and pruning it by hand is a losing game -- both libc
+  // variants of the SWC binary arrive because a lockfile cannot know which one the
+  // base image needs, and `@playwright/test` survives `--production` because Next
+  // declares it as an optional peer, so it is a peer of a production dependency.
+  //
+  // Additive: `next start` keeps working against `.next` exactly as before, which
+  // is what the browser tests in CI use.
+  output: "standalone",
   allowedDevOrigins: allowedOriginsList,
   // The legal texts moved to /legal/*. Keep the old path working for bookmarks and
   // any link already published.
