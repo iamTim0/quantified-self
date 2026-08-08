@@ -27,22 +27,29 @@ Start here:
 
 ## Deploying it
 
-Four steps, and the stack refuses to start if you skip the first — see
-[Betrieb](docs/operations.md#schritt-fur-schritt-unter-eigener-domain) for the
-detail and for the `ENCRYPTION_KEY` ordering trap.
+From published images, not from source: `.github/workflows/release.yml` builds all
+thirteen images, pushes them to `ghcr.io/iamtim0/quantified-self/*` and attaches a
+deployment bundle to a GitHub Release. The host needs Docker and nothing else — no
+checkout, no toolchain. See [Release & Deployment](docs/deployment.md) for the full
+procedure, and for the `ENCRYPTION_KEY` ordering trap.
 
 ```bash
-export PUBLIC_HOST=your-host.example
-export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
-export INTERNAL_SERVICE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
-export ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
+curl -fsSL https://github.com/iamTim0/quantified-self/releases/latest/download/quantified-self-1.0.0-deploy.tar.gz | tar -xz
+cd quantified-self-1.0.0
 
-docker compose -f docker-compose.coolify.yml config >/dev/null   # names any missing variable
-docker compose -f docker-compose.coolify.yml up -d --build
-docker compose -f docker-compose.coolify.yml run --rm core alembic upgrade head
-docker compose -f docker-compose.coolify.yml run --rm core \
+# Fill in PUBLIC_HOST and the three secrets. Compose refuses to start without them.
+$EDITOR .env
+
+docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variable
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
+docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email you@example.com --workspace "My Data"
 ```
+
+From a checkout, `task prod:config`, `task prod:up` and `task prod:owner` do the
+same. Upgrading is `QS_VERSION` in `.env`, then `pull`, `up -d` and the migration.
 
 Then check it from the outside — reachable, closed, and what it reports about its
 own configuration:
@@ -120,7 +127,8 @@ flowchart TD
 | **Message Broker** | NATS JetStream | Asynchronous, durable data ingestion |
 | **RPC & Serialization**| gRPC, Protobuf (`buf`) | Fast, typed internal communication |
 | **Dependency Mgmt** | `uv` | Fast Python package management |
-| **Orchestration** | Docker Compose | Local development and testing |
+| **Orchestration** | Docker Compose | Local development, testing and production |
+| **CI / Release** | GitHub Actions, GHCR | Gates on every push; images and releases published manually |
 | **Task Runner** | Taskfile | Cross-language script execution |
 | **Documentation** | MkDocs + Material for MkDocs | Markdown code-to-documentation site under `/docs` |
 | **Formal Verification**| Fizzbee | Designing and verifying distributed systems |
@@ -149,6 +157,8 @@ quantified-self/
 │   ├── fizzbee.Dockerfile # The model checker; no Windows build exists
 │   └── db/init.sql        # Schema for a fresh container. No seed data.
 ├── .agents/scripts/       # Lifecycle hooks and spec tooling, shared by all agents
+├── tools/build_images.py  # The published image list; the release workflow reads it
+├── docker-compose.prod.yml # Production stack from published images. No build:
 ├── Taskfile.yml
 ├── README.md
 └── AGENTS.md
@@ -201,7 +211,7 @@ task docs:serve                  # Documentation at http://localhost:8003
 
 The development defaults for those three are in this repository, so a deployment
 that uses them has no secrets. Core and the Gateway refuse to start on a published
-default when `ENVIRONMENT` is production-like, and `docker-compose.coolify.yml`
+default when `ENVIRONMENT` is production-like, and `docker-compose.prod.yml`
 uses `${VAR:?…}` so a missing value stops the deploy before a container starts.
 
 > **`ENCRYPTION_KEY` is not a restart.** It decrypts stored connector
@@ -256,7 +266,10 @@ API importers are stateless workers fetching data and pushing it into NATS JetSt
 3. **Client**: Implement `client.py` to handle external API pagination, rate limits, and auth.
 4. **Transformer**: Implement `transformer.py` to map external JSON to standard platform `DataPoint` records.
 5. **NATS Subject**: Configure publishing to `qs.ingest.<name>`.
-6. **Docker**: Add the service to `infra/docker-compose.yml`.
+6. **Docker**: Add the service to `infra/docker-compose.yml` (dev, builds from
+   source), to `docker-compose.prod.yml` (production, pulls the published image)
+   and to the image manifest in `tools/build_images.py` — CI fails if a Dockerfile
+   is in neither list there, because an unpublished image cannot be deployed.
 7. **Tests**: Add unit and integration tests.
 
 ## Fizzbee (Formal Verification)

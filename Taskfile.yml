@@ -33,6 +33,56 @@ tasks:
       - docker compose -f infra/docker-compose.yml down -v
       - docker compose --env-file .env -f infra/docker-compose.yml up -d postgres
 
+  # ─── Production stack (published images) ───────────────────────────────────
+  # These drive docker-compose.prod.yml, which pulls the images built by
+  # .github/workflows/release.yml instead of building on the host. Set QS_VERSION
+  # in .env to pin a release; see docs/deployment.md.
+
+  prod:config:
+    desc: "Validate docker-compose.prod.yml and name any variable that is missing"
+    cmds:
+      - docker compose --env-file .env -f docker-compose.prod.yml config > /dev/null
+      - echo "configuration ok"
+
+  prod:pull:
+    desc: "Pull the release images named by QS_VERSION in .env"
+    cmds:
+      - docker compose --env-file .env -f docker-compose.prod.yml pull
+
+  prod:up:
+    desc: "Start the production stack from published images (pull, start, migrate)"
+    cmds:
+      - task: prod:pull
+      - docker compose --env-file .env -f docker-compose.prod.yml up -d
+      - task: prod:migrate
+
+  prod:migrate:
+    desc: "Run Alembic migrations inside the released Core image"
+    cmds:
+      # A separate step, never a container entrypoint: replicas starting at once
+      # would otherwise migrate against each other.
+      - docker compose --env-file .env -f docker-compose.prod.yml run --rm core alembic upgrade head
+
+  prod:down:
+    desc: "Stop the production stack (volumes are kept)"
+    cmds:
+      - docker compose -f docker-compose.prod.yml down
+
+  prod:logs:
+    desc: "Follow production logs. Usage: task prod:logs -- core"
+    cmds:
+      - docker compose -f docker-compose.prod.yml logs -f {{.CLI_ARGS}}
+
+  prod:owner:
+    desc: "Create the first account in the production stack (sign-up is closed by default)"
+    cmds:
+      - docker compose --env-file .env -f docker-compose.prod.yml run --rm core python -m core.create_owner {{.CLI_ARGS}}
+
+  images:build:
+    desc: "Build all release images locally, exactly as the release workflow does"
+    cmds:
+      - python tools/build_images.py {{.CLI_ARGS}}
+
   db:migrate:
     desc: "Run pending Alembic database migrations"
     cmds:

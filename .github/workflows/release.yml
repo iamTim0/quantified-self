@@ -1,0 +1,517 @@
+name: Release
+
+# Builds every service image, pushes them to the GitHub Container Registry and
+# cuts a GitHub Release with a ready-to-deploy bundle attached.
+#
+# Manual only, on purpose. `workflow_dispatch` has no `push:` or `schedule:`
+# trigger beside it, so nothing here can start by itself -- not a merge, not a
+# tag, not a nightly. Publishing an image that a deployment will pull, and moving
+# `latest` while doing it, is a decision, and it stays one.
+#
+# The intended path is: merge to main, wait for CI, then run this workflow from
+# main with a version number. `guard` refuses to publish a commit whose CI is not
+# green, so "I forgot to check" is not a failure mode. See docs/deployment.md.
+#
+# Requires no secrets: GITHUB_TOKEN can write packages and releases in this
+# repository. The one manual step is making the packages public the first time --
+# GHCR packages start private even in a public repository, and a private package
+# means `docker compose pull` fails with `denied` for everyone but you.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, without a leading v (e.g. 1.0.0 or 1.1.0-rc.1)"
+        required: true
+        type: string
+      platforms:
+        description: "Target architectures. arm64 is emulated and roughly triples the run."
+        required: true
+        default: linux/amd64
+        type: choice
+        options:
+          - linux/amd64
+          - linux/amd64,linux/arm64
+      tag_latest:
+        description: "Also move :latest to these images"
+        required: false
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark the GitHub Release as a pre-release (never moves :latest)"
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: "Build everything, push nothing, create no release"
+        required: false
+        default: false
+        type: boolean
+      allow_failed_ci:
+        description: "Publish even though CI is not green for this commit"
+        required: false
+        default: false
+        type: boolean
+
+# No blanket grant: each job asks for what it needs. The build job can write
+# packages but not releases; the release job can write releases but not packages.
+permissions: {}
+
+concurrency:
+  # Not cancel-in-progress. Cancelling half way through leaves some of the
+  # thirteen images pushed under the new tag and the rest not, which is a worse
+  # state than a queued second run.
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    name: Check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      minor: ${{ steps.version.outputs.minor }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      registry: ${{ steps.registry.outputs.prefix }}
+      push: ${{ steps.registry.outputs.push }}
+      matrix: ${{ steps.matrix.outputs.include }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate the version
+        id: version
+        env:
+          RAW_VERSION: ${{ inputs.version }}
+          PRERELEASE_INPUT: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          # Accept `1.2.3` and `v1.2.3` and normalise; a stray v produced image
+          # tags like `vv1.2.3` when it slipped through.
+          version="${RAW_VERSION#v}"
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$RAW_VERSION' is not a semantic version. Expected 1.2.3 or 1.2.3-rc.1."
+            exit 1
+          fi
+
+          # Strip any pre-release suffix before taking the minor: `${version%.*}`
+          # alone turned 1.2.3-rc.1 into "1.2.3-rc". Unused today, because a
+          # suffix forces prerelease and prereleases get no minor tag — but a
+          # wrong value sitting in an output is a trap for whoever uses it next.
+          minor="${version%%-*}"
+          minor="${minor%.*}"
+
+          # A pre-release is a pre-release whether or not the box was ticked. A
+          # `-rc.1` build that moves :latest is the single most damaging mistake
+          # this workflow could make, so the version string decides too.
+          prerelease="$PRERELEASE_INPUT"
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+            echo "::notice::$version carries a pre-release suffix, so it is marked as a pre-release and will not move :latest."
+          fi
+
+          {
+            echo "version=$version"
+            echo "tag=v$version"
+            echo "minor=$minor"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Refuse a version that already exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -uo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error::${TAG} already exists. Published images and their tag are immutable here; pick the next version."
+            exit 1
+          fi
+          echo "${TAG} is free."
+
+      - name: Require green CI for this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALLOW_FAILED: ${{ inputs.allow_failed_ci }}
+        run: |
+          set -uo pipefail
+
+          # The CI workflow that ran for exactly this SHA, not "the last run on
+          # main" -- those differ the moment two commits land close together.
+          conclusion=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&status=completed&per_page=1" \
+            --jq '.workflow_runs[0].conclusion // "none"')
+
+          echo "CI for ${GITHUB_SHA} (${GITHUB_REF_NAME}): ${conclusion}"
+
+          if [ "$conclusion" = "success" ]; then
+            exit 0
+          fi
+
+          if [ "$ALLOW_FAILED" = "true" ]; then
+            echo "::warning::CI is '${conclusion}' for this commit and allow_failed_ci was set. Publishing anyway."
+            exit 0
+          fi
+
+          if [ "$conclusion" = "none" ]; then
+            echo "::error::No completed CI run for ${GITHUB_SHA}. Wait for CI, or re-run with allow_failed_ci."
+          else
+            echo "::error::CI concluded '${conclusion}' for ${GITHUB_SHA}. Fix it, or re-run with allow_failed_ci."
+          fi
+          exit 1
+
+      - name: Resolve the image list
+        id: matrix
+        run: |
+          set -euo pipefail
+
+          # The manifest in tools/build_images.py is the single source of truth,
+          # so `task images:build` and this workflow cannot disagree about which
+          # images exist. --check fails if a Dockerfile in the repository is in
+          # neither the published list nor the explicitly-unpublished one, which
+          # is how a new importer would otherwise be quietly left unreleased.
+          python tools/build_images.py --check
+          echo "include=$(python tools/build_images.py --matrix)" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve the registry prefix
+        id: registry
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # Lowercased because GHCR rejects uppercase in a repository path, and
+          # $GITHUB_REPOSITORY preserves whatever case the owner and repo have.
+          echo "prefix=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = "true" ]; then
+            echo "push=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Dry run: images will be built and thrown away."
+          else
+            echo "push=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: ${{ matrix.image }}
+    needs: guard
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+      # Both needed by attest-build-provenance: it signs with a short-lived OIDC
+      # token and writes the attestation back to the registry.
+      id-token: write
+      attestations: write
+    strategy:
+      # One broken Dockerfile should report as one broken image, not cancel the
+      # twelve that were fine.
+      fail-fast: false
+      matrix:
+        # From tools/build_images.py, so this list and the one `task images:build`
+        # uses locally cannot drift apart. Each entry is {image, context,
+        # dockerfile}; the contexts differ because Core, Analysis and docs build
+        # from the repository root while every other image builds from its own
+        # directory -- see the manifest for why.
+        include: ${{ fromJSON(needs.guard.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        # Only when a foreign architecture is actually requested. Installing it
+        # unconditionally slows down every amd64-only run for nothing.
+        if: contains(inputs.platforms, 'arm64')
+        uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: needs.guard.outputs.push == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Assemble the tag list
+        id: tags
+        env:
+          REPO: ${{ needs.guard.outputs.registry }}
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          MINOR: ${{ needs.guard.outputs.minor }}
+          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+          TAG_LATEST: ${{ inputs.tag_latest }}
+        run: |
+          set -euo pipefail
+          name="${REPO}/${IMAGE}"
+
+          # The exact version, and the commit, always. `sha-` is what makes a
+          # published image traceable back to a source tree without trusting a
+          # mutable tag.
+          tags="${name}:${VERSION}"$'\n'"${name}:sha-${GITHUB_SHA::7}"
+
+          # A moving minor tag (1.2) is only meaningful for a real release;
+          # pointing it at an rc would hand pre-release code to anyone tracking it.
+          if [ "$PRERELEASE" != "true" ]; then
+            tags="${tags}"$'\n'"${name}:${MINOR}"
+            if [ "$TAG_LATEST" = "true" ]; then
+              tags="${tags}"$'\n'"${name}:latest"
+            fi
+          fi
+
+          {
+            echo "list<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "$tags"
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ needs.guard.outputs.push == 'true' }}
+          tags: ${{ steps.tags.outputs.list }}
+          # Scoped per image: a single shared scope has all thirteen builds
+          # evicting each other's layers, which is slower than no cache at all.
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,scope=${{ matrix.image }},mode=max
+          labels: |
+            org.opencontainers.image.title=quantified-self/${{ matrix.image }}
+            org.opencontainers.image.version=${{ needs.guard.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      - name: Attest provenance
+        if: needs.guard.outputs.push == 'true'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ needs.guard.outputs.registry }}/${{ matrix.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Record the digest
+        if: needs.guard.outputs.push == 'true'
+        env:
+          IMAGE: ${{ matrix.image }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          REPO: ${{ needs.guard.outputs.registry }}
+        run: |
+          set -euo pipefail
+          mkdir -p digests
+          # Collected by the release job to write digests into the release notes,
+          # which is what lets a deployment pin something immutable.
+          echo "${REPO}/${IMAGE}@${DIGEST}" > "digests/${IMAGE}.txt"
+
+      - name: Upload the digest
+        if: needs.guard.outputs.push == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image }}
+          path: digests/
+          retention-days: 1
+
+  release:
+    name: GitHub Release
+    needs: [guard, build]
+    # Only when every image made it. A release whose notes list thirteen images
+    # while eleven exist is worse than no release.
+    if: needs.guard.outputs.push == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Collect the digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          merge-multiple: true
+          path: digests
+
+      - name: Build the deployment bundle
+        env:
+          VERSION: ${{ needs.guard.outputs.version }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          REGISTRY: ${{ needs.guard.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          # Everything a host needs to run this release and nothing else: no
+          # source, no toolchain, no git. This is the difference between "clone
+          # the repository and build" and "download 4 KB and start".
+          bundle="quantified-self-${VERSION}"
+          mkdir -p "$bundle/infra/db"
+
+          cp docker-compose.prod.yml "$bundle/"
+          # Mounted by the postgres service at this exact relative path.
+          cp infra/db/init.sql "$bundle/infra/db/"
+
+          # A .env with the version pinned and the three secrets left empty on
+          # purpose: compose refuses to start until they are set, which is the
+          # intended behaviour and not a bug to work around.
+          cat > "$bundle/.env" <<EOF
+          # Quantified Self ${VERSION} — deployment configuration.
+          #
+          # Generate each secret with:
+          #     python -c "import secrets; print(secrets.token_urlsafe(48))"
+          #
+          # Do not reuse a value between the three. ENCRYPTION_KEY cannot be
+          # changed later without re-encrypting stored connector credentials
+          # first — see the deployment guide before you touch it.
+
+          QS_VERSION=${VERSION}
+          QS_IMAGE_PREFIX=${REGISTRY}
+
+          PUBLIC_HOST=your-host.example
+          ENVIRONMENT=production
+          ALLOWED_ORIGINS=https://your-host.example
+
+          JWT_SECRET=
+          INTERNAL_SERVICE_SECRET=
+          ENCRYPTION_KEY=
+
+          # Self-registration stays closed; create the first account with
+          # \`docker compose run --rm core python -m core.create_owner\`.
+          ALLOW_REGISTRATION=false
+
+          # Optional Cloudflare Tunnel; only used with \`--profile tunnel\`.
+          TUNNEL_TOKEN=
+          EOF
+
+          cat > "$bundle/README.md" <<EOF
+          # Quantified Self ${VERSION}
+
+          Full guide: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deployment.md
+
+              # 1. Fill in PUBLIC_HOST and the three secrets.
+              \$EDITOR .env
+
+              # 2. Names any variable that is still missing.
+              docker compose -f docker-compose.prod.yml config >/dev/null
+
+              # 3. Pull and start. The images are ${VERSION}, pinned in .env.
+              docker compose -f docker-compose.prod.yml pull
+              docker compose -f docker-compose.prod.yml up -d
+
+              # 4. Migrate. A separate step on purpose: concurrent replicas
+              #    starting at once would otherwise migrate against each other.
+              docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
+
+              # 5. There is no default account, and sign-up is closed.
+              docker compose -f docker-compose.prod.yml run --rm core \\
+                python -m core.create_owner --email you@example.com --workspace "My Data"
+
+          To upgrade, change QS_VERSION in .env, then repeat steps 3 and 4.
+          To roll back, set the previous version and repeat step 3 — but read the
+          guide first if the release in between contained a migration.
+          EOF
+
+          tar -czf "${bundle}-deploy.tar.gz" "$bundle"
+          echo "Bundle contents:"
+          tar -tzf "${bundle}-deploy.tar.gz"
+
+      - name: Write the release notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          REGISTRY: ${{ needs.guard.outputs.registry }}
+          PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+
+          {
+            echo "## Deploying this release"
+            echo
+            echo "Download \`quantified-self-${VERSION}-deploy.tar.gz\` below, unpack it, fill in"
+            echo "\`.env\`, and follow the five steps in its README — no checkout and no build"
+            echo "on the host. The full procedure, including the \`ENCRYPTION_KEY\` ordering trap,"
+            echo "is in [the deployment guide](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deployment.md)."
+            echo
+            echo '```bash'
+            echo "curl -fsSL https://github.com/${GITHUB_REPOSITORY}/releases/download/v${VERSION}/quantified-self-${VERSION}-deploy.tar.gz | tar -xz"
+            echo "cd quantified-self-${VERSION}"
+            echo '```'
+            echo
+            echo "Already deployed? Set \`QS_VERSION=${VERSION}\` in \`.env\`, then \`docker compose"
+            echo "-f docker-compose.prod.yml pull && up -d\` and run the migration step."
+            echo
+            echo "## Images"
+            echo
+            echo "Built for \`${PLATFORMS}\` from \`${GITHUB_SHA}\`, with signed build provenance."
+            echo "Pin the digest rather than the tag where it has to be reproducible."
+            echo
+            echo "| Image | Digest |"
+            echo "| --- | --- |"
+            for f in digests/*.txt; do
+              ref=$(cat "$f")
+              name="${ref%@*}"
+              digest="${ref#*@}"
+              echo "| \`${name}:${VERSION}\` | \`${digest}\` |"
+            done
+            echo
+            echo "## Changes"
+            echo
+          } > notes.md
+
+          # Generated explicitly rather than with `gh release create
+          # --generate-notes`, which replaces the body it is given instead of
+          # appending to it -- everything above would have been dropped.
+          #
+          # Best-effort: the very first release has no previous tag to diff
+          # against, and a failure here is not worth failing a release over.
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+               -f tag_name="$TAG" -f target_commitish="$GITHUB_SHA" \
+               --jq .body >> notes.md; then
+            echo "Changelog generated."
+          else
+            echo "_Changelog could not be generated automatically._" >> notes.md
+            echo "::warning::generate-notes failed; the release notes have no changelog."
+          fi
+
+          cat notes.md
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.guard.outputs.tag }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          PRERELEASE: ${{ needs.guard.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+
+          args=(
+            "$TAG"
+            --target "$GITHUB_SHA"
+            --title "v${VERSION}"
+            --notes-file notes.md
+          )
+          [ "$PRERELEASE" = "true" ] && args+=(--prerelease)
+
+          # Creates the tag at --target as part of the release, so there is no
+          # separate tag push to get out of step with it.
+          gh release create "${args[@]}" "quantified-self-${VERSION}-deploy.tar.gz"
+
+          echo "### Released [v${VERSION}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Remind about package visibility
+        run: |
+          {
+            echo "If this was the first release, the thirteen packages are still **private**:"
+            echo "GHCR does not inherit the repository's visibility. Until they are public,"
+            echo "\`docker compose pull\` fails with \`denied\` for everyone but you."
+            echo
+            echo "Set it once per package under"
+            echo "<${GITHUB_SERVER_URL}/users/${GITHUB_REPOSITORY_OWNER}/packages> →"
+            echo "Package settings → Change visibility."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -77,7 +77,7 @@ If the user asks to add an integration for a new data source:
 3. Configure the importer to fetch connector credentials dynamically from Core Data Service DB (`GET /api/v1/internal/data/sources/<name>/token`).
 4. Configure the importer to publish to the NATS subject `qs.ingest.<name>`.
 5. Ensure the `idempotency_key` is generated correctly in the transformer.
-6. Add a `Dockerfile` for the new service and add it to `infra/docker-compose.yml`.
+6. Add a `Dockerfile` for the new service and add it to **three** places: `infra/docker-compose.yml` (development, builds from source), `docker-compose.prod.yml` (production, pulls the published image) and the `IMAGES` manifest in `tools/build_images.py`. The manifest is what the release workflow builds; a Dockerfile missing from it is an image that is simply never published, which is why CI fails on it rather than letting it pass silently.
 7. Write a Fizzbee spec extension ONLY IF new distributed patterns are introduced.
 8. Add comprehensive test coverage.
 

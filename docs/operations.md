@@ -43,10 +43,10 @@ task docs:build        # MkDocs --strict
     Entwicklungs-Defaults, die im Repository stehen. Wer sie kennt, kann Token
     fälschen und gespeicherte Zugangsdaten entschlüsseln.
 
-    Bis vor Kurzem war das eine Bitte: `docker-compose.coolify.yml` enthielt
+    Bis vor Kurzem war das eine Bitte: das Produktions-Compose enthielt
     `${JWT_SECRET:-dev-secret-key-quantified-self-2026}`, ein Deployment ohne
     gesetzte Variable lief also mit dem öffentlichen Wert — und sagte nichts.
-    Die Datei verwendet jetzt `${VAR:?…}`; fehlt eine Variable, bricht
+    `docker-compose.prod.yml` verwendet `${VAR:?…}`; fehlt eine Variable, bricht
     `docker compose` ab, bevor ein Container startet. Zusätzlich verweigern Core
     und Gateway den Start, wenn `ENVIRONMENT` produktiv ist und ein Wert einem
     veröffentlichten Default entspricht.
@@ -69,11 +69,11 @@ Deshalb zuerst umschlüsseln, dann umstellen:
 
 ```bash
 # 1. Probelauf. Zeigt, was passieren würde, und schreibt nichts.
-docker compose -f docker-compose.coolify.yml run --rm core \
+docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.rotate_encryption_key --old "$ALT" --new "$NEU" --dry-run
 
 # 2. Umschlüsseln. Eine Transaktion; ein Abbruch lässt alles auf dem alten Schlüssel.
-docker compose -f docker-compose.coolify.yml run --rm core \
+docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.rotate_encryption_key --old "$ALT" --new "$NEU"
 
 # 3. Erst jetzt ENCRYPTION_KEY auf den neuen Wert setzen und Core neu starten.
@@ -100,7 +100,7 @@ nicht das, was passiert, wenn man nichts konfiguriert. Damit gibt es allerdings
 zunächst keinen Weg hinein — dafür ist dieser Befehl da:
 
 ```bash
-docker compose -f docker-compose.coolify.yml run --rm core \
+docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email du@example.com --workspace "Meine Daten"
 ```
 
@@ -125,14 +125,14 @@ kennt.
 
 ## Deployment
 
-`docker-compose.coolify.yml` beschreibt den Produktions-Stack: Traefik, Gateway,
-Core, Dashboard, Dokumentation und die acht Importer.
+`docker-compose.prod.yml` beschreibt den Produktions-Stack: Traefik, Gateway, Core,
+Analyse, Dashboard, Dokumentation und die acht Importer. Es **baut nichts**, sondern
+zieht die Images, die der Release-Workflow veröffentlicht hat — ein Deployment ist
+ein Download und ein Neustart.
 
-### Schritt für Schritt unter eigener Domain
-
-**1. Variablen setzen.** Ohne die drei Secrets bricht `docker compose` ab, bevor
-ein Container startet — das ist Absicht, siehe oben. `PUBLIC_HOST` ist der
-Hostname, unter dem Traefik ausliefert; er steht bewusst nirgends im Repository.
+Die vollständige Anleitung — Release erzeugen, Erstinstallation, Aktualisieren,
+Zurückrollen, Variablen dieses Stacks — steht unter
+[Release & Deployment](deployment.md). Kurz:
 
 ```bash
 export PUBLIC_HOST=deine-domain.example
@@ -140,37 +140,23 @@ export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))"
 export INTERNAL_SERVICE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
 export ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 export ALLOWED_ORIGINS=https://$PUBLIC_HOST
-```
+export QS_VERSION=1.0.0        # welches Release laufen soll
 
-In Coolify gehören dieselben Werte in die Environment-Variablen der Anwendung.
-Steht schon Nutzdaten in der Datenbank, ist `ENCRYPTION_KEY` **nicht** frei
-wählbar — dann zuerst [umschlüsseln](#encryption_key-wechseln).
-
-**2. Konfiguration prüfen, bevor etwas startet.** Fehlt eine Variable, sagt das
-hier welche:
-
-```bash
-docker compose -f docker-compose.coolify.yml config >/dev/null && echo "ok"
-```
-
-**3. Starten und migrieren.**
-
-```bash
-docker compose -f docker-compose.coolify.yml up -d --build
-docker compose -f docker-compose.coolify.yml run --rm core alembic upgrade head
+docker compose -f docker-compose.prod.yml config >/dev/null   # nennt fehlende Variablen
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
+docker compose -f docker-compose.prod.yml run --rm core \
+  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
 ```
 
 Migrationen laufen bewusst als eigener Schritt und nicht beim Start eines
 Dienstes: mehrere gleichzeitig startende Repliken würden sonst gegeneinander
-migrieren.
-
-**4. Erstes Konto anlegen** — Selbstregistrierung ist aus, siehe
+migrieren. Selbstregistrierung ist aus, deshalb der letzte Befehl — siehe
 [Das erste Konto anlegen](#das-erste-konto-anlegen).
 
-```bash
-docker compose -f docker-compose.coolify.yml run --rm core \
-  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
-```
+Stehen schon Nutzdaten in der Datenbank, ist `ENCRYPTION_KEY` **nicht** frei
+wählbar — dann zuerst [umschlüsseln](#encryption_key-wechseln).
 
 ### Testen
 
@@ -220,6 +206,16 @@ darf nicht öffentlich erreichbar sein** — es liefert über
 `/api/v1/internal/*` entschlüsselte Connector-Zugangsdaten aus. Core authentifiziert
 zwar inzwischen selbst, aber die Portfreigabe bleibt unnötige Angriffsfläche.
 
+Seit `docker-compose.prod.yml` ist das keine Bitte mehr, sondern der Zustand:
+**Core veröffentlicht keine Host-Ports.** Das alte Produktions-Compose gab `8001`
+und `50051` frei, obwohl Traefik sie nie geroutet hat. Innerhalb des Compose-Netzes
+ist Core unverändert unter `core:8001` und `core:50051` erreichbar.
+
+Ebenso hängt das Traefik-Dashboard jetzt auf `127.0.0.1` statt auf allen
+Schnittstellen — es läuft mit `--api.insecure=true` und war damit auf einem
+öffentlichen Host eine unauthentifizierte Admin-UI. Zugriff über einen SSH-Tunnel:
+`ssh -L 8081:127.0.0.1:8081 user@host`.
+
 Die Importer für Apple Health (`:8005`) und Streak (`:8006`) müssen erreichbar sein,
 weil externe Geräte an sie senden.
 
@@ -251,7 +247,7 @@ mindestens einer der Werte aus
 
 ```bash
 task logs -- --service qs-core --level ERROR
-docker compose -f docker-compose.coolify.yml logs -f core
+docker compose -f docker-compose.prod.yml logs -f core
 ```
 
 ## Datensicherung

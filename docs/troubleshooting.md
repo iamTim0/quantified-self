@@ -141,7 +141,7 @@ Für lokale Entwicklung `ENVIRONMENT=dev` setzen — dann wird nur gewarnt.
 
 ### `docker compose` bricht ab mit „set JWT_SECRET"
 
-`docker-compose.coolify.yml` verwendet `${VAR:?…}`. Eine fehlende Variable stoppt
+`docker-compose.prod.yml` verwendet `${VAR:?…}`. Eine fehlende Variable stoppt
 den Deploy, bevor ein Container startet. Vorher hätte derselbe Deploy mit dem
 öffentlichen Default weitergelaufen, ohne etwas zu sagen.
 

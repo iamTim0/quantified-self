@@ -1,0 +1,415 @@
+# Quantified Self Platform — production stack, from published images.
+#
+# This file replaced `docker-compose.coolify.yml`. That one built all thirteen
+# images from source on the deployment host, which meant a deploy needed the
+# repository, a toolchain and several minutes of CPU, and that what ran in
+# production had been built exactly once, by nobody, with no record of from which
+# commit. Images are now built and published by `.github/workflows/release.yml`
+# and this file only pulls them, so a deploy is a download and a restart.
+#
+# Nothing here is Coolify-specific any more; Coolify can still deploy it as a
+# Docker Compose application, and so can a bare VPS with nothing but Docker.
+#
+#     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml pull
+#     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml up -d
+#
+# See docs/deployment.md for the full procedure, including the one-time GHCR
+# package visibility step and how to roll back.
+#
+# Two deliberate differences from the file this replaces:
+#
+#   * Core no longer publishes 8001 and 50051 to the host. It serves
+#     `/api/v1/internal/*`, which hands out decrypted connector credentials, and
+#     docs/operations.md has said all along that it must not be publicly
+#     reachable. Traefik never routed it, so the ports were pure attack surface.
+#     Everything on the compose network still reaches it by service name.
+#   * Traefik's dashboard is bound to loopback instead of every interface. It is
+#     served with `--api.insecure=true`, so on a public host it was an
+#     unauthenticated admin UI on port 8080.
+#
+# There is no `version:` key. Compose v2 ignores it and warns about it.
+
+# Where the images come from: QS_IMAGE_PREFIX to deploy from a mirror or from your
+# own fork's packages, QS_VERSION to pin a release. `latest` moves with every
+# non-prerelease release, which is convenient for a personal deployment and wrong
+# for anything you need to be able to roll back — pin the version and change it
+# deliberately.
+
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    restart: always
+    environment:
+      # Defaulted rather than required, unlike the three secrets on Core below,
+      # and the reason is the volume: PostgreSQL sets this password once, when it
+      # initialises an empty data directory. Making it required would break every
+      # existing deployment that never set it, and setting a *new* value against
+      # an already-initialised volume does not change the password — it just
+      # leaves Core unable to connect. Postgres publishes no host port, so this
+      # is reachable from the compose network only.
+      #
+      # To change it on a running deployment: ALTER USER in psql first, then here.
+      POSTGRES_USER: ${POSTGRES_USER:-qs_dev}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the schema for an empty volume and seeds nothing. Alembic owns
+      # every change after that. Shipped inside the release bundle, so a deploy
+      # without a checkout still has it at this path.
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qs_dev} -d ${POSTGRES_DB:-quantified_self}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - qs-network
+
+  nats:
+    image: nats:2.10-alpine
+    restart: always
+    command: --jetstream --store_dir /data
+    volumes:
+      - natsdata:/data
+    networks:
+      - qs-network
+
+  traefik:
+    image: traefik:v3.1
+    container_name: qs-traefik
+    restart: always
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      # The only port that has to be public. Put TLS in front of it: a reverse
+      # proxy, Coolify's own ingress, or the cloudflared service below.
+      - "${QS_HTTP_PORT:-80}:80"
+      # Traefik dashboard, loopback only. Reach it over an SSH tunnel:
+      #   ssh -L 8081:127.0.0.1:8081 user@host
+      - "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - qs-network
+
+  core:
+    # The only service with a database connection (AGENTS.md rule 1).
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
+      - NATS_URL=nats://nats:4222
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      # `:?` rather than `:-`. These previously defaulted to values printed in
+      # this repository, so a deployment that never set them ran on secrets
+      # anybody could read — and nothing said so. Compose now refuses to start.
+      #
+      # ENCRYPTION_KEY decrypts stored connector credentials, so changing it is
+      # not a restart: re-encrypt first with
+      # `python -m core.rotate_encryption_key --old … --new …`, then set it here.
+      # See docs/operations.md.
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY; re-encrypt stored credentials before changing it - see docs/operations.md}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+    healthcheck:
+      # `/health` is a pure liveness check and touches no table, so it answers
+      # before `alembic upgrade head` has ever run. That matters: the documented
+      # order is `up -d` and then migrate, and a healthcheck that needed the
+      # schema would deadlock a first install.
+      #
+      # python, not curl or wget: the image is python:3.12-slim and has neither.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - qs-network
+
+  analysis:
+    # Reads through Core's gRPC API and owns no database connection
+    # (AGENTS.md rules 1 and 3). It has deliberately no DATABASE_URL.
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/analysis:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+    environment:
+      - CORE_GRPC_URL=core:50051
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
+      # Must match Core's, or Analysis cannot authenticate to the gRPC API.
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  api-gateway:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/api-gateway:${QS_VERSION:-latest}
+    restart: always
+    ports:
+      # Kept for direct access and for smoke tests that bypass Traefik. Only
+      # Traefik's port needs to be reachable from outside the host; drop this
+      # line if you have no use for it.
+      - "${QS_GATEWAY_PORT:-8000}:8000"
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      # Was missing from the file this replaces, and its default is
+      # http://127.0.0.1:8006 — inside this container that is the Gateway itself,
+      # so `POST /ingest` for Streak proxied to nowhere.
+      - STREAK_IMPORTER_URL=http://streak-importer:8006
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
+      - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.gateway.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (PathPrefix(`/api`) || Path(`/health`))"
+      - "traefik.http.routers.gateway.entrypoints=web"
+      - "traefik.http.routers.gateway.priority=10"
+      - "traefik.http.services.gateway.loadbalancer.server.port=8000"
+    networks:
+      - qs-network
+
+  dashboard:
+    # NEXT_PUBLIC_* is inlined by Next.js at *build* time, so the published image
+    # cannot be pointed at an API host from here — setting NEXT_PUBLIC_API_URL on
+    # this container has no effect. The image is built without it on purpose:
+    # with the variable unset the UI calls `window.location.origin`, which is
+    # Traefik, which routes /api to the Gateway. That works for every deployment
+    # without a per-host image.
+    #
+    # If you must have the UI talk to a different origin, build the image
+    # yourself with --build-arg NEXT_PUBLIC_API_URL=…; see docs/deployment.md.
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/dashboard:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    environment:
+      - NODE_ENV=production
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.dashboard.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/`) || PathPrefix(`/_next`))"
+      - "traefik.http.routers.dashboard.entrypoints=web"
+      - "traefik.http.routers.dashboard.priority=1"
+      - "traefik.http.services.dashboard.loadbalancer.server.port=3000"
+    networks:
+      - qs-network
+
+  # Static documentation, rendered into the image at build time. The dev stack
+  # serves it with `mkdocs serve` against a mount of the repository; production
+  # cannot, so this exists — otherwise every in-app /docs/… link 404s.
+  docs:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/docs:${QS_VERSION:-latest}
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.docs.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && PathPrefix(`/docs`)"
+      - "traefik.http.routers.docs.entrypoints=web"
+      - "traefik.http.routers.docs.priority=20"
+      - "traefik.http.services.docs.loadbalancer.server.port=8003"
+      - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
+      - "traefik.http.routers.docs.middlewares=docs-stripprefix"
+    networks:
+      - qs-network
+
+  # ─── Importers ────────────────────────────────────────────────────────────
+  # Stateless by rule 8: no tokens in the environment, no local storage. Each one
+  # fetches its encrypted credentials from Core at runtime and stays idle until a
+  # connector is configured in the dashboard.
+  #
+  # INTERNAL_SERVICE_SECRET is what lets them authenticate for that, and the file
+  # this replaces set it on Core but on none of the importers. An importer with
+  # the variable unset derives the published development value instead, which
+  # does not match a Core that has a real one — so on any correctly configured
+  # production deployment, every credential fetch was rejected and every importer
+  # sat idle. It must be identical on Core and all eight.
+
+  yazio-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-yazio:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  dawarich-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-dawarich:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  whoop-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-whoop:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  apple-health-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-apple-health:${QS_VERSION:-latest}
+    restart: always
+    ports:
+      # Published because the iPhone automation posts here directly; there is no
+      # Traefik route for it.
+      - "${QS_APPLE_HEALTH_PORT:-8005}:8005"
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - PORT=8005
+    networks:
+      - qs-network
+
+  streak-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-streak:${QS_VERSION:-latest}
+    restart: always
+    ports:
+      - "${QS_STREAK_PORT:-8006}:8006"
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - PORT=8006
+    labels:
+      # Inbound ingestion also has a Traefik route, so an external tracker can
+      # post to https://<host>/ingest without a second open port.
+      - "traefik.enable=true"
+      - "traefik.http.routers.streak-ingest.rule=(Host(`${PUBLIC_HOST:-localhost}`) || Host(`localhost`)) && (Path(`/ingest`) || PathPrefix(`/api/v1/ingest/streak`))"
+      - "traefik.http.routers.streak-ingest.entrypoints=web"
+      - "traefik.http.routers.streak-ingest.priority=100"
+      - "traefik.http.services.streak-ingest.loadbalancer.server.port=8006"
+    networks:
+      - qs-network
+
+  home-assistant-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-home-assistant:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  weather-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-weather:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  calendar-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-calendar:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_started
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    networks:
+      - qs-network
+
+  # Optional. Only starts with `--profile tunnel`, because an empty TUNNEL_TOKEN
+  # made the container restart-loop on every deployment that had no tunnel.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: qs-cloudflared-tunnel
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN:?set TUNNEL_TOKEN to use the tunnel profile}
+    depends_on:
+      - traefik
+    networks:
+      - qs-network
+
+volumes:
+  # Unchanged names, so a stack that previously ran docker-compose.coolify.yml in
+  # this directory keeps its data: Compose derives the volume key from the
+  # project name, and the project name still comes from the directory.
+  pgdata:
+  natsdata:
+
+networks:
+  qs-network:
+    driver: bridge

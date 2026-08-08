@@ -23,7 +23,8 @@ Im Docker-Setup wird die Dokumentation über Traefik unter `/docs` geroutet und 
 | Seite | Inhalt |
 | --- | --- |
 | [Architektur](architecture.md) | Dienste, Datenfluss, Idempotenz, Tenant-Isolation, Scheduler |
-| [Betrieb](operations.md) | Deployment, Pflichtvariablen, Schlüsselwechsel, Monitoring, Backup |
+| [Release & Deployment](deployment.md) | Images veröffentlichen, Stack aufsetzen, aktualisieren, zurückrollen |
+| [Betrieb](operations.md) | Pflichtvariablen, Schlüsselwechsel, Monitoring, Backup |
 | [Authentifizierung](features/authentication.md) | Sitzungen, Cookies, Logout, Route-Guard |
 | [Externe Anmeldung (OIDC)](features/oidc.md) | Anbieterverwaltung, Kontenverknüpfung, Back-Channel-Logout |
 | [API-Keys](features/api-keys.md) | Tenant-gebundene eingehende Schlüssel |

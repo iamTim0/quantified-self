@@ -262,6 +262,21 @@ jobs:
       - name: Check for personal information
         run: python .agents/scripts/check_private_info.py
 
+      # The release workflow builds exactly the images in tools/build_images.py.
+      # A Dockerfile that is in neither list there is one that never gets
+      # published, and nothing fails when a build simply does not happen -- so it
+      # is checked here, on every push, rather than discovered at release time.
+      - name: Image manifest complete
+        run: python tools/build_images.py --check
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # tools/ had tests but no job running them.
+      - name: Tool tests
+        run: uv run --with pytest pytest tools/tests -q
+
   test-importers:
     name: Importers
     runs-on: ubuntu-latest
