@@ -40,6 +40,18 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 
     After changing the registry run `task metrics:generate` — the dashboard's TypeScript catalog and the table in `docs/metrics.md` are generated from it, and `task test:packages` fails if either is stale.
 
+16. **One Language in the Repository**: Everything committed here is written in **English** — code, identifiers, comments, docstrings, documentation, log lines, commit messages, test names, and every string a service returns. There is exactly one deliberate exception, and it is a data file: `apps/dashboard/src/app/lib/i18n/catalog-de.ts`, which holds the German half of the interface catalogue. A German sentence anywhere else is a defect, including in a comment you are only passing through.
+
+    The dashboard is bilingual, and that is a property of the catalogue, not of the components: **no user-visible literal may appear in a component.** Every label, placeholder, `title`, `aria-label`, confirm text and error message goes through `t("area.thing")`. The two catalogues cannot drift, because `catalog-de.ts` is typed `Record<MessageKey, string>` — a key missing from either side fails the type check rather than rendering an empty element. Dates and numbers come from `useI18n()` (`formatDate`, `formatDateTime`, `formatNumber`); a hardcoded locale such as `toLocaleString("de-DE")` shows one language's formatting to the other language's reader and is forbidden.
+
+17. **Localize at the Edge, Never on the Server**: Services answer in English. Anything a client must be able to present in another language travels as a **stable machine-readable `code`**, plus a `params` object when the wording contains a value — see `Warning_` in `core/deployment_warnings.py`, which the dashboard renders through `warning.<code>.*` and falls back to the server's own text for a code it does not know. Do not add `Accept-Language` handling to a service to solve a presentation problem.
+
+    The corollary is the part that actually breaks: **a field a client compares against is an identifier, not prose.** `direction`, `status`, `severity` and their kind are English, stable, and lowercase. When one changes, both sides change in the same commit — `AnalysisTab` compared `direction === "steigend"` against a German value from `insights.py`, and translating only one side would have left the trend badge silently colourless forever. A client must never branch on a sentence.
+
+18. **Defaults Are What a Local Checkout Has**: A default in `config.py` is what a developer gets with no configuration at all, so it names **loopback and the port the service actually binds** — never a container hostname. Container names are set explicitly in `infra/docker-compose.yml` *and* `docker-compose.prod.yml`, where they are true. Three defaults broke this rule at once and each failed differently: `DASHBOARD_URL=http://dashboard:3000` cost a DNS failure plus a 10 s connect timeout on **every** proxied request (measured: 12.7 s per page, for a page rendered in 50 ms), `CORE_GRPC_URL=core-service:50051` named a host that exists nowhere, and `ANALYSIS_SERVICE_URL` pointed at port 8002 while the service binds 8010.
+
+    Where a fallback list is genuinely needed, it MUST remember which candidate answered and try that one first. Rebuilding the list per request means paying for every wrong entry forever, and a cost that is paid identically on every request looks like slowness rather than like a bug.
+
 ---
 
 ## Code Conventions
@@ -93,6 +105,28 @@ If the user asks to add an integration for a new data source:
 
 ---
 
+## When Adding Text a User Will Read
+
+Every string in the dashboard exists twice, and the type system is what keeps it that way.
+
+1. Add the key to **`catalog-en.ts`** under the section for that screen, named `area.thing`.
+   English is the source: it defines `MessageKey`, so this file decides what exists.
+2. Add the same key to **`catalog-de.ts`**. Not optional — omitting it is a type error, which
+   is the point.
+3. Use it as `t("area.thing")`. Values interpolate as `{name}`: `t("share.success", { email })`.
+   Where a count changes the wording, add `*_one` / `*_other` and pick with
+   `plural(n, "…_one", "…_other")`.
+4. A string held in state stores the **key**, not the rendered sentence — a rendered sentence
+   stays in the language it was rendered in when the reader switches. See the OIDC callback
+   page, whose `status` is a `MessageKey`.
+5. Format dates and numbers with `useI18n()`, never with a literal locale.
+6. For text a **service** produces, do not add a key: the service answers in English and, if the
+   dashboard needs to say it in German, the payload carries a `code` (rule 17).
+
+`bun tsc --noEmit` in `apps/dashboard` is the check for all of this, and it runs in CI.
+
+---
+
 ## Anti-Patterns to Reject
 
 If you see these patterns, you MUST fix them or refuse to write them:
@@ -112,6 +146,14 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ A metric name that carries its unit (`*_kg`, `*_minutes`, `*_percentage`) or its source (`whoop_*` for a quantity another source also reports).
 - ❌ Committing agent scratch directories or AI planning documents, and never into the published docs nav.
 - ❌ Self-registration enabled by default. `ALLOW_REGISTRATION` is `False`; the first account is created with `python -m core.create_owner`.
+- ❌ A non-English string anywhere outside `apps/dashboard/src/app/lib/i18n/catalog-de.ts` (rule 16) — a German comment counts.
+- ❌ A user-visible literal in a component instead of a `t("area.thing")` key, or a key added to one catalogue only.
+- ❌ A hardcoded locale in the dashboard (`toLocaleString("de-DE")`, `new Intl.DateTimeFormat("de-DE")`) instead of `useI18n()`.
+- ❌ A service that localizes its own output, or a client that branches on server prose instead of on a `code` (rule 17).
+- ❌ Renaming a value a client compares against (`direction`, `status`) without changing the client in the same commit.
+- ❌ A code default that names a container (`http://dashboard:3000`, `core-service:50051`) or a port the service does not bind (rule 18).
+- ❌ A candidate/fallback list that re-pays for its failing entries on every request instead of remembering what answered.
+- ❌ A test that asserts on a fragment of prose which the next wording change would silently defeat — assert on the `code`, the status, or the structure.
 
 ## Documentation Requirements for New Features
 

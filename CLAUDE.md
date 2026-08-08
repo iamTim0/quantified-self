@@ -21,6 +21,10 @@ The full architectural rulebook is imported below and is binding for every turn:
 - **One Metric, One Name, One Unit**: Every `metric_type` comes from the registry in `packages/shared-schemas/src/shared_schemas/metrics.py`, resolved via `canonical_metric_type()` *before* the idempotency key is derived; values are converted into the registry's unit. Never invent a metric name. See [Metriken](docs/metrics.md).
 - **Inter-service Communication**: Importers publish to NATS (`qs.ingest.<source>`); Analysis queries Core via gRPC.
 - **No Auto-Seed Data**: Microservices and importers MUST NEVER automatically generate mock seed data on startup or missing config.
+- **One Language**: The repository is English — code, comments, docs, logs, commit messages, service responses. The single exception is `apps/dashboard/src/app/lib/i18n/catalog-de.ts`. A German comment is a defect.
+- **No User-Visible Literals in Components**: Every dashboard string goes through `t("area.thing")` and exists in **both** catalogues; `catalog-de.ts` is typed against the English one, so a missing key fails `tsc`. Dates and numbers come from `useI18n()`, never from a hardcoded locale.
+- **Localize at the Edge**: Services answer in English and hand out a stable `code` (plus `params`) for anything the UI must say in another language. A client never branches on prose, and a value it compares against (`direction`, `status`) is an English identifier changed on both sides in one commit.
+- **Defaults Are Local**: A default in `config.py` names loopback and the port the service actually binds; container hostnames belong in the compose files. A fallback list remembers which candidate answered.
 
 ## 2. Enabled Skills
 Project skills are registered in `.claude/skills/` and delegate to the canonical definitions in
