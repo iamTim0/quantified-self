@@ -61,11 +61,24 @@ function licenceName(pkg: Pkg): string {
   return "see below";
 }
 
+/**
+ * Line endings normalised to LF, because the output has to be byte-identical on
+ * every machine or `--check` becomes a coin flip.
+ *
+ * Some upstream licence files ship CRLF. Generating on Windows and committing
+ * turned those into LF (git's autocrlf), while CI regenerated them as CRLF from the
+ * same packages -- a 220-byte difference that read as "out of date" when nothing
+ * was. Which line ending a notice uses is not part of the notice.
+ */
+function normalise(text: string): string {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 async function findLicenceText(dir: string): Promise<string | null> {
   for (const name of LICENCE_FILENAMES) {
     const file = Bun.file(`${dir}/${name}`);
     if (await file.exists()) {
-      const text = (await file.text()).trim();
+      const text = normalise(await file.text()).trim();
       if (text) return text;
     }
   }
@@ -131,7 +144,7 @@ for (const [label, file] of [
     process.exit(1);
   }
   sections.push(
-    ["-".repeat(78), `${label} — OFL-1.1`, "-".repeat(78), "", (await licence.text()).trim(), ""].join("\n"),
+    ["-".repeat(78), `${label} — OFL-1.1`, "-".repeat(78), "", normalise(await licence.text()).trim(), ""].join("\n"),
   );
 }
 

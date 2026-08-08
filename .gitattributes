@@ -1,0 +1,12 @@
+# Files whose bytes have to be the same on every machine.
+#
+# `apps/dashboard/THIRD-PARTY-NOTICES.txt` is generated and then compared against
+# the committed copy by `bun run notices --check` in CI. Without an explicit
+# setting, a checkout on Windows materialises it with CRLF while the generator
+# writes LF, so the check fails locally for a file nobody touched. The generator
+# normalises its inputs to LF; this keeps the working tree agreeing with it.
+#
+# The vendored font licences are upstream text kept verbatim, and nothing should
+# rewrite them in passing.
+apps/dashboard/THIRD-PARTY-NOTICES.txt text eol=lf
+apps/dashboard/licenses/*.txt text eol=lf
