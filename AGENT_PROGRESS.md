@@ -157,8 +157,8 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 12 | Bearer-token tenant mapping (Core-side verification) | P0 | `completed` |
 | 13 | Tenant-bound hashed API keys (create/rotate/revoke) | P0 | `completed` |
 | 2 | Adaptive import windows | P1 | `completed` |
-| 3 | Data gap detection and backfill recommendation | P1 | `completed` (API; UI prefill open) |
-| 4 | Smart/Force duplicate detection | P1 | `completed` (API; UI toggle open) |
+| 3 | Data gap detection and backfill recommendation | P1 | `completed` (API + UI; gaps become contiguous ranges with a per-connector backfill action) |
+| 4 | Smart/Force duplicate detection | P1 | `completed` (API + UI; smart/force choice with a live preview of what is skipped) |
 | 8 | Calendar ICS integration | P2 | `completed` |
 | 9 | Importer and end-to-end tests | P1 | `completed` for changed paths |
 | 18 | Final verification (lint, types, tests, docs build) | P1 | `completed` |
