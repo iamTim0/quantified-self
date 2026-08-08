@@ -45,11 +45,10 @@ from core.db.models import (
     User,
     UserIdentity,
 )
-from core.db.session import get_session
-from core.db.tenant import get_current_tenant_id
+from core.db.session import async_session_maker, get_session
+from core.db.tenant import _current_tenant_id, get_current_tenant_id
 from core.events.consumer import start_consumer
 from core.grpc.server import serve_grpc
-from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
 from core.ingest_planning import (
     BucketCount,
     TimeRange,
@@ -57,17 +56,12 @@ from core.ingest_planning import (
     compute_sync_window,
     plan_import,
 )
+from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
     get_current_principal,
     require_role,
-)
-from core.security.crypto import (
-    DecryptionError,
-    decrypt_secret,
-    encrypt_secret,
-    mask_secret,
 )
 from core.security.cookies import (
     ACCESS_COOKIE,
@@ -77,6 +71,12 @@ from core.security.cookies import (
     clear_session_cookies,
     csrf_token_matches,
     set_session_cookies,
+)
+from core.security.crypto import (
+    DecryptionError,
+    decrypt_secret,
+    encrypt_secret,
+    mask_secret,
 )
 from core.security.oidc import (
     AUTH_REQUEST_TTL_SECONDS,
