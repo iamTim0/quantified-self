@@ -183,7 +183,13 @@ jobs:
 
           # SCHEDULER_ENABLED=false: a background tick firing mid-test would add
           # SyncRun rows the assertions do not expect.
-          SCHEDULER_ENABLED=false uv run --directory services/core \
+          #
+          # ENVIRONMENT=dev because Core and the Gateway refuse to start on the
+          # repository's default secrets in a production environment, and the
+          # Gateway defaults ENVIRONMENT to production (it is the edge; strict is
+          # the right default there). CI is not production, and there is no .env
+          # on the runner.
+          ENVIRONMENT=dev SCHEDULER_ENABLED=false uv run --directory services/core \
             uvicorn core.main:app --host 127.0.0.1 --port 8001 --log-level warning \
             > /tmp/core.log 2>&1 &
 
@@ -195,6 +201,7 @@ jobs:
           wait_for "Next" http://127.0.0.1:3000 /tmp/next.log
 
           # The Gateway last: it proxies both of the above.
+          ENVIRONMENT=dev \
           CORE_SERVICE_URL=http://127.0.0.1:8001 \
           DASHBOARD_URL=http://127.0.0.1:3000 \
           uv run --directory services/api-gateway \
