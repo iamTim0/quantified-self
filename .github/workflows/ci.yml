@@ -97,6 +97,23 @@ jobs:
           --with icalendar --with recurring-ical-events
           pytest ${{ github.workspace }}/tests/e2e -q --rootdir ${{ github.workspace }}
 
+  test-analysis:
+    name: Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      # No database service on purpose. This suite includes a boundary test that
+      # asserts the service imports no database driver; giving the job a database
+      # would make a violation harder to notice, not easier.
+      - name: Analysis tests
+        run: >-
+          uv run --directory services/analysis
+          --with pytest --with pytest-asyncio --with httpx
+          pytest tests -q
+
   lint-specs:
     name: Spec lint
     runs-on: ubuntu-latest

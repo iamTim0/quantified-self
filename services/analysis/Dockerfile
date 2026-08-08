@@ -1,12 +1,25 @@
+# Built from the repository root, not from services/analysis -- see the comment
+# in services/core/Dockerfile for why (the packages/proto path dependency).
+#
+# Build:  docker build -f services/analysis/Dockerfile .
 FROM python:3.12-slim AS builder
-
-WORKDIR /app
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-COPY pyproject.toml ./
-RUN uv pip install --system -r pyproject.toml
+WORKDIR /app
 
-COPY src/ ./src/
+COPY packages/proto/pyproject.toml ./packages/proto/
+COPY packages/proto/gen ./packages/proto/gen
+COPY services/analysis/pyproject.toml services/analysis/uv.lock ./services/analysis/
 
-CMD ["uvicorn", "analysis.main:app", "--host", "0.0.0.0", "--port", "8000"]
+WORKDIR /app/services/analysis
+RUN uv sync --frozen --no-install-project
+
+COPY services/analysis/src/ ./src/
+RUN uv sync --frozen
+
+ENV PATH="/app/services/analysis/.venv/bin:${PATH}"
+
+EXPOSE 8010
+
+CMD ["uvicorn", "analysis.main:app", "--host", "0.0.0.0", "--port", "8010"]

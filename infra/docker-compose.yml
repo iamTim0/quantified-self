@@ -26,9 +26,13 @@ services:
 
   core:
     build:
-      context: ../services/core
+      # Repo root: Core needs packages/proto, which is outside services/core.
+      context: ..
+      dockerfile: services/core/Dockerfile
     ports:
       - "8001:8001"
+      # gRPC read API, consumed by the Analysis Service.
+      - "50051:50051"
     depends_on:
       - postgres
       - nats
@@ -36,6 +40,22 @@ services:
       - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
       - NATS_URL=nats://nats:4222
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+    networks:
+      - qs-network
+
+  analysis:
+    # Reads through Core's gRPC API and owns no database connection
+    # (AGENTS.md rules 1 and 3). It has deliberately no DATABASE_URL.
+    build:
+      context: ..
+      dockerfile: services/analysis/Dockerfile
+    ports:
+      - "8010:8010"
+    depends_on:
+      - core
+    environment:
+      - CORE_GRPC_URL=core:50051
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
     networks:
       - qs-network
 
@@ -66,6 +86,7 @@ services:
       - nats
     environment:
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
@@ -87,6 +108,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -99,6 +121,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -111,6 +134,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -125,6 +149,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - PORT=8005
     networks:
       - qs-network
@@ -140,6 +165,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - PORT=8006
     labels:
       - "traefik.enable=true"

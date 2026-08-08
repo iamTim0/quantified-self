@@ -33,11 +33,14 @@ services:
 
   core:
     build:
-      context: ./services/core
-      dockerfile: Dockerfile
+      # Repo root: Core needs packages/proto, which is outside services/core.
+      context: .
+      dockerfile: services/core/Dockerfile
     restart: always
     ports:
       - "8001:8001"
+      # gRPC read API, consumed by the Analysis Service.
+      - "50051:50051"
     depends_on:
       postgres:
         condition: service_healthy
@@ -49,6 +52,22 @@ services:
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-dev-encryption-key-quantified-self-2026}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-true}
+    networks:
+      - qs-network
+
+  analysis:
+    # Reads through Core's gRPC API and owns no database connection
+    # (AGENTS.md rules 1 and 3). It has deliberately no DATABASE_URL.
+    build:
+      context: .
+      dockerfile: services/analysis/Dockerfile
+    restart: always
+    depends_on:
+      - core
+    environment:
+      - CORE_GRPC_URL=core:50051
+      - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-}
     networks:
       - qs-network
 
@@ -80,6 +99,7 @@ services:
       - nats
     environment:
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
@@ -143,6 +163,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -157,6 +178,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -171,6 +193,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -187,6 +210,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - PORT=8005
     networks:
       - qs-network
@@ -204,6 +228,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
       - PORT=8006
     networks:
       - qs-network
@@ -219,6 +244,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -233,6 +259,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 
@@ -247,6 +274,7 @@ services:
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
     networks:
       - qs-network
 

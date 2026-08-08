@@ -181,8 +181,7 @@ export default function AnalysisTab({
         min_strength: String(minStrength),
         compare_to_previous: "true",
       });
-      const res = await apiFetch(`${apiBase}/api/v1/data/analysis/insights?${params}`, {
-              });
+      const res = await apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`);
       if (!res.ok) throw new Error("Analysen konnten nicht geladen werden.");
       setData(await res.json());
     } catch (err) {

@@ -13,7 +13,7 @@ import math
 from datetime import date, timedelta
 
 import pytest
-from core.insights import (
+from analysis.insights import (
     ANALYSIS_VERSION,
     MIN_SAMPLE_FOR_CORRELATION,
     build_daily_series,

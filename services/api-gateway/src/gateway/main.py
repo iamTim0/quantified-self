@@ -255,6 +255,64 @@ async def proxy_streak_ingest(request: Request):
             )
 
 
+@app.api_route("/api/v1/analysis/{path:path}", methods=["GET"])
+async def proxy_analysis_service(path: str, request: Request):
+    """Proxy read-only analysis requests to the Analysis Service.
+
+    The analyses used to live in Core and be served from `/api/v1/data/analysis/*`.
+    They now run in their own service which reads through Core's gRPC API, so the
+    edge has to route to it (AGENTS.md rule 3).
+
+    GET only: everything the Analysis Service exposes is a computation over data
+    it does not own, so there is nothing here to POST to.
+    """
+    token = _session_credential(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing session cookie or Authorization Bearer header"},
+        )
+
+    try:
+        claims = decode_jwt(token)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+    header_tenant = request.headers.get("X-Tenant-ID")
+    if header_tenant and header_tenant != claims["tenant_id"]:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "X-Tenant-ID does not match authenticated tenant"},
+        )
+
+    forwarded_headers = {
+        k: v for k, v in request.headers.items() if k.lower() in _SAFE_FORWARD_HEADERS
+    }
+    # The Analysis Service re-validates this itself and derives the tenant from
+    # it. A cookie-authenticated browser sends no Authorization header, so the
+    # token is forwarded explicitly here -- unlike the Core proxy, where doing so
+    # would make a cookie request look header-authenticated and skip CSRF. This
+    # route is GET-only, so there is no CSRF decision to get wrong.
+    forwarded_headers["Authorization"] = f"Bearer {token}"
+    forwarded_headers["X-Tenant-ID"] = claims["tenant_id"]
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            response = await client.request(
+                method=request.method,
+                url=f"{settings.ANALYSIS_SERVICE_URL}/api/v1/analysis/{path}",
+                headers=forwarded_headers,
+                params=request.query_params,
+            )
+            return _relay_response(response)
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Analysis Service unavailable: {e!s}",
+            )
+
+
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,
