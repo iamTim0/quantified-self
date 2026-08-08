@@ -127,7 +127,9 @@ X-CSRF-Token: <csrf>
 
 - Der `jti` des Access Tokens landet auf der Denylist; weitere Requests damit → `401`.
 - Der Refresh Token wird widerrufen.
-- Mit `all_sessions: true` werden alle Sessions des Nutzers beendet.
+- Mit `all_sessions: true` werden alle Sessions des Nutzers beendet — siehe
+  [Alle Sessions beenden](#alle-sessions-beenden) dazu, warum das mehr braucht als
+  das Widerrufen der Refresh Tokens.
 - Alle drei Cookies werden gelöscht — auch dann, wenn das präsentierte Token schon
   abgelaufen oder unlesbar war. Andernfalls bliebe ein Cookie zurück und der nächste
   Seitenaufruf sähe wieder angemeldet aus.
@@ -148,6 +150,24 @@ Logout meldet nicht wieder an.**
     genau deshalb war man nach dem Logout sofort wieder angemeldet. Für lokale
     Entwicklung bitte regulär registrieren und anmelden.
 
+### Alle Sessions beenden
+
+`all_sessions: true`, eine Passwortänderung und ein erkannter Refresh-Token-Replay
+lösen alle dasselbe aus — und das tat lange nicht, was es verspricht. Widerrufen
+wurden nur die Refresh Tokens. Damit lässt sich keine *neue* Sitzung mehr
+erzeugen, aber jedes bereits ausgestellte Access Token blieb bis zu zwölf Stunden
+gültig: nach einer Passwortänderung, nach einem erkannten Diebstahl und nach einer
+Abmeldung durch den Anbieter.
+
+Die Denylist kann das nicht leisten. Sie ist auf `jti` indiziert, und ein `jti`
+wird erst bekannt, wenn das Token vorgelegt wird — „alle offenen Tokens dieses
+Kontos" ist keine Menge, die sich aufzählen lässt. Stattdessen trägt `users` jetzt
+eine Spalte `sessions_valid_from`. Jeder Request vergleicht sie mit dem `iat`
+seines Tokens; alles davor wird abgelehnt. Eine Zeile, ein Vergleich, alle Tokens.
+
+Ein neues Token nach dem Stichzeitpunkt ist davon nicht betroffen — Anmelden
+funktioniert also sofort wieder.
+
 ### Abmelden beim Anbieter
 
 Wer sich über einen externen Anbieter angemeldet hat, hat dort eine zweite,
@@ -167,6 +187,31 @@ der harmlosere Fehlerfall.
 Das Ziel nach der Abmeldung stellt `POST_LOGOUT_REDIRECT_URI` ein. Es muss beim
 Anbieter registriert sein.
 
+Die Gegenrichtung — der Anbieter beendet die Sitzung und teilt uns das mit —
+beschreibt [Back-Channel-Logout](oidc.md#back-channel-logout).
+
+## Serverseitiger Route-Guard
+
+Ein Deep-Link auf `/profile` ohne Sitzung rendert nicht mehr erst das Grundgerüst,
+wartet auf `/api/v1/auth/me` und tauscht dann das Anmeldeformular ein — mit
+`/profile` weiterhin in der Adresszeile. `apps/dashboard/src/proxy.ts` (in Next 16
+der neue Name für `middleware.ts`) leitet vorher auf `/?next=<Ziel>` um; nach der
+Anmeldung geht es dort weiter.
+
+Geprüft wird `qs_csrf`, nicht das Access Token. Das läuft nach zwölf Stunden ab,
+während die Sitzung dreißig Tage hält — auf ein fehlendes `qs_access` umzuleiten
+würde also jede zurückkehrende Nutzerin aus einer funktionierenden Sitzung werfen.
+`qs_refresh` ist auf `/api/v1/auth` beschränkt und wird bei einer Seitennavigation
+gar nicht gesendet. `qs_csrf` liegt auf `/`, lebt so lange wie der Refresh Token
+und ist für sich genommen kein Zugangsnachweis.
+
+!!! note "Kein Zugriffsschutz"
+    Der Guard ist eine Korrektur an Adresszeile und Darstellung, keine
+    Autorisierung — Next.js' eigene Dokumentation rät ausdrücklich davon ab, ihn
+    als solche zu verwenden. Jedes Byte an Tenant-Daten kommt aus einem Request,
+    den Gateway und Core prüfen. Wer das Cookie fälscht, bekommt dasselbe leere
+    Grundgerüst und ein `401`.
+
 ## Passwortänderung
 
 `POST /api/v1/auth/change-password` ändert das Passwort des **aufrufenden** Nutzers
@@ -181,11 +226,9 @@ Logout und Token-Erneuerung sind darüber nachvollziehbar.
 
 ## Bekannte Einschränkungen
 
-- Der Zugriffsschutz greift erst im Netzwerk-Request, nicht schon beim Rendern: Es
-  gibt keinen serverseitigen Route-Guard (in Next.js 16 über `proxy.ts`, nicht mehr
-  `middleware.ts`). Geschützte Seiten rendern kurz ihr Grundgerüst, bevor
-  `/api/v1/auth/me` antwortet. Daten sind davon nicht betroffen — die kommen erst
-  nach der Prüfung.
+- Der eigentliche Zugriffsschutz greift weiterhin erst im Netzwerk-Request. Der
+  [Route-Guard](#serverseitiger-route-guard) korrigiert Adresszeile und Darstellung,
+  er autorisiert nichts.
 - Externe Anmeldung über OIDC ist verfügbar, aber standardmäßig deaktiviert; siehe
   [Externe Anmeldung (OIDC)](oidc.md).
 - Rollen (`owner`, `admin`, `member`) werden für die Verwaltung der API-Keys und

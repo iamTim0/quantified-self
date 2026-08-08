@@ -37,19 +37,59 @@ task docs:build        # MkDocs --strict
 | `ALLOWED_ORIGINS` | CORS-Ursprünge des Gateways | ja |
 | `MAP_TILE_HOSTS` | erlaubte Kachel-Hosts in der CSP | nein |
 
-!!! danger "Vor dem ersten produktiven Deployment"
+!!! danger "Ohne diese drei Werte startet der Produktions-Stack nicht mehr"
     `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` und `ENCRYPTION_KEY` haben
     Entwicklungs-Defaults, die im Repository stehen. Wer sie kennt, kann Token
-    fälschen und gespeicherte Zugangsdaten entschlüsseln. Alle drei müssen gesetzt
-    werden:
+    fälschen und gespeicherte Zugangsdaten entschlüsseln.
+
+    Bis vor Kurzem war das eine Bitte: `docker-compose.coolify.yml` enthielt
+    `${JWT_SECRET:-dev-secret-key-quantified-self-2026}`, ein Deployment ohne
+    gesetzte Variable lief also mit dem öffentlichen Wert — und sagte nichts.
+    Die Datei verwendet jetzt `${VAR:?…}`; fehlt eine Variable, bricht
+    `docker compose` ab, bevor ein Container startet. Zusätzlich verweigern Core
+    und Gateway den Start, wenn `ENVIRONMENT` produktiv ist und ein Wert einem
+    veröffentlichten Default entspricht.
 
     ```bash
     python -c "import secrets; print(secrets.token_urlsafe(48))"
     ```
 
     `INTERNAL_SERVICE_SECRET` muss auf Core **und** allen Importern identisch sein.
-    Ein Wechsel von `ENCRYPTION_KEY` macht bereits gespeicherte Connector-Zugangsdaten
-    unlesbar; diese müssen dann neu hinterlegt werden.
+
+### `ENCRYPTION_KEY` wechseln
+
+Dieser Schlüssel ist der einzige, der sich nicht einfach ersetzen lässt: er
+entschlüsselt bereits gespeicherte Connector-Zugangsdaten und OIDC-Client-Secrets.
+Wird er ohne Vorbereitung geändert, sind alle hinterlegten Tokens dauerhaft
+unlesbar — die Importer laufen leer und es gibt nichts, worauf man zurückfallen
+könnte.
+
+Deshalb zuerst umschlüsseln, dann umstellen:
+
+```bash
+# 1. Probelauf. Zeigt, was passieren würde, und schreibt nichts.
+docker compose -f docker-compose.coolify.yml run --rm core \
+  python -m core.rotate_encryption_key --old "$ALT" --new "$NEU" --dry-run
+
+# 2. Umschlüsseln. Eine Transaktion; ein Abbruch lässt alles auf dem alten Schlüssel.
+docker compose -f docker-compose.coolify.yml run --rm core \
+  python -m core.rotate_encryption_key --old "$ALT" --new "$NEU"
+
+# 3. Erst jetzt ENCRYPTION_KEY auf den neuen Wert setzen und Core neu starten.
+```
+
+Das Werkzeug bricht ab, sobald ein Wert sich mit **keinem** der beiden Schlüssel
+entschlüsseln lässt, und schreibt dann gar nichts. Eine Datenbank, die halb auf
+dem alten und halb auf dem neuen Schlüssel liegt, wäre der teure Fehler, denn
+nichts hielte fest, welche Zeile auf welchem liegt. Werte, die bereits auf dem
+neuen Schlüssel liegen, bleiben unangetastet — ein zweiter Lauf nach einem
+Abbruch ist also gefahrlos.
+
+!!! tip "Wenn der Probelauf »UNREADABLE« meldet"
+    Dann liegt mindestens ein Wert auf einem dritten Schlüssel. Das passiert, wenn
+    dieselbe Datenbank zwischenzeitlich mit unterschiedlicher Konfiguration
+    betrieben wurde. Diese Zugangsdaten sind nicht wiederherstellbar; sie müssen im
+    Dashboard neu hinterlegt werden. Danach läuft die Umschlüsselung durch.
 
 ## Deployment
 

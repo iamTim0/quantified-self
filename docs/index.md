@@ -15,7 +15,25 @@ Im Docker-Setup wird die Dokumentation über Traefik unter `/docs` geroutet und 
 - Importer sind stateless und veröffentlichen ausschließlich tenant-scoped NATS-Events auf `qs.ingest.<source_type>`.
 - Credentials werden dynamisch aus Core geladen und nicht im Importer gespeichert.
 - Jedes Event enthält `tenant_id`, `source_id`, `metric_type`, `timestamp` und einen deterministischen `idempotency_key`.
-- Core bleibt der einzige Service mit Datenbankzugriff.
+- Core bleibt der einzige Service mit Datenbankzugriff; der Analysedienst liest über gRPC.
+- Verteilte Abläufe werden vor der Implementierung in `specs/` spezifiziert und modellgeprüft.
+
+## Einstiegspunkte
+
+| Seite | Inhalt |
+| --- | --- |
+| [Architektur](architecture.md) | Dienste, Datenfluss, Idempotenz, Tenant-Isolation, Scheduler |
+| [Betrieb](operations.md) | Deployment, Pflichtvariablen, Schlüsselwechsel, Monitoring, Backup |
+| [Authentifizierung](features/authentication.md) | Sitzungen, Cookies, Logout, Route-Guard |
+| [Externe Anmeldung (OIDC)](features/oidc.md) | Anbieterverwaltung, Kontenverknüpfung, Back-Channel-Logout |
+| [API-Keys](features/api-keys.md) | Tenant-gebundene eingehende Schlüssel |
+| [Fehlerbehebung](troubleshooting.md) | Häufige Fehlerbilder und was sie bedeuten |
+
+!!! danger "Vor dem ersten produktiven Deployment"
+    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` und `ENCRYPTION_KEY` haben Defaults,
+    die im Repository stehen. Der Produktions-Stack startet damit nicht mehr, und
+    `ENCRYPTION_KEY` verlangt eine Umschlüsselung **vor** der Umstellung. Siehe
+    [Betrieb](operations.md#erforderliche-konfiguration).
 
 ## Rechtliches
 

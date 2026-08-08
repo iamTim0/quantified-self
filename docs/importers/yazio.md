@@ -10,6 +10,17 @@ Der Yazio-Importer normalisiert Rohdaten in tenant-scoped Quantified-Self-Metrik
 - Credentials werden im Dashboard konfiguriert und in Core verschlüsselt gespeichert.
 - Der Importer fragt Credentials dynamisch über Core ab und bleibt ohne gültige Konfiguration idle.
 
+!!! note "Der OAuth-Client ist nicht unser Geheimnis"
+    Die Anmeldung bei Yazio verwendet deren Mobil-App-Client. Dessen `client_id`
+    und `client_secret` stecken in einer ausgelieferten App, sind damit öffentlich
+    und lassen sich von uns auch nicht wechseln. Sie standen fest verdrahtet in
+    `client.py`, was wie ein geleaktes Geheimnis aussah, und liegen jetzt als
+    `YAZIO_CLIENT_ID` / `YAZIO_CLIENT_SECRET` in der Konfiguration — mit denselben
+    Werten als Default, ersetzbar für eine Installation mit eigenem Client.
+
+    Die Zugangsdaten der Nutzerin sind davon unberührt: die kommen aus dem
+    Dashboard und werden verschlüsselt aus Core geladen.
+
 ## Einrichtung
 
 1. Im Dashboard unter **Connectors** die Datenquelle öffnen.

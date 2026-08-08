@@ -25,8 +25,10 @@ Start here:
 | [Fehlerbehebung](docs/troubleshooting.md) | Common failures and what they mean |
 
 > **Before deploying:** `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY`
-> ship with development defaults that are committed to this repository. See
-> [Betrieb](docs/operations.md) — they must be replaced.
+> ship with development defaults that are committed to this repository. The
+> production stack now refuses to start without real values, and `ENCRYPTION_KEY`
+> needs stored credentials re-encrypted *before* it changes. See
+> [Betrieb](docs/operations.md).
 
 ## Architecture Overview
 
@@ -100,20 +102,25 @@ flowchart TD
 ```text
 quantified-self/
 ├── apps/
-│   └── dashboard/         # Next.js 16 Web Dashboard UI
+│   └── dashboard/
+│       ├── src/proxy.ts   # Server-side route guard (Next 16's middleware.ts)
+│       ├── src/app/       # Next.js 16 Web Dashboard UI
+│       └── e2e/           # Playwright browser tests
 ├── services/
-│   ├── api-gateway/       # Auth, routing, JWT
-│   ├── core/              # Owns PostgreSQL, NATS consumer, gRPC server
-│   ├── analysis/          # AI/DS, queries Core via gRPC
+│   ├── api-gateway/       # Auth, routing, JWT, streaming UI proxy
+│   ├── core/              # Owns PostgreSQL, NATS consumer, gRPC server, scheduler
+│   ├── analysis/          # AI/DS, queries Core via gRPC — no database driver
 │   └── importers/
 │       └── yazio/         # NATS publisher, polls Yazio API v15
 ├── packages/
 │   ├── proto/             # Protobuf definitions (buf)
 │   └── shared-schemas/    # Shared Pydantic models
-├── specs/                 # Fizzbee formal specifications
+├── specs/                 # Fizzbee formal specifications (13, all model-checked)
 ├── infra/                 # Infrastructure configuration
 │   ├── docker-compose.yml
-│   └── db/init.sql
+│   ├── fizzbee.Dockerfile # The model checker; no Windows build exists
+│   └── db/init.sql        # Schema for a fresh container. No seed data.
+├── .agents/scripts/       # Lifecycle hooks and spec tooling, shared by all agents
 ├── Taskfile.yml
 ├── README.md
 └── AGENTS.md
@@ -153,11 +160,26 @@ task docs:serve                  # Documentation at http://localhost:8003
 
 ### Environment Variables
 
-| Variable | Description | Example |
+| Variable | Description | Production |
 | --- | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql+asyncpg://user:pass@localhost:5432/qs` |
-| `NATS_URL` | NATS JetStream URL | `nats://localhost:4222` |
-| `JWT_SECRET` | Secret for signing JWTs | `supersecret` |
+| `DATABASE_URL` | PostgreSQL connection string | required |
+| `NATS_URL` | NATS JetStream URL | required |
+| `ENVIRONMENT` | `production` makes the secret checks below fatal instead of a warning | recommended |
+| `JWT_SECRET` | Signs user access tokens | **required — the default is published here** |
+| `INTERNAL_SERVICE_SECRET` | Signs internal service credentials; identical on Core and every importer | **required** |
+| `ENCRYPTION_KEY` | Fernet key for connector credentials at rest | **required — read the note below first** |
+
+The development defaults for those three are in this repository, so a deployment
+that uses them has no secrets. Core and the Gateway refuse to start on a published
+default when `ENVIRONMENT` is production-like, and `docker-compose.coolify.yml`
+uses `${VAR:?…}` so a missing value stops the deploy before a container starts.
+
+> **`ENCRYPTION_KEY` is not a restart.** It decrypts stored connector
+> credentials; changing it without re-encrypting first makes every stored token
+> permanently unreadable. Run
+> `python -m core.rotate_encryption_key --old … --new … --dry-run` first, then
+> without `--dry-run`, and only then change the variable. See
+> [docs/operations.md](docs/operations.md).
 
 ## Database Schema
 
@@ -165,10 +187,14 @@ The database utilizes PostgreSQL extended with **TimescaleDB** for hypertable-ba
 
 ### Key Tables
 - `tenants`: Core multi-tenancy workspace entity.
-- `users`: Individual user accounts with roles and hashed credentials.
+- `users`: Individual user accounts with roles and hashed credentials. `sessions_valid_from` is the cutoff that makes "revoke every session" cover access tokens already in circulation, not just refresh tokens.
 - `data_sources`: Registered integrations (e.g., user's Yazio connector).
 - `data_points`: TimescaleDB hypertable containing actual metrics.
 - `tenant_shares`: Explicit consent grants for cross-tenant data sharing.
+
+`infra/db/init.sql` creates the schema for a fresh container and seeds **nothing**.
+It used to end by inserting an owner account with a bcrypt hash committed to this
+repository. Create the first account through sign-up.
 
 ### Deduplication Strategy
 Deduplication happens at the database level using a 64-character SHA256 `idempotency_key`:
@@ -205,4 +231,20 @@ API importers are stateless workers fetching data and pushing it into NATS JetSt
 
 ## Fizzbee (Formal Verification)
 
-We use **Fizzbee** to mathematically model and verify our distributed architecture patterns before writing code. Specifications live in `specs/`.
+We use **Fizzbee** to mathematically model and verify our distributed architecture
+patterns before writing code. The 13 specifications live in `specs/` and every one
+of them is model-checked.
+
+```bash
+task fizz:lint                       # structural check, runs anywhere including Windows
+task fizz:check                      # the real model check (needs the container or a `fizz` on PATH)
+task fizz:one SPEC=tenant_isolation  # one specification
+```
+
+`fizz:lint` runs on every push; the model check runs when a specification changes
+and weekly, because it needs a 340 MB toolchain that has no Windows build. Both
+are wired into CI (`.github/workflows/ci.yml` and `specs.yml`).
+
+Tests reference the invariant they exercise in their docstring, and the reverse
+holds too: an invariant is written so that removing a clause from the
+implementation produces a counterexample naming that clause.

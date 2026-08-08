@@ -92,7 +92,7 @@ NATS-Event und den Importer propagiert und erscheint in allen Logs als
 
 | Tabelle | Zweck |
 | --- | --- |
-| `tenants`, `users` | Arbeitsbereich und Identitäten getrennt |
+| `tenants`, `users` | Arbeitsbereich und Identitäten getrennt. `users.sessions_valid_from` ist der Stichzeitpunkt, ab dem ältere Access Tokens abgelehnt werden |
 | `data_sources` | Ein Connector pro (tenant, source_type) |
 | `data_points` | Zeitreihe, TimescaleDB-Hypertable |
 | `sync_runs` | Import-/Auditprotokoll, Grundlage adaptiver Fenster |
@@ -142,7 +142,47 @@ Entscheidung braucht: die Connector-Konfiguration und die Importhistorie.
 Damit ist auch die frühere prozesslokale `active_syncs`-Sperre in den Importern
 nicht mehr tragend: Core stellt den doppelten Auftrag gar nicht erst ein.
 
+## Sitzungen beenden: zwei Mechanismen, weil einer nicht reicht
+
+`revoked_access_tokens` ist auf `jti` indiziert und beendet **diese eine**
+Sitzung — das kann nichts anderes, denn ein Access Token ist sonst von jedem
+anderen ununterscheidbar.
+
+`users.sessions_valid_from` beendet **alle**. Das kann die Denylist nicht, weil
+ein `jti` erst bekannt wird, wenn das Token vorgelegt wird; „alle offenen Tokens
+dieses Kontos" ist keine aufzählbare Menge. Der Stichzeitpunkt wird gegen das
+`iat` jedes Tokens geprüft und deckt damit alle auf einmal ab.
+
+Beide scheitern geschlossen: Ist die Datenbank nicht erreichbar, wird der Request
+abgelehnt und nicht durchgelassen — sonst würde ein Ausfall jedes abgemeldete
+Token wieder gültig machen.
+
+Ausgelöst wird der Stichzeitpunkt von Passwortänderung, `logout all_sessions`,
+erkanntem Refresh-Token-Replay und
+[Back-Channel-Logout](features/oidc.md#back-channel-logout).
+
+## Das Gateway reicht die Oberfläche durch, ohne sie zu puffern
+
+Der UI-Proxy las früher die vollständige Antwort, bevor er das erste Byte
+weitergab. Das hebt Streaming-SSR auf und hält jede Antwort einmal komplett im
+Speicher. Er streamt jetzt.
+
+Der `httpx.AsyncClient` überlebt dabei bewusst den Handler, der ihn erzeugt hat:
+Der Body wird noch durch ihn gelesen, während Starlette schon sendet. Ihn beim
+Verlassen der Funktion zu schließen — was `async with` täte — würde jede Antwort
+auf das bis dahin Angekommene kürzen.
+
+!!! note "Was das nicht behoben hat"
+    Der Umbau sollte `next dev` hinter dem Gateway ermöglichen. Tut er nicht.
+    Nachgemessen: Das durchgereichte Dokument ist Byte für Byte identisch mit dem
+    direkt abgerufenen, alle Chunks ebenso, und der HMR-Socket verbindet sich —
+    die Seite hydriert trotzdem nicht, ohne jede Fehlermeldung. Die Pufferung war
+    also nicht die Ursache. Die Browser-Tests laufen weiterhin gegen einen
+    Produktions-Build, was ohnehin das ist, was deployt wird.
+
 ## Bekannte Einschränkungen
 
 - Analysen können bei sehr dünner Datenlage ausgelassen werden. Das ist Absicht:
   ein schwach belegter Zusammenhang ist irreführender als gar keiner.
+- `next dev` funktioniert hinter dem Gateway nicht (siehe oben). Direkt auf
+  Port 3000 funktioniert es; nur die API-Aufrufe gehen dann ins Leere.

@@ -173,14 +173,17 @@ These were discovered during inventory and are **security defects, not roadmap g
 | 19 | Continuous integration | P1 | `completed` (green as of `7e6f0d0`) |
 | 20 | Session credentials in `httpOnly` cookies + CSRF | P0 | `completed` |
 | 21 | Fizzbee CLI installed and specs model-checked | P1 | `completed` — all 12 verified in 33 s; see §10 |
-| 22 | Server-side route guard (Next 16 `proxy.ts`) | P2 | `open` |
+| 22 | Server-side route guard (Next 16 `proxy.ts`) | P2 | `completed` — see §12 |
 | 24 | Analysis as a separate service reading via Core gRPC | P1 | `completed` |
 | 25 | Sync scheduler driven by `poll_interval_hours` | P1 | `completed` |
 | 26 | Core-side sync authority (replaces process-local `active_syncs`) | P1 | `completed` |
 | 27 | WHOOP OAuth token refresh | P2 | `completed` |
 | 28 | OIDC provider admin UI + RP-initiated logout | P2 | `completed` |
 | 29 | Browser-level tests (Playwright) | P1 | `completed` |
-| 23 | Rotate committed default secrets | P0 (deploy) | `open` — deployment action, see §10 |
+| 30 | Back-channel OIDC logout | P2 | `completed` — spec-first, see §12 |
+| 31 | Per-user session cutoff (`users.sessions_valid_from`) | P0 | `completed` — makes "revoke all sessions" cover access tokens |
+| 32 | Streaming UI proxy in the Gateway | P3 | `completed` — but did not fix `next dev` behind it, see §12 |
+| 23 | Rotate committed default secrets | P0 (deploy) | `blocked on the operator` — every prerequisite is built (fail-closed startup, `${VAR:?}` in the production compose, `core.rotate_encryption_key`, runbook). Choosing and setting the values is the deploy step. See §12 |
 
 ---
 
@@ -712,3 +715,191 @@ Both now have tests that exercise the real path.
 4. **The Gateway's UI proxy buffers responses**, which is why `next dev` does not
    work behind it. Fine for the production build; worth revisiting if anyone
    wants to develop through the Gateway.
+
+---
+
+## 12. Fifth Pass — closing the four remaining open items
+
+The list at the end of §11 was the whole brief: the route guard, back-channel
+logout, the committed secrets, and the buffering UI proxy. Three are done. The
+fourth is done as a change and did not achieve what it was for, which is recorded
+below rather than rounded up.
+
+### The route guard (roadmap #22)
+
+`apps/dashboard/src/proxy.ts` — Next 16's rename of `middleware.ts`. A signed-out
+deep link to `/profile` used to render the shell, wait for `/api/v1/auth/me`, and
+then show a login form with `/profile` still in the address bar. It now redirects
+to `/?next=/profile` before any React runs, and signing in continues to the
+requested page.
+
+Three decisions worth keeping:
+
+**It checks `qs_csrf`, not `qs_access`.** The access cookie expires after twelve
+hours while the session lives thirty days, so redirecting on a missing access
+cookie would sign a returning user out of a working session — the guard would
+have caused the bug it was written to fix. `qs_refresh` is scoped to
+`/api/v1/auth` and is not sent on a navigation, so it cannot be consulted either.
+`qs_csrf` is on `/`, lives as long as the refresh token, and is not a credential.
+
+**The matcher is negative.** A route added later is guarded by default; making it
+public is a deliberate edit. The exemptions are `/`, `/auth`, `/legal`, and
+`/api` — that last one added after the first version turned every
+`/api/v1/auth/me` into a 307 when the dashboard is addressed directly.
+
+**The redirect is built from `nextUrl`.** It started as the relative reference
+`/?next=…`, which is legal HTTP and which Next answers 500 to: it parses the
+Location header with `new URL()`. Building from `nextUrl` also keeps the origin
+fixed to the host the browser asked for, verified through the Gateway.
+
+It is not an authorization boundary, and the code, the docs and the tests all say
+so. Next's own documentation says a proxy should not be used as one.
+
+### Back-channel logout
+
+A Fizzbee specification first (rule 5): `specs/oidc_backchannel_logout.fizz`, and
+it earned its keep. Two things came out of writing it.
+
+The liveness property failed three times before it said anything true. First
+because `eventually always` cannot hold if the provider may log out repeatedly —
+there is no point after which the condition stays true. Then because rejected
+deliveries incremented a counter, which made every rejection a new state, so a
+run could spend the whole `maxActions` budget refusing forged tokens and stutter
+at the frontier with the genuine notification still outstanding. A rejection
+changes nothing observable, so it now changes nothing in the model either, and
+rejections cost no budget.
+
+`AcceptedTokenWasGenuine` states the validation clauses one per rule and compares
+them against an independent definition of "genuine". Removing any one produces a
+counterexample naming that defect — confirmed by removing them: dropping the
+`nonce` check and dropping the freshness check both fail. Marking an unverifiable
+delivery as handled fails the safety property; removing the strong fairness from
+`JwksRestored` fails liveness, exactly as its comment claims.
+
+One assertion was deleted for being decoration: a separate "a replay killed a
+later session" flag could never be the one to fire, because accepting a stale
+token trips `AcceptedTokenWasGenuine` first and the checker stops there. Two
+assertions in this directory have already shipped as `return True`.
+
+The implementation is `POST /api/v1/auth/oidc/{slug}/backchannel-logout`,
+unauthenticated by necessity — the caller is the provider's server. 400 for an
+invalid token, 503 when the JWKS cannot be reached, so the provider retries the
+second and not the first.
+
+**It needed a schema change to work at all.** Revoking "every session" revoked
+only the refresh tokens, so the access token in the browser stayed valid for the
+rest of its twelve hours — a federated logout that leaves the session working for
+half a day is not one. The denylist cannot express this: it keys on `jti`, and a
+`jti` is only learned by being presented. Migration `008` adds
+`users.sessions_valid_from`, compared against each token's `iat`. Password
+changes and detected refresh-token replay had the same hole and are fixed by the
+same column.
+
+### The committed secrets (roadmap #23)
+
+Called "a deployment action, not a code change" for four passes. That was half
+right. Rotating the values is the operator's job; *nothing in the code required
+it*, and one line was the reason:
+
+```yaml
+- JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
+```
+
+A deployment that never set the variable ran on a value printed in this
+repository, and said nothing. `docker-compose.coolify.yml` now uses `${VAR:?…}`
+for all three, so a missing one stops the deploy before a container starts, and
+Core and the Gateway refuse to serve on a published default when `ENVIRONMENT` is
+production-like — a warning otherwise, so a laptop and CI keep working.
+
+`python -m core.rotate_encryption_key` is the piece that was actually missing.
+`ENCRYPTION_KEY` decrypts stored credentials, so changing it is not a restart;
+without a re-encryption tool the only honest advice was "don't". One transaction,
+a dry-run mode, idempotent on values already moved, and an abort if anything
+decrypts under neither key — a database split across two keys with no record of
+which row is on which is the expensive failure.
+
+Run against the developer's own database it immediately found three values on one
+key, one on another, and one on neither. That is not a hypothetical.
+
+Also removed: the seeded owner account in `infra/db/init.sql`, which shipped a
+bcrypt hash and named the account it opens (rule 9 forbids seeding anyway); the
+hardcoded tenant UUID that three importers defaulted to, which pointed at that
+seeded workspace and gave every code path a plausible tenant to fall back on; and
+the hardcoded Yazio OAuth client, now configuration — with the same values as the
+default, because it is Yazio's public mobile-app client and not ours to rotate.
+
+### The UI proxy: changed, but not fixed
+
+The Gateway streams the dashboard through instead of buffering it. That is worth
+having on its own — buffering defeats streaming SSR and holds every response in
+memory in full — and the lifetime trap is covered by a test: the `httpx` client
+now has to outlive the handler that created it, and `async with` would truncate
+every response.
+
+**It did not fix `next dev` behind the Gateway, which is why it was attempted.**
+Measured afterwards: the proxied document is byte-identical to the direct one,
+every chunk is byte-identical, the HMR socket connects, and the page still never
+hydrates with nothing logged. So buffering was not the cause. The claim that it
+was — written in this file after the fourth pass — was wrong, and the code
+comment now records what was measured instead of what was assumed.
+
+### Bugs found while doing this
+
+- **My own route guard 307'd every API call.** The matcher excluded `_next` and
+  files with an extension, not `/api`. Behind the Gateway those paths never reach
+  Next, so it was invisible there; it appeared the moment the dashboard was
+  opened directly, which is how it is developed.
+- **A relative `Location` is a 500 in Next**, not a redirect. Legal HTTP, and
+  Next parses the header with `new URL()`.
+- **PyJWT rejects a future-dated `iat`**, which made a test of the session cutoff
+  test the wrong thing. Rewritten to move the cutoff backwards instead.
+- **`test_run_once_enqueues_due_connectors_and_survives_one_failing` assumed no
+  other tenant had an oura connector.** `run_once` scans every tenant, so it
+  broke as soon as one did — a rule 10 violation that had simply not been
+  triggered yet.
+
+### What was deliberately not done
+
+There is no test that runs a committing key rotation. The tool rewrites every
+encrypted value in whatever database it is pointed at, and pointed at a
+developer's local database that is their real credentials. A test that damages
+the thing it runs against before failing is worse than the bug it would catch, so
+the traversal and the abort are covered by dry runs, and the translation decision
+is tested as a pure function. What that leaves uncovered is one
+`session.commit()`, and saying so is better than the alternative.
+
+### Verified
+
+| Suite | Result |
+| --- | --- |
+| Core | 213 |
+| Gateway | 13 |
+| Analysis | 47 |
+| Spec invariants | 36 |
+| End-to-end | 19 |
+| Importers (8 services) | 137 |
+| Browser (Playwright) | 12 |
+| **Total** | **477 passed, 0 failed** |
+| Fizzbee | 13 of 13 specifications verified |
+| Ruff | 81, unchanged |
+| ESLint | 25 problems, all pre-existing; 0 in any new file |
+| `tsc --noEmit` | clean |
+| `mkdocs build --strict` | clean |
+| Migration rollback | `008` down and up again |
+
+### What is still open
+
+1. **The secrets themselves are still the published defaults.** Everything that
+   blocked rotating them is now built — the runbook, the tool, the fail-closed
+   checks — but choosing the values and setting them is the operator's call.
+   **The next deploy will fail until `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and
+   `ENCRYPTION_KEY` are set**, and `ENCRYPTION_KEY` must be re-encrypted before it
+   changes. That is the intended behaviour, but it is a change in deployment
+   behaviour and should not arrive as a surprise.
+2. **The local development database is split across three encryption keys.**
+   Found by the dry run, not caused by it. The affected connectors cannot decrypt
+   today; one value is on a key that is configured nowhere and is not recoverable
+   — that connector has to be re-entered in the dashboard.
+3. **`next dev` still does not work behind the Gateway**, and the cause is not in
+   the bytes. Developing directly against port 3000 works; only the API calls
+   then need the Gateway.

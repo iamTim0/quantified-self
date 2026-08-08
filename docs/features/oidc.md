@@ -123,6 +123,78 @@ require_verified_email true
     wert ist, hängt allein davon ab, wem hier vertraut wird. `allow_signup` sollte
     nur für Anbieter aktiviert werden, deren Kontoerstellung kontrolliert ist.
 
+## Back-Channel-Logout
+
+Die Gegenrichtung zur [Abmeldung beim Anbieter](authentication.md#abmelden-beim-anbieter):
+Die Sitzung endet **beim Anbieter** — jemand meldet sich bei Google ab, eine
+Administration deaktiviert das Konto, ein Gerät wird zurückgezogen — und der
+Anbieter meldet uns das mit einem signierten Logout-Token.
+
+Bisher hörte dem niemand zu. Die lokale Sitzung lief weiter bis zu ihrem eigenen
+Ablauf: bis zu dreißig Tage, nachdem die Identität dahinter entzogen wurde.
+
+```http
+POST /api/v1/auth/oidc/<slug>/backchannel-logout
+Content-Type: application/x-www-form-urlencoded
+
+logout_token=<jwt>
+```
+
+Der Aufrufer ist ein Server ohne Sitzung bei uns, der Endpunkt also
+notwendigerweise unauthentifiziert. Alles hängt an der Prüfung des Tokens:
+
+| Prüfung | Warum |
+| --- | --- |
+| Signatur gegen das JWKS | ohne sie könnte jeder beliebige Sitzungen beenden |
+| `iss` | ein fremder Anbieter darf hier nichts beenden |
+| `aud` | muss unsere Client-ID sein |
+| **kein `nonce`** | ein `nonce` heißt: das ist ein ID-Token. Sonst ließe sich ein bei der *Anmeldung* abgefangenes Token als Abmeldung einspielen |
+| `events` enthält `…/backchannel-logout` als Objekt | unterscheidet ein Logout-Token von jedem anderen signierten Token |
+| `iat` höchstens zwei Minuten alt | siehe unten |
+| `sub` oder `sid` vorhanden | sonst benennt das Token niemanden |
+
+Die Antwort ist `200` mit `Cache-Control: no-store`, `400` bei einem ungültigen
+Token und `503`, wenn die Schlüssel des Anbieters gerade nicht erreichbar sind.
+Diese Unterscheidung ist wichtig: `400` heißt „nicht erneut versuchen", `503`
+heißt „später wieder". Wir handeln nie auf ein Token, das wir nicht prüfen können —
+sonst genügte eine Störung beim Anbieter, um mit plausibel aussehendem JSON fremde
+Sitzungen zu beenden.
+
+Wirksam wird die Abmeldung über denselben Mechanismus wie
+[»alle Sessions beenden«](authentication.md#alle-sessions-beenden). Nur die
+Refresh Tokens zu widerrufen würde die Sitzung noch zwölf Stunden weiterlaufen
+lassen — also genau das, wogegen dieses Feature existiert.
+
+### Zwei bewusste Entscheidungen
+
+**Es werden immer alle Sitzungen des Kontos beendet**, auch wenn das Token per
+`sid` nur eine benennt. Unsere Access Tokens sind an keine Anbieter-Sitzung
+gebunden; `sid` zu befolgen hieße, eine Genauigkeit zu behaupten, die wir nicht
+haben. Zu viel abzumelden meldet ein zweites Fenster früher ab, zu wenig lässt
+eine Sitzung bestehen, die die Nutzerin für beendet hält. Deshalb muss der Anbieter
+`sub` mitsenden; ein Token nur mit `sid` wird mit `400` abgelehnt statt geraten.
+
+**Es gibt keinen `jti`-Speicher gegen Replays.** Eine bereits widerrufene Sitzung
+erneut zu widerrufen ändert nichts. Gefährlich wäre ein Replay erst, wenn er über
+eine spätere, legitime Anmeldung hinweggreift — und genau das schließt das
+Zeitfenster auf `iat` aus, ohne eine zweite Tabelle zu betreiben.
+
+### Einrichten
+
+Beim Anbieter als `backchannel_logout_uri` eintragen:
+
+```text
+https://<host>/api/v1/auth/oidc/<slug>/backchannel-logout
+```
+
+`backchannel_logout_session_required` muss **aus** bleiben — das ist die
+Einstellung, die den Anbieter anweist, `sid` statt `sub` zu senden.
+
+Das Verhalten ist in `specs/oidc_backchannel_logout.fizz` spezifiziert und
+modellgeprüft. Die Prüfliste oben steht dort als Invariante
+`AcceptedTokenWasGenuine`: Wird eine Zeile entfernt, liefert der Model Checker
+genau den Defekt, der dadurch durchkäme.
+
 ## Nachvollziehbarkeit
 
 Start, Callback und Sitzungsausstellung tragen dieselbe `X-Request-ID` wie jede
@@ -137,6 +209,6 @@ Tenant-ID protokolliert; Tokens, Codes und Secrets niemals.
   `end_session_endpoint` nennt — der ist in OpenID Connect optional. Fehlt er,
   endet nur die lokale Sitzung. Siehe
   [Abmelden beim Anbieter](authentication.md#abmelden-beim-anbieter).
-- Back-Channel-Logout (der Anbieter meldet uns die Abmeldung) ist nicht
-  implementiert. Wird die Sitzung beim Anbieter beendet, bleibt die lokale bis zu
-  ihrem Ablauf bestehen.
+- [Back-Channel-Logout](#back-channel-logout) beendet immer **alle** Sitzungen des
+  Kontos, nicht nur die vom Token benannte. Ein Anbieter, der
+  `backchannel_logout_session_required` erzwingt, wird abgelehnt.

@@ -64,6 +64,18 @@ Dashboard-Version im Browser-Cache die wahrscheinlichste Ursache — hart neu la
 - Wurde das Passwort geändert? Das beendet **alle** Sitzungen.
 - Wurde ein verbrauchtes Erneuerungstoken erneut vorgelegt? Das gilt als
   möglicher Diebstahl und beendet ebenfalls alle Sitzungen. Neu anmelden.
+- Hat der Anmeldeanbieter die Sitzung beendet? Ein
+  [Back-Channel-Logout](features/oidc.md#back-channel-logout) beendet alle
+  Sitzungen des Kontos. Im Log steht dann `Back-Channel logout from … ended every
+  session for user=…`.
+
+### Ich lande beim Aufruf einer Unterseite auf der Anmeldeseite
+
+Das ist der [Route-Guard](features/authentication.md#serverseitiger-route-guard).
+Er prüft, ob ein `qs_csrf`-Cookie vorhanden ist, und leitet sonst auf
+`/?next=<Ziel>` um; nach der Anmeldung geht es dort weiter. Wer sein Cookie-
+Verzeichnis geleert oder Cookies für diese Seite blockiert hat, sieht das bei
+jedem Aufruf.
 
 ### 403 statt 401
 
@@ -114,3 +126,34 @@ Postgres läuft nicht: `task dev:up`.
 
 Die Alembic-Revisions-ID ist zu lang. `alembic_version.version_num` fasst 32
 Zeichen; Revisions-IDs müssen darunter bleiben.
+
+## Konfiguration
+
+### Core oder Gateway startet nicht: „refuses to start with published secrets"
+
+Genau das ist beabsichtigt. `ENVIRONMENT` ist produktiv gesetzt und mindestens
+einer der Werte `JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY` fehlt
+oder entspricht einem Default, der in diesem Repository steht. Die Meldung nennt
+alle betroffenen Variablen auf einmal. Siehe
+[Betrieb](operations.md#erforderliche-konfiguration).
+
+Für lokale Entwicklung `ENVIRONMENT=dev` setzen — dann wird nur gewarnt.
+
+### `docker compose` bricht ab mit „set JWT_SECRET"
+
+`docker-compose.coolify.yml` verwendet `${VAR:?…}`. Eine fehlende Variable stoppt
+den Deploy, bevor ein Container startet. Vorher hätte derselbe Deploy mit dem
+öffentlichen Default weitergelaufen, ohne etwas zu sagen.
+
+### Connector-Zugangsdaten lassen sich nicht mehr entschlüsseln
+
+`ENCRYPTION_KEY` unterscheidet sich von dem, mit dem sie gespeichert wurden. Mit
+dem alten Wert umschlüsseln statt ihn zu erraten:
+
+```bash
+python -m core.rotate_encryption_key --old "$ALT" --new "$NEU" --dry-run
+```
+
+Der Probelauf sagt, welche Werte auf welchem Schlüssel liegen, und schreibt
+nichts. Der vollständige Ablauf steht unter
+[`ENCRYPTION_KEY` wechseln](operations.md#encryption_key-wechseln).
