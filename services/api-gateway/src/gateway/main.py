@@ -12,12 +12,14 @@ Maps to Fizzbee Invariants:
 
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 
 import httpx
 import websockets
 from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.background import BackgroundTask
 
 from gateway.auth import decode_jwt
 from gateway.config import settings
@@ -30,7 +32,54 @@ from gateway.tracing import (
 setup_tracing_logger("api-gateway")
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.SERVICE_NAME)
+
+# The Gateway verifies the same tokens Core signs, so it holds the same secret
+# and inherits the same problem: the deployment compose file used to default it
+# to a value printed in this repository, so forgetting to set it did not fail --
+# it silently verified real sessions against a value anyone can read.
+#
+# Duplicated rather than imported from Core: the two services share no code by
+# design (AGENTS.md rule 6), and the check is a dozen lines.
+PUBLISHED_DEFAULTS = {
+    "dev-secret-key-quantified-self-2026",
+    "dev-secret-shared-encryption-key-qs-2026",
+    "dev-encryption-key-quantified-self-2026",
+}
+PRODUCTION_ENVIRONMENTS = {"production", "prod", "staging"}
+
+
+def audit_secrets() -> None:
+    """Refuse to serve in production with a published JWT_SECRET; warn otherwise.
+
+    Raises:
+        RuntimeError: in a production-like ENVIRONMENT.
+    """
+    if settings.JWT_SECRET and settings.JWT_SECRET not in PUBLISHED_DEFAULTS:
+        return
+
+    detail = (
+        "JWT_SECRET is unset or a value published in this repository. Generate "
+        'one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+    )
+    if settings.ENVIRONMENT.strip().lower() in PRODUCTION_ENVIRONMENTS:
+        raise RuntimeError(f"api-gateway refuses to start: {detail}")
+    logger.warning("[api-gateway] insecure default in use: %s", detail)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Checked at startup, not at import.
+
+    ENVIRONMENT defaults to production here, deliberately -- this is the edge and
+    it should be strict by default. Running the check at import time would
+    therefore refuse to even load the module in the test suite, which imports it
+    and never starts it.
+    """
+    audit_secrets()
+    yield
+
+
+app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
 
 app.add_middleware(RequestTracingMiddleware)
 
@@ -410,9 +459,30 @@ async def proxy_next_websocket(websocket: WebSocket, path: str):
     await websocket.close()
 
 
+# The UI proxy holds a response open for as long as the page takes to finish, so
+# it cannot share the 10s budget the API calls use. Connecting still has to be
+# quick -- that is what the fallback loop below depends on to move on to the next
+# candidate host -- but reading has no deadline: a streamed document legitimately
+# trickles, and a first-request compile in `next dev` takes as long as it takes.
+_UI_TIMEOUT = httpx.Timeout(10.0, read=None)
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def proxy_dashboard_ui(path: str, request: Request):
-    """Proxy non-API web traffic (e.g. /, /connectors, /_next/*) to Next.js Dashboard UI."""
+    """Proxy non-API web traffic (e.g. /, /connectors, /_next/*) to Next.js Dashboard UI.
+
+    Streamed through rather than buffered. Reading the whole upstream response
+    before sending any of it defeats streaming SSR — the browser gets a complete
+    document in one piece rather than progressively — and holds every response in
+    memory here in full.
+
+    It does *not* fix `next dev` behind this proxy, which was the reason the
+    change was attempted. Measured afterwards: the proxied document is byte-
+    identical to the direct one, every chunk is byte-identical, and the HMR socket
+    connects — and the page still never hydrates, with nothing logged. So
+    buffering was not the cause. Whatever is, it is not in the bytes, and the
+    browser tests continue to run against a production build.
+    """
     subpath = f"/{path}" if path else "/"
     forwarded_headers = {
         k: v for k, v in request.headers.items()
@@ -429,35 +499,57 @@ async def proxy_dashboard_ui(path: str, request: Request):
         if fallback not in candidate_bases:
             candidate_bases.append(fallback)
 
-    last_error = None
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        for base in candidate_bases:
-            target_url = f"{base.rstrip('/')}{subpath}"
-            try:
-                response = await client.request(
-                    method=request.method,
-                    url=target_url,
-                    headers=forwarded_headers,
-                    params=request.query_params,
-                    content=body,
-                )
-                safe_response_headers = {
-                    k: v for k, v in response.headers.items()
-                    if k.lower() not in {"transfer-encoding", "connection", "server", "content-encoding", "content-length"}
-                }
-                return Response(
-                    content=response.content,
-                    status_code=response.status_code,
-                    headers=safe_response_headers,
-                )
-            except httpx.RequestError as e:
-                last_error = e
-                continue
+    # Not `async with`: the client has to outlive this function, because the
+    # response body is still being read from it while Starlette sends it on.
+    # Closing it here would truncate every response to whatever had arrived.
+    client = httpx.AsyncClient(timeout=_UI_TIMEOUT)
+    last_error: Exception | None = None
 
+    for base in candidate_bases:
+        target_url = f"{base.rstrip('/')}{subpath}"
+        upstream_request = client.build_request(
+            method=request.method,
+            url=target_url,
+            headers=forwarded_headers,
+            params=request.query_params,
+            content=body,
+        )
+        try:
+            upstream = await client.send(upstream_request, stream=True)
+        except httpx.RequestError as e:
+            # Nothing has been sent to the browser yet, so trying the next
+            # candidate host is still safe. Once bytes are flowing it would not be.
+            last_error = e
+            continue
+
+        # `aiter_bytes` yields decoded bytes, so the upstream's own
+        # Content-Encoding and Content-Length no longer describe what we send.
+        safe_response_headers = {
+            k: v for k, v in upstream.headers.items()
+            if k.lower() not in {"transfer-encoding", "connection", "server", "content-encoding", "content-length"}
+        }
+        return StreamingResponse(
+            upstream.aiter_bytes(),
+            status_code=upstream.status_code,
+            headers=safe_response_headers,
+            # Runs after the last byte reaches the client, whether the response
+            # completed or the client went away.
+            background=BackgroundTask(_close_upstream, upstream, client),
+        )
+
+    await client.aclose()
     raise HTTPException(
         status_code=503,
         detail=f"Dashboard UI unavailable: {last_error!s}",
     )
+
+
+async def _close_upstream(upstream: httpx.Response, client: httpx.AsyncClient) -> None:
+    """Release the streamed response and the client that owns its connection."""
+    try:
+        await upstream.aclose()
+    finally:
+        await client.aclose()
 
 
 if __name__ == "__main__":

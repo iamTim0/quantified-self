@@ -167,3 +167,96 @@ async def test_internal_paths_are_not_publicly_proxied():
     # Falls through to the dashboard catch-all (503 with no dashboard running),
     # never to Core. What matters is that no credential comes back.
     assert "access_token" not in response.text
+
+
+async def _emit(parts):
+    """Yield the chunks one at a time, as a real upstream would."""
+    for part in parts:
+        yield part
+
+
+@pytest.mark.asyncio
+async def test_the_ui_proxy_streams_the_whole_body_through():
+    """The response must arrive complete, and not before the upstream finishes.
+
+    The proxy used to read the entire upstream response before sending any of it,
+    which defeats streaming SSR and holds every response in memory in full.
+
+    The trap in the streaming version is lifetime. The `httpx.AsyncClient` now has
+    to outlive the handler that created it, because the body is still being pulled
+    through it while Starlette writes to the socket. Closing it on the way out --
+    which `async with` would do -- truncates every response to whatever had
+    already arrived. A short body would very likely survive that, so this sends
+    enough chunks to fail if the connection is dropped early.
+    """
+    import httpx
+    from gateway import main as gateway_main
+
+    chunks = [f"chunk-{i:04d}:".encode() + b"x" * 4096 for i in range(64)]
+    expected = b"".join(chunks)
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/html; charset=utf-8"},
+            content=_emit(chunks),
+        )
+
+    transport = httpx.MockTransport(upstream)
+    original = httpx.AsyncClient
+
+    def patched(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    gateway_main.httpx.AsyncClient = patched
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get("/some/page")
+    finally:
+        gateway_main.httpx.AsyncClient = original
+
+    assert response.status_code == 200
+    assert response.content == expected
+    # Rewritten by the proxy: the bytes it forwards are decoded, so the upstream's
+    # own framing headers no longer describe them.
+    assert "content-encoding" not in {k.lower() for k in response.headers}
+
+
+@pytest.mark.asyncio
+async def test_the_gateway_refuses_to_start_in_production_with_a_published_secret(
+    monkeypatch,
+):
+    """The deployment compose file used to default JWT_SECRET to a value printed
+    in this repository, so forgetting to set it did not fail -- it silently
+    verified real sessions against a public string."""
+    from gateway import main as gateway_main
+    from gateway.config import settings
+
+    monkeypatch.setattr(
+        settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026", raising=False
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production", raising=False)
+
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        gateway_main.audit_secrets()
+
+
+@pytest.mark.asyncio
+async def test_a_development_gateway_warns_instead(monkeypatch, caplog):
+    """A laptop and CI must keep working, or the check gets deleted."""
+    import logging
+
+    from gateway import main as gateway_main
+    from gateway.config import settings
+
+    monkeypatch.setattr(
+        settings, "JWT_SECRET", "dev-secret-key-quantified-self-2026", raising=False
+    )
+    monkeypatch.setattr(settings, "ENVIRONMENT", "dev", raising=False)
+
+    with caplog.at_level(logging.WARNING):
+        gateway_main.audit_secrets()
+    assert any("JWT_SECRET" in r.getMessage() for r in caplog.records)
