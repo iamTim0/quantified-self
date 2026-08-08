@@ -1,4 +1,13 @@
-import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import {
+  API_BASE,
+  expectSignedIn,
+  expectSignedOut,
+  newAccount,
+  signIn,
+  signUp,
+} from "./helpers";
 
 /**
  * The sequence the whole logout bug lived in: sign in, reload, sign out, reload.
@@ -12,59 +21,6 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  * deliberately behavioural — "after reloading I am still signed out" — rather
  * than structural, because the failure mode was a page that looked signed in.
  */
-
-const API_BASE = process.env.E2E_API_BASE ?? "http://127.0.0.1:8000";
-
-/** A fresh account per run, so tests never depend on pre-existing state (rule 10). */
-function newAccount() {
-  const id = Math.random().toString(36).slice(2, 10);
-  return {
-    email: `e2e-${id}@example.test`,
-    password: "correct horse battery staple",
-    name: `E2E ${id}`,
-  };
-}
-
-/**
- * Create the account out of band.
- *
- * Takes the `request` fixture rather than `page.request` on purpose: page.request
- * shares the browser context's cookie jar, so signing up through it left the
- * browser already authenticated and the login form never rendered. Every test
- * then failed looking for an email field that was correctly absent — a test bug
- * that looks exactly like an application bug.
- */
-async function signUp(
-  request: APIRequestContext,
-  account: ReturnType<typeof newAccount>,
-) {
-  const response = await request.post(`${API_BASE}/api/v1/auth/signup`, {
-    data: account,
-  });
-  expect(
-    response.ok(),
-    `signup failed: ${response.status()} ${await response.text()}`,
-  ).toBeTruthy();
-}
-
-async function signIn(page: Page, account: ReturnType<typeof newAccount>) {
-  await page.goto("/");
-  // By label, not by CSS type or placeholder: the labels are properly associated
-  // with their inputs, so this asserts the accessible form as well as the flow.
-  await page.getByLabel("E-Mail").fill(account.email);
-  await page.getByLabel("Passwort").fill(account.password);
-  await page.getByRole("button", { name: /^anmelden$/i }).click();
-  await expectSignedIn(page);
-}
-
-async function expectSignedIn(page: Page) {
-  // The sidebar only renders for an authenticated session.
-  await expect(page.getByRole("button", { name: "Abmelden" })).toBeVisible();
-}
-
-async function expectSignedOut(page: Page) {
-  await expect(page.getByLabel("Passwort")).toBeVisible();
-}
 
 test.describe("session lifecycle in a browser", () => {
   test("sign in, reload, and the session survives", async ({ page, request }) => {

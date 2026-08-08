@@ -29,6 +29,37 @@ const getApiBase = (): string => {
 // There is deliberately no default tenant. A hardcoded seed tenant here is what
 // gave the dev-token bootstrap something to silently sign into.
 
+/**
+ * Read and clear the `next` parameter the route guard leaves behind.
+ *
+ * `src/proxy.ts` redirects a signed-out deep link to `/?next=<path>`; this sends
+ * the user on once they are signed in, instead of dropping them on the overview.
+ *
+ * Only a path on this origin is accepted. `//evil.example` and `/\evil.example`
+ * are both read as protocol-relative URLs by browsers, so a plain "starts with a
+ * slash" test is the standard way an open redirect gets in.
+ *
+ * Reads `window.location.search` rather than `useSearchParams` on purpose: this
+ * page is the shell for every route, and a `useSearchParams` call in it would
+ * force a Suspense boundary around all of them.
+ */
+function consumeNextParam(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = new URLSearchParams(window.location.search).get("next");
+  if (!raw) return null;
+
+  // Clear it either way: a rejected value must not survive a reload.
+  const url = new URL(window.location.href);
+  url.searchParams.delete("next");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return null;
+  }
+  return raw;
+}
+
 export default function DashboardPage() {
   const API_BASE = getApiBase();
   const [mounted, setMounted] = useState(false);
@@ -121,6 +152,10 @@ export default function DashboardPage() {
       if (cancelled) return;
       if (user) {
         applySession(user);
+        // The guard sent us here from a protected URL but the session turned out
+        // to be live after all (the marker cookie can be cleared on its own).
+        const returnTo = consumeNextParam();
+        if (returnTo) router.replace(returnTo);
       } else {
         resetToSignedOut();
       }
@@ -130,7 +165,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true;
     };
-  }, [API_BASE, applySession, resetToSignedOut]);
+  }, [API_BASE, applySession, resetToSignedOut, router]);
 
   // Logging out in one tab must sign the others out too. The cookie is shared
   // across tabs but its removal fires no event, so a tab that regains focus
@@ -149,6 +184,9 @@ export default function DashboardPage() {
   const handleLogin = (data: UserAuthData) => {
     applySession(data.user);
     triggerRefresh();
+    // Send them where they were originally headed, if the guard recorded it.
+    const returnTo = consumeNextParam();
+    if (returnTo) router.replace(returnTo);
   };
 
   const handleLogout = useCallback(async () => {
