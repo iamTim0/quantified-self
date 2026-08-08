@@ -97,44 +97,19 @@ jobs:
           --with icalendar --with recurring-ical-events
           pytest ${{ github.workspace }}/tests/e2e -q --rootdir ${{ github.workspace }}
 
-  specs:
-    name: Fizzbee model check
+  lint-specs:
+    name: Spec lint
     runs-on: ubuntu-latest
-    env:
-      # Job level, not step level: a step's own `env` is not available to that
-      # step's `with:` block, so the cache key was interpolating to an empty
-      # version and would not have changed when the version did.
-      FIZZBEE_VERSION: v0.5.2
     steps:
       - uses: actions/checkout@v4
-
-      # Seconds, and no download. Fails the job early on the structural mistakes
-      # rather than after a 340 MB fetch and a full state-space exploration.
+      # Structural check only -- it explores no state space and proves nothing
+      # about the invariants. It runs here because it takes seconds and needs no
+      # download, and it catches the mistakes that made the specs unrunnable in
+      # the first place. The actual model check lives in specs.yml, which runs
+      # when a spec changes rather than on every push; see the comment there for
+      # why that split.
       - name: Lint specifications
         run: python .agents/scripts/lint_specs.py
-
-      # The release archive is ~340 MB because it bundles a Python runtime for
-      # the parser, so cache it rather than re-downloading on every push.
-      - name: Cache Fizzbee
-        id: cache-fizzbee
-        uses: actions/cache@v4
-        with:
-          path: /opt/fizzbee
-          key: fizzbee-${{ env.FIZZBEE_VERSION }}-linux_x86
-
-      - name: Install Fizzbee
-        if: steps.cache-fizzbee.outputs.cache-hit != 'true'
-        run: |
-          curl -sfL -o /tmp/fizzbee.tar.gz \
-            "https://github.com/fizzbee-io/fizzbee/releases/download/${FIZZBEE_VERSION}/fizzbee-${FIZZBEE_VERSION}-linux_x86.tar.gz"
-          sudo tar xzf /tmp/fizzbee.tar.gz -C /opt
-          sudo mv "/opt/fizzbee-${FIZZBEE_VERSION}-linux_x86" /opt/fizzbee
-
-      - name: Model-check every specification
-        run: |
-          echo "/opt/fizzbee" >> "$GITHUB_PATH"
-          export PATH="/opt/fizzbee:$PATH"
-          python .agents/scripts/verify_specs.py
 
   test-importers:
     name: Importers

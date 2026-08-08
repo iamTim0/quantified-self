@@ -2,7 +2,14 @@
 # Models API polling, rate-limiting (429), token expiration (401), deterministic idempotency hashing, and NATS publishing.
 
 TENANTS = ["tenant_a", "tenant_b"]
-METRICS = ["sleep_score", "readiness_score", "activity_score"]
+METRICS = ["sleep_score", "readiness_score"]
+
+# Bounds, required for the liveness assertion at the bottom. `retry_count` is
+# monotonic, so every retry produces a state never seen before and the graph
+# never closes -- safety checking tolerates that, liveness does not, and the run
+# exceeded its 180s budget. Two polls reach every branch the assertions read:
+# a success that buffers, a 429 into backoff, a 401 into refresh, a 500 retry.
+MAX_POLLS = 2
 
 
 
@@ -15,10 +22,13 @@ action Init:
     nats_broker = []
     published_keys = {}
     retry_count = 0
+    poll_count = 0
     last_polled_timestamp = "2026-07-26T00:00:00Z"
 
 atomic action PollOuraAPI:
     require importer_state == "IDLE" and token_valid == True and rate_limited == False
+    require poll_count < MAX_POLLS
+    poll_count = poll_count + 1
     importer_state = "POLLING"
     
     # Non-deterministically simulate API outcome

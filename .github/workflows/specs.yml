@@ -1,0 +1,101 @@
+name: Fizzbee model check
+
+# Deliberately NOT part of the main CI workflow, and deliberately not run on
+# every push.
+#
+# Model checking verifies the *models* in specs/, not the implementation. A green
+# run says the design is internally consistent; it says nothing about whether the
+# code matches it. So the cost and the benefit sit in different places:
+#
+#   - The cost is real and lumpy. The release archive is ~340 MB, and a spec that
+#     someone bounds badly can run for minutes or not terminate at all --
+#     distributed_ingestion hit the 180s ceiling the first time its liveness
+#     assertion was checked. Paying that on a push that only touched a React
+#     component buys nothing.
+#   - The benefit is at authoring time, and as a ratchet. Before this workflow
+#     existed the specs had never been run even once: they used syntax the parser
+#     rejects, and two assertions had a body of `return True`. Nothing caught it
+#     because nothing ran.
+#
+# So: the cheap structural lint runs on every push as part of the main CI, and
+# the full check runs when a spec actually changes, on demand, and weekly so the
+# specs cannot rot silently while nobody is editing them.
+#
+# AGENTS.md rule 5 ("a Fizzbee specification MUST be written and verified before
+# implementing a new distributed pattern") is what this enforces. A path filter is
+# enough for that: you cannot add or change a spec without triggering it.
+
+# The path list is repeated rather than shared with a YAML anchor: GitHub Actions
+# does not support anchors or aliases in workflow files.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "specs/**"
+      - ".agents/scripts/verify_specs.py"
+      - ".agents/scripts/lint_specs.py"
+      - "infra/fizzbee.Dockerfile"
+      - ".github/workflows/specs.yml"
+  pull_request:
+    paths:
+      - "specs/**"
+      - ".agents/scripts/verify_specs.py"
+      - ".agents/scripts/lint_specs.py"
+      - "infra/fizzbee.Dockerfile"
+      - ".github/workflows/specs.yml"
+  schedule:
+    # Mondays 04:00 UTC. Catches a spec that stopped terminating because of a
+    # Fizzbee release, rather than discovering it mid-review months later.
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: specs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  model-check:
+    name: Model-check specifications
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FIZZBEE_VERSION: v0.5.2
+    steps:
+      - uses: actions/checkout@v4
+
+      # Seconds, no download. Fails early on a structural mistake rather than
+      # after fetching 340 MB and exploring a state space.
+      - name: Lint specifications
+        run: python .agents/scripts/lint_specs.py
+
+      - name: Cache Fizzbee
+        id: cache-fizzbee
+        uses: actions/cache@v4
+        with:
+          path: /opt/fizzbee
+          key: fizzbee-${{ env.FIZZBEE_VERSION }}-linux_x86
+
+      - name: Install Fizzbee
+        if: steps.cache-fizzbee.outputs.cache-hit != 'true'
+        run: |
+          curl -sfL -o /tmp/fizzbee.tar.gz \
+            "https://github.com/fizzbee-io/fizzbee/releases/download/${FIZZBEE_VERSION}/fizzbee-${FIZZBEE_VERSION}-linux_x86.tar.gz"
+          sudo tar xzf /tmp/fizzbee.tar.gz -C /opt
+          sudo mv "/opt/fizzbee-${FIZZBEE_VERSION}-linux_x86" /opt/fizzbee
+
+      - name: Model-check every specification
+        run: |
+          echo "/opt/fizzbee" >> "$GITHUB_PATH"
+          export PATH="/opt/fizzbee:$PATH"
+          python .agents/scripts/verify_specs.py
+
+      # The error trace is the useful part of a failure; without it you only see
+      # which spec failed, not the sequence of actions that broke the invariant.
+      - name: Upload counterexamples
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fizzbee-counterexamples
+          path: specs/out/
+          retention-days: 7
+          if-no-files-found: ignore

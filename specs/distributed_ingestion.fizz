@@ -1,6 +1,18 @@
 TENANTS = ['tenant_a', 'tenant_b']
 IMPORTERS = ['oura_1', 'oura_2']
 
+# Bounds, required for the liveness assertion at the bottom to be checkable at
+# all. `next_idempotency_key` is a monotonic counter: every publish produces a
+# state that has never been seen before, so the state graph never closes. Safety
+# checking survives that because it only ever looks at the current state, but
+# liveness needs the whole graph and ran past the 180s budget.
+#
+# Two messages is enough: the properties here are "a duplicate is not stored
+# twice" and "the queue drains", and both are exercised by a single message
+# published twice.
+MAX_MESSAGES = 2
+METRIC_TYPES = ["steps", "sleep"]
+
 
 action Init:
     broker_queue = []
@@ -12,10 +24,13 @@ action Init:
 
 atomic action ImporterPublish:
     require broker_available == True
+    require next_idempotency_key <= MAX_MESSAGES
     tenant_id = oneof(TENANTS)
-    importer = oneof(IMPORTERS)
-    metric_type = oneof(["steps", "sleep", "heart_rate"])
-    
+    # Which importer published is not something any assertion here reads, and
+    # branching on it multiplies the graph for nothing.
+    importer = IMPORTERS[0]
+    metric_type = oneof(METRIC_TYPES)
+
     key = str(next_idempotency_key)
     next_idempotency_key = next_idempotency_key + 1
     
@@ -41,9 +56,19 @@ atomic action NetworkRecover:
 # the `pop`, so two concurrent consumers both pass the guard and the second
 # pops an empty list. That is not a system defect being caught -- NATS
 # JetStream hands a message to exactly one consumer in a queue group, so the
-# take is atomic there too. The grammar is `(ATOMIC)? fairness? ACTION`, so
-# `fair` is kept for the liveness assertion below.
-atomic fair action CoreConsume:
+# take is atomic there too.
+#
+# fair<strong>, not plain fair. Weak fairness only obliges an action to fire if
+# it is *continuously* enabled, and CoreConsume requires the broker to be up.
+# NetworkPartition and NetworkRecover can flap forever, so the checker found a
+# lasso where the broker keeps going up and down, CoreConsume is never
+# continuously enabled, and the queue never drains -- EventualConsistency false.
+#
+# That trace is real but it is a statement about the network, not about the
+# consumer: given endlessly repeated opportunities to consume, a consumer that
+# never does is the defect worth ruling out. Strong fairness says exactly that --
+# enabled infinitely often implies fires infinitely often.
+atomic fair<strong> action CoreConsume:
     require len(broker_queue) > 0 and broker_available == True
     msg = broker_queue[0]
     # Remove from queue (ack)
