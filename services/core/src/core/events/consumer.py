@@ -12,6 +12,7 @@ Two things the previous version did not do:
   that triggered the sync, which is also what the adaptive-window logic reads.
 """
 
+import asyncio
 import json
 import logging
 import uuid
@@ -134,8 +135,26 @@ async def _tally(session, tenant_id: str, sync_run_id: str, *, inserted: bool) -
     )
 
 
+# One connection attempt fails fast rather than burning the library's default
+# retry budget inside it. Retrying is this module's job (see run_consumer_forever),
+# so that a broker outage cannot hold up anything that calls in here.
+CONNECT_TIMEOUT_SECONDS = 5
+RECONNECT_INITIAL_DELAY = 1.0
+RECONNECT_MAX_DELAY = 30.0
+
+
 async def start_consumer():
-    nc = await nats.connect(settings.NATS_URL)
+    """Connect to NATS and subscribe. Raises promptly if the broker is unreachable."""
+    nc = await nats.connect(
+        settings.NATS_URL,
+        connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        # No retries *here*. nats-py's default is 60 attempts two seconds apart,
+        # so an unreachable broker blocked this call for two minutes -- and with
+        # it Core's startup, because the lifespan awaited it before serving. The
+        # HTTP API has no business being unavailable because the broker is down.
+        max_reconnect_attempts=0,
+        allow_reconnect=False,
+    )
     js = nc.jetstream()
 
     # Ensure stream exists
@@ -147,3 +166,34 @@ async def start_consumer():
     await js.subscribe("qs.ingest.>", "core_data_service_group", cb=process_message)
     logger.info("Started consuming from qs.ingest.>")
     return nc
+
+
+async def run_consumer_forever(on_connected=None) -> None:
+    """Keep trying to establish the subscription, backing off between attempts.
+
+    Meant to run as a background task so that Core serves HTTP and gRPC whether
+    or not the broker is up. Ingestion is degraded while NATS is unreachable;
+    queries, authentication and the dashboard are not, and conflating the two
+    turns a broker outage into a full outage.
+
+    Backs off exponentially to 30s. A tight retry loop against a broker that is
+    restarting is its own kind of denial of service.
+    """
+    delay = RECONNECT_INITIAL_DELAY
+    while True:
+        try:
+            nc = await start_consumer()
+        except Exception as exc:  # noqa: BLE001 - any failure means "not connected yet"
+            logger.warning(
+                "NATS unavailable (%s); ingestion is paused, retrying in %.0fs",
+                type(exc).__name__,
+                delay,
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, RECONNECT_MAX_DELAY)
+            continue
+
+        logger.info("NATS consumer established")
+        if on_connected is not None:
+            on_connected(nc)
+        return

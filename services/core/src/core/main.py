@@ -48,7 +48,7 @@ from core.db.models import (
 )
 from core.db.session import async_session_maker, get_session
 from core.db.tenant import _current_tenant_id, get_current_tenant_id
-from core.events.consumer import start_consumer
+from core.events.consumer import run_consumer_forever
 from core.grpc.server import serve_grpc
 from core.ingest_planning import (
     BucketCount,
@@ -181,14 +181,32 @@ async def lifespan(app: FastAPI):
     if settings.SCHEDULER_ENABLED:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
 
-    try:
-        nc = await start_consumer()
+    # The NATS subscription is established in the background, never awaited here.
+    #
+    # It used to be awaited, and `nats.connect` retries sixty times two seconds
+    # apart before giving up -- so an unreachable broker held Core's startup for
+    # two minutes and nothing answered /health in the meantime. The surrounding
+    # `except Exception: yield` was written to prevent exactly that and could not,
+    # because the call blocks rather than raising.
+    #
+    # A broker outage should degrade ingestion. It should not take down queries,
+    # authentication or the dashboard.
+    app.state.nats_client = None
+
+    def _remember(nc):
         app.state.nats_client = nc
-        yield
-        await nc.close()
-    except Exception:
+
+    consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+
+    try:
         yield
     finally:
+        consumer_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await consumer_task
+        if (nc := getattr(app.state, "nats_client", None)) is not None:
+            with suppress(Exception):
+                await nc.close()
         if scheduler_task is not None:
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):
