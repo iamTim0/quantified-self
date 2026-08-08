@@ -146,6 +146,23 @@ zwar inzwischen selbst, aber die Portfreigabe bleibt unnötige Angriffsfläche.
 Die Importer für Apple Health (`:8005`) und Streak (`:8006`) müssen erreichbar sein,
 weil externe Geräte an sie senden.
 
+## Selbstauskunft im Dashboard
+
+Die Punkte aus diesem Kapitel muss man nicht hier nachlesen, um sie zu bemerken:
+Core meldet sie über `GET /api/v1/data/system/warnings`, und das Dashboard zeigt
+sie Inhabern und Administratoren als Banner über dem Inhalt — auf jedem Tab, mit
+dem jeweiligen Befehl zum Kopieren.
+
+Gemeldet werden veröffentlichte Standardwerte für `JWT_SECRET`,
+`ENCRYPTION_KEY` und `INTERNAL_SERVICE_SECRET`, offene Selbstregistrierung,
+fehlendes `Secure`-Flag auf den Cookies, und ein Passwort, dessen Hash in einer
+veröffentlichten Quelle stand. Details und die Begründung, wer was sehen darf,
+unter [Warnungen im Dashboard](features/authentication.md#warnungen-im-dashboard).
+
+Ein produktives Deployment sollte hier nichts anzeigen. Tut es das doch, ist
+mindestens einer der Werte aus
+[Erforderliche Konfiguration](#erforderliche-konfiguration) nicht gesetzt.
+
 ## Monitoring
 
 - **Healthchecks**: jeder Dienst bietet `GET /health`; die Docs zusätzlich `/healthz`.

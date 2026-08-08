@@ -14,6 +14,7 @@ import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
 import LegalFooter from "./components/LegalFooter";
+import SystemWarnings from "./components/SystemWarnings";
 import { SummaryMetrics } from "./components/MetricCards";
 import { SessionUser, endSession, fetchSession } from "./lib/session";
 import { apiFetch } from "./lib/api";
@@ -420,6 +421,10 @@ export default function DashboardPage() {
             onNavigateToProfile={() => handleTabChange("profile")}
             onRefresh={triggerRefresh}
           />
+
+          {/* Configuration and credential problems, on every tab. Previously
+              these lived only in a startup log and docs/operations.md. */}
+          <SystemWarnings apiBase={API_BASE} />
 
           {activeTab === "overview" && (
             <OverviewTab

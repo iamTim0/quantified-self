@@ -49,6 +49,7 @@ from core.db.models import (
 )
 from core.db.session import async_session_maker, get_session
 from core.db.tenant import _current_tenant_id, get_current_tenant_id
+from core.deployment_warnings import account_warnings, deployment_warnings
 from core.events.consumer import run_consumer_forever
 from core.grpc.server import serve_grpc
 from core.ingest_planning import (
@@ -1427,6 +1428,47 @@ async def oidc_backchannel_logout(
         identity.tenant_id,
     )
     return Response(status_code=200, headers={"Cache-Control": "no-store"})
+
+
+@app.get("/api/v1/data/system/warnings")
+async def list_system_warnings(session: AsyncSession = Depends(get_session)):
+    """Configuration and credential problems, for the dashboard to show.
+
+    These existed already — in the startup log, in a commit message, in
+    docs/operations.md. None of which anybody reads. A platform running on a
+    signing key that is printed in its own source should say so where its
+    operator is looking, which is the dashboard.
+
+    Scoped by role rather than uniformly: deployment warnings name *which* secret
+    is weak, so they go to owners and administrators. The account warning is
+    about the caller's own password and goes to the caller whatever their role —
+    withholding "your password is public" from a member would be absurd.
+    """
+    principal = get_current_principal()
+
+    user = (
+        await session.execute(
+            select(User).where(
+                User.id == principal.user_id, User.tenant_id == principal.tenant_id
+            )
+        )
+    ).scalars().first()
+
+    warnings = account_warnings(password_hash=user.password_hash if user else None)
+
+    if principal.role in {"owner", "admin"}:
+        warnings.extend(
+            deployment_warnings(
+                environment=settings.ENVIRONMENT,
+                jwt_secret=settings.JWT_SECRET,
+                encryption_key=settings.ENCRYPTION_KEY,
+                internal_secret=settings.INTERNAL_SERVICE_SECRET,
+                allow_registration=settings.ALLOW_REGISTRATION,
+                cookie_secure=settings.COOKIE_SECURE,
+            )
+        )
+
+    return {"warnings": [w.as_dict() for w in warnings]}
 
 
 @app.get("/api/v1/data/oidc/identities")

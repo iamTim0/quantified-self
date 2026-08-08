@@ -190,6 +190,56 @@ Anbieter registriert sein.
 Die Gegenrichtung — der Anbieter beendet die Sitzung und teilt uns das mit —
 beschreibt [Back-Channel-Logout](oidc.md#back-channel-logout).
 
+## Warnungen im Dashboard
+
+Konfigurations- und Zugangsprobleme stehen nicht mehr nur in einer Logzeile, einer
+Commit-Nachricht oder dieser Dokumentation — sie erscheinen als Banner über dem
+Inhalt, auf jedem Tab. Eine Plattform, die Sitzungen mit einem Schlüssel
+signiert, der in ihrem eigenen Quellcode steht, sollte das dort sagen, wo die
+Betreiberin hinsieht.
+
+`GET /api/v1/data/system/warnings` liefert die Liste. Was gemeldet wird:
+
+| Code | Schwere | Anlass |
+| --- | --- | --- |
+| `insecure_jwt_secret` | kritisch | `JWT_SECRET` ist unbesetzt oder ein veröffentlichter Standardwert |
+| `insecure_encryption_key` | kritisch | dito für `ENCRYPTION_KEY` — mit dem Hinweis, **vorher** umzuschlüsseln |
+| `insecure_internal_secret` | kritisch | dito für `INTERNAL_SERVICE_SECRET` |
+| `password_published` | kritisch | Der Hash des eigenen Passworts stand in einer veröffentlichten Quelle |
+| `registration_open` | Warnung | `ALLOW_REGISTRATION` ist aktiv |
+| `cookies_not_secure` | Warnung | `COOKIE_SECURE` ist aus |
+| `development_environment` | Hinweis | erklärt, warum die Dienste trotz der obigen Punkte starten |
+
+Drei Eigenschaften sind Absicht:
+
+- **Die Deployment-Warnungen sehen nur Inhaber und Administratoren.** Zu benennen,
+  *welcher* Schlüssel schwach ist, ist selbst eine kleine Offenlegung.
+- **`password_published` sieht die betroffene Person, unabhängig von der Rolle.**
+  Jemandem „dein Passwort ist öffentlich" vorzuenthalten, weil er nur Mitglied
+  ist, wäre absurd.
+- **Ausblenden gilt nur für die Sitzung.** Ein dauerhaftes „nicht mehr anzeigen"
+  auf „dein Signaturschlüssel ist öffentlich" ist der Weg, wie er öffentlich
+  bleibt. Jede Warnung nennt außerdem einen Befehl oder eine Einstellung, keinen
+  Ratschlag — „Erwäge, deine Secrets zu rotieren" ist die Form, die niemand
+  befolgt.
+
+Der Wert eines Secrets wird nie ausgegeben, nur der Variablenname. Sonst wäre die
+Warnung über einen schwachen Schlüssel ein zweiter Weg, ihn zu lesen.
+
+### Woher `password_published` weiß, was öffentlich ist
+
+Frühere Versionen legten in `infra/db/init.sql` ein Konto mit einem
+mitgelieferten bcrypt-Hash an. Wer das Repository hatte, hatte den Hash und die
+Adresse dazu; bcrypt verzögert einen Angriff, es verhindert ihn nicht. Konto und
+History sind bereinigt — nur macht das ein Passwort nicht wieder ungesehen. Ein
+Konto, das so eines **noch benutzt**, wird bei jeder Anmeldung gewarnt, bis es
+geändert ist.
+
+Gespeichert sind SHA-256-Digests der betroffenen Hashes, nicht die Hashes selbst.
+Einen echten bcrypt-Hash einzuchecken, um einen geleakten bcrypt-Hash zu
+erkennen, würde genau das wieder veröffentlichen, wovor gewarnt wird — und
+`.agents/scripts/check_private_info.py` würde es zu Recht ablehnen.
+
 ## Registrierung ist standardmäßig geschlossen
 
 `ALLOW_REGISTRATION` steht auf `false`. Das erste Konto wird mit
