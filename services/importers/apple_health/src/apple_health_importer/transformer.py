@@ -17,11 +17,11 @@ used to do that the registry makes unnecessary:
   storable and searchable without claiming a canonical name.
 """
 
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas import idempotency_key
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -36,21 +36,27 @@ logger = logging.getLogger(__name__)
 NAMESPACE = "apple_health_"
 
 
-def generate_idempotency_key(
-    tenant_id: str, source_id: str, metric_type: str, timestamp: str
-) -> str:
-    """Generate deterministic SHA256 idempotency key per Rule 4.
+#: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
+#: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
+#: identical docstring to keep in step, and its `timestamp: str` annotation would hide
+#: that the shared function also takes a `datetime`.
+generate_idempotency_key = idempotency_key
 
-    Format: SHA256(tenant_id:source_id:metric_type:timestamp)
+
+def parse_timestamp(date_str: str) -> str | None:
+    """Standardize input date string to UTC ISO-8601 format, or `None`.
+
+    `None` rather than `datetime.now()`, and rather than the unparsed string. The
+    timestamp is hashed into the `idempotency_key`, so a substituted *now* is a fresh key
+    on every poll: the same reading inserts a new row each sync, forever, and nothing
+    fails because `ON CONFLICT DO NOTHING` has nothing to conflict with. Returning the
+    raw string had the same effect whenever the provider varied its formatting.
+
+    A reading whose timestamp cannot be understood cannot be deduplicated, so the caller
+    skips it. That is what the weather and Home Assistant transformers already do.
     """
-    raw = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def parse_timestamp(date_str: str) -> str:
-    """Standardize input date string to UTC ISO-8601 format."""
     if not date_str:
-        return datetime.now(timezone.utc).isoformat()
+        return None
 
     date_str = str(date_str).strip()
 
@@ -63,8 +69,9 @@ def parse_timestamp(date_str: str) -> str:
             return dt.astimezone(timezone.utc).isoformat()
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.astimezone(timezone.utc).isoformat()
-    except Exception:
-        return date_str
+    except ValueError:
+        logger.warning("apple_health: unparseable timestamp %r, skipping the reading", date_str)
+        return None
 
 
 #: HealthKit / Health Auto Export metric name -> canonical registry key.
@@ -245,6 +252,8 @@ def transform_health_auto_export_json(
                 continue
 
             ts = parse_timestamp(str(raw_date))
+            if ts is None:
+                continue
             val = _extract_numeric_value(entry.get("qty"))
             if val is None:
                 val = _extract_numeric_value(entry.get("avg"))
@@ -318,11 +327,15 @@ def transform_health_auto_export_json(
             continue
 
         ts = parse_timestamp(str(raw_start))
+        if ts is None:
+            continue
         workout_name = str(workout.get("name") or workout.get("workoutName") or "Workout")
 
         workout_metadata = {
             "source_type": "apple_health",
             "workout_name": workout_name,
+            # Metadata, not part of the key -- absent rather than invented when the
+            # provider does not send an end.
             "end_time": parse_timestamp(str(workout.get("end") or workout.get("endDate") or "")),
         }
 

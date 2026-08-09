@@ -1,10 +1,61 @@
+import hashlib
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
 from .metrics import UnknownMetricTypeError, canonical_metric_type
+
+
+def idempotency_key(
+    tenant_id: str,
+    source_id: str,
+    metric_type: str,
+    timestamp: str | datetime,
+) -> str:
+    """``SHA256(tenant_id:source_id:metric_type:timestamp)`` — AGENTS.md rule 4.
+
+    One definition, because this hash *is* the exact-once guarantee. It was written out
+    nine times: once in each of the eight importers' transformers and once inline in
+    Core's batch-import endpoint, as ``__import__("hashlib").sha256(...)``. All nine
+    happened to agree, and nothing in the repository checked that they did — so a
+    typo in one importer's separator would have cost that source its deduplication
+    silently. Duplicates are not an error anywhere: Core inserts
+    ``ON CONFLICT DO NOTHING``, so a key that no longer matches the stored one simply
+    inserts a second row, and the only symptom is a metric that slowly doubles.
+
+    ``timestamp`` takes a string or a ``datetime``, because the importers already hold a
+    formatted ISO string while Core holds a converted ``datetime``. A ``datetime`` is
+    converted to UTC first, so an offset-aware value and its UTC equivalent agree.
+
+    **A string is hashed exactly as given, and that is deliberate.** It would be easy to
+    parse and re-emit it so that ``…T00:00:00Z`` and ``…T00:00:00+00:00`` — the two
+    spellings the importers actually use, Dawarich and Yazio the first, the rest the
+    second — converged on one key. Doing that would silently re-key every point those two
+    sources have already stored: the next import would derive a key matching nothing, and
+    ``ON CONFLICT DO NOTHING`` does not fail, it inserts. One quiet re-key would double
+    the history it was meant to protect.
+
+    So each source stays self-consistent, which is what deduplication needs, and the
+    consequence is written down instead: the *same* reading written by an importer and
+    re-imported through Core's manual path can land twice, because the two paths spell the
+    timestamp differently. Converging them is a migration — re-derive the stored keys in
+    one transaction — not a change to this function.
+
+    The metric name must be canonical *before* it gets here, which is why this does not
+    canonicalise for you: the name is part of the hash, so resolving it afterwards keys
+    the point under a name it is not stored under. ``IngestEvent`` rejects an alias for
+    the same reason.
+    """
+    if isinstance(timestamp, datetime):
+        moment = timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+        stamp = moment.astimezone(timezone.utc).isoformat()
+    else:
+        stamp = timestamp
+
+    raw = f"{tenant_id}:{source_id}:{metric_type}:{stamp}"
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
 class IngestEvent(BaseModel):

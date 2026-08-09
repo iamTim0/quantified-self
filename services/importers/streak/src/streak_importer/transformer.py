@@ -9,33 +9,43 @@ session, and the two reading as variants of each other is precisely the confusio
 the registry exists to remove.
 """
 
-import hashlib
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas import idempotency_key
 
-def generate_idempotency_key(
-    tenant_id: str, source_id: str, metric_type: str, timestamp: str
-) -> str:
-    """Generate deterministic SHA256 idempotency key per Rule 4.
+logger = logging.getLogger(__name__)
 
-    Format: SHA256(tenant_id:source_id:metric_type:timestamp)
+
+#: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
+#: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
+#: identical docstring to keep in step, and its `timestamp: str` annotation would hide
+#: that the shared function also takes a `datetime`.
+generate_idempotency_key = idempotency_key
+
+
+def parse_timestamp(date_str: Any) -> str | None:
+    """Standardize input date string to UTC ISO-8601 format, or `None`.
+
+    `None` rather than `datetime.now()`, and rather than the unparsed string. The
+    timestamp is hashed into the `idempotency_key`, so a substituted *now* is a fresh key
+    on every poll: the same set inserts a new row each sync, forever, and nothing fails
+    because `ON CONFLICT DO NOTHING` has nothing to conflict with.
+
+    A set whose timestamp cannot be understood cannot be deduplicated, so the caller skips
+    it — the same choice the weather and Home Assistant transformers make.
     """
-    raw = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-
-def parse_timestamp(date_str: Any) -> str:
-    """Standardize input date string to UTC ISO-8601 format."""
     if not date_str:
-        return datetime.now(timezone.utc).isoformat()
+        return None
 
     date_str = str(date_str).strip()
     try:
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
         return dt.astimezone(timezone.utc).isoformat()
-    except Exception:
-        return date_str
+    except ValueError:
+        logger.warning("streak: unparseable timestamp %r, skipping the entry", date_str)
+        return None
 
 
 def transform_streak_export_json(
@@ -56,6 +66,8 @@ def transform_streak_export_json(
         workout_title = str(workout.get("title") or "Workout")
         workout_category = str(workout.get("category") or "")
         workout_ts = parse_timestamp(workout.get("createdAt"))
+        if workout_ts is None:
+            continue
 
         sets = workout.get("sets") or []
         if not isinstance(sets, list):
@@ -75,6 +87,8 @@ def transform_streak_export_json(
             reps = set_item.get("reps")
             max_pulse = set_item.get("maxPulse")
             set_ts = parse_timestamp(set_item.get("createdAt") or workout.get("createdAt"))
+            if set_ts is None:
+                continue
 
             exercise = set_item.get("exercise") if isinstance(set_item.get("exercise"), dict) else {}
             exercise_title = str(exercise.get("title") or "Exercise")

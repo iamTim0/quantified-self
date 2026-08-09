@@ -15,9 +15,9 @@ was introduced:
   produces a comparable number.
 """
 
-import hashlib
 from typing import Any, NamedTuple
 
+from shared_schemas import idempotency_key
 from shared_schemas.metrics import METRIC_CATALOG, MetricUnit, convert
 
 
@@ -32,12 +32,11 @@ class _Mapping(NamedTuple):
     provider_unit: MetricUnit | None = None
 
 
-def generate_idempotency_key(
-    tenant_id: str, source_id: str, metric_type: str, timestamp: str
-) -> str:
-    """Generate deterministic SHA256 idempotency key per Rule 4."""
-    raw = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+#: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
+#: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
+#: identical docstring to keep in step, and its `timestamp: str` annotation would hide
+#: that the shared function also takes a `datetime`.
+generate_idempotency_key = idempotency_key
 
 
 METRICS: dict[str, tuple[_Mapping, ...]] = {

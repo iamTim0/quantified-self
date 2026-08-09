@@ -48,3 +48,29 @@ def test_transform_dawarich_points():
     assert point_dp["metadata"]["longitude"] == 13.4050
     assert point_dp["metadata"]["altitude"] == 35.5
     assert len(point_dp["idempotency_key"]) == 64
+
+
+def test_a_point_without_a_usable_timestamp_is_skipped():
+    """It used to be stamped `now()`, which re-keyed it on every poll.
+
+    The timestamp is hashed into the `idempotency_key`, so a substituted *now* made the
+    same point new each sync: `ON CONFLICT DO NOTHING` had nothing to conflict with and
+    inserted another row. For a GPS trace that turns a route into a smear.
+
+    Verifies Fizzbee Invariant: NoDuplicateRecords
+    """
+    assert _normalize_iso_timestamp(None) is None
+    assert _normalize_iso_timestamp("") is None
+    assert _normalize_iso_timestamp("not a timestamp") is None
+
+    points = [
+        {"latitude": 52.5, "longitude": 13.4, "timestamp": "2026-08-01T12:00:00Z"},
+        {"latitude": 52.6, "longitude": 13.5, "timestamp": "whenever"},
+        {"latitude": 52.7, "longitude": 13.6},
+    ]
+    result = transform_dawarich_points(points, "tenant-1", "src-1")
+
+    # Only the first point survives, and every emitted key is distinct.
+    assert {dp["timestamp"] for dp in result} == {"2026-08-01T12:00:00Z"}
+    keys = [dp["idempotency_key"] for dp in result]
+    assert len(keys) == len(set(keys))

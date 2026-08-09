@@ -21,13 +21,13 @@ the dashboard formats hours where hours read better.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas import idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 
 from calendar_importer.ics import CalendarEvent
@@ -37,12 +37,11 @@ logger = logging.getLogger(__name__)
 SOURCE_TYPE = "calendar"
 
 
-def generate_idempotency_key(
-    tenant_id: str, source_id: str, metric_type: str, timestamp: str
-) -> str:
-    """SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4."""
-    raw = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+#: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
+#: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
+#: identical docstring to keep in step, and its `timestamp: str` annotation would hide
+#: that the shared function also takes a `datetime`.
+generate_idempotency_key = idempotency_key
 
 
 def _event(

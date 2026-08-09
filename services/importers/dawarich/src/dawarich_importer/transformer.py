@@ -1,9 +1,9 @@
 """Transformer for Dawarich Location Data into Standardized DataPoints."""
 
-import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
+from shared_schemas import idempotency_key
 from shared_schemas.metrics import canonical_metric_type
 
 # Resolved through the registry rather than spelled out as literals: if one of these
@@ -15,16 +15,25 @@ METRIC_LATITUDE = canonical_metric_type("location_latitude")
 METRIC_LONGITUDE = canonical_metric_type("location_longitude")
 
 
-def generate_idempotency_key(
-    tenant_id: str, source_id: str, metric_type: str, timestamp: str
-) -> str:
-    """Generate deterministic SHA256 idempotency key per Rule 4."""
-    raw = f"{tenant_id}:{source_id}:{metric_type}:{timestamp}"
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+#: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
+#: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
+#: identical docstring to keep in step, and its `timestamp: str` annotation would hide
+#: that the shared function also takes a `datetime`.
+generate_idempotency_key = idempotency_key
 
 
-def _normalize_iso_timestamp(raw_timestamp: Any) -> str:
-    """Normalize epoch or string timestamp to ISO 8601 UTC string."""
+def _normalize_iso_timestamp(raw_timestamp: Any) -> str | None:
+    """Normalize an epoch or string timestamp to an ISO 8601 UTC string, or `None`.
+
+    `None` rather than `datetime.now()`. The timestamp is hashed into the
+    `idempotency_key`, so substituting *now* gives the same location point a fresh key on
+    every poll: it inserts a new row each sync, forever, and nothing fails because
+    `ON CONFLICT DO NOTHING` has nothing to conflict with. For a GPS trace that is the
+    difference between a route and a smear.
+
+    A point whose timestamp cannot be understood cannot be deduplicated, so the caller
+    skips it — the same choice the weather and Home Assistant transformers make.
+    """
     if isinstance(raw_timestamp, (int, float)):
         dt = datetime.fromtimestamp(raw_timestamp, tz=timezone.utc)
         return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -33,8 +42,8 @@ def _normalize_iso_timestamp(raw_timestamp: Any) -> str:
             dt = datetime.fromisoformat(raw_timestamp.replace("Z", "+00:00"))
             return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         except ValueError:
-            pass
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            return None
+    return None
 
 
 def transform_dawarich_points(
@@ -62,6 +71,8 @@ def transform_dawarich_points(
 
         raw_ts = point.get("timestamp") or point.get("created_at") or point.get("recorded_at")
         ts_iso = _normalize_iso_timestamp(raw_ts)
+        if ts_iso is None:
+            continue
 
         altitude = point.get("altitude") or point.get("alt")
         speed = point.get("speed")

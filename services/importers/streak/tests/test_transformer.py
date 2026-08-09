@@ -86,3 +86,43 @@ def test_transform_empty_payload():
     """Verifies graceful handling of empty or malformed Streak payload."""
     assert transform_streak_export_json({}, "tenant_1", "src_1") == []
     assert transform_streak_export_json({"workouts": "bad"}, "tenant_1", "src_1") == []
+
+
+def test_a_set_without_a_usable_timestamp_is_skipped():
+    """It used to be stamped `now()`, which re-keyed the set on every poll.
+
+    The timestamp is hashed into the `idempotency_key`, so a substituted *now* made the
+    same set look new each sync — `ON CONFLICT DO NOTHING` had nothing to conflict with,
+    and inserted another row.
+
+    Verifies Fizzbee Invariant: NoDuplicateRecords
+    """
+    from streak_importer.transformer import parse_timestamp
+
+    assert parse_timestamp(None) is None
+    assert parse_timestamp("") is None
+    assert parse_timestamp("whenever") is None
+    assert parse_timestamp("2026-08-03T14:00:00Z") == "2026-08-03T14:00:00+00:00"
+
+    payload = {
+        "workouts": [
+            {
+                "id": "w1",
+                "title": "Push",
+                "createdAt": "2026-08-03T14:00:00Z",
+                "sets": [{"id": "s1", "setNumber": 1, "weight": 60, "reps": 8}],
+            },
+            {
+                "id": "w2",
+                "title": "Pull",
+                "createdAt": "whenever",
+                "sets": [{"id": "s2", "setNumber": 1, "weight": 70, "reps": 6}],
+            },
+        ]
+    }
+    result = transform_streak_export_json(payload, "tenant-1", "src-1")
+
+    assert result, "the workout with a valid timestamp must still be imported"
+    assert all(dp["metadata"].get("workout_id") != "w2" for dp in result)
+    keys = [dp["idempotency_key"] for dp in result]
+    assert len(keys) == len(set(keys))

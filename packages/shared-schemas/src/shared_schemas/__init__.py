@@ -3,7 +3,7 @@ Shared Python schemas for Quantified Self platform.
 """
 
 from .data_point import DataPointQuery, DataPointRead
-from .events import IngestEvent, IngestEventBatch
+from .events import IngestEvent, IngestEventBatch, idempotency_key
 from .metrics import (
     CANONICAL_KEYS,
     DYNAMIC_NAMESPACES,
@@ -46,6 +46,7 @@ __all__ = [
     "canonical_metric_type",
     "convert",
     "describe",
+    "idempotency_key",
     "is_known_metric_type",
     "metrics_for_source",
 ]

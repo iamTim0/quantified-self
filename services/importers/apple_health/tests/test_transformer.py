@@ -176,3 +176,40 @@ def test_transform_invalid_payload():
 
     events_bad = transform_health_auto_export_json({"data": "invalid"}, "tenant_1", "src_1")
     assert events_bad == []
+
+
+def test_a_reading_without_a_usable_timestamp_is_skipped():
+    """It used to be stamped `now()`, which re-keyed the reading on every poll.
+
+    The timestamp is hashed into the `idempotency_key`, so a substituted *now* made the
+    same reading look new each sync — `ON CONFLICT DO NOTHING` had nothing to conflict
+    with, and inserted another row. Returning the raw unparsed string did the same
+    whenever the provider varied its formatting.
+
+    Verifies Fizzbee Invariant: NoDuplicateRecords
+    """
+    from apple_health_importer.transformer import parse_timestamp
+
+    assert parse_timestamp("") is None
+    assert parse_timestamp("not a timestamp") is None
+    assert parse_timestamp("2026-08-03T14:00:00Z") == "2026-08-03T14:00:00+00:00"
+
+    payload = {
+        "data": {
+            "metrics": [
+                {
+                    "name": "step_count",
+                    "units": "count",
+                    "data": [
+                        {"date": "2026-08-03 14:00:00 +0000", "qty": 1000},
+                        {"date": "whenever", "qty": 2000},
+                    ],
+                }
+            ]
+        }
+    }
+    result = transform_health_auto_export_json(payload, "tenant-1", "src-1")
+
+    assert [dp["value"] for dp in result] == [1000]
+    keys = [dp["idempotency_key"] for dp in result]
+    assert len(keys) == len(set(keys))

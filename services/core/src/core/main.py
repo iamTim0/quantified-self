@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field, field_validator
+from shared_schemas import idempotency_key
 from shared_schemas.metrics import (
     CANONICAL_KEYS,
     DYNAMIC_NAMESPACES,
@@ -1855,9 +1856,9 @@ async def import_mapped_rows(
     accepted = 0
     for row in request.rows:
         normalized_timestamp = row.timestamp.astimezone(timezone.utc)
-        key = __import__("hashlib").sha256(
-            f"{tenant_id}:{row.source_id}:{row.metric_type}:{normalized_timestamp.isoformat()}".encode()
-        ).hexdigest()
+        key = idempotency_key(
+            tenant_id, row.source_id, row.metric_type, normalized_timestamp
+        )
         statement = insert(DataPoint).values(
             id=str(uuid.uuid4()), tenant_id=tenant_id, source_id=row.source_id,
             metric_type=row.metric_type, timestamp=normalized_timestamp, value=row.value,
