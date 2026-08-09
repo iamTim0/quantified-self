@@ -70,7 +70,7 @@ test.describe("route guard", () => {
     await expect(page).toHaveURL(/\/auth\/callback$/);
     // Reached the page rather than merely failing to navigate away from it.
     await expect(
-      page.getByText("Die Rückmeldung des Anbieters war unvollständig."),
+      page.getByText("The provider's response was incomplete."),
     ).toBeVisible();
   });
 

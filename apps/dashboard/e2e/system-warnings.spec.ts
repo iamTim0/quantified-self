@@ -24,7 +24,7 @@ test.describe("system warnings", () => {
     await signUp(request, account);
     await signIn(page, account);
 
-    const warnings = page.getByRole("region", { name: "Systemwarnungen" });
+    const warnings = page.getByRole("region", { name: "System warnings" });
     await expect(warnings).toBeVisible();
 
     // The signing key is the one that matters most: knowing it means being able
@@ -49,7 +49,7 @@ test.describe("system warnings", () => {
     await signIn(page, account);
 
     const text = await page
-      .getByRole("region", { name: "Systemwarnungen" })
+      .getByRole("region", { name: "System warnings" })
       .innerText();
     expect(text).toContain("JWT_SECRET");
     expect(text).not.toContain("dev-secret-key-quantified-self-2026");
@@ -67,14 +67,14 @@ test.describe("system warnings", () => {
     await signUp(request, account);
     await signIn(page, account);
 
-    const warnings = page.getByRole("region", { name: "Systemwarnungen" });
+    const warnings = page.getByRole("region", { name: "System warnings" });
     const critical = warnings
       .getByText(/JWT_SECRET is a published default/)
       .first();
     await expect(critical).toBeVisible();
 
     await warnings
-      .getByRole("button", { name: "Für diese Sitzung ausblenden" })
+      .getByRole("button", { name: "Hide for this session" })
       .first()
       .click();
     await expect(critical).toBeHidden();
@@ -82,7 +82,7 @@ test.describe("system warnings", () => {
     await page.reload();
     await expect(
       page
-        .getByRole("region", { name: "Systemwarnungen" })
+        .getByRole("region", { name: "System warnings" })
         .getByText(/JWT_SECRET is a published default/),
     ).toBeVisible();
   });
@@ -96,7 +96,7 @@ test.describe("system warnings", () => {
     for (const path of ["/connectors", "/quality", "/profile"]) {
       await page.goto(path);
       await expect(
-        page.getByRole("region", { name: "Systemwarnungen" }),
+        page.getByRole("region", { name: "System warnings" }),
       ).toBeVisible();
     }
   });

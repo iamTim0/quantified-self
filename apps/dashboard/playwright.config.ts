@@ -43,8 +43,12 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    // The app is German; a mismatched locale makes text assertions flaky.
-    locale: "de-DE",
+    // The interface is bilingual and picks its language from `Accept-Language`
+    // when no `qs-locale` cookie has been set, so this line decides which
+    // catalogue the locators below have to match. Pinned rather than inherited:
+    // a suite whose language depends on the machine it runs on fails as a text
+    // assertion when the real cause is the locale.
+    locale: "en-GB",
   },
 
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

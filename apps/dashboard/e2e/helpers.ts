@@ -43,9 +43,9 @@ export async function signUp(request: APIRequestContext, account: Account) {
 export async function submitSignIn(page: Page, account: Account) {
   // By label, not by CSS type or placeholder: the labels are properly associated
   // with their inputs, so this asserts the accessible form as well as the flow.
-  await page.getByLabel("E-Mail").fill(account.email);
-  await page.getByLabel("Passwort").fill(account.password);
-  await page.getByRole("button", { name: /^anmelden$/i }).click();
+  await page.getByLabel("Email").fill(account.email);
+  await page.getByLabel("Password").fill(account.password);
+  await page.getByRole("button", { name: /^sign in$/i }).click();
 }
 
 export async function signIn(page: Page, account: Account) {
@@ -56,9 +56,9 @@ export async function signIn(page: Page, account: Account) {
 
 export async function expectSignedIn(page: Page) {
   // The sidebar only renders for an authenticated session.
-  await expect(page.getByRole("button", { name: "Abmelden" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 }
 
 export async function expectSignedOut(page: Page) {
-  await expect(page.getByLabel("Passwort")).toBeVisible();
+  await expect(page.getByLabel("Password")).toBeVisible();
 }

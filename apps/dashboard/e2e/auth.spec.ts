@@ -37,7 +37,7 @@ test.describe("session lifecycle in a browser", () => {
     await signUp(request, account);
     await signIn(page, account);
 
-    await page.getByRole("button", { name: "Abmelden" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
     await expectSignedOut(page);
 
     // The reload is the entire point. The reported bug was that this step
@@ -83,7 +83,7 @@ test.describe("session lifecycle in a browser", () => {
     await second.goto("/");
     await expectSignedIn(second);
 
-    await first.getByRole("button", { name: "Abmelden" }).click();
+    await first.getByRole("button", { name: "Sign out" }).click();
     await expectSignedOut(first);
 
     // The other tab re-checks with the server when it becomes visible rather
@@ -99,7 +99,7 @@ test.describe("session lifecycle in a browser", () => {
     const account = newAccount();
     await signUp(request, account);
     await signIn(page, account);
-    await page.getByRole("button", { name: "Abmelden" }).click();
+    await page.getByRole("button", { name: "Sign out" }).click();
     await expectSignedOut(page);
 
     // Issued from inside the page, not via page.request. Playwright's API
