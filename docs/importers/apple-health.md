@@ -37,10 +37,24 @@ version.
 The credentials are stored encrypted by the Core service. The importer reads them from Core at
 run time; they belong in neither an `.env` file nor a NATS event.
 
+## Two ways in
+
+| Way | What it needs | What it brings |
+| --- | --- | --- |
+| **Health Auto Export** (push) | The app on the phone and an API key from the dashboard | Whatever you enable in the app, as it happens |
+| **`export.zip`** (upload) | Nothing but the Health app | The whole history, workouts and GPS routes included |
+
+The second is described in [Uploading an export file](../features/file-import.md), including
+which parts of an archive are deliberately not stored. Both write into the same connector and the
+same metrics, so a reading that arrives twice is stored once.
+
 ## Data flow
 
 ```text
 Apple Health / export app -> Apple Health importer
+  -> NATS: qs.ingest.apple_health -> Core service -> data_points
+
+export.zip -> Gateway -> Apple Health importer (reads it in the background)
   -> NATS: qs.ingest.apple_health -> Core service -> data_points
 ```
 
@@ -64,6 +78,8 @@ deduplicates on the `idempotency_key`. Every import stays attached to the config
 | `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | sleep stages | `min` |
 | `body_weight` | body weight | `kg` |
 | `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | workout sessions | `min`, `km`, `kcal`, `bpm` |
+| `blood_pressure_systolic`, `blood_pressure_diastolic` | blood pressure | `mmHg` |
+| `location_point` | one point per GPS fix in a workout route | — |
 
 Health Auto Export sends the unit along with each metric, and that unit follows the phone's
 locale — miles or kilometres, hours or minutes. The importer reads it and converts to the
@@ -114,6 +130,18 @@ produces no test data in that case.
 The Core service deduplicates on the deterministically derived `idempotency_key`. First check
 whether the same measurement really was delivered more than once with different timestamps or
 different `metric_type` values.
+
+## What is not imported
+
+Health Auto Export can also send `stateOfMind`, `symptoms`, `cycleTracking`, `ecg`,
+`medications` and `heartRateNotifications`. None of them is stored. They are special-category
+health data, and whether a platform keeps them is an operator's decision that changes what the
+privacy policy has to say — not something a transformer should settle by recognising a field
+name.
+
+They are not silently dropped either: each is reported as arriving-but-not-stored, so the
+[Data Quality Center](../features/data-quality.md) can answer "my phone sends ECGs and nothing
+shows up" instead of leaving you to guess.
 
 ## Privacy and limits
 

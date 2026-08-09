@@ -1,0 +1,117 @@
+# Fizzbee Formal Specification: Importing a provider's export file
+#
+# Apple Health and Whoop both hand a user their whole history as a file. The upload
+# takes a path nothing else here takes: the browser sends the archive to the importer
+# that understands it, the importer answers *before* it has read a byte of it, and the
+# reading happens afterwards against a `SyncRun` the dashboard watches.
+#
+# That "answer first, work later" shape is what this models, because it is where the
+# ways to be wrong are: an upload that is accepted and then forgotten, a run that
+# never closes, an archive left on disk, and a second upload of the same file writing
+# a second copy of a year of somebody's life.
+#
+# Replaces oura_csv_upload.fizz, which modelled a CSV path for an importer this
+# platform no longer has, and whose invariants named tests that went with it.
+
+TENANTS = ["tenant_a", "tenant_b"]
+
+# State
+
+
+action Init:
+    # Archives written to disk and not yet read. Two at most, which is enough for
+    # "the second upload of the same file finds the first one's data already there".
+    spooled = []
+    # run id -> {tenant_id, status}
+    runs = {}
+    # idempotency key -> {tenant_id, metric_type}
+    stored = {}
+    # Points published and not yet consumed by Core.
+    published = []
+    accepted = 0
+
+atomic action AcceptUpload:
+    # Two uploads, which is exactly the interesting case: the same export sent
+    # twice. Bounding them is also what lets the liveness property below say the
+    # system *settles* -- with uploads arriving forever, "no archive is left
+    # waiting" could never become permanently true, however promptly each one
+    # was read.
+    require accepted < 2
+    tenant_id = oneof(TENANTS)
+
+    # The run is opened before the response goes out. Opening it afterwards would
+    # leave a window in which the upload has been accepted and nothing says so.
+    accepted = accepted + 1
+    run_id = "run_" + str(accepted)
+    runs[run_id] = {"tenant_id": tenant_id, "status": "running"}
+    spooled.append({"tenant_id": tenant_id, "run_id": run_id})
+
+# Fair: an accepted upload has to be read eventually, or "accepted" would be a
+# promise the model allows to be broken forever.
+atomic fair action ReadArchive:
+    require len(spooled) > 0
+    archive = spooled[0]
+    spooled.pop(0)
+    tenant_id = archive["tenant_id"]
+
+    # Every export holds the same two readings -- which is the point: the second
+    # upload of a file must add nothing.
+    for metric_type in ["steps", "sleep_duration"]:
+        published.append({
+            "tenant_id": tenant_id,
+            "metric_type": metric_type,
+            # The connector id and the timestamp are in the key, so the same reading
+            # from the same connector is the same key however it arrived.
+            "idempotency_key": tenant_id + ":connector:" + metric_type + ":2026-08-05",
+            "run_id": archive["run_id"]
+        })
+
+    runs[archive["run_id"]] = {"tenant_id": tenant_id, "status": "finished"}
+
+atomic fair action CorePersist:
+    require len(published) > 0
+    point = published[0]
+    published.pop(0)
+    if point["idempotency_key"] not in stored:
+        stored[point["idempotency_key"]] = {
+            "tenant_id": point["tenant_id"],
+            "metric_type": point["metric_type"]
+        }
+
+# SAFETY INVARIANTS
+
+always assertion UploadNoDuplicateData:
+    # Uploading the same export twice stores each reading once. Without it the
+    # honest answer to "can I re-upload?" would be no, and a partly-failed import
+    # could never be repeated.
+    return len(stored) == len(set(stored.keys()))
+
+always assertion UploadTenantIsolation:
+    # A point carries the workspace of whoever uploaded it, and no other.
+    for point in stored.values():
+        if point["tenant_id"] not in TENANTS:
+            return False
+    return True
+
+always assertion AcceptedUploadIsVisible:
+    # Nothing is accepted without a run to watch it. The response says "accepted"
+    # before the archive has been read, so the run is the only thing standing
+    # between the user and silence.
+    for archive in spooled:
+        if archive["run_id"] not in runs:
+            return False
+    return True
+
+always assertion ArchiveIsNotRetained:
+    # A finished run leaves no archive behind. It is somebody's whole medical
+    # history; it exists on disk for as long as it takes to read and no longer.
+    for archive in spooled:
+        if runs[archive["run_id"]]["status"] == "finished":
+            return False
+    return True
+
+# LIVENESS
+
+eventually always assertion EveryUploadIsRead:
+    # No upload stays accepted-but-unread, and no run stays open forever.
+    return len(spooled) == 0

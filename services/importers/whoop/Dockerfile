@@ -29,4 +29,8 @@ RUN uv sync --frozen
 
 ENV PATH="/app/services/importers/whoop/.venv/bin:${PATH}"
 
+# The export upload. Polled syncs still arrive over NATS; both are served by the
+# one process started below.
+EXPOSE 8007
+
 CMD ["python", "-m", "whoop_importer.main"]

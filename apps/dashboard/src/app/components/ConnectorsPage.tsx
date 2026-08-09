@@ -43,6 +43,10 @@ export interface ConnectorItem {
   last_request_id?: string;
   nats_subject?: string;
   nats_queue_group?: string;
+  /** `"file"` for a connector fed by uploads alone, absent for the ordinary kind. */
+  import_mode?: string | null;
+  /** Whether this provider hands its users an export file this platform can read. */
+  supports_file_import?: boolean;
 }
 
 interface ConnectorsPageProps {
@@ -92,7 +96,13 @@ export default function ConnectorsPage({
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
   // Which connector the import dialog is open for, if any.
   const [importDialogFor, setImportDialogFor] = useState<
-    { id: string; name: string; passive: boolean } | null
+    {
+      id: string;
+      name: string;
+      passive: boolean;
+      sourceType: string;
+      fileImport: boolean;
+    } | null
   >(null);
 
   const fetchConnectors = async () => {
@@ -215,7 +225,11 @@ export default function ConnectorsPage({
           const cat = CONNECTOR_CATALOG.find((c) => c.id === connector.source_type);
           const Icon = cat?.icon ?? Key;
           const direction = getConnectorDirection(connector.source_type);
-          const isPassive = direction === "passive";
+          // A file connector polls nothing either: its data arrives when somebody
+          // uploads an export, which is the same "nothing to trigger here" as a
+          // phone pushing on its own schedule.
+          const fileOnly = connector.import_mode === "file";
+          const isPassive = direction === "passive" || fileOnly;
           const typeName = cat ? catalogName(t, cat) : connector.source_type;
           const docsPath = cat?.docsPath ?? "/docs/importers/";
 
@@ -304,12 +318,20 @@ export default function ConnectorsPage({
                       id: connector.id,
                       name: connector.display_name || typeName,
                       passive: isPassive,
+                      sourceType: connector.source_type,
+                      fileImport: Boolean(connector.supports_file_import),
                     })
                   }
                   className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>{isPassive ? t("connectors.history") : t("connectors.import")}</span>
+                  <span>
+                    {fileOnly
+                      ? t("connectors.upload")
+                      : isPassive
+                      ? t("connectors.history")
+                      : t("connectors.import")}
+                  </span>
                 </button>
                 <button
                   onClick={() => onOpenConfigureModal(connector, connector.source_type)}
@@ -421,7 +443,9 @@ export default function ConnectorsPage({
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {connectors.map((c) => {
-                  const rowIsPassive = getConnectorDirection(c.source_type) === "passive";
+                  const rowFileOnly = c.import_mode === "file";
+                  const rowIsPassive =
+                    getConnectorDirection(c.source_type) === "passive" || rowFileOnly;
                   return (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3.5 px-3">
@@ -493,7 +517,9 @@ export default function ConnectorsPage({
                       {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
                     </td>
                     <td className="py-3.5 px-3 text-slate-600">
-                      {rowIsPassive
+                      {rowFileOnly
+                        ? t("connectors.fileDriven")
+                        : rowIsPassive
                         ? t("connectors.webhookDriven")
                         : t("connectors.everyHours", { hours: c.poll_interval_hours, days: c.lookback_days })}
                     </td>
@@ -519,6 +545,8 @@ export default function ConnectorsPage({
                             id: c.id,
                             name: c.display_name || c.source_type,
                             passive: rowIsPassive,
+                            sourceType: c.source_type,
+                            fileImport: Boolean(c.supports_file_import),
                           })
                         }
                         disabled={c.sync_status === "queued"}
@@ -528,6 +556,8 @@ export default function ConnectorsPage({
                         <span>
                           {c.sync_status === "queued"
                             ? t("connectors.queued")
+                            : rowFileOnly
+                            ? t("connectors.upload")
                             : rowIsPassive
                             ? t("connectors.history")
                             : t("connectors.import")}
@@ -580,6 +610,8 @@ export default function ConnectorsPage({
           apiBase={apiBase}
           sourceType={importDialogFor.id}
           sourceName={importDialogFor.name}
+          providerType={importDialogFor.sourceType}
+          fileImport={importDialogFor.fileImport}
           passive={importDialogFor.passive}
           isOpen={true}
           onClose={() => setImportDialogFor(null)}

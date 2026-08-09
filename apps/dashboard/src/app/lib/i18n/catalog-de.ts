@@ -323,6 +323,8 @@ export const de: Record<MessageKey, string> = {
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Importieren",
   "connectors.history": "Verlauf",
+  "connectors.upload": "Hochladen",
+  "connectors.fileDriven": "Wird per Export-Datei befüllt",
   "connectors.queued": "In Warteschlange",
   "connectors.newConnector": "Neuer Connector",
   "connectors.docs": "Doku",
@@ -450,6 +452,19 @@ export const de: Record<MessageKey, string> = {
   "import.typicallyMinutes": "dauert üblicherweise etwa {count} min",
   "import.passiveExplainer":
     "Dieser Connector empfängt Daten, wenn dein Gerät sie sendet — hier gibt es also nichts anzustoßen. Was ein Push-Import trotzdem hat, steht darunter: wie weit der laufende gekommen ist und was frühere getan haben.",
+  "import.uploadLegend": "Export-Datei importieren",
+  "import.uploadHintAppleHealth":
+    "In der Health-App dein Profil öffnen und „Alle Gesundheitsdaten exportieren“ wählen. Die export.zip, die du bekommst, hier hochladen — sie enthält deine gesamte Historie, Workouts und GPS-Routen inklusive.",
+  "import.uploadHintWhoop":
+    "In der Whoop-App unter Account den Datenexport anfordern. Das ZIP mit den CSV-Dateien, das per E-Mail kommt, hier hochladen.",
+  "import.uploadChoose": "Export-Datei auswählen",
+  "import.uploadStart": "Hochladen",
+  "import.uploading": "Wird hochgeladen…",
+  "import.uploadAccepted":
+    "Die Datei ist angekommen und wird gelesen. Der Fortschritt erscheint oben.",
+  "import.uploadFailed": "Die Datei konnte nicht hochgeladen werden.",
+  "import.uploadReimportNote":
+    "Dieselbe Datei kann erneut hochgeladen werden, ohne Duplikate zu erzeugen: ein bereits gespeicherter Messwert bleibt ein Messwert.",
   "import.planFailed": "Importplan konnte nicht geladen werden.",
   "import.startFailed": "Import konnte nicht gestartet werden.",
   "import.nothingToDo":
@@ -613,6 +628,21 @@ export const de: Record<MessageKey, string> = {
   "modal.importPeriod": "Import-Zeitraum",
   "modal.lastNDays": "Letzte {count} Tage",
   "modal.lastNDaysDefault": "Letzte {count} Tage (Standard)",
+  "modal.guide": "Anleitung",
+  "modal.syncFrequency": "Sync-Frequenz",
+  "modal.yazioTokenMode": "Bearer Token direkt eingeben",
+  "modal.yazioTokenOptional": "Bearer Token (optional)",
+  "modal.yazioLoginMode": "Yazio Login",
+  "modal.yazioLoginOptional": "Yazio Login (optional)",
+  "modal.modeConnect": "Jetzt verknüpfen",
+  "modal.modeFile": "Einmaliger Import",
+  "modal.modeConnectHint":
+    "Der Connector holt deine Daten selbst, im unten eingestellten Takt.",
+  "modal.modeFileHint":
+    "Keine Kontoverknüpfung: Du lädst den Export hoch, den dieser Anbieter dir gibt, und er wird in diesen Connector eingelesen. Verknüpfen kannst du ihn später trotzdem — dieselben Daten bleiben eine Reihe.",
+  "modal.fileFlowLead": "Wird per Datei befüllt:",
+  "modal.fileFlowBody":
+    "Es wird nichts abgefragt und keine Zugangsdaten gespeichert. Nach dem Speichern beim Connector „Hochladen“ öffnen und den Export auswählen.",
   "modal.passiveFlowLead": "Passiver Datenfluss:",
   "modal.passiveFlowBody":
     "Nach dem Speichern sendet die konfigurierte App Daten an die oben angezeigte URL. Neue Daten werden ohne manuelles Abfragen verarbeitet.",

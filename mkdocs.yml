@@ -35,6 +35,7 @@ nav:
   - Features:
       - Smart and force import: features/smart-import.md
       - Data quality: features/data-quality.md
+      - Uploading an export file: features/file-import.md
       - Correlations and simple analyses: features/correlations.md
       - GPS visualization: features/gps-visualization.md
   - Security:

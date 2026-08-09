@@ -382,3 +382,99 @@ async def test_a_development_gateway_warns_instead(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         gateway_main.audit_secrets()
     assert any("JWT_SECRET" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_an_upload_reaches_the_importer_that_can_read_it():
+    """The edge routes the file; the importer owns what its columns mean (rule 3)."""
+    from gateway import main as gateway_main
+
+    seen: dict[str, str] = {}
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["tenant"] = request.headers.get("X-Tenant-ID", "")
+        seen["authorization"] = request.headers.get("Authorization", "")
+        return httpx.Response(202, json={"status": "accepted", "sync_run_id": "run-1"})
+
+    token = _make_token()
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/whoop/upload",
+                params={"source_id": "44444444-4444-4444-4444-444444444444"},
+                content=b"PK\x03\x04 pretend archive",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+    assert response.status_code == 202, response.text
+    assert seen["url"].endswith("/upload?source_id=44444444-4444-4444-4444-444444444444")
+    assert "8007" in seen["url"]
+    # The importer cannot validate a session itself -- Core keeps the signing key
+    # away from it -- so the token has to travel, and the tenant with it.
+    assert seen["tenant"] == "11111111-1111-1111-1111-111111111111"
+    assert seen["authorization"] == f"Bearer {token}"
+
+
+@pytest.mark.asyncio
+async def test_an_upload_for_an_unknown_source_is_not_proxied_anywhere():
+    """`/api/v1/import/{source}/upload` must not become a way to reach arbitrary hosts."""
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"nothing should have been proxied, got {request.url}")
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/oura/upload",
+                params={"source_id": "44444444-4444-4444-4444-444444444444"},
+                content=b"x",
+                headers={"Authorization": f"Bearer {_make_token()}"},
+            )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_cookie_upload_without_the_csrf_pair_is_refused():
+    """A cookie rides along on a cross-site POST; the header it must match does not."""
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("a request without CSRF proof must not be proxied")
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/whoop/upload",
+                params={"source_id": "44444444-4444-4444-4444-444444444444"},
+                content=b"x",
+                cookies={"qs_access": _make_token(), "qs_csrf": "a-token"},
+            )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_cookie_upload_with_the_csrf_pair_goes_through():
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(202, json={"status": "accepted"})
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/apple-health/upload",
+                params={"source_id": "44444444-4444-4444-4444-444444444444"},
+                content=b"x",
+                cookies={"qs_access": _make_token(), "qs_csrf": "a-token"},
+                headers={"X-CSRF-Token": "a-token"},
+            )
+
+    assert response.status_code == 202

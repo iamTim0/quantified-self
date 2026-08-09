@@ -318,6 +318,8 @@ export const en = {
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Import",
   "connectors.history": "History",
+  "connectors.upload": "Upload",
+  "connectors.fileDriven": "Fed by uploaded exports",
   "connectors.queued": "Queued",
   "connectors.newConnector": "New connector",
   "connectors.docs": "Docs",
@@ -444,6 +446,18 @@ export const en = {
   "import.typicallyMinutes": "usually about {count} min",
   "import.passiveExplainer":
     "This connector receives data when your device sends it, so there is nothing to start here. What a push import does have is shown below: how far the current one has got, and what earlier ones did.",
+  "import.uploadLegend": "Import an export file",
+  "import.uploadHintAppleHealth":
+    "In the Health app, open your profile and choose “Export All Health Data”. Upload the export.zip you receive here — it holds your whole history, workouts and GPS routes included.",
+  "import.uploadHintWhoop":
+    "In the Whoop app, request your data export under Account. Upload the ZIP of CSVs that arrives by email here.",
+  "import.uploadChoose": "Choose an export file",
+  "import.uploadStart": "Upload",
+  "import.uploading": "Uploading…",
+  "import.uploadAccepted": "The file has arrived and is being read. Progress appears above.",
+  "import.uploadFailed": "The file could not be uploaded.",
+  "import.uploadReimportNote":
+    "The same file can be uploaded again without creating duplicates: a reading already stored stays one reading.",
   "import.planFailed": "The import plan could not be loaded.",
   "import.startFailed": "The import could not be started.",
   "import.nothingToDo": "Nothing to do — the period is already complete.",
@@ -604,6 +618,21 @@ export const en = {
   "modal.importPeriod": "Import period",
   "modal.lastNDays": "Last {count} days",
   "modal.lastNDaysDefault": "Last {count} days (default)",
+  "modal.guide": "Guide",
+  "modal.syncFrequency": "Sync frequency",
+  "modal.yazioTokenMode": "Enter a bearer token",
+  "modal.yazioTokenOptional": "Bearer token (optional)",
+  "modal.yazioLoginMode": "Yazio login",
+  "modal.yazioLoginOptional": "Yazio login (optional)",
+  "modal.modeConnect": "Connect now",
+  "modal.modeFile": "Import a file",
+  "modal.modeConnectHint":
+    "The connector fetches your data itself, on the schedule set below.",
+  "modal.modeFileHint":
+    "No account connection: you upload the export this provider gives you, and it is read into this connector. You can still connect it later — the same data stays one series.",
+  "modal.fileFlowLead": "Fed by files:",
+  "modal.fileFlowBody":
+    "Nothing is polled and no credential is stored. After saving, open Upload on the connector and choose your export.",
   "modal.passiveFlowLead": "Passive data flow:",
   "modal.passiveFlowBody":
     "Once saved, the configured app sends data to the URL shown above. New data is processed without anyone polling for it.",

@@ -481,6 +481,9 @@ export default function DashboardPage() {
             initialDisplayName={selectedModalConnector?.display_name}
             initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
             initialLookbackDays={selectedModalConnector?.lookback_days || 30}
+            // Which kind of connector this is, so editing one fed by uploads does
+            // not silently turn it back into a polled one.
+            initialImportMode={selectedModalConnector?.import_mode}
             isEditing={Boolean(selectedModalConnector?.id)}
             tenantId={tenantId}
             onSaved={triggerRefresh}

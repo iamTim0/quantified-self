@@ -12,6 +12,7 @@ Maps to Fizzbee Invariants:
 
 import asyncio
 import logging
+import secrets
 from contextlib import asynccontextmanager
 
 import httpx
@@ -301,6 +302,101 @@ async def proxy_streak_ingest(request: Request):
             raise HTTPException(
                 status_code=503,
                 detail=f"Streak Importer Service unavailable: {e!s}",
+            )
+
+
+# Where an uploaded export goes. One entry per provider that hands its users a file,
+# so an unknown source is a 404 here rather than a proxied request to whatever the
+# path happens to spell.
+_UPLOAD_TARGETS: dict[str, str] = {
+    "apple-health": "APPLE_HEALTH_IMPORTER_URL",
+    "whoop": "WHOOP_IMPORTER_URL",
+}
+
+# An archive is not a JSON body. The 30 s that fits every other proxied call is not
+# enough to push a gigabyte of somebody's health history over a home connection, and
+# a timeout here means the whole upload starts again from nothing.
+_UPLOAD_TIMEOUT = httpx.Timeout(connect=10.0, read=900.0, write=900.0, pool=10.0)
+
+# Mirrors core.security.cookies. The Gateway shares no code with Core by design
+# (rule 6), so the two spellings are kept in step by name.
+CSRF_COOKIE = "qs_csrf"
+CSRF_HEADER = "X-CSRF-Token"
+
+
+@app.post("/api/v1/import/{source}/upload")
+async def proxy_import_upload(source: str, request: Request):
+    """Stream an export archive to the importer that knows how to read it.
+
+    Streamed rather than buffered: every other proxied route calls
+    `await request.body()`, which for a whole-history Apple Health export means
+    holding it in the Gateway's memory before the importer has seen a byte of it.
+
+    The session is validated here and the token passed on, because the importer
+    cannot check one itself — Core keeps the JWT signing key away from the importers
+    deliberately, so the importer asks Core who the caller is (see
+    `apple_health_importer/client.py`).
+    """
+    setting_name = _UPLOAD_TARGETS.get(source)
+    if setting_name is None:
+        raise HTTPException(status_code=404, detail=f"No file import exists for '{source}'.")
+
+    token = _session_credential(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing session cookie or Authorization Bearer header"},
+        )
+
+    try:
+        claims = decode_jwt(token)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content={"detail": e.detail})
+
+    # A cookie rides along on a cross-site POST; a header does not. This route ends at
+    # a service that authenticates by *asking Core who the token belongs to*, which is
+    # a GET and therefore carries no CSRF proof of its own — so the proof has to be
+    # required here, the same double-submit pair Core checks on its own writes.
+    if not request.headers.get("Authorization"):
+        cookie_token = request.cookies.get(CSRF_COOKIE) or ""
+        header_token = request.headers.get(CSRF_HEADER) or ""
+        if not cookie_token or not secrets.compare_digest(cookie_token, header_token):
+            return JSONResponse(
+                status_code=403, content={"detail": "Missing or invalid CSRF token"}
+            )
+
+    header_tenant = request.headers.get("X-Tenant-ID")
+    if header_tenant and header_tenant != claims["tenant_id"]:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "X-Tenant-ID does not match authenticated tenant"},
+        )
+
+    forwarded_headers = {
+        k: v
+        for k, v in request.headers.items()
+        if k.lower() in {"content-type", "accept", "user-agent"}
+    }
+    forwarded_headers["Authorization"] = f"Bearer {token}"
+    forwarded_headers["X-Tenant-ID"] = claims["tenant_id"]
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    target_url = f"{getattr(settings, setting_name)}/upload"
+
+    async with httpx.AsyncClient(timeout=_UPLOAD_TIMEOUT) as client:
+        try:
+            response = await client.request(
+                method="POST",
+                url=target_url,
+                headers=forwarded_headers,
+                params=request.query_params,
+                content=request.stream(),
+            )
+            return _relay_response(response)
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"{source} importer unavailable: {e!s}",
             )
 
 

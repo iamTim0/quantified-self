@@ -166,6 +166,27 @@ for _path, _canonical in ENTRY_FIELD_METRICS.items():
 #: nobody else writes. They are still carried, so nothing is lost.
 ENTRY_CONTEXT_FIELDS: tuple[str, ...] = ("Min", "Max")
 
+#: Top-level sections this importer deliberately does not read.
+#:
+#: The scope is Health Auto Export's standard health data and its workouts. What is
+#: listed here is special-category health data under Article 9 GDPR — a diagnosis, a
+#: medication schedule, a cycle, a mood, an ECG trace — and whether a platform stores
+#: that is the operator's decision, not a transformer's, and it changes what the
+#: privacy policy has to say.
+#:
+#: Reported rather than silently skipped, which is the difference that matters: the
+#: Data Quality Center names them as arriving-but-not-stored, so "my phone sends ECGs
+#: and nothing shows up" is answerable, and enabling one later is a deliberate act
+#: with somewhere to put the metrics rather than a discovery.
+UNREAD_SECTIONS: tuple[str, ...] = (
+    "stateOfMind",
+    "symptoms",
+    "cycleTracking",
+    "ecg",
+    "medications",
+    "heartRateNotifications",
+)
+
 #: The `units` strings Health Auto Export emits, lowercased, mapped onto registry
 #: units. Anything absent means "we do not know what this number is in" -- the value is
 #: then stored unconverted rather than silently assumed to be canonical.
@@ -181,6 +202,9 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "%": MetricUnit.PERCENT,
     "bpm": MetricUnit.BPM,
     "count/min": MetricUnit.BPM,
+    # Apple's own archive states blood pressure in mmHg; the push path never sent a
+    # unit for it at all, so this is the spelling the export brought with it.
+    "mmhg": MetricUnit.MMHG,
     "ms": MetricUnit.MILLISECOND,
     "s": MetricUnit.SECOND,
     "sec": MetricUnit.SECOND,
@@ -209,7 +233,16 @@ def canonical_name(raw_name: str) -> str:
     if raw_name in METRIC_NAME_MAP:
         return METRIC_NAME_MAP[raw_name]
     cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw_name).strip("_").lower()
-    return f"{NAMESPACE}{cleaned}" if cleaned else f"{NAMESPACE}metric"
+    if not cleaned:
+        return f"{NAMESPACE}metric"
+    # A HealthKit name that already *is* a registry key needs no translation and no
+    # namespace: `HKQuantityTypeIdentifierBloodPressureSystolic` reduces to
+    # `blood_pressure_systolic`, which is the catalogued metric. Namespacing it
+    # anyway put the same reading in `apple_health_blood_pressure_systolic`, next to
+    # the real one and never meeting it.
+    if cleaned in METRIC_CATALOG:
+        return cleaned
+    return f"{NAMESPACE}{cleaned}"
 
 
 def normalise_value(
@@ -281,11 +314,7 @@ def transform_health_auto_export_json(
     metrics_list = data_content.get("metrics") or []
     workouts_list = data_content.get("workouts") or []
 
-    # Top-level arrays this transformer does not read at all. Reported rather than
-    # ignored, so "Apple Health is sending me ECG data and nothing arrives" is a
-    # question the interface can answer.
-    for section in ("stateOfMind", "symptoms", "cycleTracking", "ecg", "medications",
-                    "heartRateNotifications"):
+    for section in UNREAD_SECTIONS:
         entries = data_content.get(section)
         if isinstance(entries, list) and entries:
             report.unmapped(f"data.{section}[]", entries[0], times=len(entries))
@@ -493,7 +522,7 @@ def transform_health_auto_export_json(
         if isinstance(route, list) and route:
             handled_workout_keys.add("route")
             data_points.extend(
-                _route_points(route, tenant_id, source_id, workout_id, workout_name, report)
+                route_points(route, tenant_id, source_id, workout_id, workout_name, report)
             )
 
         for key, value in workout.items():
@@ -504,7 +533,7 @@ def transform_health_auto_export_json(
     return data_points
 
 
-def _route_points(
+def route_points(
     route: list[Any],
     tenant_id: str,
     source_id: str,

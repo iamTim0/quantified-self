@@ -50,6 +50,17 @@ secret do not cross the service boundary.
    connector due. The importer has no timer of its own — it acts on the task Core
    publishes; see [Architecture](../architecture.md#scheduled-imports).
 
+## Importing the emailed export
+
+WHOOP will send your whole history as a ZIP of CSVs, which needs no OAuth application at all.
+Request it in the app under Account, then upload the archive on the connector — see
+[Uploading an export file](../features/file-import.md).
+
+The export's columns resolve to the same metric names a polled sync writes, so the two do not
+become separate series. Its units differ, though, and that is deliberate rather than incidental:
+the export gives energy in kilocalories where the API gives kilojoules, and reading one as the
+other would be wrong by a factor of four with nothing looking amiss.
+
 ## Data flow
 
 ```text

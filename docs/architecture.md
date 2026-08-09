@@ -68,6 +68,15 @@ flowchart TB
 For push sources (Apple Health, Streak) steps 1–5 do not apply: the external service sends
 straight to the importer, which resolves the tenant from the API key.
 
+For an **uploaded export** (Apple Health's `export.zip`, WHOOP's emailed ZIP of CSVs) steps 1–5
+do not apply either. The browser sends the file through the Gateway to the importer that can read
+it; the importer opens a `SyncRun`, answers `202 Accepted`, and only then reads the archive and
+publishes on `qs.ingest.<source>` — steps 6 to 8 as usual. The response comes first because
+reading a whole history takes minutes, and the run is what the dashboard watches meanwhile. The
+importer cannot validate a session itself: Core keeps the JWT signing key away from the importers,
+so the importer asks Core whom the forwarded token belongs to. See
+[Uploading an export file](features/file-import.md).
+
 ## Idempotency
 
 ```text

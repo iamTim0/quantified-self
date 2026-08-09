@@ -25,8 +25,35 @@ PUSH_SOURCE_TYPES = frozenset({"apple_health", "streak"})
 # and then still demanded an ICS body in reply.
 CREDENTIAL_OPTIONAL_SOURCE_TYPES = PUSH_SOURCE_TYPES | frozenset({"weather", "calendar"})
 
+# Providers that will hand a user their own history as a file — Apple Health's
+# `export.zip` from the Health app, Whoop's emailed ZIP of CSVs. Both need no API
+# application, no OAuth and no developer account, which for a one-off is the whole
+# difference between having your data and not.
+FILE_IMPORT_SOURCE_TYPES = frozenset({"apple_health", "whoop"})
 
-def credential_is_optional(source_type: str) -> bool:
+# `config["import_mode"]` for a connector that is fed by uploads alone. The other
+# value is absent: a connector configured the ordinary way carries no import_mode,
+# because "how do I normally get data" is what the source type already answers.
+IMPORT_MODE_FILE = "file"
+
+
+def supports_file_import(source_type: str) -> bool:
+    """Whether an export file can be uploaded for this connector type at all."""
+    return source_type in FILE_IMPORT_SOURCE_TYPES
+
+
+def is_file_import(source_type: str, config: dict | None = None) -> bool:
+    """Whether this particular connector is fed by uploaded files only.
+
+    A file-import connector is a real row in `data_sources` — it has to be, because
+    its id is the second component of every idempotency key its uploads derive, and
+    that is what makes uploading the same export twice a no-op instead of a second
+    copy of a year of history.
+    """
+    return supports_file_import(source_type) and (config or {}).get("import_mode") == IMPORT_MODE_FILE
+
+
+def credential_is_optional(source_type: str, config: dict | None = None) -> bool:
     """Whether this connector may exist without a stored provider credential.
 
     One definition rather than three. The same predicate decides whether a
@@ -34,13 +61,15 @@ def credential_is_optional(source_type: str) -> bool:
     whether its token endpoint answers — and when those three drifted apart, a
     connector could be created and then never seen again.
     """
-    return source_type in CREDENTIAL_OPTIONAL_SOURCE_TYPES
+    return source_type in CREDENTIAL_OPTIONAL_SOURCE_TYPES or is_file_import(source_type, config)
 
 
-def is_scheduled(source_type: str) -> bool:
+def is_scheduled(source_type: str, config: dict | None = None) -> bool:
     """Whether the scheduler should ever plan a sync for this connector.
 
     False for push connectors: nothing subscribes to their task subject, so a
-    planned run is a row that can only ever expire.
+    planned run is a row that can only ever expire. False for file imports too, and
+    for the same reason — the data arrives when somebody uploads it, so a poll has
+    nothing to poll.
     """
-    return source_type not in PUSH_SOURCE_TYPES
+    return source_type not in PUSH_SOURCE_TYPES and not is_file_import(source_type, config)

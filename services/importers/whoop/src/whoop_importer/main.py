@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 import nats
+import uvicorn
 
 from whoop_importer.client import (
     WhoopApiError,
@@ -24,6 +25,7 @@ from whoop_importer.config import settings
 from whoop_importer.internal_auth import internal_headers
 from whoop_importer.sync_task import SyncTask, parse_sync_task, resolve_window
 from whoop_importer.transformer import transform_whoop_records
+from whoop_importer.web import app as web_app
 
 
 def _get_log_dir() -> Path:
@@ -256,8 +258,17 @@ async def main():
         "Subscribed to NATS subject 'qs.task.sync.whoop' (queue group: 'whoop_importer_task_group')"
     )
 
+    # One process, one NATS client, two ways in: tasks arrive on the broker, export
+    # archives arrive over HTTP. Serving the upload endpoint replaces the idle wait
+    # that used to keep this service alive doing nothing.
+    web_app.state.nats_client = nc
+    server = uvicorn.Server(
+        uvicorn.Config(web_app, host="0.0.0.0", port=settings.PORT, log_config=None)
+    )
+    logger.info(f"Serving the export upload endpoint on port {settings.PORT}")
+
     try:
-        await asyncio.Event().wait()
+        await server.serve()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Stopping WHOOP Importer Service...")
     finally:

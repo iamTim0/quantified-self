@@ -207,6 +207,7 @@ services:
       # picks up its X-Request-ID, so this is the path that has to work.
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
+      - WHOOP_IMPORTER_URL=http://whoop-importer:8007
       # Traefik routes / to the dashboard directly, so this only matters for a
       # request that reaches the Gateway on its own port. In this network the UI
       # is the container; the code default is loopback, for a local checkout.
@@ -348,6 +349,11 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - PORT=8007
+    # Not published: the export upload is reached through the Gateway, which is
+    # where the session is checked. The port exists for that hop alone.
+    expose:
+      - "8007"
     networks:
       - qs-network
 

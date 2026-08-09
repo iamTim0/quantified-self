@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     ANALYSIS_SERVICE_URL: str = "http://127.0.0.1:8010"
     APPLE_HEALTH_IMPORTER_URL: str = "http://127.0.0.1:8005"
     STREAK_IMPORTER_URL: str = "http://127.0.0.1:8006"
+    # The WHOOP importer only listens on NATS for its polled syncs; the port is for
+    # the emailed export upload, and 8007 is what that service binds.
+    WHOOP_IMPORTER_URL: str = "http://127.0.0.1:8007"
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated CORS origins

@@ -155,7 +155,7 @@ async def find_due_connectors(
         # Push connectors have no task subject anybody listens on. Planning a sync
         # for one produced a `SyncRun` that could only ever expire as stale, and
         # left the connector looking permanently queued in the meantime.
-        if not is_scheduled(source.source_type):
+        if not is_scheduled(source.source_type, config):
             continue
         if config.get("status") == "inactive":
             continue

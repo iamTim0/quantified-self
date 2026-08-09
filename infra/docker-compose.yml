@@ -96,6 +96,7 @@ services:
       # Defaults to 127.0.0.1:8005, which in this container is the Gateway itself,
       # so POST /api/v1/ingest/apple-health proxied to nothing.
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
+      - WHOOP_IMPORTER_URL=http://whoop-importer:8007
       # The Gateway serves the UI on / by proxying it. In this network that is
       # the container; the code default is loopback, for a local checkout.
       - DASHBOARD_URL=http://dashboard:3000
@@ -159,6 +160,11 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - PORT=8007
+    # Not published: the export upload is reached through the Gateway, which is
+    # where the session is checked. The port exists for that hop alone.
+    expose:
+      - "8007"
     networks:
       - qs-network
 

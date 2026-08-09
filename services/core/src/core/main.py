@@ -57,7 +57,13 @@ from core.analytics import (
     pearson_pairs,
 )
 from core.config import settings
-from core.connectors import PUSH_SOURCE_TYPES, credential_is_optional
+from core.connectors import (
+    IMPORT_MODE_FILE,
+    PUSH_SOURCE_TYPES,
+    credential_is_optional,
+    is_scheduled,
+    supports_file_import,
+)
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -2439,6 +2445,23 @@ def _validate_connector_config(source_type: str, config: dict[str, Any]) -> None
     the poll interval stays legal while the state that gets written is always one
     the importer can act on.
     """
+    # `import_mode` is not part of any provider's config model, because it says how
+    # the connector is fed rather than how to reach the provider. Checked here so a
+    # value that means nothing cannot be stored: it decides whether a credential is
+    # required and whether the scheduler ever looks at this row.
+    import_mode = config.get("import_mode")
+    if import_mode is not None:
+        if import_mode != IMPORT_MODE_FILE:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown import_mode '{import_mode}'. The only file-fed mode is 'file'.",
+            )
+        if not supports_file_import(source_type):
+            raise HTTPException(
+                status_code=422,
+                detail=f"{source_type} has no export file this platform can read.",
+            )
+
     model = CONNECTOR_CONFIG_MODELS.get(source_type)
     if model is None:
         return
@@ -2583,7 +2606,12 @@ async def configure_connector(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    credential_optional = credential_is_optional(req.source_type)
+    # Against the configuration that will be *stored*, not against the request
+    # alone: a file-import connector holds no provider credential, and the field
+    # that says so arrives in `config`, which is merged further down.
+    intended_config = dict((existing.config if existing else None) or {})
+    intended_config.update(req.config or {})
+    credential_optional = credential_is_optional(req.source_type, intended_config)
 
     if raw_token:
         encrypted_token = encrypt_secret(raw_token)
@@ -2778,6 +2806,18 @@ async def plan_and_enqueue_sync(
     now = datetime.now(timezone.utc)
     req_id = str(uuid.uuid4())
 
+    # Nothing subscribes to a push or file connector's task subject: one is fed by
+    # its device, the other by an upload. Enqueueing anyway produced a run that
+    # could only expire, and the connector read as "queued" for six hours while it
+    # waited for a consumer that does not exist.
+    if not is_scheduled(source_type, config):
+        return {
+            "status": "not_pollable",
+            "source_type": source_type,
+            "tenant_id": tenant_id,
+            "request_id": req_id,
+        }
+
     # Core is the single authority on whether a connector is already busy. The
     # importers each kept a process-local `active_syncs` set, which stops nothing
     # once a second replica exists -- both would accept the same task. Refusing to
@@ -2932,7 +2972,7 @@ async def list_connectors(
         config = s.config or {}
         # A credential-optional connector has no stored token, so absence of one is
         # not evidence that the connector is unconfigured.
-        credential_optional = credential_is_optional(s.source_type)
+        credential_optional = credential_is_optional(s.source_type, config)
         if config.get("status") == "inactive":
             continue
         if not config.get("encrypted_token") and not credential_optional:
@@ -2965,6 +3005,11 @@ async def list_connectors(
             "nats_subject": f"qs.task.sync.{s.source_type}",
             "nats_queue_group": f"{s.source_type}_importer_task_group",
             "masked_token": config.get("masked_token", "••••••••"),
+            # How this connector is fed, and whether it *could* be fed by a file.
+            # The dashboard offers an upload on the strength of these two rather
+            # than keeping its own list of which providers ship an export.
+            "import_mode": config.get("import_mode"),
+            "supports_file_import": supports_file_import(s.source_type),
             "poll_interval_hours": config.get("poll_interval_hours", 6),
             "lookback_days": config.get("lookback_days", 30),
             "last_sync_at": last_sync_at,
@@ -3039,7 +3084,7 @@ async def get_connector_token(
         # A credential-optional connector has no provider credential. The importer
         # still needs source_id and config, so return those with a null token
         # rather than a 404 it would have to special-case.
-        if not credential_is_optional(source_type):
+        if not credential_is_optional(source_type, source.config):
             raise HTTPException(
                 status_code=404, detail="Token not found in connector configuration"
             )

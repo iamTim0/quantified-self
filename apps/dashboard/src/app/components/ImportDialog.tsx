@@ -10,6 +10,7 @@ import {
   RefreshCw,
   ShieldCheck,
   SkipForward,
+  Upload,
   X,
   Zap,
 } from "lucide-react";
@@ -68,6 +69,14 @@ interface ImportDialogProps {
   sourceType: string;
   sourceName: string;
   /**
+   * The connector's *type*, where an export file can be uploaded for it. The id
+   * above says which connector; this says which importer knows how to read the
+   * file, and it is the one part of the upload URL that is not an id.
+   */
+  providerType?: string;
+  /** Whether this provider hands its users an export file at all. */
+  fileImport?: boolean;
+  /**
    * A push connector: data arrives when the phone sends it, so there is nothing
    * to trigger here. The dialog still opens — it is where progress and history
    * live, and a pushed import had nowhere to show either.
@@ -124,6 +133,8 @@ export default function ImportDialog({
   apiBase,
   sourceType,
   sourceName,
+  providerType,
+  fileImport = false,
   passive = false,
   isOpen,
   onClose,
@@ -138,6 +149,8 @@ export default function ImportDialog({
   const [typicalSeconds, setTypicalSeconds] = useState<number | null>(null);
   const [planning, setPlanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   // Suppresses the "suggested range" hint once the user edits the pickers.
@@ -249,6 +262,44 @@ export default function ImportDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, Boolean(running), sourceType]);
 
+  /**
+   * Send the export archive to the importer that can read it.
+   *
+   * The file goes as the request body rather than as a multipart form: there is one
+   * part, the importer streams it straight to disk, and multipart would mean
+   * buffering and re-parsing a file that can run to a gigabyte. The response is the
+   * run to watch — reading the archive happens afterwards, which is why the progress
+   * panel above takes over from here.
+   */
+  const handleUpload = async () => {
+    if (!file || !providerType) return;
+    setUploading(true);
+    setError("");
+    setResult("");
+    try {
+      const slug = providerType.replace(/_/g, "-");
+      const res = await apiFetch(
+        `${apiBase}/api/v1/import/${slug}/upload?source_id=${encodeURIComponent(sourceType)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/zip" },
+          body: file,
+        },
+      );
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.detail || t("import.uploadFailed"));
+
+      setResult(t("import.uploadAccepted"));
+      setFile(null);
+      onQueued?.();
+      await loadRuns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleImport = async () => {
     setSubmitting(true);
     setError("");
@@ -320,6 +371,49 @@ export default function ImportDialog({
             <p className="rounded-2xl border border-violet-200 bg-violet-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-violet-900">
               {t("import.passiveExplainer")}
             </p>
+          )}
+
+          {/*
+            The export file. Offered for every connector whose provider hands one
+            out, whether or not it is also connected to an API: an archive is how
+            you get the years that predate the connector, and it lands in the same
+            connector, so a reading that is already stored stays one reading.
+          */}
+          {fileImport && providerType && (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-900">
+                <Upload className="h-3.5 w-3.5" /> {t("import.uploadLegend")}
+              </h3>
+              <p className="mt-1 text-[11px] leading-relaxed text-sky-900">
+                {t(
+                  providerType === "apple_health"
+                    ? "import.uploadHintAppleHealth"
+                    : "import.uploadHintWhoop",
+                )}
+              </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <input
+                  type="file"
+                  accept=".zip,application/zip"
+                  aria-label={t("import.uploadChoose")}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900"
+                />
+                <button
+                  onClick={handleUpload}
+                  disabled={!file || uploading}
+                  className="flex items-center gap-2 whitespace-nowrap rounded-2xl bg-sky-900 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-sky-950 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {uploading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5" />
+                  )}
+                  {uploading ? t("import.uploading") : t("import.uploadStart")}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-sky-800">{t("import.uploadReimportNote")}</p>
+            </div>
           )}
 
           {!passive && (
@@ -426,6 +520,10 @@ export default function ImportDialog({
             </div>
           )}
 
+
+          </>
+          )}
+
           {/*
             Live progress. The counts come from the ingest consumer as the data is
             actually stored, so this is what happened rather than an animation. A
@@ -475,9 +573,6 @@ export default function ImportDialog({
                 </p>
               )}
             </div>
-          )}
-
-          </>
           )}
 
           {/* Plan preview — only meaningful where an import can be planned. */}
