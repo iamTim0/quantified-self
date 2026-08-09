@@ -27,6 +27,7 @@ from whoop_importer.core_client import (
     bearer_token,
     close_sync_run,
     open_sync_run,
+    report_sync_progress,
     resolve_session,
     resolve_upload_target,
     send_field_report,
@@ -178,38 +179,95 @@ async def upload_export(
     tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
     target = await resolve_upload_target(tenant_id, source_id, req_id=x_request_id)
 
-    data = await _read_capped_body(request, MAX_ARCHIVE_BYTES)
-    if not data:
-        raise HTTPException(status_code=400, detail="The upload was empty.")
+    # Open before consuming the body so an empty or oversized upload is visible as
+    # a failed run on the connector detail page.
+    sync_run_id = await open_sync_run(
+        tenant_id,
+        target.source_id,
+        req_id=x_request_id,
+        points_expected=None,
+        message="Receiving the WHOOP archive.",
+    )
 
     try:
+        data = await _read_capped_body(request, MAX_ARCHIVE_BYTES)
+        if not data:
+            raise HTTPException(status_code=400, detail="The upload was empty.")
         events, report = await asyncio.to_thread(_parse_export, data, tenant_id, target.source_id)
+        if not events:
+            raise HTTPException(
+                status_code=400,
+                detail="The archive was read but held no measurements this platform stores.",
+            )
     except ArchiveTooLarge as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=str(exc),
+        )
         raise HTTPException(status_code=413, detail=str(exc)) from None
     except ArchiveUnreadable as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-
-    if not events:
-        raise HTTPException(
-            status_code=400,
-            detail="The archive was read but held no measurements this platform stores.",
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=str(exc),
         )
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except HTTPException as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=str(exc.detail),
+        )
+        raise
+    except Exception as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=f"Could not read the archive: {type(exc).__name__}: {exc}",
+        )
+        raise HTTPException(status_code=400, detail="Could not read the archive.") from None
+
+    await report_sync_progress(
+        tenant_id,
+        target.source_id,
+        sync_run_id,
+        req_id=x_request_id,
+        points_expected=len(events),
+        message=f"WHOOP archive contains {len(events)} data point(s) to publish.",
+    )
 
     nc = getattr(request.app.state, "nats_client", None)
     if nc is None or not nc.is_connected:
         if not getattr(request.app.state, "testing", False):
+            await close_sync_run(
+                tenant_id,
+                target.source_id,
+                sync_run_id,
+                req_id=x_request_id,
+                status="error",
+                message="NATS event broker unavailable; the upload was rejected.",
+            )
             raise HTTPException(
                 status_code=503,
                 detail="NATS event broker unavailable. Please retry later.",
             )
 
-    sync_run_id = await open_sync_run(
-        tenant_id,
-        target.source_id,
-        req_id=x_request_id,
-        points_expected=len(events),
-        message=f"Export upload: {len(events)} data point(s) to publish.",
-    )
+    # The exact count is now known, but the run is already open so every earlier
+    # failure has a durable history row. The current count is reported in the
+    # response and final status as the importer publishes.
 
     if nc is not None and nc.is_connected:
         # Held in a set until it finishes: the event loop keeps only a weak
@@ -229,6 +287,17 @@ async def upload_export(
         )
         _running_imports.add(task)
         task.add_done_callback(_running_imports.discard)
+    else:
+        # Test/dry-run mode has no broker task to finish the run, so close it here.
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="success",
+            message=f"Export parsed: {len(events)} data point(s) ready.",
+            points_received=len(events),
+        )
 
     logger.info(
         "[req_id=%s] Tenant %s: accepted a WHOOP export with %d data point(s) for connector %s.",

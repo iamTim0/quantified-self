@@ -191,6 +191,38 @@ async def close_sync_run(
             logger.warning(f"Could not report sync result to Core: {exc}")
 
 
+async def report_sync_progress(
+    tenant_id: str,
+    source_id: str,
+    sync_run_id: str | None,
+    *,
+    req_id: str,
+    points_expected: int | None = None,
+    points_received: int | None = None,
+    message: str | None = None,
+) -> None:
+    """Tell Core a known total without closing the still-running import."""
+    if not sync_run_id:
+        return
+    url = (
+        f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/"
+        f"{source_id}/sync-runs/{sync_run_id}/progress"
+    )
+    payload: dict[str, Any] = {}
+    if points_expected is not None:
+        payload["points_expected"] = points_expected
+    if points_received is not None:
+        payload["points_received"] = points_received
+    if message:
+        payload["message"] = message[:512]
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
+        except Exception as exc:
+            logger.warning(f"Could not report sync progress to Core: {exc}")
+
+
 async def send_field_report(
     tenant_id: str,
     source_id: str,

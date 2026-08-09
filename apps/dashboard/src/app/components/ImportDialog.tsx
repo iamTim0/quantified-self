@@ -55,12 +55,14 @@ export interface SyncRun {
   window_start: string | null;
   window_end: string | null;
   window_reason: string | null;
+  points_expected: number | null;
   points_received: number;
   points_accepted: number;
   points_duplicate: number;
   message: string | null;
   started_at: string | null;
   finished_at: string | null;
+  duration_seconds: number | null;
 }
 
 interface ImportDialogProps {
@@ -321,6 +323,9 @@ export default function ImportDialog({
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) throw new Error(data?.detail || t("import.startFailed"));
+      if (data?.status === "error") {
+        throw new Error(data?.message || t("import.startFailed"));
+      }
 
       setResult(
         data?.status === "skipped"
@@ -573,7 +578,7 @@ export default function ImportDialog({
                 )}
               </div>
 
-              {running.points_received > 0 ? (
+              {(running.points_expected ?? running.points_received) > 0 ? (
                 <>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
                     <div
@@ -582,8 +587,8 @@ export default function ImportDialog({
                         width: `${Math.min(
                           100,
                           Math.round(
-                            ((running.points_accepted + running.points_duplicate) /
-                              running.points_received) *
+                              ((running.points_accepted + running.points_duplicate) /
+                              (running.points_expected ?? running.points_received)) *
                               100,
                           ),
                         )}%`,
@@ -593,7 +598,7 @@ export default function ImportDialog({
                   <p className="mt-1.5 text-[11px] text-emerald-900">
                     {t("import.progressOf", {
                       done: running.points_accepted + running.points_duplicate,
-                      total: running.points_received,
+                      total: running.points_expected ?? running.points_received,
                     })}
                   </p>
                 </>

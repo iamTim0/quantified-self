@@ -23,6 +23,7 @@ from apple_health_importer.client import (
     bearer_token,
     close_sync_run,
     open_sync_run,
+    report_sync_progress,
     resolve_session,
     resolve_upload_target,
     send_field_report,
@@ -129,18 +130,52 @@ async def ingest_health_auto_export_payload(
             detail="This API key is not bound to a connector. Re-create it in the dashboard.",
         )
 
+    # Open before parsing so malformed JSON and broker outages are recorded for the
+    # authenticated connector instead of disappearing into the access log.
+    sync_run_id = await open_sync_run(
+        tenant_id,
+        source_id,
+        req_id=x_request_id,
+        trigger="push",
+        message="Health Auto Export request received.",
+    )
+
     try:
         payload = await request.json()
     except Exception:
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="Invalid JSON payload.",
+        )
         raise HTTPException(status_code=400, detail="Invalid JSON payload.")
 
     if not isinstance(payload, dict):
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="Payload must be a JSON object.",
+        )
         raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
 
     # Prevent silent data loss: Return 503 if NATS is unavailable so webhook client retries delivery
     if nc_client is None or not nc_client.is_connected:
         # Check if running in test environment where NATS is mocked/disabled
         if not getattr(request.app.state, "testing", False):
+            await close_sync_run(
+                tenant_id,
+                source_id,
+                sync_run_id,
+                req_id=x_request_id,
+                status="error",
+                message="NATS event broker unavailable; the request was rejected.",
+            )
             logger.error(f"[req_id={x_request_id}] NATS connection offline. Rejecting payload with 503.")
             raise HTTPException(
                 status_code=503,
@@ -148,21 +183,28 @@ async def ingest_health_auto_export_payload(
             )
 
     field_report = FieldReportCollector()
-    events = transform_health_auto_export_json(
-        payload, tenant_id=tenant_id, source_id=source_id, report=field_report
-    )
+    try:
+        events = transform_health_auto_export_json(
+            payload, tenant_id=tenant_id, source_id=source_id, report=field_report
+        )
+    except Exception as exc:
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=f"Health Auto Export transformation failed: {type(exc).__name__}: {exc}",
+        )
+        raise HTTPException(status_code=400, detail="The Apple Health payload could not be imported.") from None
 
-    # A pushed import used to leave no trace at all: no run, so `_tally` never
-    # counted anything and the whole thing was invisible in the history while it
-    # happened and afterwards. The count is known here, before publishing, which
-    # is what lets the dashboard show real progress rather than a guess.
-    sync_run_id = await open_sync_run(
+    await report_sync_progress(
         tenant_id,
         source_id,
+        sync_run_id,
         req_id=x_request_id,
-        trigger="push",
         points_expected=len(events),
-        message=f"Health Auto Export pushed {len(events)} data point(s).",
+        message=f"Health Auto Export transformed {len(events)} data point(s).",
     )
 
     published_count = 0
@@ -349,24 +391,53 @@ async def upload_export_archive(
     tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
     target = await resolve_upload_target(tenant_id, source_id, req_id=x_request_id)
 
-    if (nc_client is None or not nc_client.is_connected) and not getattr(
-        request.app.state, "testing", False
-    ):
-        raise HTTPException(
-            status_code=503, detail="NATS event broker unavailable. Please retry later."
-        )
-
-    path = await _spool_upload(request, MAX_ARCHIVE_BYTES)
-
-    # No `points_expected`: how much an archive holds is not known until it has been
-    # read, and the interface counts rather than showing a percentage it invented.
+    # Open the run before reading the body so rejected archives (empty, oversized
+    # or unreadable) remain visible in the connector history as failed requests.
     sync_run_id = await open_sync_run(
         tenant_id,
         target.source_id,
         req_id=x_request_id,
         trigger="upload",
-        message="Reading the uploaded Apple Health archive.",
+        message="Receiving the Apple Health archive.",
     )
+
+    if (nc_client is None or not nc_client.is_connected) and not getattr(
+        request.app.state, "testing", False
+    ):
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="NATS event broker unavailable; the upload was rejected.",
+        )
+        raise HTTPException(
+            status_code=503, detail="NATS event broker unavailable. Please retry later."
+        )
+
+    try:
+        path = await _spool_upload(request, MAX_ARCHIVE_BYTES)
+    except HTTPException as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=str(exc.detail),
+        )
+        raise
+    except Exception as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=f"Could not receive the archive: {type(exc).__name__}: {exc}",
+        )
+        raise HTTPException(status_code=400, detail="Could not receive the archive.") from None
 
     task = asyncio.create_task(
         _import_archive(

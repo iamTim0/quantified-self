@@ -53,10 +53,14 @@ def test_health_check_endpoint():
     assert data["service"] == "qs-importer-apple-health"
 
 
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.report_sync_progress", new_callable=AsyncMock)
+@patch("apple_health_importer.main.open_sync_run", new_callable=AsyncMock)
 @patch("apple_health_importer.main.resolve_api_key", new_callable=AsyncMock)
-def test_ingest_with_valid_key(mock_resolve):
+def test_ingest_with_valid_key(mock_resolve, mock_open, mock_progress, mock_close):
     """A recognised key ingests into the tenant the key belongs to."""
     mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-1"
 
     response = client.post(
         "/ingest",
@@ -72,10 +76,14 @@ def test_ingest_with_valid_key(mock_resolve):
     assert data["total_transformed"] == 1
 
 
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.report_sync_progress", new_callable=AsyncMock)
+@patch("apple_health_importer.main.open_sync_run", new_callable=AsyncMock)
 @patch("apple_health_importer.main.resolve_api_key", new_callable=AsyncMock)
-def test_ingest_accepts_legacy_api_key_header(mock_resolve):
+def test_ingest_accepts_legacy_api_key_header(mock_resolve, mock_open, mock_progress, mock_close):
     """Existing Health Auto Export configs send X-Api-Key; that must keep working."""
     mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-1"
 
     response = client.post(
         "/ingest", json=SAMPLE_PAYLOAD, headers={"X-Api-Key": VALID_KEY}

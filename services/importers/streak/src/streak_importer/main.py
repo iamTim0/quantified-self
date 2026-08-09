@@ -14,6 +14,7 @@ from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
 from streak_importer.auth import extract_presented_key, resolve_api_key
+from streak_importer.client import close_sync_run, open_sync_run, report_sync_progress
 from streak_importer.config import settings
 from streak_importer.transformer import transform_streak_export_json
 
@@ -118,37 +119,103 @@ async def ingest_streak_payload(
             detail="This API key is not bound to a connector. Re-create it in the dashboard.",
         )
 
+    sync_run_id = await open_sync_run(
+        tenant_id,
+        source_id,
+        req_id=x_request_id,
+        message="Streak webhook request received.",
+    )
+
     try:
         payload = await request.json()
     except Exception:
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="Invalid JSON payload.",
+        )
         raise HTTPException(status_code=400, detail="Invalid JSON payload.")
 
     if not isinstance(payload, dict):
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="Payload must be a JSON object.",
+        )
         raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
 
     # Prevent silent data loss: Return 503 if NATS is offline
     if nc_client is None or not nc_client.is_connected:
         if not getattr(request.app.state, "testing", False):
+            await close_sync_run(
+                tenant_id,
+                source_id,
+                sync_run_id,
+                req_id=x_request_id,
+                status="error",
+                message="NATS event broker unavailable; the request was rejected.",
+            )
             logger.error(f"[req_id={x_request_id}] NATS connection offline. Rejecting payload with 503.")
             raise HTTPException(
                 status_code=503,
                 detail="NATS event broker unavailable. Please retry later.",
             )
 
-    events = transform_streak_export_json(payload, tenant_id=tenant_id, source_id=source_id)
     workout_count = len(payload.get("workouts") or [])
 
     published_count = 0
-    if nc_client and nc_client.is_connected:
-        js = nc_client.jetstream()
-        for event in events:
-            # AGENTS.md rule 13: correlation id travels with the event, not just the log.
-            event["request_id"] = x_request_id
-            raw_data = json.dumps(event).encode("utf-8")
-            await js.publish("qs.ingest.streak", raw_data)
-            published_count += 1
-    else:
-        published_count = len(events)
+    try:
+        events = transform_streak_export_json(
+            payload, tenant_id=tenant_id, source_id=source_id
+        )
+        await report_sync_progress(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            points_expected=len(events),
+            message=f"Streak payload transformed into {len(events)} event(s).",
+        )
+        if nc_client and nc_client.is_connected:
+            js = nc_client.jetstream()
+            for event in events:
+                # AGENTS.md rule 13: correlation id travels with the event, not just the log.
+                event["request_id"] = x_request_id
+                if sync_run_id:
+                    event["sync_run_id"] = sync_run_id
+                raw_data = json.dumps(event).encode("utf-8")
+                await js.publish("qs.ingest.streak", raw_data)
+                published_count += 1
+        else:
+            published_count = len(events)
+    except Exception as exc:
+        logger.exception("[req_id=%s] Streak import failed after %d events.", x_request_id, published_count)
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=f"Streak import failed after {published_count} event(s): {exc}",
+            points_received=published_count,
+        )
+        raise HTTPException(status_code=500, detail="The Streak import failed.") from None
+
+    await close_sync_run(
+        tenant_id,
+        source_id,
+        sync_run_id,
+        req_id=x_request_id,
+        status="success",
+        message=f"{published_count} Streak event(s) published.",
+        points_received=published_count,
+    )
 
     logger.info(
         "[req_id=%s] Tenant %s (key %s): transformed %d events (%d workouts), published %d to NATS.",
@@ -167,6 +234,7 @@ async def ingest_streak_payload(
             "ok": True,
             "tenant_id": tenant_id,
             "source_id": source_id,
+            "sync_run_id": sync_run_id,
             "workoutCount": workout_count,
             "published_count": published_count,
         },

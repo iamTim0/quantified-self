@@ -69,9 +69,12 @@ def test_an_upload_without_a_session_is_refused():
 
 
 @patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock)
+@patch("whoop_importer.web.report_sync_progress", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
-def test_an_upload_is_accepted_with_the_count_it_will_publish(mock_session, mock_target, mock_open):
+def test_an_upload_is_accepted_with_the_count_it_will_publish(
+    mock_session, mock_target, mock_progress, mock_open
+):
     """A CSV export is small enough to count up front, so the progress bar has a total."""
     mock_session.return_value = TENANT
     mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
@@ -86,7 +89,7 @@ def test_an_upload_is_accepted_with_the_count_it_will_publish(mock_session, mock
     assert response.status_code == 202, response.text
     body = response.json()
     assert body["sync_run_id"] == "run-1"
-    assert body["points_expected"] == mock_open.await_args.kwargs["points_expected"] > 0
+    assert body["points_expected"] == mock_progress.await_args.kwargs["points_expected"] > 0
 
 
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
@@ -106,7 +109,9 @@ def test_a_connector_belonging_to_somebody_else_is_a_404(mock_session, mock_targ
 
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
-def test_a_file_that_is_not_a_whoop_export_says_so(mock_session, mock_target):
+@patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock)
+@patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock)
+def test_a_file_that_is_not_a_whoop_export_says_so(mock_close, mock_open, mock_session, mock_target):
     """A wrong file is a mistake to correct, not a silent import of nothing."""
     mock_session.return_value = TENANT
     mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")

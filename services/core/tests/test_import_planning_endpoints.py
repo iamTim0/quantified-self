@@ -9,17 +9,23 @@ Maps to Fizzbee Invariants:
 - SmartSkipOnlyWhenComplete
 """
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from core.db.models import DataPoint, DataSource, SyncRun
+from core.db.models import ApiKey, DataPoint, DataSource, SyncRun
 from core.db.session import async_session_maker
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import (
+    auth_headers,
+    cleanup_test_tenant,
+    create_test_tenant,
+    service_headers,
+)
 
 app.state.testing = True
 
@@ -349,6 +355,102 @@ async def test_sync_history_is_listed_and_tenant_scoped(mock_nats):
     finally:
         await cleanup_test_tenant(tenant_a)
         await cleanup_test_tenant(tenant_b)
+
+
+@pytest.mark.asyncio
+async def test_sync_history_includes_duration_and_expected_points():
+    """Verifies Fizzbee Invariant: StrictTenantIsolationOnRead."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop")
+        started = datetime.now(timezone.utc) - timedelta(seconds=7)
+        finished = started + timedelta(seconds=3)
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-duration",
+                    mode="force",
+                    trigger="upload",
+                    status="error",
+                    points_expected=42,
+                    points_received=10,
+                    started_at=started,
+                    finished_at=finished,
+                    message="archive rejected",
+                )
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get(
+                f"/api/v1/data/sources/{source_id}/sync-runs",
+                headers=auth_headers(tenant_id),
+            )
+
+        assert response.status_code == 200
+        run = response.json()["runs"][0]
+        assert run["status"] == "error"
+        assert run["points_expected"] == 42
+        assert run["duration_seconds"] == pytest.approx(3.0)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_rejected_known_api_key_is_attributed_to_its_connector():
+    """Verifies Fizzbee Invariant: WebhookMappedToCorrectTenant."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "apple_health")
+        presented = "qsk_revoked_test_key"
+        async with async_session_maker() as session:
+            session.add(
+                ApiKey(
+                    tenant_id=tenant_id,
+                    name="test key",
+                    key_prefix="qsk_revoked",
+                    key_hash=hashlib.sha256(presented.encode()).hexdigest(),
+                    source_type="apple_health",
+                    source_id=source_id,
+                    status="revoked",
+                )
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.post(
+                "/api/v1/internal/auth/api-keys/failure",
+                headers=service_headers(),
+                json={
+                    "key_hash": hashlib.sha256(presented.encode()).hexdigest(),
+                    "source_type": "apple_health",
+                    "request_id": "req-rejected-key",
+                    "status_code": 401,
+                    "message": "The API key was rejected by Core.",
+                },
+            )
+
+        assert response.status_code == 202
+        async with async_session_maker() as session:
+            result = await session.execute(
+                select(SyncRun).where(
+                    SyncRun.tenant_id == tenant_id,
+                    SyncRun.source_id == source_id,
+                    SyncRun.request_id == "req-rejected-key",
+                )
+            )
+            run = result.scalars().one()
+            assert run.status == "error"
+            assert run.finished_at is not None
+    finally:
+        await cleanup_test_tenant(tenant_id)
 
 
 @pytest.mark.asyncio

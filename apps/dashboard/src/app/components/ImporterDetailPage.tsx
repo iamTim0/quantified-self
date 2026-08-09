@@ -1,0 +1,359 @@
+"use client";
+
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  ArrowLeft,
+  CheckCircle2,
+  Clock3,
+  History,
+  Loader2,
+  RefreshCw,
+  Settings,
+  XCircle,
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "../lib/api";
+import { useI18n, type MessageKey } from "../lib/i18n/provider";
+import { getConnectorDirection } from "./ConnectorModal";
+import ImportDialog, { type SyncRun } from "./ImportDialog";
+import type { ConnectorItem } from "./ConnectorsPage";
+
+interface ImporterDetailPageProps {
+  apiBase: string;
+  tenantId: string;
+  connector: ConnectorItem;
+  refreshTrigger: number;
+  onOpenConfigureModal: (connector: ConnectorItem) => void;
+}
+
+const RUN_REFRESH_MS = 5_000;
+
+function statusKey(status: string): MessageKey {
+  if (status === "success") return "importerDetail.statusSuccess";
+  if (status === "error") return "importerDetail.statusError";
+  if (status === "skipped") return "importerDetail.statusSkipped";
+  if (status === "queued") return "importerDetail.statusQueued";
+  if (status === "running") return "importerDetail.statusRunning";
+  return "importerDetail.statusUnknown";
+}
+
+function triggerKey(trigger: string): MessageKey {
+  if (trigger === "scheduled") return "importerDetail.triggerScheduled";
+  if (trigger === "manual") return "importerDetail.triggerManual";
+  if (trigger === "push") return "importerDetail.triggerPush";
+  if (trigger === "upload") return "importerDetail.triggerUpload";
+  return "importerDetail.triggerOther";
+}
+
+function modeKey(mode: string): MessageKey {
+  if (mode === "smart") return "importerDetail.modeSmart";
+  if (mode === "force") return "importerDetail.modeForce";
+  return "importerDetail.modeOther";
+}
+
+function durationLabel(
+  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
+  formatNumber: (value: number) => string,
+  seconds: number | null,
+): string {
+  if (seconds === null || seconds < 0) return t("importerDetail.noDuration");
+  if (seconds < 90) {
+    return t("importerDetail.durationSeconds", { count: formatNumber(Math.max(1, Math.round(seconds))) });
+  }
+  return t("importerDetail.durationMinutes", { count: formatNumber(Math.round(seconds / 60)) });
+}
+
+function statusClass(status: string): string {
+  if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (status === "skipped") return "border-slate-200 bg-slate-100 text-slate-700";
+  return "border-amber-200 bg-amber-50 text-amber-800";
+}
+
+export default function ImporterDetailPage({
+  apiBase,
+  tenantId,
+  connector,
+  refreshTrigger,
+  onOpenConfigureModal,
+}: ImporterDetailPageProps) {
+  const router = useRouter();
+  const { t, formatDateTime, formatNumber } = useI18n();
+  const [runs, setRuns] = useState<SyncRun[]>([]);
+  const [typicalSeconds, setTypicalSeconds] = useState<number | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+
+  const loadRuns = useCallback(async (append = false, offset = 0) => {
+    try {
+      const response = await apiFetch(
+        `${apiBase}/api/v1/data/sources/${connector.id}/sync-runs?limit=100&offset=${append ? offset : 0}`,
+        { headers: { "X-Tenant-ID": tenantId }, cache: "no-store" },
+      );
+      if (!response.ok) {
+        setError(t("importerDetail.historyFailed"));
+        return;
+      }
+      const data = await response.json();
+      setRuns((previous) => (append ? [...previous, ...(data.runs || [])] : data.runs || []));
+      setTypicalSeconds(data.typical_duration_seconds ?? null);
+      setHasMore(Boolean(data.has_more));
+      setError("");
+    } catch {
+      setError(t("importerDetail.historyFailed"));
+    } finally {
+      setLoading(false);
+    }
+  }, [apiBase, connector.id, t, tenantId]);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns, refreshTrigger]);
+
+  useEffect(() => {
+    const interval = setInterval(() => void loadRuns(), RUN_REFRESH_MS);
+    return () => clearInterval(interval);
+  }, [loadRuns]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    await loadRuns(true, runs.length);
+    setLoadingMore(false);
+  };
+
+  const counts = useMemo(
+    () => ({
+      success: runs.filter((run) => run.status === "success").length,
+      error: runs.filter((run) => run.status === "error").length,
+      active: runs.filter((run) => run.finished_at === null).length,
+    }),
+    [runs],
+  );
+
+  const passive = getConnectorDirection(connector.source_type) === "passive";
+  const latest = runs[0];
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <button
+            type="button"
+            onClick={() => router.push("/connectors")}
+            aria-label={t("importerDetail.back")}
+            className="mt-1 rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div>
+            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              {t("importerDetail.eyebrow")}
+            </p>
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+              {connector.display_name || connector.source_type}
+            </h1>
+            <p className="mt-1 text-xs text-slate-500">
+              {connector.source_type} · {passive ? t("connectors.passive") : t("connectors.active")}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void loadRuns()}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+            {t("header.refresh")}
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenConfigureModal(connector)}
+            className="inline-flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 hover:bg-[#08432a]"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            {t("connectors.edit")}
+          </button>
+          <button
+            type="button"
+            onClick={() => setImportOpen(true)}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            {passive ? t("connectors.history") : t("connectors.import")}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+          {error}
+        </p>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <SummaryCard label={t("importerDetail.totalRuns")} value={formatNumber(runs.length)} />
+        <SummaryCard label={t("importerDetail.successfulRuns")} value={formatNumber(counts.success)} tone="success" />
+        <SummaryCard label={t("importerDetail.failedRuns")} value={formatNumber(counts.error)} tone="error" />
+        <SummaryCard label={t("importerDetail.activeRuns")} value={formatNumber(counts.active)} tone="active" />
+        <SummaryCard
+          label={t("importerDetail.typicalDuration")}
+          value={durationLabel(t, formatNumber, typicalSeconds)}
+        />
+      </div>
+
+      {latest && (
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <Clock3 className="h-4 w-4 text-[#0d5c3a]" />
+            <h2 className="text-sm font-bold text-slate-900">{t("importerDetail.latestRun")}</h2>
+          </div>
+          <div className="grid gap-3 text-xs sm:grid-cols-4">
+            <DetailValue label={t("importerDetail.status")} value={t(statusKey(latest.status))} />
+            <DetailValue label={t("importerDetail.trigger")} value={t(triggerKey(latest.trigger))} />
+            <DetailValue label={t("importerDetail.started")} value={formatDateTime(latest.started_at)} />
+            <DetailValue
+              label={t("importerDetail.duration")}
+              value={durationLabel(t, formatNumber, latest.duration_seconds)}
+            />
+          </div>
+          {latest.message && (
+            <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">{latest.message}</p>
+          )}
+        </section>
+      )}
+
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-[#0d5c3a]" />
+            <h2 className="text-sm font-bold text-slate-900">{t("importerDetail.historyTitle")}</h2>
+          </div>
+          <span className="text-[11px] text-slate-400">{t("importerDetail.autoRefresh", { seconds: RUN_REFRESH_MS / 1000 })}</span>
+        </div>
+
+        {loading && runs.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" /> {t("importerDetail.loading")}
+          </div>
+        ) : runs.length === 0 ? (
+          <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-xs text-slate-500">
+            {t("importerDetail.noRuns")}
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {runs.map((run) => (
+              <article key={run.id} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="flex min-w-0 items-start gap-2.5">
+                    {run.status === "success" ? (
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                    ) : run.status === "error" ? (
+                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                    ) : (
+                      <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                    )}
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass(run.status)}`}>
+                          {t(statusKey(run.status))}
+                        </span>
+                        <span className="text-[11px] font-semibold text-slate-700">{t(triggerKey(run.trigger))}</span>
+                        <span className="text-[11px] text-slate-400">{formatDateTime(run.started_at)}</span>
+                      </div>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {t("importerDetail.points", {
+                          accepted: formatNumber(run.points_accepted),
+                          duplicate: formatNumber(run.points_duplicate),
+                          expected: run.points_expected === null ? t("importerDetail.unknown") : formatNumber(run.points_expected),
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-slate-500 sm:grid-cols-4 lg:min-w-[430px]">
+                    <DetailValue label={t("importerDetail.mode")} value={t(modeKey(run.mode))} />
+                    <DetailValue label={t("importerDetail.duration")} value={durationLabel(t, formatNumber, run.duration_seconds)} />
+                    <DetailValue label={t("importerDetail.finished")} value={formatDateTime(run.finished_at)} />
+                    <DetailValue label={t("importerDetail.requestId")} value={run.request_id} mono />
+                  </div>
+                </div>
+                {run.message && <p className="mt-3 break-words border-t border-slate-200 pt-3 text-xs text-slate-600">{run.message}</p>}
+              </article>
+            ))}
+            {hasMore && (
+              <button
+                type="button"
+                onClick={() => void loadMore()}
+                disabled={loadingMore}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {loadingMore ? t("importerDetail.loadingMore") : t("importerDetail.loadMore")}
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {importOpen && (
+        <ImportDialog
+          key={connector.id}
+          apiBase={apiBase}
+          sourceType={connector.id}
+          sourceName={connector.display_name || connector.source_type}
+          providerType={connector.source_type}
+          fileImport={Boolean(connector.supports_file_import)}
+          passive={passive || connector.import_mode === "file"}
+          isOpen
+          onClose={() => setImportOpen(false)}
+          onQueued={loadRuns}
+        />
+      )}
+    </div>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "success" | "error" | "active";
+}) {
+  const valueClass =
+    tone === "success"
+      ? "text-emerald-700"
+      : tone === "error"
+        ? "text-rose-700"
+        : tone === "active"
+          ? "text-amber-700"
+          : "text-slate-900";
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`mt-2 text-lg font-extrabold ${valueClass}`}>{value}</p>
+    </div>
+  );
+}
+
+function DetailValue({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`mt-0.5 truncate text-[11px] text-slate-700 ${mono ? "font-mono" : ""}`}>{value}</p>
+    </div>
+  );
+}

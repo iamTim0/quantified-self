@@ -64,9 +64,13 @@ def test_head_and_get_ingest_server_checks():
 
 
 @patch("streak_importer.main.resolve_api_key", new_callable=AsyncMock)
-def test_post_ingest_with_valid_key(mock_resolve):
+@patch("streak_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("streak_importer.main.report_sync_progress", new_callable=AsyncMock)
+@patch("streak_importer.main.open_sync_run", new_callable=AsyncMock)
+def test_post_ingest_with_valid_key(mock_open, mock_progress, mock_close, mock_resolve):
     """A recognised key ingests into the tenant the key belongs to."""
     mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-1"
 
     response = client.post(
         "/ingest",
@@ -83,9 +87,13 @@ def test_post_ingest_with_valid_key(mock_resolve):
 
 
 @patch("streak_importer.main.resolve_api_key", new_callable=AsyncMock)
-def test_post_ingest_accepts_legacy_api_key_header(mock_resolve):
+@patch("streak_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("streak_importer.main.report_sync_progress", new_callable=AsyncMock)
+@patch("streak_importer.main.open_sync_run", new_callable=AsyncMock)
+def test_post_ingest_accepts_legacy_api_key_header(mock_open, mock_progress, mock_close, mock_resolve):
     """Existing Streak 2.0 configs send X-Api-Key; that must keep working."""
     mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-1"
 
     response = client.post(
         "/ingest", json=SAMPLE_PAYLOAD, headers={"X-Api-Key": VALID_KEY}

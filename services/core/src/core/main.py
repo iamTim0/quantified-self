@@ -2091,6 +2091,21 @@ def _typical_duration_seconds(runs: Sequence[SyncRun]) -> float | None:
     return round(median(durations), 1) if durations else None
 
 
+def _run_duration_seconds(run: SyncRun, *, now: datetime | None = None) -> float | None:
+    """Return the elapsed time for a run, including the live time of an open run."""
+    if run.started_at is None:
+        return None
+    finished_at = run.finished_at or now or datetime.now(timezone.utc)
+    started_at = run.started_at
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=timezone.utc)
+    if finished_at.tzinfo is None:
+        finished_at = finished_at.replace(tzinfo=timezone.utc)
+    if finished_at < started_at:
+        return None
+    return round((finished_at - started_at).total_seconds(), 1)
+
+
 def _looks_like_uuid(value: str) -> bool:
     try:
         uuid.UUID(value)
@@ -2290,6 +2305,7 @@ async def get_import_plan(
 async def list_sync_runs(
     source_ref: str,
     limit: int = Query(20, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
     session: AsyncSession = Depends(get_session),
 ):
     """Import history for one connector, newest first.
@@ -2306,6 +2322,7 @@ async def list_sync_runs(
         select(SyncRun)
         .where(SyncRun.tenant_id == tenant_id, SyncRun.source_id == source.id)
         .order_by(SyncRun.started_at.desc())
+        .offset(offset)
         .limit(limit)
     )
     runs = res.scalars().all()
@@ -2318,6 +2335,9 @@ async def list_sync_runs(
         # estimate about *this* connector rather than a guess: before it has ever
         # run there is simply nothing here, and the interface says nothing.
         "typical_duration_seconds": _typical_duration_seconds(runs),
+        "offset": offset,
+        "limit": limit,
+        "has_more": len(runs) == limit,
         "runs": [
             {
                 "id": run.id,
@@ -2328,6 +2348,7 @@ async def list_sync_runs(
                 "window_start": run.window_start.isoformat() if run.window_start else None,
                 "window_end": run.window_end.isoformat() if run.window_end else None,
                 "window_reason": run.window_reason,
+                "points_expected": run.points_expected,
                 "points_received": run.points_received,
                 "points_accepted": run.points_accepted,
                 "points_duplicate": run.points_duplicate,
@@ -2335,6 +2356,7 @@ async def list_sync_runs(
                 "message": run.message,
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+                "duration_seconds": _run_duration_seconds(run),
             }
             for run in runs
         ],
@@ -2784,6 +2806,48 @@ async def trigger_sync_post(
     )
 
 
+async def _record_failed_sync_request(
+    session: AsyncSession,
+    tenant_id: str,
+    source: DataSource,
+    *,
+    request_id: str,
+    mode: Literal["smart", "force"],
+    trigger: str,
+    message: str,
+    update_connector: bool = True,
+) -> SyncRun:
+    """Persist a failed import request after its connector was resolved.
+
+    A request that fails before a task reaches an importer still belongs in the
+    connector's audit trail. The source and tenant are already authenticated here,
+    so recording this row does not require guessing either boundary.
+    """
+    now = datetime.now(timezone.utc)
+    run = SyncRun(
+        tenant_id=tenant_id,
+        source_id=source.id,
+        source_type=source.source_type,
+        request_id=request_id,
+        mode=mode,
+        trigger=trigger,
+        status="error",
+        message=message[:512],
+        started_at=now,
+        finished_at=now,
+    )
+    session.add(run)
+
+    if update_connector:
+        config = dict(source.config or {})
+        config["sync_status"] = "error"
+        config["last_sync_message"] = message[:512]
+        config["last_request_id"] = request_id
+        source.config = config
+    await session.commit()
+    return run
+
+
 async def plan_and_enqueue_sync(
     session: AsyncSession,
     tenant_id: str,
@@ -2811,11 +2875,25 @@ async def plan_and_enqueue_sync(
     # could only expire, and the connector read as "queued" for six hours while it
     # waited for a consumer that does not exist.
     if not is_scheduled(source_type, config):
+        run = await _record_failed_sync_request(
+            session,
+            tenant_id,
+            source,
+            request_id=req_id,
+            mode=mode,
+            trigger=trigger,
+            message=(
+                "This connector does not support scheduled imports; use its webhook "
+                "or upload flow."
+            ),
+        )
         return {
-            "status": "not_pollable",
+            "status": "error",
             "source_type": source_type,
             "tenant_id": tenant_id,
             "request_id": req_id,
+            "sync_run_id": run.id,
+            "message": run.message,
         }
 
     # Core is the single authority on whether a connector is already busy. The
@@ -2832,26 +2910,61 @@ async def plan_and_enqueue_sync(
             req_id,
             source_type,
         )
+        run = await _record_failed_sync_request(
+            session,
+            tenant_id,
+            source,
+            request_id=req_id,
+            mode=mode,
+            trigger=trigger,
+            message="The connector already has an import in flight.",
+            update_connector=False,
+        )
         return {
-            "status": "already_running",
+            "status": "error",
             "source_type": source_type,
             "tenant_id": tenant_id,
             "request_id": req_id,
+            "sync_run_id": run.id,
+            "message": run.message,
         }
 
-    if start and end:
-        window = _validated_window(start, end)
-        window_reason = "Period chosen by the user."
-    else:
-        window, window_reason = compute_sync_window(
-            now=now,
-            poll_interval_hours=float(config.get("poll_interval_hours", 6)),
-            lookback_days=int(config.get("lookback_days", 30)),
-            last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
-        )
+    try:
+        if start and end:
+            window = _validated_window(start, end)
+            window_reason = "Period chosen by the user."
+        else:
+            window, window_reason = compute_sync_window(
+                now=now,
+                poll_interval_hours=float(config.get("poll_interval_hours", 6)),
+                lookback_days=int(config.get("lookback_days", 30)),
+                last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
+            )
 
-    fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
-    plan = await plan_import(fetch, window, mode=mode)
+        fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
+        plan = await plan_import(fetch, window, mode=mode)
+    except HTTPException as exc:
+        await _record_failed_sync_request(
+            session,
+            tenant_id,
+            source,
+            request_id=req_id,
+            mode=mode,
+            trigger=trigger,
+            message=str(exc.detail),
+        )
+        raise
+    except Exception as exc:
+        await _record_failed_sync_request(
+            session,
+            tenant_id,
+            source,
+            request_id=req_id,
+            mode=mode,
+            trigger=trigger,
+            message=f"Import planning failed: {type(exc).__name__}: {exc}",
+        )
+        raise
 
     effective = plan.recommended or window
     nothing_to_do = plan.recommended is None and mode == "smart"
@@ -2890,6 +3003,8 @@ async def plan_and_enqueue_sync(
             "source_type": source_type,
             "tenant_id": tenant_id,
             "request_id": req_id,
+            "sync_run_id": run.id,
+            "message": run.message,
             "mode": mode,
             "plan": plan.to_dict(),
         }
@@ -2909,6 +3024,7 @@ async def plan_and_enqueue_sync(
     }).encode("utf-8")
     
     nc = getattr(app.state, "nats_client", None)
+    publish_error: Exception | None = None
     if nc:
         try:
             if hasattr(nc, "jetstream"):
@@ -2920,13 +3036,37 @@ async def plan_and_enqueue_sync(
                 await js.publish(f"qs.task.sync.{source_type}", payload)
             else:
                 await nc.publish(f"qs.task.sync.{source_type}", payload)
-        except Exception as e:
-            logger.warning(f"Failed to publish task sync event: {e}")
+        except Exception as exc:
+            publish_error = exc
+    else:
+        publish_error = RuntimeError("NATS client is unavailable")
+
+    if publish_error is not None:
+        message = f"Could not queue the import: {type(publish_error).__name__}: {publish_error}"
+        run.status = "error"
+        run.message = message[:512]
+        run.finished_at = datetime.now(timezone.utc)
+        source_config = dict(source.config or {})
+        source_config["sync_status"] = "error"
+        source_config["last_sync_message"] = message[:512]
+        source.config = source_config
+        await session.commit()
+        logger.warning("[req_id=%s] %s", req_id, message)
+        return {
+            "status": "error",
+            "source_type": source_type,
+            "tenant_id": tenant_id,
+            "request_id": req_id,
+            "sync_run_id": run.id,
+            "message": run.message,
+        }
 
     return {
         "status": "sync_queued",
         "source_type": source_type,
-        "tenant_id": tenant_id
+        "tenant_id": tenant_id,
+        "request_id": req_id,
+        "sync_run_id": run.id,
     }
 
 
@@ -3391,6 +3531,16 @@ class ResolveApiKeyRequest(BaseModel):
     source_type: str = Field(..., max_length=64)
 
 
+class RecordApiKeyFailureRequest(BaseModel):
+    """A rejected inbound request, identified without sending its plaintext key."""
+
+    key_hash: str = Field(..., min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$")
+    source_type: str = Field(..., max_length=64)
+    request_id: str = Field(..., min_length=1, max_length=128)
+    status_code: int = Field(..., ge=400, le=599)
+    message: str = Field(..., min_length=1, max_length=512)
+
+
 @app.post("/api/v1/internal/auth/api-keys/resolve")
 async def resolve_api_key(
     req: ResolveApiKeyRequest,
@@ -3436,6 +3586,41 @@ async def resolve_api_key(
         "key_prefix": key.key_prefix,
         "scopes": key.scopes,
     }
+
+
+@app.post("/api/v1/internal/auth/api-keys/failure", status_code=202)
+async def record_api_key_failure(
+    req: RecordApiKeyFailureRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Record a rejected request when its key still identifies a connector.
+
+    The importer sends only the SHA-256 digest. Unknown or missing keys cannot be
+    assigned to a tenant safely and therefore produce no tenant-visible run; a
+    revoked or expired key can still be attributed to its own connector here.
+    """
+    result = await session.execute(select(ApiKey).where(ApiKey.key_hash == req.key_hash))
+    key = result.scalars().first()
+    if key is None or key.source_type != req.source_type or not key.source_id:
+        return {"status": "accepted"}
+
+    now = datetime.now(timezone.utc)
+    run = SyncRun(
+        tenant_id=key.tenant_id,
+        source_id=key.source_id,
+        source_type=key.source_type,
+        request_id=req.request_id,
+        mode="force",
+        trigger="push",
+        status="error",
+        points_received=0,
+        message=f"HTTP {req.status_code}: {req.message}"[:512],
+        started_at=now,
+        finished_at=now,
+    )
+    session.add(run)
+    await session.commit()
+    return {"status": "accepted"}
 
 
 # ─── Explorer Saved Views Endpoints ─────────────────────────
@@ -3665,6 +3850,14 @@ class OpenSyncRunRequest(BaseModel):
     message: str | None = Field(None, max_length=512)
 
 
+class UpdateSyncRunProgressRequest(BaseModel):
+    """Update known progress without finishing an import run."""
+
+    points_expected: int | None = Field(None, ge=0)
+    points_received: int | None = Field(None, ge=0)
+    message: str | None = Field(None, max_length=512)
+
+
 @app.post("/api/v1/internal/data/sources/{source_ref}/sync-runs", status_code=201)
 async def open_sync_run_internal(
     source_ref: str,
@@ -3695,7 +3888,8 @@ async def open_sync_run_internal(
         status="running",
         window_start=None,
         window_end=None,
-        points_received=req.points_expected or 0,
+        points_expected=req.points_expected,
+        points_received=0,
         message=(req.message or "")[:512] or None,
         started_at=now,
     )
@@ -3714,6 +3908,42 @@ async def open_sync_run_internal(
         "source_type": source.source_type,
         "tenant_id": tenant_id,
     }
+
+
+@app.post("/api/v1/internal/data/sources/{source_ref}/sync-runs/{sync_run_id}/progress")
+async def update_sync_run_progress_internal(
+    source_ref: str,
+    sync_run_id: str,
+    req: UpdateSyncRunProgressRequest,
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """Record an expected count while an importer is still running."""
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    result = await session.execute(
+        select(SyncRun).where(
+            SyncRun.id == sync_run_id,
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.source_id == source.id,
+        )
+    )
+    run = result.scalars().first()
+    if not run:
+        raise HTTPException(status_code=404, detail="Sync run not found")
+    if run.finished_at is not None:
+        raise HTTPException(status_code=409, detail="Sync run is already finished")
+
+    if req.points_expected is not None:
+        run.points_expected = req.points_expected
+    if req.points_received is not None:
+        run.points_received = req.points_received
+    if req.message:
+        run.message = req.message[:512]
+    await session.commit()
+    return {"status": "ok", "sync_run_id": run.id}
 
 
 @app.post("/api/v1/internal/data/sources/{source_ref}/status")
@@ -3806,4 +4036,3 @@ async def delete_tenant_account(
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
-

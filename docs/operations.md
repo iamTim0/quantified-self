@@ -276,8 +276,12 @@ A production deployment should show nothing here. If it does, at least one of th
 - **Health checks**: every service offers `GET /health`; the docs additionally `/healthz`.
 - **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
   the data point that was written.
-- **Import history**: `GET /api/v1/data/sources/{type}/sync-runs` shows the window, mode, status and
-  counters per run — the most reliable answer to "why is data missing".
+- **Import history**: open a configured connector's **Runs** detail page, or call
+  `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the trigger, status, duration,
+  request id, expected/received/accepted/duplicate point counts and the final message per run —
+  the most reliable answer to "why is data missing". The history includes failed planning,
+  upload, webhook and importer runs; an unknown or missing API key cannot be assigned to a tenant
+  safely and is therefore not shown in a tenant's connector history.
 
 ```bash
 task logs -- --service qs-core --level ERROR

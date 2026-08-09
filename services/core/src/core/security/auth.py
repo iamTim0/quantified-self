@@ -64,7 +64,10 @@ INTERNAL_PATH_PREFIX = "/api/v1/internal/"
 # so they cannot be asked to name one up front. They still require a valid service
 # credential, and the tenant contextvar is deliberately left unset so that any
 # accidental tenant-scoped query inside them raises instead of leaking.
-TENANTLESS_INTERNAL_PATHS: set[str] = {"/api/v1/internal/auth/api-keys/resolve"}
+TENANTLESS_INTERNAL_PATHS: set[str] = {
+    "/api/v1/internal/auth/api-keys/resolve",
+    "/api/v1/internal/auth/api-keys/failure",
+}
 
 
 @dataclass(frozen=True)

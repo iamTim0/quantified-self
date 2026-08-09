@@ -37,7 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.connectors import is_scheduled
@@ -138,6 +138,44 @@ async def has_in_flight_run(
     return result.scalars().first() is not None
 
 
+async def expire_stale_runs(
+    session: AsyncSession,
+    source: DataSource,
+    *,
+    now: datetime,
+) -> int:
+    """Mark importer runs that stopped reporting as failed.
+
+    A crashed importer cannot call the status endpoint. Expiring the run here keeps
+    the connector history truthful and lets the next scheduled attempt proceed.
+    The update is scoped to the source's tenant and connector instance.
+    """
+    cutoff = now - STALE_RUN_AFTER
+    result = await session.execute(
+        update(SyncRun)
+        .where(
+            SyncRun.tenant_id == source.tenant_id,
+            SyncRun.source_id == source.id,
+            SyncRun.status.in_(IN_FLIGHT_STATUSES),
+            SyncRun.started_at < cutoff,
+        )
+        .values(
+            status="error",
+            message="The importer did not report completion before the run timeout.",
+            finished_at=now,
+        )
+    )
+    expired = result.rowcount or 0
+    if expired:
+        config = dict(source.config or {})
+        config["sync_status"] = "error"
+        config["last_sync_message"] = (
+            "The importer did not report completion before the run timeout."
+        )
+        source.config = config
+    return expired
+
+
 async def find_due_connectors(
     session: AsyncSession, *, now: datetime
 ) -> list[DueConnector]:
@@ -152,6 +190,7 @@ async def find_due_connectors(
     due: list[DueConnector] = []
     for source in rows:
         config = source.config or {}
+        await expire_stale_runs(session, source, now=now)
         # Push connectors have no task subject anybody listens on. Planning a sync
         # for one produced a `SyncRun` that could only ever expire as stale, and
         # left the connector looking permanently queued in the meantime.

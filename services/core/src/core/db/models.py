@@ -293,6 +293,7 @@ class SyncRun(Base):
     window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     window_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    points_expected: Mapped[int | None] = mapped_column(Integer, nullable=True)
     points_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

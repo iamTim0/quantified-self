@@ -1,8 +1,11 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
+import ImporterDetailPage from "./ImporterDetailPage";
 import { plural, useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
 import { 
   Key, 
@@ -93,6 +96,7 @@ export default function ConnectorsPage({
   onOpenConfigureModal,
 }: ConnectorsPageProps) {
   const { t, formatDateTime } = useI18n();
+  const pathname = usePathname();
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ConnectorTab>("current");
@@ -142,6 +146,17 @@ export default function ConnectorsPage({
     return () => clearInterval(interval);
   }, [apiBase, tenantId]);
 
+  const detailId = (() => {
+    const match = pathname.match(/^\/connectors\/([^/]+)\/?$/);
+    if (!match) return null;
+    try {
+      return decodeURIComponent(match[1]);
+    } catch {
+      return null;
+    }
+  })();
+  const detailConnector = detailId ? connectors.find((connector) => connector.id === detailId) : null;
+
   // Disconnect one connector instance. Addressed by id, not type: with two
   // calendars configured, deleting "calendar" would remove an arbitrary one.
   const handleDeleteConnector = async (connector: ConnectorItem) => {
@@ -166,6 +181,37 @@ export default function ConnectorsPage({
       setDeletingSource(null);
     }
   };
+
+  if (detailId && loading) {
+    return <div className="py-16 text-center text-xs text-slate-500">{t("importerDetail.loading")}</div>;
+  }
+
+  if (detailId && !detailConnector) {
+    return (
+      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-slate-900">{t("importerDetail.notFound")}</h1>
+        <p className="text-xs text-slate-500">{t("importerDetail.notFoundHint")}</p>
+        <Link
+          href="/connectors"
+          className="inline-flex rounded-2xl bg-[#0d5c3a] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#08432a]"
+        >
+          {t("importerDetail.backToConnectors")}
+        </Link>
+      </div>
+    );
+  }
+
+  if (detailConnector) {
+    return (
+      <ImporterDetailPage
+        apiBase={apiBase}
+        tenantId={tenantId}
+        connector={detailConnector}
+        refreshTrigger={refreshTrigger}
+        onOpenConfigureModal={(connector) => onOpenConfigureModal(connector)}
+      />
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -289,6 +335,14 @@ export default function ConnectorsPage({
                               <BookOpen className="w-3 h-3" />
                               <span className="text-[10px]">{t("connectors.docs")}</span>
                             </a>
+                            <Link
+                              href={`/connectors/${encodeURIComponent(c.id)}`}
+                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                              title={t("connectors.openDetails")}
+                            >
+                              <Activity className="h-3 w-3" />
+                              <span className="text-[10px]">{t("connectors.details")}</span>
+                            </Link>
                           </div>
                           <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                             {c.source_type}

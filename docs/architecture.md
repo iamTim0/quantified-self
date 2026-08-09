@@ -77,6 +77,31 @@ importer cannot validate a session itself: Core keeps the JWT signing key away f
 so the importer asks Core whom the forwarded token belongs to. See
 [Uploading an export file](features/file-import.md).
 
+## Import history and progress
+
+Every import belongs to one connector instance and has a tenant-scoped `SyncRun`. Core creates
+runs for scheduled and manual imports; push and upload importers open their own run before they
+start transforming data. This keeps rejected requests, malformed uploads and partial imports in
+the same audit trail as successful work.
+
+The tenant-protected endpoint
+`GET /api/v1/data/sources/<connector-id>/sync-runs` returns the newest runs for that connector.
+Each entry includes its status, trigger, request id, import window, accepted and duplicate point
+counts, optional expected point count, message and duration. The connector id is used deliberately:
+two connectors of the same type must never share a history or progress display.
+
+An importer can report a known total while it is still running through Core's internal
+`.../sync-runs/<sync-run-id>/progress` endpoint. `points_expected` may remain unknown for a
+streaming API import and becomes known after a file importer has parsed its archive. Core remains
+the only owner of the run record and the dashboard reads it through the tenant-scoped API. The
+connector detail view at `/connectors/<connector-id>` shows the latest status, progress counts,
+durations and history.
+
+Core also expires a `queued` or `running` run after six hours without completion. It records an
+error and allows the next scheduled attempt to proceed, so a crashed importer cannot block a
+connector forever. Rejected push API keys may be attributed to their connector using only the
+stored key hash; the plaintext key is never sent to Core or written to the run history.
+
 ## Idempotency
 
 ```text

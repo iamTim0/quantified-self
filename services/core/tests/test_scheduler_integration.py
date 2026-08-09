@@ -20,11 +20,16 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from core.db.models import DataSource, SyncRun
 from core.db.session import async_session_maker
-from core.main import _enqueue_scheduled_sync
+from core.main import _enqueue_scheduled_sync, app
 from core.scheduler import DueConnector
 from sqlalchemy import select
 
 from tests.db_helpers import cleanup_test_tenant, create_test_tenant
+
+
+class _MockNATSClient:
+    async def publish(self, _subject: str, _payload: bytes) -> None:
+        return None
 
 
 async def _connector(tenant_id: str, source_type: str) -> str:
@@ -80,13 +85,16 @@ async def test_scheduled_enqueue_records_a_run_attributed_to_the_scheduler():
 
 
 @pytest.mark.asyncio
-async def test_a_second_scheduled_enqueue_is_refused_while_the_first_is_in_flight():
+async def test_a_second_scheduled_enqueue_is_refused_while_the_first_is_in_flight(
+    monkeypatch,
+):
     """Core, not the importer, is what stops the duplicate.
 
     Verifies Fizzbee Invariant: NoDuplicateData
     """
     tenant_id = await create_test_tenant()
     try:
+        monkeypatch.setattr(app.state, "nats_client", _MockNATSClient(), raising=False)
         source_id = await _connector(tenant_id, "whoop")
         connector = DueConnector(
             tenant_id=tenant_id,
@@ -108,8 +116,11 @@ async def test_a_second_scheduled_enqueue_is_refused_while_the_first_is_in_fligh
                 )
             ).scalars().all()
 
-        # The second call short-circuits before writing a row.
-        assert len(runs) == 1
+        # The duplicate does not enqueue a task, but its failed request is still
+        # recorded so the connector detail page explains what happened.
+        assert len(runs) == 2
+        assert {run.status for run in runs} == {"queued", "error"}
+        assert any(run.message == "The connector already has an import in flight." for run in runs)
     finally:
         await cleanup_test_tenant(tenant_id)
 

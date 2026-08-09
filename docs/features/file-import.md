@@ -33,6 +33,18 @@ work, which is longer than a browser should hold a connection open. What you wat
 the progress panel in the same dialog — it counts the data points as they are actually stored, and
 the connector's history keeps the outcome.
 
+The response contains a `sync_run_id` and the connector detail page at
+`/connectors/<connector-id>` shows the same run in its history. The importer reports the expected
+point count after parsing the file, then Core counts accepted and duplicate events as they arrive.
+The progress total is therefore unknown briefly for a large archive and becomes exact once parsing
+has finished. A failed upload is still recorded against the connector, including failures before
+the archive could be parsed.
+
+The history is connector-specific and tenant-protected. It includes the trigger (`upload`), status,
+request id, start and finish times, duration, expected points, accepted points, duplicates and the
+last message. An importer crash is eventually marked as an error by Core after the six-hour stale
+run timeout; it does not leave the connector permanently busy.
+
 The file itself is written to the importer's disk while it is being read and deleted afterwards,
 whether the import succeeded or failed. Nothing is kept.
 

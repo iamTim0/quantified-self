@@ -54,6 +54,29 @@ def internal_headers(req_id: str, tenant_id: str | None = None) -> dict[str, str
     return headers
 
 
+async def record_api_key_failure(
+    presented_key: str,
+    *,
+    req_id: str,
+    status_code: int,
+    message: str,
+) -> None:
+    """Ask Core to attribute a rejected key to its connector, without the key itself."""
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/auth/api-keys/failure"
+    payload = {
+        "key_hash": hashlib.sha256(presented_key.encode("utf-8")).hexdigest(),
+        "source_type": settings.SOURCE_TYPE,
+        "request_id": req_id,
+        "status_code": status_code,
+        "message": message[:512],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(url, headers=internal_headers(req_id), json=payload)
+    except Exception as exc:
+        logger.debug("[req_id=%s] Could not record rejected Streak request: %s", req_id, exc)
+
+
 @dataclass(frozen=True)
 class ApiKeyIdentity:
     """The tenant and connector an accepted API key resolves to."""
@@ -109,6 +132,12 @@ async def resolve_api_key(presented_key: str | None, req_id: str) -> ApiKeyIdent
         )
 
     if res.status_code != 200:
+        await record_api_key_failure(
+            presented_key,
+            req_id=req_id,
+            status_code=res.status_code,
+            message="The API key was rejected by Core.",
+        )
         logger.warning(
             "[req_id=%s] Rejected ingest: API key not accepted (core status=%s).",
             req_id,
@@ -119,6 +148,12 @@ async def resolve_api_key(presented_key: str | None, req_id: str) -> ApiKeyIdent
     data = res.json()
     tenant_id = data.get("tenant_id")
     if not tenant_id:
+        await record_api_key_failure(
+            presented_key,
+            req_id=req_id,
+            status_code=401,
+            message="Core returned no tenant for the API key.",
+        )
         raise HTTPException(status_code=401, detail="Invalid API key.")
 
     return ApiKeyIdentity(
