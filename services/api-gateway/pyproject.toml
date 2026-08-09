@@ -9,11 +9,16 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
-    "python-jose[cryptography]>=3.3.0",
     "pyjwt>=2.13.0",
     "websockets>=12.0",
 ]
 requires-python = ">=3.12"
+
+# python-jose is deliberately absent: every token this service mints or verifies
+# goes through pyjwt (gateway/auth.py), and the second JWT library was imported
+# nowhere while pulling ecdsa, rsa, pyasn1 and six in behind it -- four transitive
+# packages for no caller, one of them carrying an advisory its maintainers have
+# said they will not fix (GHSA-wj6h-64fc-37mp).
 
 [build-system]
 requires = ["hatchling"]

@@ -3,7 +3,9 @@ name="calendar-importer"
 version="0.1.0"
 license = "AGPL-3.0-only"
 requires-python=">=3.12"
-dependencies=["httpx>=0.27","nats-py>=2.8","pydantic-settings>=2.2","pytest>=8","pytest-asyncio>=0.24","icalendar>=6.0","recurring-ical-events>=3.2","python-dateutil>=2.9","qs-shared-schemas"]
+dependencies=["httpx>=0.27","nats-py>=2.8","pydantic-settings>=2.2","pytest>=8","pytest-asyncio>=0.24","icalendar>=6.0","recurring-ical-events>=3.2","qs-shared-schemas"]
+# Expanding a recurrence rule is recurring-ical-events' job, so python-dateutil is
+# not here: it was declared and never imported.
 # The metric catalog is shared, not copied: a name or unit defined in
 # packages/shared-schemas/src/shared_schemas/metrics.py reaches this importer here.
 [tool.uv.sources]

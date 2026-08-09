@@ -35,7 +35,6 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
-    { name = "python-dateutil" },
     { name = "qs-shared-schemas" },
     { name = "recurring-ical-events" },
 ]
@@ -48,7 +47,6 @@ requires-dist = [
     { name = "pydantic-settings", specifier = ">=2.2" },
     { name = "pytest", specifier = ">=8" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
-    { name = "python-dateutil", specifier = ">=2.9" },
     { name = "qs-shared-schemas", editable = "../../../packages/shared-schemas" },
     { name = "recurring-ical-events", specifier = ">=3.2" },
 ]

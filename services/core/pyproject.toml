@@ -9,10 +9,8 @@ dependencies = [
     "uvicorn>=0.29.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
-    "psycopg[binary]>=3.1.0",
     "nats-py>=2.7.0",
     "grpcio>=1.62.0",
-    "grpcio-tools>=1.62.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
     "pgvector>=0.2.5",
@@ -27,6 +25,13 @@ dependencies = [
     "qs-shared-schemas",
 ]
 requires-python = ">=3.12"
+
+# Neither psycopg nor grpcio-tools is here. Every connection this service opens is
+# asyncpg's -- the application through DATABASE_URL in core/config.py and Alembic
+# through alembic.ini name the same `postgresql+asyncpg` driver -- and grpcio-tools
+# is the code generator behind `task proto:generate`, which supplies it itself with
+# `uv run --with`. The Dockerfile copies packages/proto/gen and never runs protoc.
+# Both were declared here, imported nowhere, and shipped into the runtime image.
 
 # Path dependencies rather than copies: a protobuf change reaches this service
 # through packages/proto/generate.py (AGENTS.md rule 7), and a metric definition
