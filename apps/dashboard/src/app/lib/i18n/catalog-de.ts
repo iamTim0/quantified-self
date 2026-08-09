@@ -47,9 +47,6 @@ export const de: Record<MessageKey, string> = {
   "sidebar.docsTitle": "Zentrale Plattform-Dokumentation öffnen",
   "sidebar.settings": "Einstellungen",
   "sidebar.logout": "Abmelden",
-  "sidebar.promoTitle": "Live Quantified Self",
-  "sidebar.promoBody": "Yazio, WHOOP und Apple Health verbinden und laufend auswerten.",
-  "sidebar.promoAction": "Connectors verwalten",
 
   // ── Kopfzeile ──────────────────────────────────────────────────────────────
   "header.autoRefresh": "Aktualisiert sich automatisch alle 30 Sekunden",

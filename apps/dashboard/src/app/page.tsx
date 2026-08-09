@@ -114,15 +114,23 @@ export default function DashboardPage() {
 
   const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
 
+  // Refreshed when the tab comes back into the foreground, and not on a timer.
+  //
+  // There was a 30s interval here. Nothing on this page changes every 30 seconds:
+  // the scheduler checks for due connectors every five minutes, and an import that
+  // lands writes history, not a live figure. So the interval mostly re-fetched the
+  // same numbers, moved the page under whoever was reading it, and kept a signed-in
+  // tab talking to the API all day for nothing.
+  //
+  // Coming back to the tab is the moment the data might actually be stale, which is
+  // why that half stays. A sync you trigger yourself already calls triggerRefresh.
   useEffect(() => {
     if (!isAuthenticated) return;
-    const interval = window.setInterval(triggerRefresh, 30_000);
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") triggerRefresh();
     };
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
-      window.clearInterval(interval);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [isAuthenticated, triggerRefresh]);

@@ -130,28 +130,6 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
         </div>
       </div>
 
-      {/* Bottom Promo CTA Card (like Reference Image) */}
-      <div className="mt-8 relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#0d5c3a] to-[#08432a] p-4 text-white shadow-xl shadow-[#0d5c3a]/20">
-        <div className="flex items-center justify-between mb-2">
-          <div className="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center">
-            <Activity className="w-3.5 h-3.5 text-emerald-300" />
-          </div>
-          <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-200">
-            PRO
-          </span>
-        </div>
-        <h4 className="text-xs font-bold text-white mb-1">{t("sidebar.promoTitle")}</h4>
-        <p className="text-[11px] text-emerald-100/80 mb-3 leading-tight">
-          {t("sidebar.promoBody")}
-        </p>
-        <button
-          onClick={() => onTabChange("connectors")}
-          className="w-full py-2 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors shadow-md"
-        >
-          <span>{t("sidebar.promoAction")}</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
     </aside>
   );
 }

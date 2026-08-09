@@ -47,9 +47,6 @@ export const en = {
   "sidebar.docsTitle": "Open the platform documentation",
   "sidebar.settings": "Settings",
   "sidebar.logout": "Sign out",
-  "sidebar.promoTitle": "Live Quantified Self",
-  "sidebar.promoBody": "Connect Yazio, WHOOP and Apple Health for continuous analysis.",
-  "sidebar.promoAction": "Manage connectors",
 
   // ── Top header ─────────────────────────────────────────────────────────────
   "header.autoRefresh": "Refreshes automatically every 30 seconds",
