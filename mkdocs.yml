@@ -47,6 +47,24 @@ markdown_extensions:
       permalink: true
   - tables
   - pymdownx.details
-  - pymdownx.superfences
+  # The custom fence is what turns a ```mermaid block into a diagram rather than a
+  # syntax-highlighted listing. Without it the page silently prints the source, which
+  # reads as a broken page rather than as missing configuration.
+  #
+  # Material does NOT bundle the renderer: it injects
+  # `https://unpkg.com/mermaid@11/dist/mermaid.min.js` at page load. So a diagram in
+  # `docs/` needs the reader to reach unpkg, and on a host without outbound internet the
+  # block renders empty rather than falling back to its source. The same diagram in
+  # README.md is unaffected -- GitHub renders mermaid server-side.
+  #
+  # Vendoring it (3.4 MB via `extra_javascript`) would make `/docs` self-contained and
+  # keep a reader's IP off a third party, which is the arrangement this project chose for
+  # its webfonts. Not done here because it is a permanent 3.4 MB in git history and that
+  # is a decision worth making deliberately. See docs/troubleshooting.md.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 plugins:
   - search

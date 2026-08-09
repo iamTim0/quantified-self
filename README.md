@@ -3,7 +3,7 @@
 A SaaS-ready, microservice-based personal data analytics platform.
 
 [![CI](https://github.com/iamTim0/quantified-self/actions/workflows/ci.yml/badge.svg)](https://github.com/iamTim0/quantified-self/actions/workflows/ci.yml)
-![License](https://img.shields.io/badge/License-MIT-green)
+![Licence](https://img.shields.io/badge/Licence-AGPL--3.0--only-green)
 ![Python Version](https://img.shields.io/badge/Python-3.12%2B-blue)
 
 ## Documentation
@@ -66,57 +66,104 @@ OWNER_EMAIL=you@example.com OWNER_PASSWORD='…' \
 > needs stored credentials re-encrypted *before* it changes. See
 > [Operations](docs/operations.md).
 
-## Architecture Overview
+## How it works
 
-The Quantified Self Platform uses a microservice architecture built for scale, isolation, and robustness. It separates data ingestion, storage, and analysis into distinct services that communicate asynchronously or via strict RPC contracts.
+Ingestion is **pull from the platform, never push from a worker**: Core decides when a
+connector is due and what period to ask for, and an importer only ever executes the task
+it is handed. That is what keeps the importers stateless — they hold no schedule, no
+cursor and no credentials of their own.
 
 ```mermaid
-flowchart TD
-    subgraph External
-        Client[User / Client App]
-        YazioAPI[Yazio API v15]
-    end
+flowchart LR
+    core["Core&nbsp;&mdash; plans the window,<br/>owns the database"]
+    bus{{"NATS JetStream"}}
+    importer["Importer&nbsp;&mdash; stateless,<br/>one per provider"]
+    provider[/"Provider API"/]
+    device[/"Phone or app<br/>push sources"/]
+    db[("PostgreSQL")]
 
-    subgraph Platform
-        Gateway[API Gateway\nFastAPI]
-        Core[Core Data Service\nFastAPI]
-        Analysis[Analysis Service\nFastAPI]
-        YazioImporter[Yazio Importer\nPython Stateless Worker]
-        WhoopImporter[WHOOP Importer\nFastAPI + NATS Consumer]
-        EnvironmentImporters[Home Assistant / Weather / Calendar\nStateless Workers]
-        
-        NATS[(NATS JetStream)]
-        DB[(PostgreSQL\n+ TimescaleDB + pgvector)]
-    end
-
-    Client -->|HTTP/JWT| Gateway
-    Gateway -->|HTTP/REST| Core
-    Gateway -->|HTTP/REST| Analysis
-    
-    YazioImporter -->|Poll v15| YazioAPI
-    YazioImporter -->|Publish Event| NATS
-    WhoopImporter -->|OAuth API| WHOOP[WHOOP API]
-    WhoopImporter -->|Publish Event| NATS
-    EnvironmentImporters -->|Publish tenant-scoped events| NATS
-    NATS -->|Consume Event| Core
-    Core -->|SQL| DB
-    
-    Analysis -->|gRPC| Core
+    core -->|"1. qs.task.sync.SOURCE<br/>window, mode, request_id"| bus
+    bus -->|"2. one task"| importer
+    importer -->|"3. asks Core for the credential"| core
+    importer -->|"4. fetches exactly that window"| provider
+    device -->|"POST /api/v1/ingest/...<br/>API key, hashed"| importer
+    importer -->|"5. qs.ingest.SOURCE&nbsp;&mdash; canonical name,<br/>converted unit, idempotency_key"| bus
+    bus -->|"6. consume"| core
+    core -->|"7. INSERT ... ON CONFLICT DO NOTHING"| db
 ```
+
+Reading the numbered path once:
+
+1. **Core plans.** It knows the poll interval *and* the import history, so it computes the
+   window — the overlap that catches late-arriving data, extended to an older gap if one is
+   known — records a `SyncRun`, and publishes the task. Nothing else could: only Core has
+   the database.
+2. **The importer fetches its credential** from Core at run time. Tokens live encrypted in
+   the database (Fernet AES-256) and never in an importer's `.env`. Without one it stays
+   idle instead of inventing data.
+3. **It calls the provider** for that window and nothing wider.
+4. **It publishes canonical events.** The metric name comes from the shared registry and the
+   value is converted into the unit that registry declares, *before* the
+   `idempotency_key = SHA256(tenant_id:source_id:metric_type:timestamp)` is derived — the
+   name is part of the hash.
+5. **Core consumes**, in a queue group, so replicas share the work.
+6. **Core writes** with `ON CONFLICT DO NOTHING`. Re-importing a period is therefore free of
+   consequence, which is what lets step 1 overlap on purpose.
+
+For push sources — Apple Health and Streak — steps 1 to 3 do not happen: the phone or the
+app sends to the importer, which resolves the tenant from a hashed API key and continues at
+step 4.
+
+Every hop carries the same `X-Request-ID`, so one import can be followed from the click to
+the row. The full picture, including sessions and the scheduler, is in
+[Architecture](docs/architecture.md).
 
 ### Services
 
-| Service | Port | Purpose | Communication |
+| Service | Address | Responsibility | Database |
 | --- | --- | --- | --- |
-| **API Gateway** | 8000 | Auth, routing, JWT validation, injects tenant context | HTTP (REST) in/out |
-| **Core** | 8001 | Owns DB. Consumes ingestion events. Serves gRPC queries | NATS (in), gRPC (out), PostgreSQL |
-| **Analysis** | 8002 | AI/Data Science, complex queries, embeddings | gRPC (to Core), HTTP (from Gateway) |
-| **Yazio Importer** | Container | Polls Yazio API v15 for meals, products & daily macros | NATS publisher (`qs.ingest.yazio`) |
-| **WHOOP Importer** | 8013 (internal) | Request-driven cycles, recovery, sleep and workout import | NATS task consumer/publisher (`qs.ingest.whoop`) |
-| **Home Assistant Importer** | Container | Polls authorized environmental sensor states | NATS (`qs.ingest.home_assistant`) |
-| **Weather Importer** | Container | Polls Open-Meteo-compatible weather timelines | NATS (`qs.ingest.weather`) |
-| **Calendar Importer** | Container | Polls ICS/iCalendar event summaries | NATS (`qs.ingest.calendar`) |
-| **Docs** | 8003 (`/docs`) | Material for MkDocs static documentation | Traefik route (`/docs`) |
+| **Traefik** | `:8080` | The single origin: `/` to the dashboard, `/api` to the Gateway, `/docs` to the docs, `/ingest` to the Streak importer | no |
+| **API Gateway** | `:8000` | Verifies the JWT, injects `X-Tenant-ID` and `X-Request-ID`, proxies | no |
+| **Core** | `:8001`, gRPC `:50051` | REST API, ingest consumer, scheduler, import planning, migrations | **yes, exclusively** |
+| **Analysis** | `:8010` | Correlations, trends, anomalies, weekday routines | no — reads Core over gRPC |
+| **Dashboard** | `:3000` | Next.js interface, bilingual | no |
+| **Docs** | `:8003` at `/docs` | This documentation, built with Material for MkDocs | no |
+| **Importers** | see below | One per provider, stateless | no |
+
+## Importers
+
+Eight services, all built the same way: `config.py`, `client.py`, `transformer.py`,
+`main.py`; credentials from Core at run time; canonical metric names from the shared
+registry; publish to `qs.ingest.<source>`. *Active* means the platform fetches from the
+provider on Core's schedule; *passive* means the data arrives when the provider or the
+device sends it.
+
+| Importer | Kind | What it brings in | Subject |
+| --- | --- | --- | --- |
+| **WHOOP** | active | Recovery, sleep, strain, workouts. Core renews the OAuth token before it expires | `qs.ingest.whoop` |
+| **Yazio** | active | Food diary, calories, macronutrients, per-meal energy | `qs.ingest.yazio` |
+| **Apple Health** | passive | Steps, heart rate, HRV, sleep stages, workouts, body weight | `qs.ingest.apple_health` |
+| **Dawarich** | active | GPS location points and movement traces | `qs.ingest.dawarich` |
+| **Streak** | passive | Strength training: sets, repetitions, weights, session volume | `qs.ingest.streak` |
+| **Home Assistant** | active | Whichever sensors the household exports, under a dynamic namespace | `qs.ingest.home_assistant` |
+| **Weather** | active | Temperature, humidity, precipitation, pressure, wind, UV | `qs.ingest.weather` |
+| **Calendar** | active | Events, meeting duration, busy time from an ICS feed | `qs.ingest.calendar` |
+
+The two passive importers need an address to send to. Both are reachable through the same
+origin as everything else, so a phone only ever needs the deployment's hostname and an API
+key created in the dashboard:
+
+| Source | POST to | Authentication |
+| --- | --- | --- |
+| Apple Health | `https://<host>/api/v1/ingest/apple-health` | `Authorization: Bearer <api-key>` |
+| Streak | `https://<host>/api/v1/ingest/streak`, or the shorter `/ingest` | `Authorization: Bearer <api-key>` |
+
+The key is stored only as a SHA-256 hash and resolves to exactly one tenant and one source
+type — see [API keys](docs/features/api-keys.md).
+
+Each has a page under [docs/importers/](docs/importers/index.md) with its setup, its
+metrics and how to query them. Adding one is a checklist rather than a design exercise —
+see [Adding a New Importer](#adding-a-new-importer).
 
 ## Tech Stack
 
@@ -181,22 +228,57 @@ cd quantified-self
 task setup
 ```
 
-### Start Infrastructure & Microservices
-Start all backing services and microservices using Docker Compose:
+### Running it locally
+
+Three modes, and the difference that matters is **which address answers both the page and
+`/api`** — the UI always calls its own origin, so there is exactly one per mode.
+
 ```bash
-docker compose -f infra/docker-compose.yml up -d
+task dev:up          # everything in containers        -> http://localhost:8080
+task dev:docker      # containers, code mounted        -> http://localhost:8080
+task dev:local       # backends as host processes      -> http://localhost:3000
 ```
 
-### Run Services Locally
-You can run individual services or all importers locally using Taskfile commands:
+`task dev:up` and `task dev:docker` put Traefik in front, so `/`, `/api` and `/docs` are one
+origin — the arrangement a deployment uses. `dev:docker` additionally mounts the checkout, so
+Core, the Gateway and Analysis reload on save and the documentation watches `docs/` itself.
+`dev:local` runs the backends as processes on the host; `/docs` is not served there and the
+dev server rewrites `/api` to the Gateway for you.
+
+The individual published ports (`:3000`, `:8000`, `:8001`) are for debugging. Opening `:3000`
+in the container stack bypasses Traefik, and then nothing answers `/api`.
+
+First run needs a schema and an account — self-registration is off by default:
+
 ```bash
-task run:core
-task run:gateway
-task run:importers:all           # Concurrently run all importer microservices
-task run:importer:yazio          # Or run individual importers (apple-health, calendar, dawarich, etc.)
-task dashboard
-task docs:serve                  # Documentation at http://localhost:8003
+task db:migrate
+uv run --directory services/core python -m core.create_owner   --email you@example.com --workspace "My data"
 ```
+
+Individual pieces, when you want them:
+
+```bash
+task run:core                    # :8001, gRPC :50051
+task run:gateway                 # :8000
+task run:analysis                # :8010
+task run:importers:all           # all eight
+task run:importer:yazio          # or one of them
+task dashboard                   # :3000
+task docs:serve                  # :8003
+```
+
+### Checking it
+
+```bash
+task test:all      # packages, specs, Core, Gateway, Analysis, e2e, importers
+task lint:all      # Ruff, ESLint, tsc
+task docs:build    # MkDocs --strict: every internal link and anchor
+task check:private # no personal data in a tracked file
+```
+
+Core, the e2e suite and the browser suite need Postgres on `:5433`
+(`docker compose -f infra/docker-compose.yml up -d postgres nats`). Everything else runs
+without any backing service.
 
 ### Environment Variables
 
@@ -236,12 +318,28 @@ The database utilizes PostgreSQL extended with **TimescaleDB** for hypertable-ba
 
 `infra/db/init.sql` creates the schema for a fresh container and seeds **nothing**.
 It used to end by inserting an owner account with a bcrypt hash committed to this
-repository. Create the first account through sign-up.
+repository, so every clone carried the credentials for that account. Create the first
+one with `python -m core.create_owner` — self-registration is off by default, which is
+why there is a command for it.
 
 ### Deduplication Strategy
-Deduplication happens at the database level using a 64-character SHA256 `idempotency_key`:
-$$\text{SHA256}(\text{tenant\_id} + ":" + \text{source\_id} + ":" + \text{metric\_type} + ":" + \text{timestamp})$$
-The core service executes `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
+
+Deduplication happens in the database, on a 64-character SHA256 `idempotency_key`:
+
+```text
+idempotency_key = SHA256(tenant_id + ":" + source_id + ":" + metric_type + ":" + timestamp)
+```
+
+Core writes with `INSERT INTO data_points ... ON CONFLICT (tenant_id, idempotency_key, timestamp) DO NOTHING`.
+The timestamp is in the constraint because TimescaleDB requires the partitioning column in
+every unique index — which is why a transformer must normalize timestamps and must never
+fall back to `now()`.
+
+The derivation lives in exactly one place, `shared_schemas.idempotency_key`. It used to be
+written out nine times, once per importer and once inline in Core, and nothing checked that
+the nine agreed: a changed separator would not raise anywhere, because a key that matches
+nothing stored inserts a row rather than failing. The symptom would have been a metric that
+slowly doubles.
 
 ## Licence
 

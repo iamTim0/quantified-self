@@ -6,22 +6,37 @@ The platform is a set of independently deployable services with a strict divisio
 responsibility. The most important rule: **only `services/core/` owns the database.** No other
 service imports a database driver.
 
-```text
-                    ┌──────────────┐
-   Browser ────────►│  API Gateway │  verify JWT, set X-Request-ID
-                    └──────┬───────┘
-                           │ HTTP (Authorization + X-Tenant-ID)
-                    ┌──────▼───────┐
-                    │     Core     │──► PostgreSQL (TimescaleDB, pgvector, PostGIS)
-                    └──┬────────┬──┘
-        qs.task.sync.* │        │ qs.ingest.*
-                    ┌──▼────────┴──┐
-                    │ NATS JetStream│
-                    └──┬────────▲──┘
-                       │        │
-                  ┌────▼────────┴────┐
-                  │    Importers     │  8 services, stateless
-                  └──────────────────┘
+```mermaid
+flowchart TB
+    browser["Browser"]
+    traefik["Traefik&nbsp;&mdash; routes by role, one origin"]
+    ui["Dashboard&nbsp;:3000&nbsp;&mdash; Next.js"]
+    gateway["API Gateway&nbsp;:8000&nbsp;&mdash; verifies the JWT,<br/>injects X-Tenant-ID and X-Request-ID"]
+    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies"]
+    bus{{"NATS JetStream"}}
+    importers["Importers&nbsp;&mdash; 8 stateless services, one per provider"]
+    providers[/"Provider APIs and devices"/]
+
+    subgraph owner["The only service that may touch the database"]
+        core["Core&nbsp;:8001, gRPC&nbsp;:50051&nbsp;&mdash; REST, ingest consumer,<br/>scheduler, import planning"]
+        db[("PostgreSQL&nbsp;&mdash; TimescaleDB, pgvector, PostGIS")]
+    end
+
+    browser --> traefik
+    traefik --> ui
+    traefik --> gateway
+    gateway --> core
+    gateway --> analysis
+    analysis -->|"gRPC, read only"| core
+    core --- db
+
+    core -->|"1. qs.task.sync.SOURCE&nbsp;&mdash; window, mode, request_id"| bus
+    bus --> importers
+    importers -->|"2. asks Core for the encrypted credential"| core
+    importers -->|"3. fetches exactly that window"| providers
+    importers -->|"4. qs.ingest.SOURCE&nbsp;&mdash; canonical name, converted unit,<br/>deterministic idempotency_key"| bus
+    bus -->|"5. one consumer, queue group"| core
+    core -->|"6. INSERT ... ON CONFLICT DO NOTHING"| db
 ```
 
 ## Services
@@ -114,6 +129,11 @@ Today:
   connector credential could cross the service boundary.
 - The Analysis service holds **no** database connection. A test reads the AST of every module and
   fails as soon as a database driver is imported there.
+
+That last check used to exist for Analysis alone, which made rule 1 a property of one service out of
+ten. `tools/tests/test_service_boundaries.py` now walks every service except Core and fails on an
+imported driver, on a *declared* dependency on one, and on a migration directory outside Core — so a
+new importer is covered the day it is added, rather than the day somebody writes it a test.
 
 The interface calls `/api/v1/analysis/insights`; the Gateway proxies it through.
 

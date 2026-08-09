@@ -205,6 +205,24 @@ right: there the documentation is an image built by `mkdocs build` that sits at 
 When measuring this, `curl` **without** `-L` is worth it: with redirects followed it reports the 200 of
 the sign-in page you end up on, and the loop looks like a success.
 
+### A diagram in `/docs` renders as an empty block
+
+Material fetches the mermaid renderer from `https://unpkg.com/mermaid@11/…` when the page
+loads — it does not bundle it. On a host with no outbound internet, or behind something that
+blocks unpkg, the diagram area stays blank rather than falling back to its source.
+
+Two ways out. Read the same diagram on GitHub, where it is rendered server-side; or vendor
+the renderer into the site and stop depending on a third party:
+
+```yaml
+# mkdocs.yml
+extra_javascript:
+  - assets/mermaid.min.js   # 3.4 MB, committed
+```
+
+The second is also the privacy-preserving option: as it stands, every reader of `/docs`
+makes a request to unpkg.
+
 ## Configuration
 
 ### Core or the Gateway will not start: "refuses to start with published secrets"
