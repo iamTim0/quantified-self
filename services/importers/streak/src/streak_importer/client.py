@@ -5,7 +5,6 @@ per Rule 8 (Stateless Importers & Connector Credentials).
 """
 
 import logging
-import uuid
 from typing import Any
 
 import httpx
@@ -30,9 +29,17 @@ async def get_connector_credentials_from_core(
                 data = res.json()
                 if data.get("status") == "active":
                     token = data.get("access_token")
-                    source_id = data.get("source_id") or str(
-                        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
-                    )
+                    source_id = data.get("source_id")
+                    if not source_id:
+                        # No synthetic fallback. It collapsed every instance of a
+                        # type onto one id -- and that id is the second component
+                        # of every idempotency key, so two devices would have
+                        # written one indistinguishable series.
+                        logger.warning(
+                            "Core returned no source_id for tenant %s; refusing to guess one.",
+                            tenant_id,
+                        )
+                        return None, None, None
                     # "get" was a typo for "config" that silently shadowed the real
                     # connector configuration whenever Core emitted that key.
                     return token, source_id, data.get("config", {})

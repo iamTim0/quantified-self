@@ -30,9 +30,31 @@ from tests.db_helpers import (
 app.state.testing = True
 
 
+async def _connector(
+    ac: AsyncClient, tenant_id: str, *, source_type: str = "apple_health", name: str = "Phone"
+) -> str:
+    """The connector a key will push to.
+
+    A key now names a connector *instance*, because that id becomes the
+    `source_id` of every point ingested under it. Creating one explicitly is also
+    rule 10: the test builds the state it needs rather than assuming it.
+    """
+    res = await ac.post(
+        "/api/v1/data/sources/configure",
+        json={"source_type": source_type, "display_name": name, "status": "active"},
+        headers=auth_headers(tenant_id),
+    )
+    assert res.status_code == 200, res.text
+    return res.json()["source_id"]
+
+
 async def _create_key(ac: AsyncClient, tenant_id: str, **overrides) -> dict:
     body = {"name": "Health Auto Export", "source_type": "apple_health"}
     body.update(overrides)
+    if "source_id" not in body:
+        body["source_id"] = await _connector(
+            ac, tenant_id, source_type=body["source_type"], name=f"{body['source_type']}-1"
+        )
     res = await ac.post(
         "/api/v1/data/api-keys", json=body, headers=auth_headers(tenant_id)
     )

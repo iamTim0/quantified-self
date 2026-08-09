@@ -12,8 +12,10 @@ import json
 import logging
 import os
 import uuid
+from collections.abc import Sequence
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
+from statistics import median
 from typing import Any, Literal
 from urllib.parse import parse_qs
 
@@ -22,13 +24,21 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
-from pydantic import BaseModel, Field, field_validator
-from shared_schemas import idempotency_key
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+from shared_schemas import FieldReport, idempotency_key
 from shared_schemas.metrics import (
     CANONICAL_KEYS,
     DYNAMIC_NAMESPACES,
     METRIC_ALIASES,
     METRIC_CATALOG,
+    Cadence,
     UnknownMetricTypeError,
     canonical_metric_type,
     describe,
@@ -40,13 +50,20 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.analytics import detect_daily_gaps, find_cross_source_conflicts, pearson_pairs
+from core.analytics import (
+    detect_cadence_gaps,
+    detect_daily_gaps,
+    find_cross_source_conflicts,
+    pearson_pairs,
+)
 from core.config import settings
+from core.connectors import PUSH_SOURCE_TYPES, credential_is_optional
 from core.db.models import (
     ApiKey,
     DataPoint,
     DataSource,
     ExplorerView,
+    IngestFieldReport,
     OidcAuthRequest,
     OidcProvider,
     RefreshToken,
@@ -134,10 +151,8 @@ ValidSourceType = Literal[
 ]
 ValidStatus = Literal["active", "inactive"]
 
-# Connectors that receive pushed data. They authenticate inbound requests with
-# tenant-bound API keys (see the api_keys table), so they hold no provider
-# credential of their own and must be configurable without one.
-PUSH_SOURCE_TYPES = {"apple_health", "streak"}
+# The connector taxonomy lives in `core.connectors`, so the scheduler can share it
+# without importing this module (see the import block above).
 
 
 class ManualDataPointRequest(BaseModel):
@@ -1823,21 +1838,61 @@ async def get_metrics_summary(
 async def get_data_gaps(
     start_date: date = Query(...),
     end_date: date = Query(...),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; days are bucketed in it",
+    ),
     session: AsyncSession = Depends(get_session),
 ):
-    """Detect missing tracking days using only the authenticated tenant's timeline."""
+    """Detect missing tracking days using only the authenticated tenant's timeline.
+
+    Two questions, because "missing" means two different things. A metric expected
+    daily is judged against calendar days; one sampled continuously is judged
+    against the rate it actually kept. Metrics that simply happen when they happen
+    are not judged at all — see `Cadence`.
+    """
     tenant_id = get_current_tenant_id()
     if end_date < start_date or (end_date - start_date).days > 366:
         raise HTTPException(status_code=400, detail="Date range must contain at most 367 ordered days")
+
+    window_start = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
+    window_end = datetime.combine(
+        end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
+    )
+
+    # Filtered in SQL, not in Python. Half the registry is event-driven and would
+    # be discarded after Postgres had selected, transferred and decoded it — and
+    # the discarded half is the high-volume one, GPS traces and per-minute samples.
+    judged = [
+        key
+        for key, definition in METRIC_CATALOG.items()
+        if definition.cadence in (Cadence.DAILY, Cadence.CONTINUOUS)
+    ]
     result = await session.execute(
         select(DataPoint.metric_type, DataPoint.timestamp).where(
             DataPoint.tenant_id == tenant_id,
-            DataPoint.timestamp >= datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc),
-            DataPoint.timestamp < datetime.combine(end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc),
+            DataPoint.metric_type.in_(judged),
+            DataPoint.timestamp >= window_start,
+            DataPoint.timestamp < window_end,
         )
     )
-    gaps = detect_daily_gaps(result.all(), start_date, end_date)
-    return {"tenant_id": tenant_id, "gaps": gaps, "missing_count": sum(len(g["missing_dates"]) for g in gaps)}
+    rows = result.all()
+
+    # The reader's own zone, not UTC. Without this the parameter added for exactly
+    # this purpose was exercised only by its unit test, and the first and last day
+    # of every window stayed misreported.
+    gaps = detect_daily_gaps(rows, start_date, end_date, local_timezone=_window_timezone(offset_minutes))
+    cadence_gaps = detect_cadence_gaps(rows, TimeRange(window_start, window_end))
+    return {
+        "tenant_id": tenant_id,
+        "gaps": gaps,
+        "missing_count": sum(len(g["missing_dates"]) for g in gaps),
+        # Continuous metrics report interrupted spans rather than missing days:
+        # a calendar day is the wrong unit for something sampled every minute.
+        "cadence_gaps": cadence_gaps,
+    }
 
 
 @app.post("/api/v1/data/import", status_code=202)
@@ -1978,25 +2033,94 @@ def _bucket_fetcher(
 
 
 async def _resolve_source(
-    session: AsyncSession, tenant_id: str, source_type: str
+    session: AsyncSession,
+    tenant_id: str,
+    source_type: str | None = None,
+    *,
+    source_id: str | None = None,
 ) -> DataSource | None:
-    res = await session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == tenant_id, DataSource.source_type == source_type
-        )
-    )
+    """The connector a request is about, addressed by instance or by type.
+
+    `source_id` is the precise form and the one the dashboard uses. Addressing by
+    type is kept for the callers that still speak that way, but it is only
+    meaningful while a tenant holds one connector of the type — with two, it
+    resolves to whichever the database returns first, so it is ordered by creation
+    to at least be *stable* rather than arbitrary.
+    """
+    query = select(DataSource).where(DataSource.tenant_id == tenant_id)
+    if source_id is not None:
+        query = query.where(DataSource.id == source_id)
+    if source_type is not None:
+        query = query.where(DataSource.source_type == source_type)
+    res = await session.execute(query.order_by(DataSource.created_at, DataSource.id))
     return res.scalars().first()
 
 
+def _window_timezone(offset_minutes: int) -> timezone:
+    """The reader's zone as a fixed offset.
+
+    An offset rather than a zone name because that is what a browser can state
+    without ambiguity, and because a gap window is short enough that a DST change
+    inside it moves one boundary by an hour rather than corrupting the answer.
+    """
+    return timezone(timedelta(minutes=offset_minutes))
+
+
+def _typical_duration_seconds(runs: Sequence[SyncRun]) -> float | None:
+    """How long this connector's finished imports usually take, or ``None``.
+
+    The median of what actually happened, not an estimate of what should: a mean
+    would let one stuck six-hour run dominate the answer forever. ``None`` when
+    there is nothing to go on, so the interface can stay silent rather than invent
+    a number for a connector that has never run.
+    """
+    durations = [
+        (run.finished_at - run.started_at).total_seconds()
+        for run in runs
+        if run.finished_at is not None
+        and run.started_at is not None
+        and run.status == "success"
+        and run.finished_at >= run.started_at
+    ]
+    return round(median(durations), 1) if durations else None
+
+
+def _looks_like_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+async def _resolve_source_ref(
+    session: AsyncSession, tenant_id: str, ref: str
+) -> DataSource | None:
+    """Resolve a path segment that names either a connector instance or a type.
+
+    One route rather than two. No `source_type` is a UUID, so the two forms cannot
+    collide, and importers that still address their own type keep working while the
+    dashboard addresses the exact instance the user clicked.
+    """
+    if _looks_like_uuid(ref):
+        return await _resolve_source(session, tenant_id, source_id=ref)
+    return await _resolve_source(session, tenant_id, ref)
+
+
 async def _last_successful_sync_end(
-    session: AsyncSession, tenant_id: str, source_type: str
+    session: AsyncSession, tenant_id: str, source_id: str
 ) -> datetime | None:
-    """When the last successful run's window ended, for adaptive resumption."""
+    """When this connector's last successful run ended, for adaptive resumption.
+
+    Keyed on the instance, not the type: with two calendars, the type would let
+    one connector's successful window advance the other's resume point, and the
+    second calendar would silently skip everything the first had already fetched.
+    """
     res = await session.execute(
         select(SyncRun.window_end)
         .where(
             SyncRun.tenant_id == tenant_id,
-            SyncRun.source_type == source_type,
+            SyncRun.source_id == source_id,
             SyncRun.status == "success",
             SyncRun.window_end.is_not(None),
         )
@@ -2007,6 +2131,68 @@ async def _last_successful_sync_end(
     if value is not None and value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value
+
+
+#: Open-Meteo's place-name lookup. Configurable so a self-hosted deployment can
+#: point it elsewhere, and so a test never reaches the network.
+GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
+
+
+@app.get("/api/v1/data/geocode")
+async def geocode_place(
+    query: str = Query(..., min_length=2, max_length=120, description="Place name to look up"),
+):
+    """Resolve a place name to coordinates, for configuring a weather connector.
+
+    Proxied rather than called from the browser for two reasons. The dashboard
+    ships a `connect-src` allowlist (`apps/dashboard/next.config.ts`), and widening
+    it for a convenience feature would permit that origin for every script on the
+    page. And a direct call would hand the user's IP address and the name of the
+    place they live to a third party — the very thing this platform exists to keep
+    in one place.
+
+    Answers in English with a stable shape (rule 17): the dashboard formats it.
+    """
+    tenant_id = get_current_tenant_id()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(
+                GEOCODING_URL,
+                params={"name": query, "count": 5, "format": "json"},
+                headers={"Accept": "application/json"},
+            )
+    except httpx.HTTPError as exc:
+        logger.warning(
+            "[tenant=%s] Geocoding provider unreachable: %s", tenant_id, type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=502, detail="The place-name service could not be reached."
+        ) from None
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"The place-name service returned HTTP {response.status_code}.",
+        )
+
+    payload = response.json() if response.content else {}
+    results = payload.get("results") or []
+    return {
+        "query": query,
+        "results": [
+            {
+                "name": entry.get("name"),
+                "country": entry.get("country"),
+                "admin1": entry.get("admin1"),
+                "latitude": entry.get("latitude"),
+                "longitude": entry.get("longitude"),
+            }
+            for entry in results
+            if isinstance(entry, dict)
+            and entry.get("latitude") is not None
+            and entry.get("longitude") is not None
+        ],
+    }
 
 
 @app.get("/api/v1/data/coverage")
@@ -2052,9 +2238,9 @@ class ImportPlanRequest(BaseModel):
     mode: Literal["smart", "force"] = Field("smart", description="Smart skips known-complete ranges")
 
 
-@app.post("/api/v1/data/sources/{source_type}/import-plan")
+@app.post("/api/v1/data/sources/{source_ref}/import-plan")
 async def get_import_plan(
-    source_type: str,
+    source_ref: str,
     req: ImportPlanRequest,
     session: AsyncSession = Depends(get_session),
 ):
@@ -2064,7 +2250,7 @@ async def get_import_plan(
     ranges will be skipped and why.
     """
     tenant_id = get_current_tenant_id()
-    source = await _resolve_source(session, tenant_id, source_type)
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
     if not source:
         raise HTTPException(status_code=404, detail="Connector not configured")
 
@@ -2079,7 +2265,7 @@ async def get_import_plan(
             now=now,
             poll_interval_hours=float(config.get("poll_interval_hours", 6)),
             lookback_days=int(config.get("lookback_days", 30)),
-            last_success_end=await _last_successful_sync_end(session, tenant_id, source_type),
+            last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
         )
 
     fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
@@ -2088,28 +2274,44 @@ async def get_import_plan(
     payload = plan.to_dict()
     payload["window_reason"] = window_reason
     payload["tenant_id"] = tenant_id
-    payload["source_type"] = source_type
+    payload["source_id"] = source.id
+    payload["source_type"] = source.source_type
     payload["docs_url"] = "/docs/features/smart-import/"
     return payload
 
 
-@app.get("/api/v1/data/sources/{source_type}/sync-runs")
+@app.get("/api/v1/data/sources/{source_ref}/sync-runs")
 async def list_sync_runs(
-    source_type: str,
+    source_ref: str,
     limit: int = Query(20, ge=1, le=200),
     session: AsyncSession = Depends(get_session),
 ):
-    """Import history for a connector, newest first."""
+    """Import history for one connector, newest first.
+
+    Filtered by connector id. Filtered by type, a tenant's two calendars would
+    share one interleaved history with nothing to tell the rows apart.
+    """
     tenant_id = get_current_tenant_id()
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
     res = await session.execute(
         select(SyncRun)
-        .where(SyncRun.tenant_id == tenant_id, SyncRun.source_type == source_type)
+        .where(SyncRun.tenant_id == tenant_id, SyncRun.source_id == source.id)
         .order_by(SyncRun.started_at.desc())
         .limit(limit)
     )
+    runs = res.scalars().all()
+
     return {
         "tenant_id": tenant_id,
-        "source_type": source_type,
+        "source_id": source.id,
+        "source_type": source.source_type,
+        # How long this connector usually takes, from its own finished runs. An
+        # estimate about *this* connector rather than a guess: before it has ever
+        # run there is simply nothing here, and the interface says nothing.
+        "typical_duration_seconds": _typical_duration_seconds(runs),
         "runs": [
             {
                 "id": run.id,
@@ -2128,7 +2330,7 @@ async def list_sync_runs(
                 "started_at": run.started_at.isoformat() if run.started_at else None,
                 "finished_at": run.finished_at.isoformat() if run.finished_at else None,
             }
-            for run in res.scalars().all()
+            for run in runs
         ],
     }
 
@@ -2148,8 +2350,125 @@ def _validated_window(start: datetime, end: datetime) -> TimeRange:
 
 # ─── Connector Configuration Endpoints ──────────────────────
 
+class WeatherConnectorConfig(BaseModel):
+    """The parts of a weather connector's `config` the importer actually reads.
+
+    Everywhere else `config` is an untyped blob, and for weather that was the bug:
+    the connector could be saved with no coordinates at all, because nothing on
+    the way in looked, and the importer then failed with a message naming fields
+    the form had never offered. Validating here turns a silent misconfiguration
+    into a 422 at the moment it is made.
+
+    `extra="allow"` on purpose -- Core's own bookkeeping keys (`status`,
+    `last_sync_at`, …) are merged into the same dictionary and must survive.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # Optional only because the expert mode supplies a complete `request_url`
+    # instead, which already carries the location in its query.
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    base_url: str | None = None
+    request_url: str | None = None
+    hourly_variables: list[str] | None = None
+
+    @field_validator("base_url", "request_url")
+    @classmethod
+    def _absolute_http_url(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        candidate = v.strip()
+        if not candidate:
+            return None
+        if not candidate.lower().startswith(("http://", "https://")):
+            raise ValueError("must start with http:// or https://")
+        return candidate
+
+    @model_validator(mode="after")
+    def _location_or_request_url(self) -> "WeatherConnectorConfig":
+        """One of the two modes has to be complete.
+
+        Without this the connector saves happily and then fails in the importer
+        with a message naming fields the form never showed — which is exactly how
+        weather came to be unconfigurable in the first place.
+        """
+        if self.request_url:
+            return self
+        if self.latitude is None or self.longitude is None:
+            raise ValueError("latitude and longitude are required unless request_url is given")
+        return self
+
+
+class CalendarConnectorConfig(BaseModel):
+    """A calendar is its feed URL, and nothing else is required.
+
+    Until the API mode was removed, a calendar without a URL was refused by the
+    credential check as a side effect. Making the credential unconditionally
+    optional removed that guard, so the requirement is stated here instead —
+    where it belongs, because a URL is configuration and not a credential.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    ics_url: str | None = None
+    base_url: str | None = None
+
+    @model_validator(mode="after")
+    def _needs_a_feed_url(self) -> "CalendarConnectorConfig":
+        url = (self.ics_url or self.base_url or "").strip()
+        if not url:
+            raise ValueError("a calendar feed URL is required")
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("the calendar URL must start with http:// or https://")
+        return self
+
+
+#: Per-source-type validation for the otherwise free-form `config` blob. A type
+#: absent from here keeps the old behaviour, which is "anything goes".
+CONNECTOR_CONFIG_MODELS: dict[str, type[BaseModel]] = {
+    "weather": WeatherConnectorConfig,
+    "calendar": CalendarConnectorConfig,
+}
+
+
+def _validate_connector_config(source_type: str, config: dict[str, Any]) -> None:
+    """Reject a connector whose stored configuration could not work.
+
+    Checked against the *merged* result rather than the request, so editing only
+    the poll interval stays legal while the state that gets written is always one
+    the importer can act on.
+    """
+    model = CONNECTOR_CONFIG_MODELS.get(source_type)
+    if model is None:
+        return
+    try:
+        model.model_validate(config)
+    except ValidationError as exc:
+        # Field *and* reason. A whole-model rule (such as "latitude and longitude
+        # are required unless request_url is given") has an empty `loc`, so naming
+        # only the field produced the useless "configuration: config".
+        problems = []
+        for error in exc.errors():
+            where = ".".join(str(part) for part in error["loc"])
+            message = error.get("msg", "is invalid")
+            problems.append(f"{where}: {message}" if where else message)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid {source_type} connector configuration — {'; '.join(problems)}",
+        ) from None
+
+
 class ConfigureConnectorRequest(BaseModel):
     source_type: ValidSourceType = Field(..., description="Connector provider: oura, whoop, apple_health, fitbit, yazio")
+    # Which instance to update. Absent means "create a new one" -- a tenant may
+    # hold several connectors of the same type, so the type alone no longer
+    # identifies a row. Editing used to overwrite whichever one existed.
+    source_id: str | None = Field(None, description="Existing connector to update")
+    # What the user calls this instance. Required on create, because "which of my
+    # three calendars is this?" has no answer the system could invent; optional on
+    # update, where leaving it out keeps the current name.
+    display_name: str | None = Field(None, min_length=1, max_length=128)
     # SECURITY H6: Optional access_token to allow editing frequency without re-entering token
     access_token: str | None = Field(None, description="Raw API access token / credential", max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
@@ -2193,13 +2512,26 @@ async def configure_connector(
         session.add(Tenant(id=tenant_id, name="Default Workspace"))
         await session.flush()
 
-    # Check existing data source
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == req.source_type,
-    )
-    res = await session.execute(stmt)
-    existing = res.scalars().first()
+    # Which instance is being edited, if any. Without an explicit `source_id` this
+    # is a *create*: a tenant may hold several connectors of the same type, so the
+    # type alone no longer names a row, and assuming it did is what made a second
+    # calendar overwrite the first.
+    existing: DataSource | None = None
+    if req.source_id:
+        existing = await _resolve_source(session, tenant_id, source_id=req.source_id)
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Connector not found")
+        if existing.source_type != req.source_type:
+            raise HTTPException(
+                status_code=400, detail="source_type does not match the connector being edited"
+            )
+    elif not (req.display_name or "").strip():
+        # `.strip()` because `min_length=1` counts characters, and three spaces is
+        # three characters that name nothing.
+        raise HTTPException(
+            status_code=422,
+            detail="display_name is required when creating a connector",
+        )
 
     if req.source_type == "yazio" and req.config and "yazio_email" in req.config and "yazio_password" in req.config and req.config["yazio_email"] and req.config["yazio_password"]:
         email = req.config["yazio_email"]
@@ -2228,7 +2560,13 @@ async def configure_connector(
                 if resp.status_code == 401:
                     raise HTTPException(status_code=401, detail="Yazio sign-in failed: wrong email address or password.")
                 if not resp.is_success:
-                    raise HTTPException(status_code=resp.status_code, detail=f"Yazio Login fehlgeschlagen: {resp.text}")
+                    logger.warning(
+                        "Yazio sign-in failed with HTTP %s: %s", resp.status_code, resp.text[:500]
+                    )
+                    raise HTTPException(
+                        status_code=resp.status_code,
+                        detail=f"Yazio sign-in failed (HTTP {resp.status_code}).",
+                    )
                 token_data = resp.json()
                 raw_token = token_data.get("access_token", "")
                 if not raw_token:
@@ -2245,14 +2583,7 @@ async def configure_connector(
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    # A connector legitimately has no provider credential when it either receives
-    # pushed data (authenticated per-request by a tenant-bound API key) or reads a
-    # public/tokenised ICS URL, where the URL itself is the credential.
-    incoming_config = req.config or {}
-    credential_optional = req.source_type in PUSH_SOURCE_TYPES or (
-        req.source_type == "calendar"
-        and bool(incoming_config.get("ics_url") or incoming_config.get("base_url"))
-    )
+    credential_optional = credential_is_optional(req.source_type)
 
     if raw_token:
         encrypted_token = encrypt_secret(raw_token)
@@ -2324,27 +2655,45 @@ async def configure_connector(
     if existing:
         merged_config = dict(existing.config or {})
         merged_config.update(config_data)
+        _validate_connector_config(req.source_type, merged_config)
         existing.config = merged_config
+        if (req.display_name or "").strip():
+            existing.display_name = req.display_name.strip()
         source_id = existing.id
+        display_name = existing.display_name
     else:
+        _validate_connector_config(req.source_type, config_data)
         source_id = str(uuid.uuid4())
+        display_name = (req.display_name or "").strip()
         new_source = DataSource(
             id=source_id,
             tenant_id=tenant_id,
             source_type=req.source_type,
+            display_name=display_name,
             config=config_data,
         )
         session.add(new_source)
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="A connector of this type already uses that name.",
+        ) from None
 
     req_id = str(uuid.uuid4())
     payload = json.dumps({
         "tenant_id": tenant_id,
+        # The importer needs to know *which* instance it was asked to sync: it is
+        # what the credential lookup keys on and what every idempotency key it
+        # derives is built from.
+        "source_id": source_id,
         "source_type": req.source_type,
         "request_id": req_id
     }).encode("utf-8")
-    
+
     nc = getattr(app.state, "nats_client", None)
     if nc:
         try:
@@ -2366,6 +2715,7 @@ async def configure_connector(
         "source_id": source_id,
         "tenant_id": tenant_id,
         "source_type": req.source_type,
+        "display_name": display_name,
         "masked_token": config_data.get("masked_token", "••••••••"),
         "poll_interval_hours": req.poll_interval_hours,
         "lookback_days": req.lookback_days,
@@ -2374,7 +2724,12 @@ async def configure_connector(
 
 
 class TriggerSyncRequest(BaseModel):
-    source_type: str = Field(..., description="Connector provider name (e.g. yazio, dawarich)")
+    # Either identifies the connector. `source_id` is exact and is what the
+    # dashboard sends; `source_type` remains for callers that predate instances.
+    source_id: str | None = Field(None, description="Connector instance to sync")
+    source_type: str | None = Field(
+        None, description="Connector provider name (e.g. yazio, dawarich)"
+    )
     start: datetime | None = Field(None, description="Explicit window start; omit to derive one")
     end: datetime | None = Field(None, description="Explicit window end; omit to use now")
     mode: Literal["smart", "force"] = Field(
@@ -2387,8 +2742,13 @@ async def trigger_sync_post(
     req: TriggerSyncRequest,
     session: AsyncSession = Depends(get_session),
 ):
+    ref = req.source_id or req.source_type
+    if not ref:
+        raise HTTPException(
+            status_code=422, detail="Either source_id or source_type is required"
+        )
     return await trigger_sync(
-        source_type=req.source_type,
+        source_ref=ref,
         session=session,
         start=req.start,
         end=req.end,
@@ -2425,7 +2785,7 @@ async def plan_and_enqueue_sync(
     # `force` is exempt: an explicit user override should not be blocked by a run
     # that may itself be stuck.
     if mode != "force" and await has_in_flight_run(
-        session, tenant_id, source_type, now=now
+        session, tenant_id, source.id, now=now
     ):
         logger.info(
             "[req_id=%s] Sync for %s not enqueued: a run is already in flight.",
@@ -2447,7 +2807,7 @@ async def plan_and_enqueue_sync(
             now=now,
             poll_interval_hours=float(config.get("poll_interval_hours", 6)),
             lookback_days=int(config.get("lookback_days", 30)),
-            last_success_end=await _last_successful_sync_end(session, tenant_id, source_type),
+            last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
         )
 
     fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
@@ -2496,6 +2856,10 @@ async def plan_and_enqueue_sync(
 
     payload = json.dumps({
         "tenant_id": tenant_id,
+        # Which instance to sync. The importer fetches its credential by this id
+        # and keys every point it produces on it, so without it a tenant's second
+        # calendar would import the first one's feed.
+        "source_id": source.id,
         "source_type": source_type,
         "request_id": req_id,
         "sync_run_id": run.id,
@@ -2526,9 +2890,9 @@ async def plan_and_enqueue_sync(
     }
 
 
-@app.post("/api/v1/data/sources/{source_type}/sync", status_code=202)
+@app.post("/api/v1/data/sources/{source_ref}/sync", status_code=202)
 async def trigger_sync(
-    source_type: str,
+    source_ref: str,
     session: AsyncSession = Depends(get_session),
     start: datetime | None = Query(None),
     end: datetime | None = Query(None),
@@ -2543,7 +2907,7 @@ async def trigger_sync(
     """
     tenant_id = get_current_tenant_id()
 
-    source = await _resolve_source(session, tenant_id, source_type)
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
     if not source:
         raise HTTPException(status_code=404, detail="Connector not configured")
 
@@ -2566,11 +2930,9 @@ async def list_connectors(
     connectors = []
     for s in sources:
         config = s.config or {}
-        # A push connector or a public ICS feed has no stored credential, so absence
-        # of one is not evidence that the connector is unconfigured.
-        credential_optional = s.source_type in PUSH_SOURCE_TYPES or (
-            s.source_type == "calendar" and bool(config.get("ics_url") or config.get("base_url"))
-        )
+        # A credential-optional connector has no stored token, so absence of one is
+        # not evidence that the connector is unconfigured.
+        credential_optional = credential_is_optional(s.source_type)
         if config.get("status") == "inactive":
             continue
         if not config.get("encrypted_token") and not credential_optional:
@@ -2593,9 +2955,12 @@ async def list_connectors(
             "id": s.id,
             "tenant_id": s.tenant_id,
             "source_type": s.source_type,
+            "display_name": s.display_name,
             "status": config.get("status", "active"),
             "sync_status": config.get("sync_status", "idle" if last_dp_dt else "pending"),
-            "last_sync_message": config.get("last_sync_message", "NATS Task Group bereit"),
+            # Services answer in English (rule 16); the dashboard renders its own
+            # wording for a connector that has not run yet.
+            "last_sync_message": config.get("last_sync_message", "Ready."),
             "last_request_id": config.get("last_request_id"),
             "nats_subject": f"qs.task.sync.{s.source_type}",
             "nats_queue_group": f"{s.source_type}_importer_task_group",
@@ -2613,19 +2978,19 @@ async def list_connectors(
     }
 
 
-@app.delete("/api/v1/data/sources/{source_type}")
+@app.delete("/api/v1/data/sources/{source_ref}")
 async def delete_connector(
-    source_type: str,
+    source_ref: str,
     session: AsyncSession = Depends(get_session),
 ):
-    """Safely wipe connector credentials for the tenant without deleting ingested metric data points."""
+    """Wipe one connector's credentials without deleting its ingested data points.
+
+    `source_ref` is the connector's id. A bare source type still resolves, but with
+    several instances of a type it would disconnect an arbitrary one, so the
+    dashboard always sends the id.
+    """
     tenant_id = get_current_tenant_id()
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == source_type,
-    )
-    res = await session.execute(stmt)
-    source = res.scalars().first()
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
 
     if not source:
         raise HTTPException(status_code=404, detail="Connector configuration not found")
@@ -2639,39 +3004,42 @@ async def delete_connector(
 
     return {
         "status": "success",
-        "message": f"Token for connector '{source_type}' deleted successfully. Ingested metric data preserved.",
-        "source_type": source_type,
+        "message": (
+            f"Token for connector '{source.display_name}' deleted successfully. "
+            "Ingested metric data preserved."
+        ),
+        "source_id": source.id,
+        "source_type": source.source_type,
         "tenant_id": tenant_id,
     }
 
 
-@app.get("/api/v1/internal/data/sources/{source_type}/token")
+@app.get("/api/v1/internal/data/sources/{source_ref}/token")
 async def get_connector_token(
-    source_type: str,
+    source_ref: str,
     session: AsyncSession = Depends(get_session),
 ):
-    """Internal endpoint for Importer microservices to fetch decrypted credentials."""
+    """Internal endpoint for Importer microservices to fetch decrypted credentials.
+
+    `source_ref` is the connector's id -- the sync task carries it, because with
+    several connectors of one type the type alone no longer says whose credential
+    is wanted. A bare type still resolves, for the importers and tests that address
+    themselves that way.
+    """
     tenant_id = get_current_tenant_id()
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == source_type,
-    )
-    res = await session.execute(stmt)
-    source = res.scalars().first()
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
 
     if not source or not source.config:
-        raise HTTPException(status_code=404, detail=f"No connector configured for {source_type}")
+        raise HTTPException(status_code=404, detail=f"No connector configured for {source_ref}")
+
+    source_type = source.source_type
 
     encrypted_token = source.config.get("encrypted_token")
     if not encrypted_token:
-        # Push connectors and public ICS feeds have no provider credential. The
-        # importer still needs source_id and config, so return those with a null
-        # token rather than a 404 it would have to special-case.
-        credential_optional = source_type in PUSH_SOURCE_TYPES or (
-            source_type == "calendar"
-            and bool(source.config.get("ics_url") or source.config.get("base_url"))
-        )
-        if not credential_optional:
+        # A credential-optional connector has no provider credential. The importer
+        # still needs source_id and config, so return those with a null token
+        # rather than a 404 it would have to special-case.
+        if not credential_is_optional(source_type):
             raise HTTPException(
                 status_code=404, detail="Token not found in connector configuration"
             )
@@ -2751,9 +3119,48 @@ async def get_connector_token(
 # ─── Tenant-bound Inbound API Keys ──────────────────────────
 
 
+async def _resolve_connector_for_key(
+    session: AsyncSession, tenant_id: str, source_type: str, source_id: str | None
+) -> DataSource:
+    """The connector instance an inbound key will push to.
+
+    Named explicitly, or inferred when the tenant has exactly one connector of the
+    type. Two candidates and no choice is an error rather than a guess: the id
+    picked here ends up in every idempotency key derived from data pushed with this
+    credential, so guessing wrong is not a routing mistake but a data one.
+    """
+    if source_id:
+        source = await _resolve_source(session, tenant_id, source_type, source_id=source_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail="Connector not found")
+        return source
+
+    res = await session.execute(
+        select(DataSource)
+        .where(DataSource.tenant_id == tenant_id, DataSource.source_type == source_type)
+        .order_by(DataSource.created_at, DataSource.id)
+    )
+    candidates = res.scalars().all()
+    if not candidates:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {source_type} connector is configured. Create one first.",
+        )
+    if len(candidates) > 1:
+        raise HTTPException(
+            status_code=409,
+            detail="Several connectors of this type exist; name the one with source_id.",
+        )
+    return candidates[0]
+
+
 class CreateApiKeyRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=128)
     source_type: str = Field(..., description="Connector this key may push to")
+    # Which connector instance the pushed data belongs to. Optional only so a
+    # tenant with a single connector of the type need not name it; the endpoint
+    # resolves it and refuses when the choice is ambiguous.
+    source_id: str | None = Field(None, description="Connector instance this key pushes to")
     expires_in_days: int | None = Field(
         None, ge=1, le=3650, description="Optional expiry; omit for a non-expiring key"
     )
@@ -2767,6 +3174,7 @@ def _serialize_api_key(key: ApiKey) -> dict[str, Any]:
         "name": key.name,
         "key_prefix": key.key_prefix,
         "source_type": key.source_type,
+        "source_id": key.source_id,
         "scopes": key.scopes,
         "status": key.status,
         "expires_at": key.expires_at.isoformat() if key.expires_at else None,
@@ -2794,6 +3202,14 @@ async def create_api_key_endpoint(
             detail=f"source_type must be one of: {', '.join(sorted(PUSH_SOURCE_TYPES))}",
         )
 
+    # A key has to name the connector *instance* it pushes to: that id becomes the
+    # `source_id` of every point ingested under it, and therefore part of every
+    # idempotency key. With two connectors of the type and no choice made, guessing
+    # would quietly file one device's readings under the other.
+    target = await _resolve_connector_for_key(
+        session, principal.tenant_id, req.source_type, req.source_id
+    )
+
     raw_key, key_prefix, key_hash = create_api_key()
     expires_at = (
         datetime.now(timezone.utc) + timedelta(days=req.expires_in_days)
@@ -2808,6 +3224,7 @@ async def create_api_key_endpoint(
         key_prefix=key_prefix,
         key_hash=key_hash,
         source_type=req.source_type,
+        source_id=target.id,
         scopes=req.scopes,
         expires_at=expires_at,
     )
@@ -2896,6 +3313,11 @@ async def rotate_api_key(
         key_prefix=key_prefix,
         key_hash=key_hash,
         source_type=old_key.source_type,
+        # The replacement pushes to the same connector instance. Rotation changes
+        # the credential, not where the data lands -- and since this id is part of
+        # every idempotency key derived from it, a different one would make the
+        # same readings arrive again as new points.
+        source_id=old_key.source_id,
         scopes=old_key.scopes,
         expires_at=old_key.expires_at,
         rotated_from_id=old_key.id,
@@ -2954,19 +3376,16 @@ async def resolve_api_key(
         raise HTTPException(status_code=403, detail="API key not valid for this source")
 
     key.last_used_at = now
-
-    source_res = await session.execute(
-        select(DataSource).where(
-            DataSource.tenant_id == key.tenant_id,
-            DataSource.source_type == key.source_type,
-        )
-    )
-    source = source_res.scalars().first()
     await session.commit()
 
+    # The key names the connector *instance*, not just its type. Once a tenant can
+    # hold two Apple Health connectors, the type no longer answers "whose reading
+    # is this?" — and that answer is the `source_id` every idempotency key derived
+    # from this push is built from, so getting it wrong would merge two people's
+    # phones into one series.
     return {
         "tenant_id": key.tenant_id,
-        "source_id": source.id if source else None,
+        "source_id": key.source_id,
         "source_type": key.source_type,
         "key_id": key.id,
         "key_prefix": key.key_prefix,
@@ -3073,9 +3492,188 @@ class UpdateConnectorStatusRequest(BaseModel):
     points_received: int | None = Field(None, ge=0)
 
 
-@app.post("/api/v1/internal/data/sources/{source_type}/status")
+class FieldReportPayload(FieldReport):
+    """What an importer sends, which is a `FieldReport` plus the run it belongs to.
+
+    Inherited rather than restated: both ends of this contract were written in the
+    same change, and a hand-written twin would silently drop any field added to the
+    shared model.
+    """
+
+    sync_run_id: str | None = None
+
+
+@app.post("/api/v1/internal/data/sources/{source_ref}/field-report", status_code=202)
+async def record_field_report_internal(
+    source_ref: str,
+    req: FieldReportPayload,
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """Record which provider fields an import used, and which it ignored.
+
+    Upserted per path, so the table holds a rolling picture of the provider's shape
+    rather than one row per import. `occurrences` accumulates, which is what makes
+    "seen 4 000 times and never stored" distinguishable from a one-off oddity.
+    """
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    now = datetime.now(timezone.utc)
+    # Merged by path first. `ON CONFLICT DO UPDATE` cannot touch the same row twice
+    # in one statement, so two sightings of one path would have failed the whole
+    # request with a 500 — and the collector happening to deduplicate today is a
+    # property of one client, not a guarantee this endpoint can rely on.
+    merged: dict[str, dict[str, Any]] = {}
+    for sighting in (*req.mapped, *req.unmapped):
+        row = merged.get(sighting.path)
+        if row is None:
+            merged[sighting.path] = {
+                "id": str(uuid.uuid4()),
+                "tenant_id": tenant_id,
+                "source_id": source.id,
+                "source_type": source.source_type,
+                "field_path": sighting.path,
+                "value_kind": sighting.kind,
+                "metric_type": sighting.metric_type,
+                "occurrences": sighting.occurrences,
+                "first_seen_at": now,
+                "last_seen_at": now,
+                "last_sync_run_id": req.sync_run_id,
+            }
+            continue
+        row["occurrences"] += sighting.occurrences
+        # A path mapped anywhere in this report is mapped, whichever order it came in.
+        row["metric_type"] = row["metric_type"] or sighting.metric_type
+    rows = list(merged.values())
+    if not rows:
+        return {"status": "ok", "recorded": 0}
+
+    statement = pg_insert(IngestFieldReport).values(rows)
+    statement = statement.on_conflict_do_update(
+        constraint="uq_field_reports_tenant_source_path",
+        set_={
+            "value_kind": statement.excluded.value_kind,
+            # A path that has *become* mapped must stop being reported as a gap —
+            # that transition is precisely the evidence a fix worked.
+            "metric_type": statement.excluded.metric_type,
+            "occurrences": IngestFieldReport.occurrences + statement.excluded.occurrences,
+            "last_seen_at": statement.excluded.last_seen_at,
+            "last_sync_run_id": statement.excluded.last_sync_run_id,
+        },
+    )
+    await session.execute(statement)
+    await session.commit()
+
+    return {"status": "ok", "recorded": len(rows), "truncated": req.truncated}
+
+
+@app.get("/api/v1/data/quality/unsupported-fields")
+async def list_unsupported_fields(
+    session: AsyncSession = Depends(get_session),
+):
+    """Fields this platform is being given and is not storing.
+
+    The question a user cannot otherwise ask: *is my device sending something that
+    never arrives?* Answered from shape alone — there are no values here, and the
+    response says so in its own field names.
+    """
+    tenant_id = get_current_tenant_id()
+    res = await session.execute(
+        select(IngestFieldReport, DataSource.display_name)
+        .join(DataSource, DataSource.id == IngestFieldReport.source_id)
+        .where(
+            IngestFieldReport.tenant_id == tenant_id,
+            IngestFieldReport.metric_type.is_(None),
+        )
+        .order_by(IngestFieldReport.occurrences.desc(), IngestFieldReport.field_path)
+        .limit(500)
+    )
+
+    fields = [
+        {
+            "source_id": row.source_id,
+            "source_type": row.source_type,
+            "connector_name": display_name,
+            "field_path": row.field_path,
+            "value_kind": row.value_kind,
+            "occurrences": row.occurrences,
+            "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+        }
+        for row, display_name in res.all()
+    ]
+    return {"tenant_id": tenant_id, "fields": fields}
+
+
+class OpenSyncRunRequest(BaseModel):
+    """Start an import that Core did not schedule."""
+
+    trigger: Literal["push", "upload"] = Field(
+        "push", description="How this import was started"
+    )
+    request_id: str | None = Field(None, max_length=128)
+    # Known up front for a file upload, unknowable for a webhook. Where it is
+    # unknown the interface counts rather than showing an invented percentage.
+    points_expected: int | None = Field(None, ge=0)
+    message: str | None = Field(None, max_length=512)
+
+
+@app.post("/api/v1/internal/data/sources/{source_ref}/sync-runs", status_code=201)
+async def open_sync_run_internal(
+    source_ref: str,
+    req: OpenSyncRunRequest,
+    tenant_id: str = Depends(get_current_tenant_id),
+    session: AsyncSession = Depends(get_session),
+):
+    """Open a run for an import nobody planned.
+
+    Scheduled and manual imports get their `SyncRun` from `plan_and_enqueue_sync`.
+    Pushed data had none at all: the Apple Health webhook wrote data points with no
+    `sync_run_id`, so `_tally` never counted them and the whole import was invisible
+    in the history — there was nothing to show a progress display, and no record
+    that it had happened.
+    """
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    now = datetime.now(timezone.utc)
+    run = SyncRun(
+        tenant_id=tenant_id,
+        source_id=source.id,
+        source_type=source.source_type,
+        request_id=req.request_id or get_current_request_id() or str(uuid.uuid4()),
+        mode="force",
+        trigger=req.trigger,
+        status="running",
+        window_start=None,
+        window_end=None,
+        points_received=req.points_expected or 0,
+        message=(req.message or "")[:512] or None,
+        started_at=now,
+    )
+    session.add(run)
+
+    config = dict(source.config or {})
+    config["sync_status"] = "queued"
+    config["last_sync_message"] = req.message or "Import running."
+    source.config = config
+
+    await session.commit()
+
+    return {
+        "sync_run_id": run.id,
+        "source_id": source.id,
+        "source_type": source.source_type,
+        "tenant_id": tenant_id,
+    }
+
+
+@app.post("/api/v1/internal/data/sources/{source_ref}/status")
 async def update_connector_status_internal(
-    source_type: str,
+    source_ref: str,
     req: UpdateConnectorStatusRequest,
     tenant_id: str = Depends(get_current_tenant_id),
     session: AsyncSession = Depends(get_session),
@@ -3084,13 +3682,12 @@ async def update_connector_status_internal(
 
     Closing out the ``SyncRun`` is what makes the next window adaptive: only a run
     that reached ``success`` is allowed to move the resume point forward.
+
+    Resolved through `_resolve_source_ref`, which also removes a `scalar_one_or_none`
+    that would have raised `MultipleResultsFound` -- a 500 -- the moment a tenant
+    held two connectors of one type.
     """
-    stmt = select(DataSource).where(
-        DataSource.tenant_id == tenant_id,
-        DataSource.source_type == source_type,
-    )
-    res = await session.execute(stmt)
-    ds = res.scalar_one_or_none()
+    ds = await _resolve_source_ref(session, tenant_id, source_ref)
     if ds:
         cfg = dict(ds.config or {})
         cfg["sync_status"] = req.sync_status

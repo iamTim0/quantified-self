@@ -29,6 +29,11 @@ class SyncTask:
     tenant_id: str
     source_type: str
     request_id: str
+    #: Which connector instance to sync. A tenant may hold several of one type, so
+    #: the type alone no longer says whose credential to fetch or which
+    #: ``source_id`` to key the resulting points on. Optional only for a payload
+    #: published by an older Core.
+    source_id: str | None = None
     mode: str = "smart"
     sync_run_id: str | None = None
     window_start: datetime | None = None
@@ -62,6 +67,7 @@ def parse_sync_task(payload: dict[str, Any]) -> SyncTask | None:
 
     return SyncTask(
         tenant_id=tenant_id,
+        source_id=payload.get("source_id"),
         source_type=payload.get("source_type", "calendar"),
         request_id=payload.get("request_id") or "req_importer_task",
         mode=payload.get("mode") or "smart",

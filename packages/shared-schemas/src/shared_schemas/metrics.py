@@ -87,6 +87,7 @@ class MetricUnit(StrEnum):
     MILE = "mi"
     CELSIUS = "°C"
     HECTOPASCAL = "hPa"
+    MMHG = "mmHg"
     MILLIMETER = "mm"
     KILOMETER_PER_HOUR = "km/h"
     DEGREE = "°"
@@ -131,6 +132,27 @@ class MetricCategory(StrEnum):
     CUSTOM = "custom"
 
 
+class Cadence(StrEnum):
+    """How often a metric is expected to appear — the missing half of "is data missing?".
+
+    Gap detection used to assume every metric produced a value every calendar day,
+    for every metric that appeared even once. A rest day therefore *was* a gap in
+    `workout_duration`, a scale stepped on twice a month made `body_weight` look
+    93 % broken, and in both cases the honest answer is "nothing is missing".
+
+    * ``DAILY`` — one value per day is the expectation. A missing day is a gap.
+    * ``CONTINUOUS`` — sampled far more often than daily, at a rate the device
+      decides. A gap is a span much longer than the cadence actually observed, not
+      an empty calendar day.
+    * ``EVENT`` — happens when it happens. Absence carries no information, so no
+      gap is ever reported.
+    """
+
+    DAILY = "daily"
+    CONTINUOUS = "continuous"
+    EVENT = "event"
+
+
 class MetricDefinition(BaseModel):
     """What one metric key means, in the only place it is defined."""
 
@@ -155,6 +177,11 @@ class MetricDefinition(BaseModel):
     plausible_max: float | None = None
     #: Decimal places for display. 0 means the quantity is only meaningful as a whole.
     precision: int = 1
+    #: How often a reading is expected. Consumed by gap detection and by the
+    #: "too thin" judgement in the analyses. ``EVENT`` by default because that is
+    #: the answer that never invents a problem: a metric nobody has classified
+    #: reports no gaps rather than a year of imaginary ones.
+    cadence: Cadence = Cadence.EVENT
 
     @property
     def is_dynamic(self) -> bool:
@@ -258,6 +285,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=200_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="distance",
@@ -271,6 +299,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=500,
         precision=2,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="energy_active",
@@ -284,6 +313,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=15_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="energy_resting",
@@ -297,6 +327,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=6_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="energy_total",
@@ -311,6 +342,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=20_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="exercise_duration",
@@ -324,6 +356,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="stand_duration",
@@ -337,6 +370,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="whoop_strain",
@@ -352,8 +386,37 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=21,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     # ── Heart ─────────────────────────────────────────────────────────────────
+    MetricDefinition(
+        key="blood_pressure_systolic",
+        unit=MetricUnit.MMHG,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.HEART,
+        label_de="Blutdruck systolisch",
+        label_en="Blood pressure, systolic",
+        # Two metrics rather than one "120/80": they are two measurements, they
+        # trend differently, and a string cannot be averaged or correlated.
+        sources=("apple_health",),
+        aliases=("systolic",),
+        plausible_min=50,
+        plausible_max=260,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="blood_pressure_diastolic",
+        unit=MetricUnit.MMHG,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.HEART,
+        label_de="Blutdruck diastolisch",
+        label_en="Blood pressure, diastolic",
+        sources=("apple_health",),
+        aliases=("diastolic",),
+        plausible_min=30,
+        plausible_max=180,
+        precision=0,
+    ),
     MetricDefinition(
         key="heart_rate",
         unit=MetricUnit.BPM,
@@ -365,6 +428,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=20,
         plausible_max=250,
         precision=0,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="heart_rate_average",
@@ -378,6 +442,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=20,
         plausible_max=200,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="heart_rate_resting",
@@ -391,6 +456,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=25,
         plausible_max=120,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="heart_rate_walking_average",
@@ -404,6 +470,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=40,
         plausible_max=200,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="hrv_rmssd",
@@ -419,6 +486,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=1,
         plausible_max=300,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="hrv_sdnn",
@@ -432,6 +500,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=1,
         plausible_max=300,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="blood_oxygen",
@@ -445,6 +514,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=50,
         plausible_max=100,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="respiratory_rate",
@@ -457,6 +527,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=4,
         plausible_max=60,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     # ── Sleep ─────────────────────────────────────────────────────────────────
     MetricDefinition(
@@ -471,6 +542,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_duration_deep",
@@ -484,6 +556,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_duration_rem",
@@ -497,6 +570,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_duration_light",
@@ -511,6 +585,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_duration_awake",
@@ -524,6 +599,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_duration_in_bed",
@@ -537,6 +613,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="sleep_efficiency",
@@ -550,6 +627,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="whoop_sleep_performance",
@@ -563,6 +641,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="whoop_recovery_score",
@@ -576,6 +655,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     # Oura reaches the platform as a CSV through the dashboard's visual mapper rather
     # than as an importer, but its columns still need somewhere to land -- and its
@@ -593,6 +673,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="oura_readiness_score",
@@ -606,6 +687,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="oura_activity_score",
@@ -619,6 +701,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     # ── Body ──────────────────────────────────────────────────────────────────
     MetricDefinition(
@@ -671,6 +754,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=20,
         plausible_max=45,
         precision=1,
+        cadence=Cadence.DAILY,
     ),
     # ── Nutrition ─────────────────────────────────────────────────────────────
     MetricDefinition(
@@ -693,6 +777,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=20_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="nutrition_protein",
@@ -706,6 +791,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="nutrition_carbohydrates",
@@ -719,6 +805,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=2_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="nutrition_fat",
@@ -732,6 +819,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_000,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="nutrition_fiber",
@@ -745,6 +833,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=500,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="nutrition_meal_energy",
@@ -973,7 +1062,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.LOCATION,
         label_de="Standortpunkte",
         label_en="Location points",
-        sources=("dawarich",),
+        # A route from a phone and a trace from Dawarich are the same quantity, so
+        # they share a name (rule 15).
+        sources=("dawarich", "apple_health"),
         plausible_min=0,
         plausible_max=1,
         precision=0,
@@ -1014,6 +1105,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=200,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="calendar_busy_duration",
@@ -1030,6 +1122,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=1_440,
         precision=0,
+        cadence=Cadence.DAILY,
     ),
     MetricDefinition(
         key="calendar_meeting_duration",
@@ -1057,6 +1150,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=-70,
         plausible_max=60,
         precision=1,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_temperature_apparent",
@@ -1070,6 +1164,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=-80,
         plausible_max=70,
         precision=1,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_humidity",
@@ -1083,6 +1178,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_precipitation",
@@ -1096,6 +1192,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=500,
         precision=1,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_pressure",
@@ -1109,6 +1206,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=800,
         plausible_max=1_100,
         precision=0,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_wind_speed",
@@ -1122,6 +1220,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=500,
         precision=1,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_cloud_cover",
@@ -1135,6 +1234,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=0,
+        cadence=Cadence.CONTINUOUS,
     ),
     MetricDefinition(
         key="weather_uv_index",
@@ -1147,6 +1247,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=20,
         precision=1,
+        cadence=Cadence.CONTINUOUS,
     ),
 )
 

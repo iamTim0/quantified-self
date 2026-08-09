@@ -213,3 +213,189 @@ def test_a_reading_without_a_usable_timestamp_is_skipped():
     assert [dp["value"] for dp in result] == [1000]
     keys = [dp["idempotency_key"] for dp in result]
     assert len(keys) == len(set(keys))
+
+
+# ─── Shapes that were being discarded ────────────────────────
+#
+# Each of these covers a quantity Health Auto Export sends and this importer threw
+# away without a word. They were found by reading the provider's documentation
+# against the transformer by hand; the field report exists so the next one is not.
+
+TENANT = "00000000-0000-0000-0000-000000000001"
+SOURCE = "11111111-1111-1111-1111-111111111111"
+
+
+def _metrics(payload: dict) -> dict[str, float]:
+    points = transform_health_auto_export_json(payload, tenant_id=TENANT, source_id=SOURCE)
+    return {p["metric_type"]: p["value"] for p in points}
+
+
+def test_heart_rate_entries_are_read():
+    """Entries carry Min/Avg/Max — capitalised — and never a `qty`.
+
+    The reader looked for `qty`, then lowercase `avg`, then `value`, so every
+    single heart-rate reading was skipped.
+    """
+    values = _metrics(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "heart_rate",
+                        "units": "bpm",
+                        "data": [{"date": "2026-08-05 10:00:00 +0000", "Min": 52, "Avg": 61.5, "Max": 128}],
+                    }
+                ]
+            }
+        }
+    )
+    assert values["heart_rate"] == 61.5
+
+
+def test_heart_rate_min_and_max_are_kept_as_context():
+    """The registry has no daily min/max, so they travel alongside rather than vanish."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "heart_rate",
+                        "units": "bpm",
+                        "data": [{"date": "2026-08-05 10:00:00 +0000", "Min": 52, "Avg": 61.5, "Max": 128}],
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    assert points[0]["metadata"]["Min"] == 52
+    assert points[0]["metadata"]["Max"] == 128
+
+
+def test_blood_pressure_becomes_two_metrics():
+    """It arrives as systolic/diastolic and was dropped entirely."""
+    values = _metrics(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "blood_pressure",
+                        "units": "mmHg",
+                        "data": [
+                            {"date": "2026-08-05 10:00:00 +0000", "systolic": 118, "diastolic": 76}
+                        ],
+                    }
+                ]
+            }
+        }
+    )
+    assert values["blood_pressure_systolic"] == 118
+    assert values["blood_pressure_diastolic"] == 76
+
+
+def test_workout_energy_and_distance_use_the_current_field_names():
+    """v2 renamed them, and only the v1 names were read.
+
+    Worse than a rename: in v2 `activeEnergy` is a time-series *array*, so the old
+    lookup found something and extracted nothing from it.
+    """
+    values = _metrics(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "activeEnergy": [{"date": "2026-08-05 07:01:00 +0000", "qty": 12}],
+                        "activeEnergyBurned": {"qty": 410, "units": "kcal"},
+                        "distance": {"qty": 8.2, "units": "km"},
+                        "duration": 2400,
+                    }
+                ]
+            }
+        }
+    )
+    assert values["workout_energy"] == 410
+    assert values["workout_distance"] == 8.2
+    # Seconds, declared nowhere; read as minutes it would have been 2400 minutes.
+    assert values["workout_duration"] == 40
+
+
+def test_a_workout_route_becomes_location_points():
+    """GPS was never read at all, so a recorded run had no trace."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "route": [
+                            {
+                                "latitude": 52.52,
+                                "longitude": 13.41,
+                                "altitude": 34.0,
+                                "timestamp": "2026-08-05 07:00:05 +0000",
+                            },
+                            {
+                                "lat": 52.53,
+                                "lon": 13.42,
+                                "timestamp": "2026-08-05 07:00:15 +0000",
+                            },
+                        ],
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    route = [p for p in points if p["metric_type"] == "location_point"]
+
+    # Both the current and the older coordinate spelling are read.
+    assert len(route) == 2
+    assert route[0]["metadata"]["latitude"] == 52.52
+    assert route[0]["metadata"]["altitude"] == 34.0
+    assert route[1]["metadata"]["longitude"] == 13.42
+    # A trace, not one point per workout: distinct timestamps, distinct keys.
+    assert route[0]["idempotency_key"] != route[1]["idempotency_key"]
+
+
+def test_the_field_report_names_what_was_not_stored():
+    """The systematic version of how the defects above were found."""
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Swim",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "duration": 1800,
+                        "swolfScore": 34,
+                    }
+                ],
+                "ecg": [{"classification": "Sinus Rhythm"}],
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+        report=report,
+    )
+    built = report.build()
+
+    unmapped = {sighting.path for sighting in built.unmapped}
+    assert "workouts.swolfScore" in unmapped
+    assert "data.ecg[]" in unmapped
+    assert {s.path for s in built.mapped} == {"workouts.duration"}
+
+    # No value ever appears in a report — only a path and the kind of thing there.
+    for sighting in (*built.mapped, *built.unmapped):
+        assert sighting.kind in {"number", "string", "bool", "array", "object", "null"}
+        assert not hasattr(sighting, "value")

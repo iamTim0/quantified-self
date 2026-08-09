@@ -1,7 +1,7 @@
 """Request-driven calendar importer publishing exclusively through JetStream.
 
 Reads real iCalendar feeds. A public ``.ics`` URL needs no credential; see
-``client.infer_auth_mode`` for how the four supported modes are distinguished.
+``client.infer_auth_mode`` for how the three supported modes are distinguished.
 """
 
 import asyncio
@@ -41,12 +41,21 @@ logger = logging.getLogger(__name__)
 active_syncs: set[str] = set()
 
 
-async def credentials(tenant_id: str, request_id: str) -> dict[str, Any] | None:
+async def credentials(
+    tenant_id: str, request_id: str, source_ref: str | None = None
+) -> dict[str, Any] | None:
+    """Fetch this connector's credential from Core.
+
+    Addressed by connector id when the sync task carries one: a tenant may hold
+    several connectors of this type, and the type alone would hand back an
+    arbitrary one of them.
+    """
+    reference = source_ref or "calendar"
     headers = internal_headers(request_id, tenant_id)
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             response = await client.get(
-                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/calendar/token",
+                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{reference}/token",
                 headers=headers,
             )
             return response.json() if response.status_code == 200 else None
@@ -63,7 +72,7 @@ async def report_sync_result_to_core(
     """Close out the sync run in Core so the next window can adapt."""
     url = (
         f"{settings.CORE_SERVICE_URL}"
-        f"/api/v1/internal/data/sources/{task.source_type}/status"
+        f"/api/v1/internal/data/sources/{task.source_id or task.source_type}/status"
     )
     payload: dict[str, Any] = {
         "sync_status": status,
@@ -84,7 +93,7 @@ async def report_sync_result_to_core(
 
 async def sync_calendar(task: SyncTask, connection: Any) -> int:
     """Fetch, parse and publish one tenant's calendar. Returns points published."""
-    secret = await credentials(task.tenant_id, task.request_id)
+    secret = await credentials(task.tenant_id, task.request_id, task.source_id)
     if not secret or secret.get("status") != "active":
         logger.info(
             "[req_id=%s] No active calendar connector for tenant %s; staying idle.",
@@ -94,14 +103,14 @@ async def sync_calendar(task: SyncTask, connection: Any) -> int:
         return 0
 
     config = secret.get("config") or {}
-    # A public ICS feed has no token, and that is a valid configuration.
-    token = secret.get("access_token") or None
+    # No token is read at all: a calendar is an ICS feed, and the only credential
+    # one can carry is inside its own URL.
     source_id = secret.get("source_id")
     if not source_id:
         logger.warning("[req_id=%s] Connector has no source_id; skipping.", task.request_id)
         return 0
 
-    feed = build_feed_config(config, token)
+    feed = build_feed_config(config)
     window_start, window_end = resolve_window(task, config)
 
     logger.info(
@@ -149,11 +158,15 @@ async def process(message: Any, connection: Any) -> None:
             logger.warning("Missing tenant_id in calendar task payload; dropping.")
             return
 
-        if task.tenant_id in active_syncs:
-            logger.info("Calendar sync already running for tenant; skipping duplicate task.")
+        # Keyed on the connector instance, not the tenant. Keyed on the tenant, a
+        # user with a work calendar and a family calendar had the second task
+        # discarded as a "duplicate" whenever the first was still running.
+        lock_key = f"{task.tenant_id}:{task.source_id or task.source_type}"
+        if lock_key in active_syncs:
+            logger.info("Calendar sync already running for this connector; skipping duplicate.")
             return
 
-        active_syncs.add(task.tenant_id)
+        active_syncs.add(lock_key)
         try:
             published = await sync_calendar(task, connection)
             await report_sync_result_to_core(
@@ -163,7 +176,7 @@ async def process(message: Any, connection: Any) -> None:
                 points_received=published,
             )
         finally:
-            active_syncs.discard(task.tenant_id)
+            active_syncs.discard(lock_key)
 
     except CalendarAuthError as e:
         logger.error("[req_id=%s] Calendar authentication failed: %s", task.request_id, e)

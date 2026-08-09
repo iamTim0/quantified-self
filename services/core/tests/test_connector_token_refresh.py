@@ -35,6 +35,7 @@ async def _whoop_connector(tenant_id: str, *, expires_at: datetime) -> str:
                 id=source_id,
                 tenant_id=tenant_id,
                 source_type="whoop",
+                display_name="Whoop",
                 config={
                     "status": "active",
                     "encrypted_token": encrypt_secret("expiring-access-token"),

@@ -18,6 +18,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
+from core.db.session import engine as core_engine
 from core.main import app, get_session
 from core.db.models import Tenant, DataSource, DataPoint, ExplorerView, TenantShare, User
 
@@ -31,6 +32,12 @@ from tests.e2e.e2e_helpers import (
 )
 
 
+# Entering the TestClient context manager runs the app's lifespan. Without this
+# flag that would audit secrets, start the gRPC server and open a NATS consumer
+# for a suite that needs none of them.
+app.state.testing = True
+
+
 @pytest.fixture(autouse=True)
 def setup_e2e_test_environment():
     """Setup schema and FastAPI dependency override for isolated testing."""
@@ -39,10 +46,29 @@ def setup_e2e_test_environment():
     yield
     app.dependency_overrides.clear()
 
+    # `get_session` is overridden, but the authentication middleware opens its own
+    # session from Core's engine, which is pooled. Each test gets a fresh
+    # TestClient and therefore a fresh event loop, so a connection left in the
+    # pool by the previous test belongs to a loop that no longer exists — and the
+    # failure surfaces on an unrelated request as "Event loop is closed".
+    asyncio.run(core_engine.dispose())
+
 
 @pytest.fixture
 def api_client():
-    return TestClient(app)
+    """One client, and therefore one event loop, for the whole test.
+
+    `TestClient(app)` used bare starts and tears down an event loop per request.
+    That was survivable while the database engine opened a fresh connection every
+    time; with a pooled engine, the second request in a test borrows a connection
+    created in a loop that no longer exists and fails with "Event loop is closed"
+    — nowhere near the code that caused it.
+
+    Entering the context manager also runs the app's lifespan, which the
+    `app.state.testing` flag set above reduces to a no-op.
+    """
+    with TestClient(app) as client:
+        yield client
 
 
 @pytest.mark.asyncio
@@ -54,6 +80,7 @@ async def test_dashboard_connectors_flow_e2e(api_client):
     # 1. Configure a new connector (e.g. Yazio)
     config_payload = {
         "source_type": "yazio",
+        "display_name": "Yazio",
         "access_token": "secret_yazio_token_xyz123",
         "status": "active",
         "poll_interval_hours": 6,
@@ -150,7 +177,12 @@ async def test_dashboard_visual_import_and_wipe_e2e(api_client):
     headers = auth_headers(tenant_id)
 
     async with e2e_session_maker() as session:
-        ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="manual_csv")
+        ds = DataSource(
+            id=source_id,
+            tenant_id=tenant_id,
+            source_type="manual_csv",
+            display_name="Manual import",
+        )
         session.add(ds)
         await session.commit()
 

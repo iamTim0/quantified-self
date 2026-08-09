@@ -223,10 +223,14 @@ export default function DashboardPage() {
     if (connector) {
       setSelectedModalConnector(connector);
     } else if (sourceType) {
+      // A blank stand-in that only carries the chosen type. `id: ""` is what makes
+      // `isEditing` false downstream, so this opens as "create a new instance"
+      // rather than as an edit of something that does not exist yet.
       setSelectedModalConnector({
         id: "",
         tenant_id: tenantId,
         source_type: sourceType,
+        display_name: "",
         status: "active",
         masked_token: "••••••••",
         poll_interval_hours: 6,
@@ -471,6 +475,10 @@ export default function DashboardPage() {
               setSelectedModalConnector(undefined);
             }}
             initialSourceType={selectedModalConnector?.source_type}
+            // Which instance is being edited. Without it the modal would create a
+            // new connector every time, instead of updating the one clicked.
+            initialSourceId={selectedModalConnector?.id}
+            initialDisplayName={selectedModalConnector?.display_name}
             initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
             initialLookbackDays={selectedModalConnector?.lookback_days || 30}
             isEditing={Boolean(selectedModalConnector?.id)}

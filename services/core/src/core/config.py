@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     # deploy outright.
     ENVIRONMENT: str = "development"
     DATABASE_URL: str = "postgresql+asyncpg://qs_dev:qs_dev_password@127.0.0.1:5433/quantified_self"
+    # Connection pooling. Two processes hold this engine — the API and the ingest
+    # consumer — so the defaults are sized for a handful of concurrent statements
+    # each rather than for a crowd. Recycling below any sensible idle timeout keeps
+    # a long-lived connection from being closed under us by the server or a NAT.
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_POOL_MAX_OVERFLOW: int = 10
+    DATABASE_POOL_RECYCLE_SECONDS: int = 1800
     NATS_URL: str = "nats://127.0.0.1:4222"
     GRPC_PORT: int = 50051
     JWT_SECRET: str = _default_jwt_secret()

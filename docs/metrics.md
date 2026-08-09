@@ -116,6 +116,8 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
+| `blood_pressure_systolic` | Blood pressure, systolic | `mmHg` | `average` | apple_health | `systolic` |
+| `blood_pressure_diastolic` | Blood pressure, diastolic | `mmHg` | `average` | apple_health | `diastolic` |
 | `heart_rate` | Heart rate | `bpm` | `average` | apple_health | — |
 | `heart_rate_average` | Average heart rate (day) | `bpm` | `average` | whoop | `cycle_average_heart_rate` |
 | `heart_rate_resting` | Resting heart rate | `bpm` | `average` | apple_health, whoop | `resting_heart_rate`, `resting_hr`, `resting_heart_rate_bpm` |
@@ -190,7 +192,7 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `location_point` | Location points | `count` | `sum` | dawarich | — |
+| `location_point` | Location points | `count` | `sum` | dawarich, apple_health | — |
 | `location_latitude` | Latitude | `°` | `last` | dawarich | — |
 | `location_longitude` | Longitude | `°` | `last` | dawarich | — |
 
@@ -224,3 +226,19 @@ dashboard picks whichever matches the reader's language.
 | `custom_` | Custom metric | manual import |
 
 <!-- END GENERATED METRIC TABLE -->
+
+## Cadence
+
+Every metric records how often a reading is expected, which is what makes "is data missing?"
+answerable:
+
+- `daily` — one value per day is the expectation. A day without one is a gap.
+- `continuous` — sampled far more often than daily, at a rate the device chooses. Judged
+  against the cadence actually observed rather than against calendar days.
+- `event` — happens when it happens. Absence carries no information, so no gap is ever
+  reported.
+
+`event` is the default. A metric nobody has classified therefore reports no gaps rather than a
+year of imaginary ones — the conservative answer, and the one that cannot invent a problem.
+
+See [Data quality](features/data-quality.md) for what each setting changes.

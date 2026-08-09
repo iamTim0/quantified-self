@@ -76,7 +76,9 @@ def test_naive_timestamps_are_treated_as_utc():
 # ── Against the database ─────────────────────────────────────────────────────
 
 
-async def _connector(tenant_id: str, *, source_type: str, config: dict) -> str:
+async def _connector(
+    tenant_id: str, *, source_type: str, config: dict, display_name: str | None = None
+) -> str:
     source_id = str(uuid.uuid4())
     async with async_session_maker() as session:
         session.add(
@@ -84,6 +86,7 @@ async def _connector(tenant_id: str, *, source_type: str, config: dict) -> str:
                 id=source_id,
                 tenant_id=tenant_id,
                 source_type=source_type,
+                display_name=display_name or source_type,
                 config=config,
             )
         )
@@ -91,11 +94,19 @@ async def _connector(tenant_id: str, *, source_type: str, config: dict) -> str:
     return source_id
 
 
-async def _run(tenant_id: str, source_type: str, *, status: str, started_at: datetime):
+async def _run(
+    tenant_id: str, source_type: str, source_id: str, *, status: str, started_at: datetime
+):
+    """A sync run attributed to one connector *instance*.
+
+    `source_id` is what the scheduler now keys on: with two calendars, keying on
+    the type let one connector's run block the other for six hours.
+    """
     async with async_session_maker() as session:
         session.add(
             SyncRun(
                 tenant_id=tenant_id,
+                source_id=source_id,
                 source_type=source_type,
                 request_id=str(uuid.uuid4()),
                 status=status,
@@ -130,8 +141,12 @@ async def test_a_connector_with_a_run_in_flight_is_skipped():
     """
     tenant_id = await create_test_tenant()
     try:
-        await _connector(tenant_id, source_type="whoop", config={"poll_interval_hours": 1})
-        await _run(tenant_id, "whoop", status="running", started_at=NOW - timedelta(minutes=5))
+        source_id = await _connector(
+            tenant_id, source_type="whoop", config={"poll_interval_hours": 1}
+        )
+        await _run(
+            tenant_id, "whoop", source_id, status="running", started_at=NOW - timedelta(minutes=5)
+        )
 
         async with async_session_maker() as session:
             due = await find_due_connectors(session, now=NOW)
@@ -149,12 +164,16 @@ async def test_a_stale_run_does_not_block_forever():
     """
     tenant_id = await create_test_tenant()
     try:
-        await _connector(tenant_id, source_type="yazio", config={"poll_interval_hours": 1})
-        await _run(tenant_id, "yazio", status="running", started_at=NOW - timedelta(hours=12))
+        source_id = await _connector(
+            tenant_id, source_type="yazio", config={"poll_interval_hours": 1}
+        )
+        await _run(
+            tenant_id, "yazio", source_id, status="running", started_at=NOW - timedelta(hours=12)
+        )
 
         async with async_session_maker() as session:
             assert (
-                await has_in_flight_run(session, tenant_id, "yazio", now=NOW)
+                await has_in_flight_run(session, tenant_id, source_id, now=NOW)
             ) is False
             due = await find_due_connectors(session, now=NOW)
         assert [d.source_type for d in due if d.tenant_id == tenant_id] == ["yazio"]
@@ -166,13 +185,76 @@ async def test_a_stale_run_does_not_block_forever():
 async def test_a_finished_run_does_not_block():
     tenant_id = await create_test_tenant()
     try:
-        await _connector(tenant_id, source_type="dawarich", config={"poll_interval_hours": 1})
-        await _run(tenant_id, "dawarich", status="success", started_at=NOW - timedelta(minutes=1))
+        source_id = await _connector(
+            tenant_id, source_type="dawarich", config={"poll_interval_hours": 1}
+        )
+        await _run(
+            tenant_id,
+            "dawarich",
+            source_id,
+            status="success",
+            started_at=NOW - timedelta(minutes=1),
+        )
 
         async with async_session_maker() as session:
             assert (
-                await has_in_flight_run(session, tenant_id, "dawarich", now=NOW)
+                await has_in_flight_run(session, tenant_id, source_id, now=NOW)
             ) is False
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_one_instance_syncing_does_not_block_its_twin():
+    """Two calendars are two connectors, not one busy one.
+
+    Keyed on `source_type`, the second calendar was skipped for as long as the
+    first was importing -- up to STALE_RUN_AFTER -- and looked simply broken.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        work = await _connector(
+            tenant_id,
+            source_type="calendar",
+            display_name="Work",
+            config={"poll_interval_hours": 1},
+        )
+        family = await _connector(
+            tenant_id,
+            source_type="calendar",
+            display_name="Family",
+            config={"poll_interval_hours": 1},
+        )
+        await _run(
+            tenant_id, "calendar", work, status="running", started_at=NOW - timedelta(minutes=5)
+        )
+
+        async with async_session_maker() as session:
+            assert await has_in_flight_run(session, tenant_id, work, now=NOW) is True
+            assert await has_in_flight_run(session, tenant_id, family, now=NOW) is False
+            due = await find_due_connectors(session, now=NOW)
+
+        assert [d.source_id for d in due if d.tenant_id == tenant_id] == [family]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_push_connectors_are_never_scheduled():
+    """Nothing subscribes to `qs.task.sync.apple_health`.
+
+    Planning a sync for a push connector produced a SyncRun that could only ever
+    expire as stale six hours later, while the connector showed as queued
+    throughout.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        await _connector(
+            tenant_id, source_type="apple_health", config={"poll_interval_hours": 1}
+        )
+        async with async_session_maker() as session:
+            due = await find_due_connectors(session, now=NOW)
+        assert [d for d in due if d.tenant_id == tenant_id] == []
     finally:
         await cleanup_test_tenant(tenant_id)
 

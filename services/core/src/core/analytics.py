@@ -1,18 +1,47 @@
 """Pure analytics helpers used by tenant-scoped Core endpoints."""
 
 from collections import defaultdict
-from datetime import date, datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import date, datetime, timedelta, timezone, tzinfo
 from math import sqrt
-from typing import Any, Iterable
+from typing import Any
+
+from shared_schemas.metrics import METRIC_CATALOG, Cadence
+
+from core.ingest_planning import TimeRange, find_gaps
 
 
 def detect_daily_gaps(
-    points: Iterable[tuple[str, datetime]], start: date, end: date
+    points: Iterable[tuple[str, datetime]],
+    start: date,
+    end: date,
+    *,
+    local_timezone: tzinfo = timezone.utc,
 ) -> list[dict[str, Any]]:
-    """Return missing UTC calendar days per metric within an inclusive window."""
+    """Missing days per metric — for the metrics where a missing day means anything.
+
+    Every metric used to be judged against the calendar, which made a rest day a
+    "gap" in `workout_duration` and a fortnightly weigh-in look 93 % broken. The
+    registry now says how often each metric is expected (`Cadence`), and only
+    `DAILY` metrics are counted against days at all:
+
+    * ``DAILY`` — a day without a value is a gap, which is the original behaviour
+      and the only case where it was ever right.
+    * ``CONTINUOUS`` — sampled at whatever rate the device chooses, so a day is the
+      wrong unit entirely. Handled by :func:`detect_cadence_gaps` below, which
+      measures against the rate actually observed.
+    * ``EVENT`` — absence carries no information. Never a gap.
+
+    Days are bucketed in `local_timezone` rather than UTC. Bucketing on UTC put a
+    CET user's 00:30 reading on the previous day, so the first and last day of every
+    window were systematically wrong — reported as missing while the data was there.
+    """
     observed: dict[str, set[date]] = defaultdict(set)
     for metric_type, timestamp in points:
-        observed[metric_type].add(timestamp.astimezone(timezone.utc).date())
+        if _cadence_of(metric_type) is not Cadence.DAILY:
+            continue
+        observed[metric_type].add(timestamp.astimezone(local_timezone).date())
+
     days = (end - start).days + 1
     return [
         {
@@ -25,6 +54,53 @@ def detect_daily_gaps(
         }
         for metric, dates in sorted(observed.items())
     ]
+
+
+def detect_cadence_gaps(
+    points: Iterable[tuple[str, datetime]],
+    window: TimeRange,
+    *,
+    tolerance_factor: float = 2.5,
+) -> list[dict[str, Any]]:
+    """Interruptions in metrics sampled faster than daily.
+
+    A heart-rate monitor that stops for a week is a gap worth reporting, but a
+    calendar day is the wrong unit to notice it with — the device decides its own
+    rate. Each metric is measured against the cadence it actually kept, so a
+    five-minute sensor and an hourly one are both judged fairly.
+
+    This exists because leaving `CONTINUOUS` metrics out of `detect_daily_gaps`
+    would otherwise have meant nine metrics — heart rate and every weather series —
+    silently reporting no gaps at all, which is worse than the false alarms the
+    cadence work set out to remove.
+    """
+    by_metric: dict[str, list[datetime]] = defaultdict(list)
+    for metric_type, timestamp in points:
+        if _cadence_of(metric_type) is Cadence.CONTINUOUS:
+            by_metric[metric_type].append(timestamp)
+
+    gaps: list[dict[str, Any]] = []
+    for metric, timestamps in sorted(by_metric.items()):
+        ranges = find_gaps(timestamps, window, tolerance_factor=tolerance_factor)
+        if ranges:
+            gaps.append(
+                {
+                    "metric_type": metric,
+                    "missing_ranges": [r.to_dict() for r in ranges],
+                }
+            )
+    return gaps
+
+
+def _cadence_of(metric_type: str) -> Cadence:
+    """The registry's cadence, or ``EVENT`` for a name it does not catalogue.
+
+    Namespaced metrics (`home_assistant_*`, `apple_health_*`) are defined by the
+    user's own setup, so nothing here can know how often they should appear —
+    and claiming a gap in one would be an invention.
+    """
+    definition = METRIC_CATALOG.get(metric_type)
+    return definition.cadence if definition is not None else Cadence.EVENT
 
 
 def find_cross_source_conflicts(

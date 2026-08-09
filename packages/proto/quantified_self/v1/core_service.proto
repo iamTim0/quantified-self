@@ -46,6 +46,11 @@ message ListDataSourcesRequest {
 message DataSourceSummary {
   string id = 1;
   string source_type = 2;
+  // What the user calls this instance. A tenant may hold several connectors of
+  // one type, so `source_type` alone no longer names anything a reader could
+  // tell apart. Still deliberately no `config` field: this message crosses a
+  // service boundary, and rule 12 says credentials do not.
+  string display_name = 3;
 }
 
 message ListDataSourcesResponse {

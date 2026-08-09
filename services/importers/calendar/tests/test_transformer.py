@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from calendar_importer.ics import CalendarEvent
 from shared_schemas.metrics import canonical_metric_type
 
-from calendar_importer.transformer import transform, transform_events
+from calendar_importer.transformer import transform_events
 
 TENANT = "tenant-1"
 SOURCE = "source-1"
@@ -130,13 +130,16 @@ def test_events_carry_top_level_source_type():
     assert all(p["source_type"] == "calendar" for p in points)
 
 
-def test_legacy_json_transform_skips_rows_without_a_timestamp():
-    """The old code substituted now(), producing a new key on every sync."""
-    rows = [
-        {"start": "2026-08-03T00:00:00+00:00", "duration_minutes": 21.5},
-        {"duration_minutes": 10.0},  # no start
-    ]
-    events = transform(rows, TENANT, SOURCE)
+def test_keys_are_stable_across_runs():
+    """The same occurrence must produce the same key every sync (rule 4).
 
-    assert len(events) == 1
-    assert events[0]["idempotency_key"] == transform(rows, TENANT, SOURCE)[0]["idempotency_key"]
+    This replaces a test of `transform()`, the JSON entry point removed with the
+    calendar's API mode -- the importer never called it, and the mode it existed
+    for could not work.
+    """
+    events = [_event("a", 9), _event("b", 11)]
+
+    first = transform_events(events, TENANT, SOURCE)
+    second = transform_events(events, TENANT, SOURCE)
+
+    assert [e["idempotency_key"] for e in first] == [e["idempotency_key"] for e in second]

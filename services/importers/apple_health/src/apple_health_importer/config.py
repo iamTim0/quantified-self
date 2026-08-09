@@ -6,7 +6,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-importer-apple-health"
     NATS_URL: str = "nats://localhost:4222"
-    CORE_SERVICE_URL: str = "http://localhost:8001"
+    CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
     PORT: int = 8005
     SOURCE_TYPE: str = "apple_health"
     # Bearer credential presented to Core's internal API. Must match Core's

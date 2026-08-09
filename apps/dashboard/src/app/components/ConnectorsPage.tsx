@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
-import { useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
+import { plural, useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
 import { 
   Key, 
   RefreshCw, 
@@ -29,6 +29,8 @@ export interface ConnectorItem {
   id: string;
   tenant_id: string;
   source_type: string;
+  /** What the user called this instance. The only thing separating two calendars. */
+  display_name: string;
   status: string;
   masked_token: string;
   poll_interval_hours: number;
@@ -64,6 +66,9 @@ function catalogName(t: Translate, cat: CatalogConnector): string {
   return cat.nameKey ? t(cat.nameKey) : (cat.name ?? cat.id);
 }
 
+/** How often the table refreshes queue status. Stated in the badge above it. */
+const POLL_INTERVAL_MS = 10_000;
+
 const CONNECTOR_CATALOG: CatalogConnector[] = [
   { id: "yazio", name: "Yazio", descriptionKey: "connectors.desc.yazio", icon: Flame, available: true, docsPath: "/docs/importers/yazio/" },
   { id: "dawarich", name: "Dawarich", descriptionKey: "connectors.desc.dawarich", icon: MapPin, available: true, docsPath: "/docs/importers/dawarich/" },
@@ -86,7 +91,9 @@ export default function ConnectorsPage({
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
   // Which connector the import dialog is open for, if any.
-  const [importDialogFor, setImportDialogFor] = useState<{ id: string; name: string } | null>(null);
+  const [importDialogFor, setImportDialogFor] = useState<
+    { id: string; name: string; passive: boolean } | null
+  >(null);
 
   const fetchConnectors = async () => {
     try {
@@ -112,12 +119,13 @@ export default function ConnectorsPage({
     }
   }, [apiBase, tenantId]);
 
-  // 10s Live Auto-Polling for Queue Status & Last Sync Timestamps
+  // Live refresh of queue status and last-sync timestamps. The badge above the
+  // table states this interval, and reads it from here so the two cannot drift.
   useEffect(() => {
     if (!tenantId) return;
     const interval = setInterval(() => {
       fetchConnectors();
-    }, 10000);
+    }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [apiBase, tenantId]);
 
@@ -142,14 +150,16 @@ export default function ConnectorsPage({
     }
   };
 
-  // 1-Click Delete Specific Connector & Remove Credentials
-  const handleDeleteConnector = async (sourceType: string) => {
-    if (!confirm(t("connectors.confirmDelete", { source: sourceType.toUpperCase() }))) {
+  // Disconnect one connector instance. Addressed by id, not type: with two
+  // calendars configured, deleting "calendar" would remove an arbitrary one.
+  const handleDeleteConnector = async (connector: ConnectorItem) => {
+    const label = connector.display_name || connector.source_type;
+    if (!confirm(t("connectors.confirmDelete", { source: label }))) {
       return;
     }
-    setDeletingSource(sourceType);
+    setDeletingSource(connector.id);
     try {
-      const res = await apiFetch(`${apiBase}/api/v1/data/sources/${sourceType}`, {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/${connector.id}`, {
         method: "DELETE",
         headers: {
           "X-Tenant-ID": tenantId,
@@ -189,129 +199,189 @@ export default function ConnectorsPage({
             className="flex items-center gap-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white px-4 py-2 rounded-2xl shadow-md shadow-[#0d5c3a]/20 transition-all"
           >
             <Plus className="w-4 h-4" />
-            <span>Neuer Connector</span>
+            <span>{t("connectors.newConnector")}</span>
           </button>
         </div>
       </div>
 
-      {/* Connector Catalog Cards Gallery */}
+      {/*
+        One card per configured connector *instance*, then one per catalog entry to
+        add another. Previously the gallery iterated the catalog and looked each
+        type up with `.find()`, which could only ever show one — so a second
+        calendar was invisible even once the backend could store it.
+      */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {CONNECTOR_CATALOG.map((cat) => {
-          const configured = connectors.find((c) => c.source_type === cat.id);
-          const isConfigured = Boolean(configured);
-          const Icon = cat.icon;
-          const direction = getConnectorDirection(cat.id);
+        {connectors.map((connector) => {
+          const cat = CONNECTOR_CATALOG.find((c) => c.id === connector.source_type);
+          const Icon = cat?.icon ?? Key;
+          const direction = getConnectorDirection(connector.source_type);
           const isPassive = direction === "passive";
+          const typeName = cat ? catalogName(t, cat) : connector.source_type;
+          const docsPath = cat?.docsPath ?? "/docs/importers/";
 
           return (
             <div
-              key={cat.id}
+              key={connector.id}
               className={`glass-card p-6 bg-white border rounded-3xl flex flex-col justify-between transition-all hover:-translate-y-1 ${
-                isConfigured ? "border-emerald-200/80 shadow-md" : "border-slate-200/80"
+                "border-emerald-200/80 shadow-md"
               }`}
             >
               <div>
                 <div className="flex justify-between items-start mb-4">
-                  <div className={`p-3 rounded-2xl ${isConfigured ? "bg-emerald-50 text-[#0d5c3a]" : "bg-slate-100 text-slate-500"}`}>
+                  <div className={"p-3 rounded-2xl bg-emerald-50 text-[#0d5c3a]"}>
                     <Icon className="w-6 h-6" />
                   </div>
-                  {isConfigured ? (
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3 text-emerald-600" /> {isPassive ? t("connectors.passive") : t("connectors.active")}
-                    </span>
-                  ) : cat.available ? (
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 px-2.5 py-1 rounded-full">
-                      {t("connectors.ready")}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200 px-2.5 py-1 rounded-full">
-                      {t("connectors.soon")}
-                    </span>
-                  )}
+                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3 text-emerald-600" /> {isPassive ? t("connectors.passive") : t("connectors.active")}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-2 mb-1">
-                  <h3 className="text-lg font-extrabold text-slate-900">{catalogName(t, cat)}</h3>
+                  {/* The instance name leads: it is what distinguishes two calendars. */}
+                  <h3 className="text-lg font-extrabold text-slate-900 truncate">
+                    {connector.display_name || typeName}
+                  </h3>
                   <a
-                    href={cat.docsPath}
+                    href={docsPath}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 transition-colors"
-                    title={t("connectors.docsFor", { name: catalogName(t, cat) })}
+                    title={t("connectors.docsFor", { name: typeName })}
                   >
                     <BookOpen className="w-3 h-3" />
-                    <span>Docs</span>
+                    <span>{t("connectors.docs")}</span>
                   </a>
                 </div>
+                <p className="text-[11px] font-semibold text-slate-400 mb-1">{typeName}</p>
                 <span className={isPassive
                   ? "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-violet-50 text-violet-800 border border-violet-200"
                   : "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-sky-50 text-sky-800 border border-sky-200"}>
                   {isPassive ? t("connectors.passiveHint") : t("connectors.activeHint")}
                 </span>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">{t(cat.descriptionKey)}</p>
+                {cat && (
+                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                    {t(cat.descriptionKey)}
+                  </p>
+                )}
 
                 {/* Queue Status Live Badge */}
-                {isConfigured && configured && (
-                  <div className="mb-4 pt-3 border-t border-slate-100">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-[10px] font-bold uppercase text-slate-400">Queue Status</span>
-                      <span className={`font-bold uppercase text-[10px] px-2 py-0.5 rounded-full ${
-                        configured.sync_status === "queued"
-                          ? "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
-                          : configured.sync_status === "error"
-                          ? "bg-rose-100 text-rose-800 border border-rose-300"
-                          : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                      }`}>
-                        {configured.sync_status === "queued"
-                          ? "🟡 Event in Queue"
-                          : configured.sync_status === "error"
-                          ? t("connectors.authError")
-                          : "🟢 Standby / Bereit"}
-                      </span>
-                    </div>
+                <div className="mb-4 pt-3 border-t border-slate-100">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-bold uppercase text-slate-400">
+                      {t("connectors.queueStatus")}
+                    </span>
+                    <span className={`font-bold uppercase text-[10px] px-2 py-0.5 rounded-full ${
+                      connector.sync_status === "queued"
+                        ? "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
+                        : connector.sync_status === "error"
+                        ? "bg-rose-100 text-rose-800 border border-rose-300"
+                        : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    }`}>
+                      {connector.sync_status === "queued"
+                        ? t("connectors.eventQueued")
+                        : connector.sync_status === "error"
+                        ? t("connectors.authError")
+                        : t("connectors.standby")}
+                    </span>
                   </div>
-                )}
+                </div>
               </div>
 
-              <div className="flex gap-2 pt-2 border-t border-slate-100">
-                {isConfigured && configured ? (
-                  <>
-                    {!isPassive && (
-                    <button
-                      onClick={() => setImportDialogFor({ id: cat.id, name: catalogName(t, cat) })}
-                      className="flex-1 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>{t("connectors.import")}</span>
-                    </button>
-                    )}
-                    <button
-                      onClick={() => onOpenConfigureModal(configured, cat.id)}
-                      className="p-2.5 text-xs font-semibold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors"
-                      title={t("connectors.editCredentials")}
-                    >
-                      <Settings className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteConnector(cat.id)}
-                      disabled={deletingSource === cat.id}
-                      className="p-2.5 text-xs font-semibold rounded-2xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 transition-colors disabled:opacity-50"
-                      title={t("connectors.disconnect")}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    onClick={() => onOpenConfigureModal(undefined, cat.id)}
-                    disabled={!cat.available}
-                    className="w-full py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-40 shadow-md shadow-[#0d5c3a]/20 flex items-center justify-center gap-1.5"
-                  >
-                    <span>{cat.available ? t("connectors.connectNow") : t("connectors.soon")}</span>
-                    {cat.available && <ArrowUpRight className="w-3.5 h-3.5" />}
-                  </button>
-                )}
+              {/*
+                The cards sit four to a row on `lg`, so the icon-only buttons squeeze the
+                Import label until it clips. `min-w-0` lets the flex-1 button actually
+                shrink, and `flex-wrap` gives it its own line rather than overflowing.
+              */}
+              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+                {/*
+                  Offered for push connectors too. The dialog is where an import's
+                  progress and history live, and a pushed import had neither —
+                  `!isPassive` hid the only place it could have been shown.
+                */}
+                <button
+                  onClick={() =>
+                    setImportDialogFor({
+                      id: connector.id,
+                      name: connector.display_name || typeName,
+                      passive: isPassive,
+                    })
+                  }
+                  className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{isPassive ? t("connectors.history") : t("connectors.import")}</span>
+                </button>
+                <button
+                  onClick={() => onOpenConfigureModal(connector, connector.source_type)}
+                  className="p-2.5 text-xs font-semibold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors"
+                  title={t("connectors.editCredentials")}
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleDeleteConnector(connector)}
+                  disabled={deletingSource === connector.id}
+                  className="p-2.5 text-xs font-semibold rounded-2xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 transition-colors disabled:opacity-50"
+                  title={t("connectors.disconnect")}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
               </div>
+            </div>
+          );
+        })}
+
+        {/*
+          One "add" card per catalog entry, always offered -- adding a second
+          calendar is the point, so a configured type must not disappear from here.
+        */}
+        {CONNECTOR_CATALOG.map((cat) => {
+          const Icon = cat.icon;
+          const count = connectors.filter((c) => c.source_type === cat.id).length;
+          return (
+            <div
+              key={`add-${cat.id}`}
+              className="glass-card p-6 bg-white border border-dashed border-slate-300 rounded-3xl flex flex-col justify-between transition-all hover:-translate-y-1"
+            >
+              <div>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="p-3 rounded-2xl bg-slate-100 text-slate-500">
+                    <Icon className="w-6 h-6" />
+                  </div>
+                  {count > 0 && (
+                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full">
+                      {t(
+                        plural(
+                          count,
+                          "connectors.instanceCount_one",
+                          "connectors.instanceCount_other",
+                        ),
+                        { count },
+                      )}
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-lg font-extrabold text-slate-900 mb-1">
+                  {catalogName(t, cat)}
+                </h3>
+                <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                  {t(cat.descriptionKey)}
+                </p>
+              </div>
+              <button
+                onClick={() => onOpenConfigureModal(undefined, cat.id)}
+                disabled={!cat.available}
+                className="w-full py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-40 shadow-md shadow-[#0d5c3a]/20 flex items-center justify-center gap-1.5"
+              >
+                <span>
+                  {!cat.available
+                    ? t("connectors.soon")
+                    : count > 0
+                    ? t("connectors.addAnother")
+                    : t("connectors.connectNow")}
+                </span>
+                {cat.available && <ArrowUpRight className="w-3.5 h-3.5" />}
+              </button>
             </div>
           );
         })}
@@ -321,13 +391,17 @@ export default function ConnectorsPage({
       <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-slate-900">Konfigurierte Connections & Live Queue Status</h3>
+            <h3 className="text-sm font-bold text-slate-900">{t("connectors.tableTitle")}</h3>
             <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-              <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" /> Auto-Polling 10s
+              <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />{" "}
+              {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
             </span>
           </div>
           <span className="text-xs font-semibold text-slate-400">
-            {connectors.length} Connector{connectors.length === 1 ? "" : "en"} konfiguriert
+            {t(
+              plural(connectors.length, "connectors.configuredCount_one", "connectors.configuredCount_other"),
+              { count: connectors.length },
+            )}
           </span>
         </div>
 
@@ -339,21 +413,26 @@ export default function ConnectorsPage({
               <thead>
                 <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
                   <th className="pb-3 px-3">{t("connectors.colSource")}</th>
-                  <th className="pb-3 px-3">NATS Queue & Status</th>
-                  <th className="pb-3 px-3">Letzter Sync</th>
+                  <th className="pb-3 px-3">{t("connectors.colQueue")}</th>
+                  <th className="pb-3 px-3">{t("connectors.colLastSync")}</th>
                   <th className="pb-3 px-3">{t("connectors.colTransfer")}</th>
-                  <th className="pb-3 px-3 text-right">Aktionen</th>
+                  <th className="pb-3 px-3 text-right">{t("connectors.colActions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {connectors.map((c) => (
+                {connectors.map((c) => {
+                  const rowIsPassive = getConnectorDirection(c.source_type) === "passive";
+                  return (
                   <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                     <td className="py-3.5 px-3">
                       <div className="flex items-center gap-2.5">
                         <Key className="w-4 h-4 text-[#0d5c3a]" />
                         <div>
                           <div className="flex items-center gap-2">
-                            <div className="font-bold text-slate-900 uppercase tracking-wide">{c.source_type}</div>
+                            {/* Name first, type beneath: two calendars differ only by name. */}
+                            <div className="font-bold text-slate-900">
+                              {c.display_name || c.source_type}
+                            </div>
                             <a
                               href={CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)?.docsPath ?? "/docs/importers/"}
                               target="_blank"
@@ -362,11 +441,14 @@ export default function ConnectorsPage({
                               title={t("connectors.openDocs")}
                             >
                               <BookOpen className="w-3 h-3" />
-                              <span className="text-[10px]">Docs</span>
+                              <span className="text-[10px]">{t("connectors.docs")}</span>
                             </a>
                           </div>
-                          <div className={getConnectorDirection(c.source_type) === "passive" ? "text-[10px] font-bold uppercase tracking-wider text-violet-700" : "text-[10px] font-bold uppercase tracking-wider text-sky-700"}>
-                            {getConnectorDirection(c.source_type) === "passive"
+                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                            {c.source_type}
+                          </div>
+                          <div className={rowIsPassive ? "text-[10px] font-bold uppercase tracking-wider text-violet-700" : "text-[10px] font-bold uppercase tracking-wider text-sky-700"}>
+                            {rowIsPassive
                               ? t("connectors.passiveHint")
                               : t("connectors.activeHint")}
                           </div>
@@ -392,10 +474,10 @@ export default function ConnectorsPage({
                           }`} />
                           <span>
                             {c.sync_status === "queued"
-                              ? "Event gequeut (Processing)"
+                              ? t("connectors.processing")
                               : c.sync_status === "error"
                               ? t("connectors.authErrorShort")
-                              : "Bereit / Active"}
+                              : t("connectors.readyActive")}
                           </span>
                         </span>
                         {c.last_sync_message && (
@@ -411,29 +493,49 @@ export default function ConnectorsPage({
                       {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
                     </td>
                     <td className="py-3.5 px-3 text-slate-600">
-                      {getConnectorDirection(c.source_type) === "passive"
-                        ? "Webhook · ereignisbasiert"
+                      {rowIsPassive
+                        ? t("connectors.webhookDriven")
                         : t("connectors.everyHours", { hours: c.poll_interval_hours, days: c.lookback_days })}
                     </td>
-                    <td className="py-3.5 px-3 text-right space-x-2">
-                      {getConnectorDirection(c.source_type) === "active" && (
+                    {/*
+                      `text-right space-x-2` wrapped badly: Tailwind's space-x-* is a
+                      sibling margin, so a button pushed onto a second line kept its left
+                      margin and sat indented instead of flush right. A flex row with
+                      `gap` puts the space between the items rather than beside them, and
+                      wraps to the right edge.
+                    */}
+                    <td className="py-3.5 px-3">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                      {/*
+                        Offered for push connectors too, matching the cards: the
+                        dialog is where progress and history live, and a pushed
+                        import has both. The guard here also made the `passive`
+                        flag below dead — it could only ever be computed inside a
+                        branch that had already excluded passive connectors.
+                      */}
                       <button
                         onClick={() =>
                           setImportDialogFor({
-                            id: c.source_type,
-                            name: CONNECTOR_CATALOG.find((x) => x.id === c.source_type)?.name ?? c.source_type,
+                            id: c.id,
+                            name: c.display_name || c.source_type,
+                            passive: rowIsPassive,
                           })
                         }
                         disabled={c.sync_status === "queued"}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5"
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
                       >
                         <RefreshCw className={`w-3 h-3 ${c.sync_status === "queued" ? "animate-spin" : ""}`} />
-                        <span>{c.sync_status === "queued" ? "Queued" : "Importieren"}</span>
+                        <span>
+                          {c.sync_status === "queued"
+                            ? t("connectors.queued")
+                            : rowIsPassive
+                            ? t("connectors.history")
+                            : t("connectors.import")}
+                        </span>
                       </button>
-                      )}
                       <button
                         onClick={() => onOpenConfigureModal(c)}
-                        className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 ${
+                        className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
                           c.sync_status === "error"
                             ? "bg-rose-600 hover:bg-rose-700 text-white"
                             : "bg-[#0d5c3a] hover:bg-[#08432a] text-white"
@@ -443,17 +545,19 @@ export default function ConnectorsPage({
                         <span>{c.sync_status === "error" ? t("connectors.renewToken") : t("connectors.edit")}</span>
                       </button>
                       <button
-                        onClick={() => handleDeleteConnector(c.source_type)}
-                        disabled={deletingSource === c.source_type}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1"
+                        onClick={() => handleDeleteConnector(c)}
+                        disabled={deletingSource === c.id}
+                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
                         title={t("connectors.disconnect")}
                       >
                         <Trash2 className="w-3 h-3" />
                         <span>{t("common.delete")}</span>
                       </button>
+                      </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -476,6 +580,7 @@ export default function ConnectorsPage({
           apiBase={apiBase}
           sourceType={importDialogFor.id}
           sourceName={importDialogFor.name}
+          passive={importDialogFor.passive}
           isOpen={true}
           onClose={() => setImportDialogFor(null)}
           onQueued={fetchConnectors}

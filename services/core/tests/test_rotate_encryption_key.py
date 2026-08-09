@@ -112,7 +112,11 @@ async def make_source(tenant_id: str, config: dict) -> str:
     async with async_session_maker() as session:
         session.add(
             DataSource(
-                id=source_id, tenant_id=tenant_id, source_type="oura", config=config
+                id=source_id,
+                tenant_id=tenant_id,
+                source_type="oura",
+                display_name="Oura",
+                config=config,
             )
         )
         await session.commit()

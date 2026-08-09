@@ -47,7 +47,7 @@ async def test_end_to_end_ingestion_deduplication():
             session.add(t)
             await session.flush()
 
-            ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura")
+            ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura", display_name="Oura")
             session.add(ds)
             await session.commit()
 

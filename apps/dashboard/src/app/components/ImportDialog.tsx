@@ -14,7 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { useT, type Translate } from "../lib/i18n/provider";
+import { useI18n, type Translate } from "../lib/i18n/provider";
 
 /**
  * Import dialog with an explicit time range, a smart/force choice and a preview of
@@ -64,11 +64,35 @@ export interface SyncRun {
 
 interface ImportDialogProps {
   apiBase: string;
+  /** The connector instance. Every endpoint here addresses it by id. */
   sourceType: string;
   sourceName: string;
+  /**
+   * A push connector: data arrives when the phone sends it, so there is nothing
+   * to trigger here. The dialog still opens — it is where progress and history
+   * live, and a pushed import had nowhere to show either.
+   */
+  passive?: boolean;
   isOpen: boolean;
   onClose: () => void;
   onQueued?: () => void;
+}
+
+/** How often to refresh while an import is running. */
+const PROGRESS_POLL_MS = 2000;
+
+/** A run that has started and not finished. There is at most one per connector. */
+function activeRun(runs: SyncRun[]): SyncRun | undefined {
+  return runs.find((run) => run.finished_at === null && run.status !== "skipped");
+}
+
+/** "about 2 minutes", from seconds — or nothing when the connector has no history. */
+function durationHint(t: Translate, seconds: number | null | undefined): string | null {
+  if (!seconds || seconds <= 0) return null;
+  if (seconds < 90) {
+    return t("import.typicallySeconds", { count: Math.max(1, Math.round(seconds)) });
+  }
+  return t("import.typicallyMinutes", { count: Math.round(seconds / 60) });
 }
 
 /** `datetime-local` needs `YYYY-MM-DDTHH:mm` in local time, not an ISO UTC string. */
@@ -84,15 +108,9 @@ function fromLocalInput(value: string): string {
   return new Date(value).toISOString();
 }
 
-function formatRange(range: ImportRange): string {
-  const fmt = new Intl.DateTimeFormat("de-DE", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${fmt.format(new Date(range.start))} – ${fmt.format(new Date(range.end))}`;
+/** A range in the reader's own locale, which `useI18n` knows and this file did not. */
+function formatRange(formatDateTime: (value: string) => string, range: ImportRange): string {
+  return `${formatDateTime(range.start)} – ${formatDateTime(range.end)}`;
 }
 
 function durationLabel(t: Translate, range: ImportRange): string {
@@ -106,16 +124,18 @@ export default function ImportDialog({
   apiBase,
   sourceType,
   sourceName,
+  passive = false,
   isOpen,
   onClose,
   onQueued,
 }: ImportDialogProps) {
-  const t = useT();
+  const { t, formatDateTime } = useI18n();
   const [mode, setMode] = useState<"smart" | "force">("smart");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
   const [plan, setPlan] = useState<ImportPlan | null>(null);
   const [runs, setRuns] = useState<SyncRun[]>([]);
+  const [typicalSeconds, setTypicalSeconds] = useState<number | null>(null);
   const [planning, setPlanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -173,7 +193,11 @@ export default function ImportDialog({
         `${apiBase}/api/v1/data/sources/${sourceType}/sync-runs?limit=5`,
         { headers: authHeaders() },
       );
-      if (res.ok) setRuns((await res.json()).runs || []);
+      if (res.ok) {
+        const data = await res.json();
+        setRuns(data.runs || []);
+        setTypicalSeconds(data.typical_duration_seconds ?? null);
+      }
     } catch {
       // History is informational; a failure here must not block the import.
     }
@@ -211,6 +235,19 @@ export default function ImportDialog({
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, start, end]);
+
+  // While a run is in flight, keep asking. The counts are written by the ingest
+  // consumer as the data actually lands, so this is the import's real progress
+  // rather than a client-side animation. Polling stops the moment nothing is
+  // running, so an idle dialog costs nothing.
+  const running = activeRun(runs);
+  const typicalHint = durationHint(t, typicalSeconds);
+  useEffect(() => {
+    if (!isOpen || !running) return;
+    const timer = setInterval(() => void loadRuns(), PROGRESS_POLL_MS);
+    return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, Boolean(running), sourceType]);
 
   const handleImport = async () => {
     setSubmitting(true);
@@ -257,7 +294,7 @@ export default function ImportDialog({
             <CalendarRange className="h-5 w-5 text-[#0d5c3a]" />
             <div>
               <h2 className="text-base font-bold text-slate-900">
-                Daten importieren — {sourceName}
+                {t("import.title", { name: sourceName })}
               </h2>
               <p className="text-[11px] text-slate-500">
                 {t("import.subtitle")}
@@ -274,11 +311,24 @@ export default function ImportDialog({
         </div>
 
         <div className="space-y-5 px-6 py-5">
+          {/*
+            A push connector has nothing to trigger: the phone decides when data
+            arrives. Everything that plans or starts an import is hidden, and what
+            remains is what such a connector does have — progress and history.
+          */}
+          {passive && (
+            <p className="rounded-2xl border border-violet-200 bg-violet-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-violet-900">
+              {t("import.passiveExplainer")}
+            </p>
+          )}
+
+          {!passive && (
+          <>
           {/* Range */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Von
+                {t("import.from")}
               </span>
               <input
                 type="datetime-local"
@@ -292,7 +342,7 @@ export default function ImportDialog({
             </label>
             <label className="block">
               <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Bis
+                {t("import.to")}
               </span>
               <input
                 type="datetime-local"
@@ -308,7 +358,7 @@ export default function ImportDialog({
 
           {plan?.window_reason && !rangeTouched && (
             <p className="text-[11px] leading-relaxed text-slate-500">
-              <span className="font-semibold text-slate-600">Vorschlag:</span>{" "}
+              <span className="font-semibold text-slate-600">{t("import.suggestion")}</span>{" "}
               {plan.window_reason}
             </p>
           )}
@@ -316,7 +366,7 @@ export default function ImportDialog({
           {/* Mode */}
           <fieldset className="space-y-2">
             <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
-              Modus
+              {t("import.modeLegend")}
             </legend>
             <label
               className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
@@ -334,11 +384,10 @@ export default function ImportDialog({
               />
               <span>
                 <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                  <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> Smart (empfohlen)
+                  <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> {t("import.smartLabel")}
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
-                  {t("import.smartHint")}{" "}
-                  fehlende Bereich wird importiert.
+                  {t("import.smartHint")}
                 </span>
               </span>
             </label>
@@ -362,7 +411,7 @@ export default function ImportDialog({
                   <Zap className="h-4 w-4 text-amber-600" /> {t("import.forceLabel")}
                 </span>
                 <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
-                  Der gesamte Zeitraum wird erneut verarbeitet.
+                  {t("import.forceBody")}
                 </span>
               </span>
             </label>
@@ -372,18 +421,71 @@ export default function ImportDialog({
             <div className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
               <p className="text-[11px] leading-relaxed text-amber-900">
-                Force-Importe verursachen deutlich mehr Verarbeitungsaufwand und erzeugen
-                Duplicate Events. Doppelte Datenpunkte entstehen dank Idempotenz nicht,
-                {t("import.forceHint")}
+                {t("import.forceWarning")} {t("import.forceHint")}
               </p>
             </div>
           )}
 
-          {/* Plan preview */}
+          {/*
+            Live progress. The counts come from the ingest consumer as the data is
+            actually stored, so this is what happened rather than an animation. A
+            percentage appears only where the total is genuinely known — a file
+            upload knows it after parsing, a provider poll does not — and where it
+            is not, the count is shown on its own. An invented percentage would be
+            worse than an honest number.
+          */}
+          {running && (
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("import.running")}
+                </h3>
+                {typicalHint && (
+                  <span className="text-[11px] text-emerald-700">{typicalHint}</span>
+                )}
+              </div>
+
+              {running.points_received > 0 ? (
+                <>
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                    <div
+                      className="h-full rounded-full bg-[#0d5c3a] transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.round(
+                            ((running.points_accepted + running.points_duplicate) /
+                              running.points_received) *
+                              100,
+                          ),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-emerald-900">
+                    {t("import.progressOf", {
+                      done: running.points_accepted + running.points_duplicate,
+                      total: running.points_received,
+                    })}
+                  </p>
+                </>
+              ) : (
+                <p className="text-[11px] text-emerald-900">
+                  {t("import.progressCounted", { count: running.points_accepted })}
+                </p>
+              )}
+            </div>
+          )}
+
+          </>
+          )}
+
+          {/* Plan preview — only meaningful where an import can be planned. */}
+          {!passive && (
           <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Vorschau
+                {t("import.previewLegend")}
               </h3>
               {planning && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
             </div>
@@ -398,8 +500,7 @@ export default function ImportDialog({
 
                 {plan.confidence === "low" && (
                   <p className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
-                    {t("import.tooIrregular")}{" "}
-                    Bereichserkennung. Sicherheitshalber wird der volle Zeitraum importiert.
+                    {t("import.tooIrregular")}
                   </p>
                 )}
 
@@ -414,7 +515,7 @@ export default function ImportDialog({
                           key={`${r.start}-${r.end}`}
                           className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-slate-600"
                         >
-                          <span className="font-mono">{formatRange(r)}</span>
+                          <span className="font-mono">{formatRange(formatDateTime, r)}</span>
                           <span className="text-slate-400">{durationLabel(t, r)}</span>
                         </li>
                       ))}
@@ -428,7 +529,7 @@ export default function ImportDialog({
                       <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
                     </p>
                     <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
-                      <span className="font-mono">{formatRange(effective)}</span>
+                      <span className="font-mono">{formatRange(formatDateTime, effective)}</span>
                       <span>{durationLabel(t, effective)}</span>
                     </div>
                   </div>
@@ -445,27 +546,26 @@ export default function ImportDialog({
                     rel="noreferrer"
                     className="inline-block text-[11px] text-[#0d5c3a] underline"
                   >
-                    Wie Smart- und Force-Import funktionieren
+                    {t("import.howItWorks")}
                   </a>
                 )}
               </div>
             )}
           </div>
+          )}
 
           {/* History */}
           {runs.length > 0 && (
             <details className="rounded-2xl border border-slate-200 bg-white p-4">
               <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
-                <History className="h-3.5 w-3.5" /> Letzte Importe ({runs.length})
+                <History className="h-3.5 w-3.5" /> {t("import.recent", { count: runs.length })}
               </summary>
               <ul className="mt-3 space-y-2">
                 {runs.map((run) => (
                   <li key={run.id} className="rounded-xl bg-slate-50 px-3 py-2 text-[11px]">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-slate-700">
-                        {run.started_at
-                          ? new Date(run.started_at).toLocaleString("de-DE")
-                          : "—"}
+                        {formatDateTime(run.started_at)}
                       </span>
                       <span className="flex items-center gap-1.5">
                         {run.mode === "force" && (
@@ -477,7 +577,7 @@ export default function ImportDialog({
                       </span>
                     </div>
                     <p className="mt-0.5 text-slate-500">
-                      {run.points_accepted} neu · {run.points_duplicate} Duplikate
+                      {t("import.runCounts", { accepted: run.points_accepted, duplicate: run.points_duplicate })}
                     </p>
                     {run.message && (
                       <p className="mt-0.5 text-slate-400">{run.message}</p>
@@ -505,8 +605,9 @@ export default function ImportDialog({
             onClick={onClose}
             className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
           >
-            Abbrechen
+            {passive ? t("common.close") : t("common.cancel")}
           </button>
+          {!passive && (
           <button
             onClick={handleImport}
             disabled={submitting || planning || (nothingToDo && mode === "smart")}
@@ -519,6 +620,7 @@ export default function ImportDialog({
             )}
             {nothingToDo && mode === "smart" ? t("import.nothingToImport") : t("import.start")}
           </button>
+          )}
         </div>
       </div>
     </div>

@@ -46,7 +46,7 @@ async def _seed(tenant_id: str, *, metric: str, count: int) -> str:
     source_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     async with async_session_maker() as session:
-        session.add(DataSource(id=source_id, tenant_id=tenant_id, source_type="oura"))
+        session.add(DataSource(id=source_id, tenant_id=tenant_id, source_type="oura", display_name="Oura"))
         await session.flush()
         for index in range(count):
             session.add(
@@ -215,10 +215,15 @@ async def test_list_data_sources_carries_no_credentials(grpc_channel):
         )
 
         assert [s.source_type for s in response.sources] == ["oura"]
-        # The message has no field that could carry one, which is the point.
+        # The message has no field that could carry one, which is the point. The
+        # set is pinned exactly rather than checked for absences, so *adding* a
+        # field is a decision somebody has to make here on purpose --
+        # `display_name` arrived with multi-instance connectors and is a label the
+        # user typed, never a credential.
         assert {f.name for f in pb.DataSourceSummary.DESCRIPTOR.fields} == {
             "id",
             "source_type",
+            "display_name",
         }
     finally:
         await cleanup_test_tenant(tenant_id)

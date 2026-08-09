@@ -300,6 +300,35 @@ def test_quality_accepts_a_dense_series():
     assert quality["coverage_pct"] > 80
 
 
+def test_an_event_metric_is_not_excluded_for_being_sparse():
+    """Body weight measured 20 times in 90 days is not "too thin" — it is body weight.
+
+    Coverage was measured against the calendar for every metric, so nothing
+    event-driven could ever clear 50 %: weight, workouts and calendar metrics were
+    permanently excluded from every analysis for having the density they are
+    supposed to have.
+    """
+    quality = series_quality(series_from([80.0] * 20), window_days=90, metric_type="body_weight")
+
+    assert quality["cadence"] == "event"
+    assert quality["sufficient"] is True
+
+
+def test_a_daily_metric_is_still_judged_on_density():
+    """The relaxation must not reach the metrics the rule was written for."""
+    quality = series_quality(series_from([1.0] * 20), window_days=90, metric_type="steps")
+
+    assert quality["cadence"] == "daily"
+    assert quality["sufficient"] is False
+
+
+def test_the_sample_floor_applies_whatever_the_cadence():
+    """A correlation over five points is not worth showing, however sparse the metric."""
+    quality = series_quality(series_from([80.0] * 5), window_days=90, metric_type="body_weight")
+
+    assert quality["sufficient"] is False
+
+
 def test_build_daily_series_averages_within_a_day():
     from datetime import datetime, timezone
 

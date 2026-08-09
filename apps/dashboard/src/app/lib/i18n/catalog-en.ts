@@ -190,6 +190,19 @@ export const en = {
   "quality.explainBody":
     "Gaps weaken every trend and correlation drawn from the data. A source conflict means two integrations report different values for the same period. Stabilise the data first, interpret correlations second.",
   "quality.explainDocs": "Documentation on data quality",
+  "quality.interruptionsTitle": "Interruptions",
+  "quality.interruptionsHint":
+    "Metrics recorded continuously — heart rate, weather — measured against the rate they actually kept rather than against calendar days.",
+  "quality.unsupportedTitle": "Not yet supported",
+  "quality.unsupportedHint":
+    "Your device sends these fields and this platform does not store them yet. Only the field names and their types are recorded here — never a value.",
+  "quality.unsupportedConnector": "Connector",
+  "quality.unsupportedField": "Field",
+  "quality.unsupportedKind": "Type",
+  "quality.unsupportedSeen": "Seen",
+  "quality.unsupportedLastSeen": "Last seen",
+  "quality.unsupportedCopy": "Copy report",
+  "quality.unsupportedCopied": "Copied",
   "quality.largestGaps": "Largest data gaps",
   "quality.largestGapsHint":
     "Consecutive missing days. “Backfill” opens the import dialog with exactly this period filled in.",
@@ -304,6 +317,26 @@ export const en = {
 
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Import",
+  "connectors.history": "History",
+  "connectors.queued": "Queued",
+  "connectors.newConnector": "New connector",
+  "connectors.docs": "Docs",
+  "connectors.queueStatus": "Queue status",
+  "connectors.eventQueued": "🟡 Event queued",
+  "connectors.standby": "🟢 Standby",
+  "connectors.processing": "Event queued (processing)",
+  "connectors.readyActive": "Ready / active",
+  "connectors.webhookDriven": "Webhook · event-driven",
+  "connectors.tableTitle": "Configured connections & live queue status",
+  "connectors.autoRefresh": "Auto-refresh {seconds}s",
+  "connectors.configuredCount_one": "{count} connector configured",
+  "connectors.configuredCount_other": "{count} connectors configured",
+  "connectors.colQueue": "NATS queue & status",
+  "connectors.colLastSync": "Last sync",
+  "connectors.colActions": "Actions",
+  "connectors.addAnother": "Add another",
+  "connectors.instanceCount_one": "{count} configured",
+  "connectors.instanceCount_other": "{count} configured",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "The keys could not be loaded.",
@@ -391,6 +424,26 @@ export const en = {
   "profile.privacyLead":
     "Which data is processed, on what basis, and how to delete it",
   "import.days": "{count} days",
+  "import.title": "Import data — {name}",
+  "import.from": "From",
+  "import.to": "To",
+  "import.suggestion": "Suggestion:",
+  "import.modeLegend": "Mode",
+  "import.smartLabel": "Smart (recommended)",
+  "import.forceBody": "The whole period is processed again.",
+  "import.forceWarning":
+    "Force imports cost considerably more processing and produce duplicate events. Idempotency still prevents duplicate data points,",
+  "import.previewLegend": "Preview",
+  "import.howItWorks": "How smart and force imports work",
+  "import.recent": "Recent imports ({count})",
+  "import.runCounts": "{accepted} new · {duplicate} duplicates",
+  "import.running": "Import running",
+  "import.progressOf": "{done} of {total} data points stored",
+  "import.progressCounted": "{count} data points stored so far",
+  "import.typicallySeconds": "usually about {count} s",
+  "import.typicallyMinutes": "usually about {count} min",
+  "import.passiveExplainer":
+    "This connector receives data when your device sends it, so there is nothing to start here. What a push import does have is shown below: how far the current one has got, and what earlier ones did.",
   "import.planFailed": "The import plan could not be loaded.",
   "import.startFailed": "The import could not be started.",
   "import.nothingToDo": "Nothing to do — the period is already complete.",
@@ -473,9 +526,43 @@ export const en = {
     "Please enter the URL of your calendar feed (.ics).",
   "modal.calendarUrlScheme":
     "The calendar URL has to start with http:// or https://.",
-  "modal.calendarUrlSuspect":
-    "This URL does not look like an .ics feed. Either give a valid ICS URL or add an API key.",
   "modal.needBaseUrl": "Please enter the HTTPS base URL of the provider API.",
+  "modal.baseUrlLabel": "Base URL",
+  "modal.calendarUrlLabel": "Calendar feed URL",
+  "modal.displayNameLabel": "Name",
+  "modal.displayNamePlaceholder": "e.g. Work calendar",
+  "modal.displayNameHint":
+    "Shown on the connector card. You can set up the same provider more than once — the name is what tells them apart.",
+  "modal.needDisplayName": "Please give this connector a name.",
+  "modal.credentialsStoredBody":
+    "You can change the polling interval and period without entering the credentials again.",
+  "modal.tokenLabel": "Access token",
+  "modal.tokenPlaceholder": "Bearer token / API key",
+  "modal.keepTokenPlaceholder": "•••••••• (keep the token)",
+  "modal.setupGuide": "Setup guide",
+  "modal.weatherPlaceLabel": "Location",
+  "modal.weatherPlacePlaceholder": "City or place name",
+  "modal.weatherSearch": "Search",
+  "modal.weatherSearching": "Searching…",
+  "modal.weatherNoPlaces": "No place of that name was found.",
+  "modal.weatherSearchFailed": "The place could not be looked up. Enter the coordinates directly.",
+  "modal.weatherChosenPlace": "Using {place}",
+  "modal.weatherLatitude": "Latitude",
+  "modal.weatherLongitude": "Longitude",
+  "modal.weatherNeedCoordinates":
+    "Please choose a location, or enter latitude and longitude yourself.",
+  "modal.weatherCoordinatesRange":
+    "Latitude must be between -90 and 90, longitude between -180 and 180.",
+  "modal.weatherModeGuided": "Guided",
+  "modal.weatherModeCustom": "Own URL",
+  "modal.weatherRequestUrlLabel": "Full request URL",
+  "modal.weatherRequestUrlHint":
+    "Sent exactly as written, query included — so a URL copied from the provider's own documentation works, including the archive endpoint for periods further back than the forecast API reaches. The import period is added only where you have not set one.",
+  "modal.weatherNeedRequestUrl":
+    "Please enter a complete URL starting with http:// or https://.",
+  "modal.weatherBaseUrl": "Provider URL",
+  "modal.weatherBaseUrlHint":
+    "Open-Meteo is preset and needs no API key. Replace it only for a self-hosted or commercial endpoint.",
   "modal.needApiKey": "Please enter a valid API key for {provider}.",
   "modal.needApiKeyOrGenerate":
     "Please enter a valid API key for {provider}, or generate one.",
@@ -507,10 +594,7 @@ export const en = {
   "modal.keepApiKey": "•••••••• (keep the API key)",
   "modal.pasteDawarichKey": "Paste your Dawarich API key here",
   "modal.icsHint":
-    "Public and private ICS feeds (Outlook, Google, Nextcloud) all work; the URL is stored encrypted and never logged.",
-  "modal.apiKeyOptional": "(optional, for API calendars only)",
-  "modal.apiKeyOptionalPlaceholder":
-    "Only needed if your provider offers no ICS feed",
+    "Public and private ICS feeds (Outlook, Google, Nextcloud) all work, and none of them need an API key. A private feed address is itself the secret: it is stored encrypted and never logged.",
   "modal.intervalSection": "Edit the polling interval and period",
   "modal.everyHour": "Every hour",
   "modal.everyNHours": "Every {count} hours",
@@ -546,6 +630,11 @@ export const en = {
   "analysis.computing": "Computing the analyses…",
   "analysis.title": "Relationships & patterns",
   "analysis.subtitleTail": "Relationships — not causes.",
+  "analysis.window": "Period",
+  "analysis.fromPercent": "from {percent} %",
+  "analysis.onlySignificant": "statistically significant only",
+  "analysis.disclaimer":
+    "Every result describes a statistical relationship, not cause and effect. None of it is medical advice.",
   "analysis.minStrength": "Minimum strength",
   "analysis.all": "all",
   "analysis.howToRead": "How to read these analyses",

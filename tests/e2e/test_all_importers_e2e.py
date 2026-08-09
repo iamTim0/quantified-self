@@ -24,7 +24,8 @@ from dawarich_importer.transformer import transform_dawarich_points
 from whoop_importer.transformer import transform_whoop_records
 from apple_health_importer.transformer import transform_health_auto_export_json
 from streak_importer.transformer import transform_streak_export_json
-from calendar_importer.transformer import transform as transform_calendar
+from calendar_importer.ics import CalendarEvent
+from calendar_importer.transformer import transform_events as transform_calendar_events
 from home_assistant_importer.transformer import transform as transform_home_assistant
 from weather_importer.transformer import transform as transform_weather
 
@@ -205,33 +206,53 @@ def test_streak_importer_e2e_mock_import(mock_tenant_context):
         assert dp["source_type"] == "streak"
 
 
-def test_calendar_importer_e2e_mock_import(mock_tenant_context):
-    """Test Calendar importer transformer with mock calendar events.
+def _occurrence(**overrides) -> CalendarEvent:
+    base = dict(
+        uid="event-1",
+        summary="Deep Work",
+        start=datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc),
+        end=datetime(2026, 8, 4, 11, 0, tzinfo=timezone.utc),
+        all_day=False,
+    )
+    base.update(overrides)
+    return CalendarEvent(**base)
 
-    The fixture previously used `start_time`, a key the transformer never read, so
-    it fell through to `datetime.now()` and produced a different idempotency_key on
-    every run — a guaranteed duplicate row per sync. The correct key is `start`.
+
+def test_calendar_importer_e2e_mock_import(mock_tenant_context):
+    """Test the Calendar transformer against expanded ICS occurrences.
+
+    This used to drive `transform()`, a JSON entry point the importer never
+    called — it existed for a REST calendar mode that was removed because it had
+    never worked. The real path is ICS, so that is what is covered here.
     """
     tenant_id, source_id = mock_tenant_context
-    records = [
-        {"start": "2026-08-04T10:00:00+00:00", "duration_minutes": 60, "summary": "Deep Work"}
-    ]
-    dps = transform_calendar(records, tenant_id, source_id)
-    assert len(dps) == 1
-    assert dps[0]["tenant_id"] == tenant_id
-    assert dps[0]["value"] == 60.0
+    events = [_occurrence()]
 
-    # Re-running must yield the identical key (Rule 4), which the now() fallback
-    # made impossible.
-    again = transform_calendar(records, tenant_id, source_id)
-    assert again[0]["idempotency_key"] == dps[0]["idempotency_key"]
+    dps = transform_calendar_events(events, tenant_id, source_id)
+
+    durations = [d for d in dps if d["metric_type"] == "calendar_meeting_duration"]
+    assert len(durations) == 1
+    assert durations[0]["tenant_id"] == tenant_id
+    assert durations[0]["value"] == 60.0
+
+    # Re-running must yield the identical key (Rule 4).
+    again = transform_calendar_events(events, tenant_id, source_id)
+    assert [d["idempotency_key"] for d in again] == [d["idempotency_key"] for d in dps]
 
 
-def test_calendar_importer_skips_records_without_a_timestamp(mock_tenant_context):
-    """A record with no usable timestamp is dropped, not stamped with now()."""
+def test_calendar_occurrences_at_the_same_minute_do_not_collide(mock_tenant_context):
+    """Two meetings starting together are two data points, not one overwriting the other.
+
+    A timestamp-only key would collide here; the occurrence's own uid is part of it.
+    """
     tenant_id, source_id = mock_tenant_context
-    dps = transform_calendar([{"duration_minutes": 60}], tenant_id, source_id)
-    assert dps == []
+    events = [_occurrence(uid="a"), _occurrence(uid="b", summary="Standup")]
+
+    dps = transform_calendar_events(events, tenant_id, source_id)
+
+    keys = [d["idempotency_key"] for d in dps if d["metric_type"] == "calendar_meeting_duration"]
+    assert len(keys) == 2
+    assert len(set(keys)) == 2
 
 
 def test_home_assistant_importer_e2e_mock_import(mock_tenant_context):

@@ -33,6 +33,7 @@ async def test_manual_sync_trigger_returns_202(mock_nats):
         # First configure so it exists
             payload = {
                 "source_type": "oura",
+                "display_name": "Oura Ring",
                 "access_token": "test-token",
                 "status": "active",
                 "config": {"lookback_days": 30}
@@ -60,6 +61,7 @@ async def test_configure_source_stores_custom_config_and_publishes_task(mock_nat
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {
                 "source_type": "oura",
+                "display_name": "Oura Ring",
                 "access_token": "test-token",
                 "status": "active",
                 "config": {"lookback_days": 30}
@@ -82,6 +84,7 @@ async def test_internal_token_endpoint_returns_token_and_config():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
             payload = {
                 "source_type": "oura",
+                "display_name": "Oura Ring",
                 "access_token": "test-token",
                 "status": "active",
                 "config": {"lookback_days": 30}

@@ -10,6 +10,11 @@ WORKDIR /app
 
 COPY packages/proto/pyproject.toml ./packages/proto/
 COPY packages/proto/gen ./packages/proto/gen
+# The metric registry, for each metric's expected cadence. A path dependency the
+# image does not carry fails the build with "Distribution not found", which is
+# what tools/tests/test_build_images.py exists to catch before CI does.
+COPY packages/shared-schemas/pyproject.toml ./packages/shared-schemas/
+COPY packages/shared-schemas/src ./packages/shared-schemas/src
 COPY services/analysis/pyproject.toml services/analysis/uv.lock ./services/analysis/
 
 WORKDIR /app/services/analysis

@@ -18,8 +18,19 @@ Importers must listen to these subjects and execute sync tasks only when a messa
 Importers MUST NEVER store API tokens, OAuth credentials, or configuration in `.env` files or local databases. Importers have **zero database access**.
 
 Credentials and custom `config` dictionaries must be fetched dynamically over internal HTTP at the start of a sync task:
-`GET /api/v1/internal/data/sources/<source_type>/token`
+`GET /api/v1/internal/data/sources/<source_id>/token`
 This request must include the `X-Tenant-ID` header.
+
+The path segment is the **connector id** carried by the sync task, not the source type. A tenant may
+hold several connectors of one type — three calendars, two weather locations — so the type alone no
+longer says whose credential is wanted. A bare type still resolves, for older payloads, but it
+returns whichever instance was created first.
+
+For the same reason an importer must never invent a `source_id`. Three of them used to fall back to
+`uuid5(NAMESPACE_DNS, f"{tenant_id}:{source_type}")` when Core returned none; that collapsed every
+instance of a type onto one id, and since the id is the second component of every idempotency key,
+two connectors would have written into a single indistinguishable series. An importer with no
+`source_id` reports an error and stops.
 
 **Security Constraints:**
 - Zero plaintext secrets in `.env` files.

@@ -5,7 +5,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     NATS_URL: str = "nats://localhost:4222"
-    CORE_SERVICE_URL: str = "http://localhost:8001"
+    CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
     # NOTE: TENANT_ID was removed deliberately. It defaulted to the workspace
     # UUID that infra/db/init.sql used to seed, so it named a tenant that no
     # longer exists and, worse, gave every code path a plausible-looking tenant

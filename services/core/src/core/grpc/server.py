@@ -244,6 +244,7 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                     pb.DataSourceSummary(
                         id=str(row.id),
                         source_type=row.source_type or "",
+                        display_name=row.display_name or "",
                     )
                     for row in rows
                 ]

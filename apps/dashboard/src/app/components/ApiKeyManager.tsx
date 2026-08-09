@@ -29,6 +29,8 @@ export interface ApiKey {
   name: string;
   key_prefix: string;
   source_type: string;
+  /** The connector instance this key pushes to. */
+  source_id: string | null;
   scopes: string[];
   status: string;
   expires_at: string | null;
@@ -41,6 +43,13 @@ export interface ApiKey {
 interface ApiKeyManagerProps {
   apiBase: string;
   sourceType: string;
+  /**
+   * Which connector instance keys belong to. A key now decides the `source_id` of
+   * every point pushed under it, so with two Apple Health connectors the type
+   * alone no longer says where the data lands. Empty while the connector is being
+   * created and has no id yet.
+   */
+  sourceId?: string;
   ingestPath: string;
   providerLabel: string;
 }
@@ -50,6 +59,7 @@ interface ApiKeyManagerProps {
 export default function ApiKeyManager({
   apiBase,
   sourceType,
+  sourceId,
   ingestPath,
   providerLabel,
 }: ApiKeyManagerProps) {
@@ -75,14 +85,20 @@ export default function ApiKeyManager({
       const res = await apiFetch(`${apiBase}/api/v1/data/api-keys`, { headers: headers() });
       if (res.ok) {
         const all: ApiKey[] = (await res.json()).api_keys || [];
-        setKeys(all.filter((k) => k.source_type === sourceType));
+        // Filtered to this instance when there is one, so a second Apple Health
+        // connector does not display the first connector's keys as its own.
+        setKeys(
+          all.filter((k) =>
+            sourceId ? k.source_id === sourceId : k.source_type === sourceType,
+          ),
+        );
       }
     } catch {
       setError(t("apikeys.loadFailed"));
     } finally {
       setLoading(false);
     }
-  }, [apiBase, headers, sourceType]);
+  }, [apiBase, headers, sourceType, sourceId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +121,7 @@ export default function ApiKeyManager({
         body: JSON.stringify({
           name: newKeyName.trim() || `${providerLabel} Key`,
           source_type: sourceType,
+          source_id: sourceId || undefined,
           expires_in_days: expiresInDays === "" ? undefined : Number(expiresInDays),
         }),
       });

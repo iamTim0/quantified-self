@@ -101,7 +101,7 @@ and the importer, and appears in every log as `[req_id=…]`.
 | Table | Purpose |
 | --- | --- |
 | `tenants`, `users` | Workspace and identities kept separate. `users.sessions_valid_from` is the cut-off from which older access tokens are rejected |
-| `data_sources` | One connector per (tenant, source_type) |
+| `data_sources` | One row per configured connector *instance*. A tenant may hold several of a type — three calendars, two weather locations — told apart by `display_name` and unique on `(tenant_id, source_type, display_name)` |
 | `data_points` | The time series, a TimescaleDB hypertable |
 | `sync_runs` | Import and audit log, the basis for adaptive windows |
 | `api_keys` | Tenant-bound inbound keys, stored only as a hash |
@@ -125,8 +125,9 @@ Today:
   `ListMetricTypes` and `ListDataSources`.
 - Every call needs an internal service credential; every query filters by `tenant_id`, which is
   validated as a UUID first.
-- `DataSourceSummary` carries only `id` and `source_type`. There is deliberately no field in which a
-  connector credential could cross the service boundary.
+- `DataSourceSummary` carries only `id`, `source_type` and `display_name`. There is deliberately no
+  field in which a connector credential could cross the service boundary, and a test pins the field
+  set exactly so adding one is a decision somebody has to make on purpose.
 - The Analysis service holds **no** database connection. A test reads the AST of every module and
   fails as soon as a database driver is imported there.
 
@@ -146,8 +147,11 @@ the connector configuration and the import history.
 - Every five minutes it checks which connectors are due.
 - A tick takes a transaction-scoped Postgres advisory lock, so that with several Core instances only
   one of them plans.
-- A connector with an import already running is skipped. After six hours a run counts as orphaned,
-  since otherwise a crashed importer would block its connector forever.
+- A connector with an import already running is skipped — keyed on the connector *instance*, so one
+  of a tenant's two calendars importing does not hold up the other. After six hours a run counts as
+  orphaned, since otherwise a crashed importer would block its connector forever.
+- Push connectors are never scheduled. Nothing subscribes to `qs.task.sync.apple_health`, so a
+  planned run there could only ever expire as stale while the connector showed as queued throughout.
 - Turn it off with `SCHEDULER_ENABLED=false`.
 
 That also means the importers' former process-local `active_syncs` lock no longer carries any weight:

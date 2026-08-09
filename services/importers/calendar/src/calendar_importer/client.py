@@ -1,17 +1,21 @@
 """Fetching calendar feeds.
 
-The brief distinguishes four ways a calendar can be reached, and the old client
-supported none of them properly — it always sent ``Authorization: Bearer`` and
-always expected JSON:
+A calendar is reached in one of three ways, inferred from what the tenant
+configured unless they set it explicitly, so pasting an Outlook ``.ics`` link
+just works:
 
 * ``public_ics``   — a plain ``.ics`` URL. **No credential required.**
 * ``private_ics``  — a tokenized ``.ics`` URL (Outlook/Google "secret address").
                      The URL itself is the credential, so it is never logged.
 * ``basic_auth``   — CalDAV-style username/password.
-* ``api_key``      — a bearer token, for providers that want one.
 
-The mode is inferred from what the tenant configured unless they set it
-explicitly, so pasting an Outlook ``.ics`` link just works.
+There used to be a fourth, ``api_key``, which sent ``Authorization: Bearer``.
+It never did what its name suggested: `fetch_feed` still required an *ICS body*
+in that mode, so a JSON REST calendar was never actually supported — the bearer
+header was the only difference. It has been removed rather than finished,
+because every provider people actually use publishes an ICS feed, and keeping a
+mode that exists only to demand a credential is what made an Outlook feed
+impossible to add.
 """
 
 from __future__ import annotations
@@ -43,7 +47,6 @@ class FeedConfig:
 
     url: str
     auth_mode: str = "public_ics"
-    token: str | None = None
     username: str | None = None
     password: str | None = None
     display_timezone: str = "UTC"
@@ -60,14 +63,14 @@ class FeedConfig:
         return f"{parsed.scheme}://{host}/…"
 
 
-def infer_auth_mode(config: dict[str, Any], token: str | None) -> str:
+def infer_auth_mode(config: dict[str, Any]) -> str:
     """Work out how to authenticate from what the tenant actually configured.
 
     An ``.ics`` URL with no credential is a public feed — the old behaviour of
     demanding an API key for it was the reported bug.
     """
     explicit = (config.get("auth_mode") or "").strip().lower()
-    if explicit in {"public_ics", "private_ics", "basic_auth", "api_key"}:
+    if explicit in {"public_ics", "private_ics", "basic_auth"}:
         return explicit
 
     if config.get("username") and config.get("password"):
@@ -76,12 +79,12 @@ def infer_auth_mode(config: dict[str, Any], token: str | None) -> str:
     url = (config.get("ics_url") or config.get("base_url") or "").strip()
     looks_like_ics = url.lower().split("?")[0].endswith(".ics")
 
-    if looks_like_ics:
-        # A tokenized feed is still just a URL fetch; the distinction is only
-        # whether the URL is a secret, which changes how we log it.
-        return "private_ics" if _url_carries_secret(url) else "public_ics"
-
-    return "api_key" if token else "public_ics"
+    # A tokenized feed is still just a URL fetch; the distinction is only whether
+    # the URL is a secret, which changes how we log it. The `.ics` suffix is not
+    # required -- plenty of providers serve a feed from an extensionless path.
+    if not looks_like_ics:
+        logger.info("Calendar URL does not end in .ics; fetching it as a feed anyway.")
+    return "private_ics" if _url_carries_secret(url) else "public_ics"
 
 
 def _url_carries_secret(url: str) -> bool:
@@ -92,7 +95,7 @@ def _url_carries_secret(url: str) -> bool:
     return any(len(segment) >= 32 for segment in parsed.path.split("/"))
 
 
-def build_feed_config(config: dict[str, Any], token: str | None) -> FeedConfig:
+def build_feed_config(config: dict[str, Any]) -> FeedConfig:
     """Assemble a FeedConfig from stored connector configuration."""
     url = (config.get("ics_url") or config.get("base_url") or "").strip()
     if not url:
@@ -104,8 +107,7 @@ def build_feed_config(config: dict[str, Any], token: str | None) -> FeedConfig:
 
     return FeedConfig(
         url=url,
-        auth_mode=infer_auth_mode(config, token),
-        token=token,
+        auth_mode=infer_auth_mode(config),
         username=config.get("username"),
         password=config.get("password"),
         display_timezone=config.get("timezone") or config.get("display_timezone") or "UTC",
@@ -123,11 +125,7 @@ async def fetch_feed(feed: FeedConfig, *, timeout: float = 30.0) -> str:
     headers = {"Accept": "text/calendar, text/plain;q=0.9, */*;q=0.5"}
     auth: httpx.Auth | None = None
 
-    if feed.auth_mode == "api_key":
-        if not feed.token:
-            raise CalendarAuthError("API key mode configured but no token stored")
-        headers["Authorization"] = f"Bearer {feed.token}"
-    elif feed.auth_mode == "basic_auth":
+    if feed.auth_mode == "basic_auth":
         if not (feed.username and feed.password):
             raise CalendarAuthError("Basic auth configured but username/password missing")
         auth = httpx.BasicAuth(feed.username, feed.password)

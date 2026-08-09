@@ -8,7 +8,6 @@ and publishes to NATS subject 'qs.ingest.whoop'.
 import asyncio
 import json
 import logging
-import uuid
 from pathlib import Path
 from typing import Any
 
@@ -74,7 +73,7 @@ async def report_sync_result_to_core(
     """
     url = (
         f"{settings.CORE_SERVICE_URL}"
-        f"/api/v1/internal/data/sources/{task.source_type}/status"
+        f"/api/v1/internal/data/sources/{task.source_id or task.source_type}/status"
     )
     headers = internal_headers(task.request_id, task.tenant_id)
     payload: dict[str, Any] = {
@@ -93,10 +92,16 @@ async def report_sync_result_to_core(
 
 
 async def get_connector_credentials_from_core(
-    tenant_id: str, req_id: str = "req_importer_poll"
+    tenant_id: str,
+    req_id: str = "req_importer_poll",
+    source_ref: str | None = None,
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:
     """Fetch decrypted WHOOP OAuth access token & source_id from Core Data Service DB."""
-    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/whoop/token"
+    # Addressed by connector id when the sync task carries one: a tenant may
+    # hold several connectors of this type, and the bare type would hand back
+    # an arbitrary one of them.
+    reference = source_ref or "whoop"
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{reference}/token"
     headers = internal_headers(req_id, tenant_id)
 
     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -105,9 +110,18 @@ async def get_connector_credentials_from_core(
             if res.status_code == 200:
                 data = res.json()
                 if data.get("status") == "active" and data.get("access_token"):
-                    source_id = data.get("source_id") or str(
-                        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:whoop")
-                    )
+                    # No synthetic fallback. It used to be
+                    # `uuid5(NAMESPACE_DNS, f"{tenant_id}:<type>")`, which collapsed
+                    # every instance of a type onto one id -- and that id is the
+                    # second component of every idempotency key, so two connectors
+                    # would have written into a single indistinguishable series.
+                    source_id = data.get("source_id")
+                    if not source_id:
+                        logger.warning(
+                            "Core returned no source_id for tenant %s; refusing to guess one.",
+                            tenant_id,
+                        )
+                        return None, None, None
                     return data["access_token"], source_id, data.get("config", {})
             return None, None, None
         except Exception as e:
@@ -193,15 +207,19 @@ async def process_task_message(msg, nc: nats.NATS):
             return
 
         tenant_id = task.tenant_id
-        if tenant_id in active_syncs:
+        # Keyed on the connector instance, not the tenant. Keyed on the tenant,
+        # a user's second connector of this type had its task discarded as a
+        # "duplicate" whenever the first was still running.
+        lock_key = f"{tenant_id}:{task.source_id or task.source_type}"
+        if lock_key in active_syncs:
             logger.info("Sync already in progress for tenant, skipping duplicate task")
             await msg.ack()
             return
 
-        active_syncs.add(tenant_id)
+        active_syncs.add(lock_key)
         try:
             token, source_id, config = await get_connector_credentials_from_core(
-                tenant_id, req_id=task.request_id
+                tenant_id, req_id=task.request_id, source_ref=task.source_id
             )
             if not token or not source_id:
                 logger.info(
@@ -212,7 +230,7 @@ async def process_task_message(msg, nc: nats.NATS):
 
             await fetch_and_publish(nc, task, source_id, token, config or {})
         finally:
-            active_syncs.discard(tenant_id)
+            active_syncs.discard(lock_key)
             await msg.ack()
     except Exception as e:
         logger.error(f"Error processing task message: {e}")

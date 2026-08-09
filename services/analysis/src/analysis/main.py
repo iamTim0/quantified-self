@@ -163,7 +163,8 @@ async def get_insights(
     )
 
     quality = {
-        metric: series_quality(daily, days) for metric, daily in sorted(series.items())
+        metric: series_quality(daily, days, metric)
+        for metric, daily in sorted(series.items())
     }
     # Analyses only run on series with a defensible amount of data.
     usable = {m: d for m, d in series.items() if quality[m]["sufficient"]}

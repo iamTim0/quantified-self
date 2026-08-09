@@ -193,6 +193,19 @@ export const de: Record<MessageKey, string> = {
   "quality.explainBody":
     "Lücken reduzieren die Aussagekraft von Trends und Korrelationen. Quellenkonflikte zeigen, dass zwei Integrationen für denselben Zeitraum unterschiedliche Werte liefern. Empfehlung: zuerst Datenqualität stabilisieren, dann Korrelationen interpretieren.",
   "quality.explainDocs": "Dokumentation zur Datenqualität",
+  "quality.interruptionsTitle": "Unterbrechungen",
+  "quality.interruptionsHint":
+    "Fortlaufend aufgezeichnete Metriken — Puls, Wetter — gemessen an der tatsächlich eingehaltenen Rate statt an Kalendertagen.",
+  "quality.unsupportedTitle": "Noch nicht unterstützt",
+  "quality.unsupportedHint":
+    "Dein Gerät sendet diese Felder, und diese Plattform speichert sie noch nicht. Erfasst sind ausschließlich Feldnamen und Typen — nie ein Wert.",
+  "quality.unsupportedConnector": "Connector",
+  "quality.unsupportedField": "Feld",
+  "quality.unsupportedKind": "Typ",
+  "quality.unsupportedSeen": "Gesehen",
+  "quality.unsupportedLastSeen": "Zuletzt",
+  "quality.unsupportedCopy": "Bericht kopieren",
+  "quality.unsupportedCopied": "Kopiert",
   "quality.largestGaps": "Größte Datenlücken",
   "quality.largestGapsHint":
     "Zusammenhängende fehlende Tage. Über „Nachladen“ wird der Importdialog mit genau diesem Zeitraum vorbelegt.",
@@ -309,6 +322,26 @@ export const de: Record<MessageKey, string> = {
 
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Importieren",
+  "connectors.history": "Verlauf",
+  "connectors.queued": "In Warteschlange",
+  "connectors.newConnector": "Neuer Connector",
+  "connectors.docs": "Doku",
+  "connectors.queueStatus": "Queue-Status",
+  "connectors.eventQueued": "🟡 Event in Warteschlange",
+  "connectors.standby": "🟢 Bereit",
+  "connectors.processing": "Event in Warteschlange (wird verarbeitet)",
+  "connectors.readyActive": "Bereit / aktiv",
+  "connectors.webhookDriven": "Webhook · ereignisbasiert",
+  "connectors.tableTitle": "Konfigurierte Verbindungen & Live-Queue-Status",
+  "connectors.autoRefresh": "Aktualisiert alle {seconds}s",
+  "connectors.configuredCount_one": "{count} Connector konfiguriert",
+  "connectors.configuredCount_other": "{count} Connectoren konfiguriert",
+  "connectors.colQueue": "NATS-Queue & Status",
+  "connectors.colLastSync": "Letzter Sync",
+  "connectors.colActions": "Aktionen",
+  "connectors.addAnother": "Weiteren hinzufügen",
+  "connectors.instanceCount_one": "{count} eingerichtet",
+  "connectors.instanceCount_other": "{count} eingerichtet",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "Schlüssel konnten nicht geladen werden.",
@@ -397,6 +430,26 @@ export const de: Record<MessageKey, string> = {
   "profile.privacyLead":
     "Welche Daten verarbeitet werden, auf welcher Grundlage und wie du sie löschen kannst",
   "import.days": "{count} Tage",
+  "import.title": "Daten importieren — {name}",
+  "import.from": "Von",
+  "import.to": "Bis",
+  "import.suggestion": "Vorschlag:",
+  "import.modeLegend": "Modus",
+  "import.smartLabel": "Smart (empfohlen)",
+  "import.forceBody": "Der gesamte Zeitraum wird erneut verarbeitet.",
+  "import.forceWarning":
+    "Force-Importe verursachen deutlich mehr Verarbeitungsaufwand und erzeugen doppelte Events. Doppelte Datenpunkte entstehen dank Idempotenz trotzdem nicht,",
+  "import.previewLegend": "Vorschau",
+  "import.howItWorks": "Wie Smart- und Force-Import funktionieren",
+  "import.recent": "Letzte Importe ({count})",
+  "import.runCounts": "{accepted} neu · {duplicate} Duplikate",
+  "import.running": "Import läuft",
+  "import.progressOf": "{done} von {total} Datenpunkten gespeichert",
+  "import.progressCounted": "{count} Datenpunkte bisher gespeichert",
+  "import.typicallySeconds": "dauert üblicherweise etwa {count} s",
+  "import.typicallyMinutes": "dauert üblicherweise etwa {count} min",
+  "import.passiveExplainer":
+    "Dieser Connector empfängt Daten, wenn dein Gerät sie sendet — hier gibt es also nichts anzustoßen. Was ein Push-Import trotzdem hat, steht darunter: wie weit der laufende gekommen ist und was frühere getan haben.",
   "import.planFailed": "Importplan konnte nicht geladen werden.",
   "import.startFailed": "Import konnte nicht gestartet werden.",
   "import.nothingToDo":
@@ -481,9 +534,44 @@ export const de: Record<MessageKey, string> = {
     "Bitte gib die URL deines Kalender-Feeds (.ics) ein.",
   "modal.calendarUrlScheme":
     "Die Kalender-URL muss mit http:// oder https:// beginnen.",
-  "modal.calendarUrlSuspect":
-    "Diese URL sieht nicht nach einem .ics-Feed aus. Gib entweder eine gültige ICS-URL oder zusätzlich einen API Key an.",
   "modal.needBaseUrl": "Bitte gib die HTTPS-Basis-URL der Provider-API ein.",
+  "modal.baseUrlLabel": "Basis-URL",
+  "modal.calendarUrlLabel": "Kalender-Feed-URL",
+  "modal.displayNameLabel": "Name",
+  "modal.displayNamePlaceholder": "z. B. Arbeitskalender",
+  "modal.displayNameHint":
+    "Erscheint auf der Connector-Karte. Denselben Anbieter kannst du mehrfach einrichten — der Name unterscheidet die Instanzen.",
+  "modal.needDisplayName": "Bitte gib diesem Connector einen Namen.",
+  "modal.credentialsStoredBody":
+    "Du kannst Abfrage-Frequenz und Zeitraum anpassen, ohne die Zugangsdaten neu einzugeben.",
+  "modal.tokenLabel": "Zugriffstoken",
+  "modal.tokenPlaceholder": "Bearer Token / API Key",
+  "modal.keepTokenPlaceholder": "•••••••• (Token beibehalten)",
+  "modal.setupGuide": "Einrichtungsanleitung",
+  "modal.weatherPlaceLabel": "Ort",
+  "modal.weatherPlacePlaceholder": "Stadt oder Ortsname",
+  "modal.weatherSearch": "Suchen",
+  "modal.weatherSearching": "Suche läuft …",
+  "modal.weatherNoPlaces": "Es wurde kein Ort mit diesem Namen gefunden.",
+  "modal.weatherSearchFailed":
+    "Der Ort konnte nicht nachgeschlagen werden. Gib die Koordinaten direkt ein.",
+  "modal.weatherChosenPlace": "Verwendet wird {place}",
+  "modal.weatherLatitude": "Breitengrad",
+  "modal.weatherLongitude": "Längengrad",
+  "modal.weatherNeedCoordinates":
+    "Bitte wähle einen Ort aus oder gib Breiten- und Längengrad selbst ein.",
+  "modal.weatherCoordinatesRange":
+    "Der Breitengrad muss zwischen -90 und 90 liegen, der Längengrad zwischen -180 und 180.",
+  "modal.weatherModeGuided": "Geführt",
+  "modal.weatherModeCustom": "Eigene URL",
+  "modal.weatherRequestUrlLabel": "Vollständige Abfrage-URL",
+  "modal.weatherRequestUrlHint":
+    "Wird exakt so gesendet, samt Query — eine aus der Anbieter-Dokumentation kopierte URL funktioniert also, einschließlich des Archiv-Endpunkts für Zeiträume, die die Forecast-API nicht mehr abdeckt. Der Importzeitraum wird nur ergänzt, wo du keinen gesetzt hast.",
+  "modal.weatherNeedRequestUrl":
+    "Bitte gib eine vollständige URL an, die mit http:// oder https:// beginnt.",
+  "modal.weatherBaseUrl": "Anbieter-URL",
+  "modal.weatherBaseUrlHint":
+    "Open-Meteo ist voreingestellt und braucht keinen API Key. Ersetze die URL nur für einen selbst gehosteten oder kommerziellen Endpunkt.",
   "modal.needApiKey": "Bitte gib einen gültigen API Key für {provider} ein.",
   "modal.needApiKeyOrGenerate":
     "Bitte gib einen gültigen API Key für {provider} ein oder generiere einen.",
@@ -515,10 +603,7 @@ export const de: Record<MessageKey, string> = {
   "modal.keepApiKey": "•••••••• (API Key beibehalten)",
   "modal.pasteDawarichKey": "Füge deinen Dawarich API Key hier ein",
   "modal.icsHint":
-    "Öffentliche und private ICS-Feeds (Outlook, Google, Nextcloud) funktionieren; die URL wird verschlüsselt gespeichert und nie protokolliert.",
-  "modal.apiKeyOptional": "(optional, nur für API-Kalender)",
-  "modal.apiKeyOptionalPlaceholder":
-    "Nur nötig, wenn dein Anbieter keinen ICS-Feed anbietet",
+    "Öffentliche und private ICS-Feeds (Outlook, Google, Nextcloud) funktionieren, und keiner davon braucht einen API Key. Eine private Feed-Adresse ist selbst das Geheimnis: sie wird verschlüsselt gespeichert und nie protokolliert.",
   "modal.intervalSection": "Abfrage-Intervall & Zeitraum bearbeiten",
   "modal.everyHour": "Jede Stunde",
   "modal.everyNHours": "Alle {count} Stunden",
@@ -554,6 +639,11 @@ export const de: Record<MessageKey, string> = {
   "analysis.computing": "Analysen werden berechnet…",
   "analysis.title": "Zusammenhänge & Muster",
   "analysis.subtitleTail": "Zusammenhänge — keine Ursachen.",
+  "analysis.window": "Zeitraum",
+  "analysis.fromPercent": "ab {percent} %",
+  "analysis.onlySignificant": "nur statistisch signifikante",
+  "analysis.disclaimer":
+    "Jedes Ergebnis beschreibt einen statistischen Zusammenhang, keine Ursache und Wirkung. Nichts davon ist eine medizinische Empfehlung.",
   "analysis.minStrength": "Mindeststärke",
   "analysis.all": "alle",
   "analysis.howToRead": "Wie diese Analysen zu lesen sind",

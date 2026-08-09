@@ -27,7 +27,7 @@ async def ensure_seeded_data(tenant_id: str):
     """Seed test metric data points for query endpoint tests."""
     async with async_session_maker() as session:
         source_id = str(uuid.uuid4())
-        ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura")
+        ds = DataSource(id=source_id, tenant_id=tenant_id, source_type="oura", display_name="Oura")
         session.add(ds)
         await session.flush()
 

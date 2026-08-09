@@ -4,17 +4,23 @@ FastAPI Webhook Server & NATS JetStream Publisher for Health Auto Export JSON.
 Submits transformed IngestEvents to NATS subject 'qs.ingest.apple_health'.
 """
 
+import asyncio
 import json
 import logging
-import uuid
 from contextlib import asynccontextmanager
 
 import nats
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from shared_schemas import FieldReportCollector
 
 from apple_health_importer.auth import extract_presented_key, resolve_api_key
+from apple_health_importer.client import (
+    close_sync_run,
+    open_sync_run,
+    send_field_report,
+)
 from apple_health_importer.config import settings
 from apple_health_importer.transformer import transform_health_auto_export_json
 
@@ -90,9 +96,20 @@ async def ingest_health_auto_export_payload(
             status_code=403, detail="X-Tenant-ID does not match the authenticated API key."
         )
 
-    source_id = identity.source_id or str(
-        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
-    )
+    # The key names the connector instance. No synthetic fallback: a guessed id
+    # would be the second component of every idempotency key derived here, so two
+    # phones pushing under different keys would merge into one series.
+    source_id = identity.source_id
+    if not source_id:
+        logger.error(
+            "[req_id=%s] API key %s resolves to no connector; refusing the push.",
+            x_request_id,
+            identity.key_prefix,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="This API key is not bound to a connector. Re-create it in the dashboard.",
+        )
 
     try:
         payload = await request.json()
@@ -112,7 +129,23 @@ async def ingest_health_auto_export_payload(
                 detail="NATS event broker unavailable. Please retry later.",
             )
 
-    events = transform_health_auto_export_json(payload, tenant_id=tenant_id, source_id=source_id)
+    field_report = FieldReportCollector()
+    events = transform_health_auto_export_json(
+        payload, tenant_id=tenant_id, source_id=source_id, report=field_report
+    )
+
+    # A pushed import used to leave no trace at all: no run, so `_tally` never
+    # counted anything and the whole thing was invisible in the history while it
+    # happened and afterwards. The count is known here, before publishing, which
+    # is what lets the dashboard show real progress rather than a guess.
+    sync_run_id = await open_sync_run(
+        tenant_id,
+        source_id,
+        req_id=x_request_id,
+        trigger="push",
+        points_expected=len(events),
+        message=f"Health Auto Export pushed {len(events)} data point(s).",
+    )
 
     published_count = 0
     if nc_client and nc_client.is_connected:
@@ -120,6 +153,8 @@ async def ingest_health_auto_export_payload(
         for event in events:
             # AGENTS.md rule 13: correlation id travels with the event, not just the log.
             event["request_id"] = x_request_id
+            if sync_run_id:
+                event["sync_run_id"] = sync_run_id
             raw_data = json.dumps(event).encode("utf-8")
             await js.publish("qs.ingest.apple_health", raw_data)
             published_count += 1
@@ -136,12 +171,35 @@ async def ingest_health_auto_export_payload(
         published_count,
     )
 
+    # Concurrently: both are post-publish bookkeeping, independent of each other,
+    # and the phone is waiting on this response. Sequentially they added two full
+    # round trips to every push.
+    await asyncio.gather(
+        send_field_report(
+            tenant_id,
+            source_id,
+            field_report.build(),
+            req_id=x_request_id,
+            sync_run_id=sync_run_id,
+        ),
+        close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="idle",
+            message=f"{published_count} data point(s) received from Health Auto Export.",
+            points_received=published_count,
+        ),
+    )
+
     return JSONResponse(
         status_code=200,
         content={
             "status": "success",
             "tenant_id": tenant_id,
             "source_id": source_id,
+            "sync_run_id": sync_run_id,
             "total_transformed": len(events),
             "published_count": published_count,
         },

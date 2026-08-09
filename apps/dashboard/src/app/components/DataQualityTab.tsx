@@ -19,6 +19,35 @@ type Props = { apiBase: string; tenantId?: string };
 type Gap = { metric_type: string; missing_dates: string[] };
 type Connector = { source_type: string; lookback_days: number };
 
+/**
+ * An interruption in a metric sampled faster than daily.
+ *
+ * Reported as spans rather than missing days: a calendar day is the wrong unit
+ * for something recorded every few minutes. Without reading these, heart rate and
+ * every weather series would show nothing at all once they left the daily check.
+ */
+type CadenceGap = {
+  metric_type: string;
+  missing_ranges: { start: string; end: string }[];
+};
+
+/**
+ * One provider field that arrives and is not stored.
+ *
+ * Deliberately shape-only: a path, the kind of value that sat there, and how often
+ * it was seen. There is no value field, and there is not meant to be one — keeping
+ * payloads would mean a second copy of the most sensitive data in the system.
+ */
+type UnsupportedField = {
+  source_id: string;
+  source_type: string;
+  connector_name: string;
+  field_path: string;
+  value_kind: string;
+  occurrences: number;
+  last_seen_at: string | null;
+};
+
 /** Contiguous runs of missing days, so "12 Tage" becomes a usable backfill range. */
 function toRanges(dates: string[]): { start: string; end: string; days: number }[] {
   const sorted = [...dates].sort();
@@ -53,6 +82,11 @@ export default function DataQualityTab({ apiBase }: Props) {
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [windowDays, setWindowDays] = useState(30);
   const [loading, setLoading] = useState(true);
+  // Fields a connector is being given and this platform does not store. Shapes
+  // only — the response carries a path and a value *kind*, never a value.
+  const [unsupported, setUnsupported] = useState<UnsupportedField[]>([]);
+  const [cadenceGaps, setCadenceGaps] = useState<CadenceGap[]>([]);
+  const [copied, setCopied] = useState(false);
   const [backfill, setBackfill] = useState<{ sourceType: string } | null>(null);
 
   const load = useCallback(async () => {
@@ -62,20 +96,28 @@ export default function DataQualityTab({ apiBase }: Props) {
     start.setDate(end.getDate() - (windowDays - 1));
     
     try {
-      const [gapRes, conflictRes, connectorRes] = await Promise.all([
+      const [gapRes, conflictRes, connectorRes, unsupportedRes] = await Promise.all([
         apiFetch(
           `${apiBase}/api/v1/data/quality/gaps?start_date=${start
             .toISOString()
-            .slice(0, 10)}&end_date=${end.toISOString().slice(0, 10)}`,
+            .slice(0, 10)}&end_date=${end.toISOString().slice(0, 10)}` +
+            `&offset_minutes=${-new Date().getTimezoneOffset()}`,
         ),
         apiFetch(`${apiBase}/api/v1/data/quality/conflicts`),
         apiFetch(`${apiBase}/api/v1/data/sources`),
+        apiFetch(`${apiBase}/api/v1/data/quality/unsupported-fields`),
       ]);
-      if (gapRes.ok) setGaps((await gapRes.json()).gaps ?? []);
+      if (gapRes.ok) {
+        const data = await gapRes.json();
+        setGaps(data.gaps ?? []);
+        setCadenceGaps(data.cadence_gaps ?? []);
+      }
       if (conflictRes.ok)
         setConflicts(((await conflictRes.json()).conflicts ?? []).length);
       if (connectorRes.ok)
         setConnectors((await connectorRes.json()).connectors ?? []);
+      if (unsupportedRes.ok)
+        setUnsupported((await unsupportedRes.json()).fields ?? []);
     } finally {
       setLoading(false);
     }
@@ -91,6 +133,41 @@ export default function DataQualityTab({ apiBase }: Props) {
       cancelled = true;
     };
   }, [load]);
+
+  /**
+   * A ready-to-paste report of what is not being stored.
+   *
+   * Carries the provider's field names, their types and how often they were seen —
+   * and deliberately nothing else. No values, no connector ids, no workspace
+   * identifier: this is meant to be pasted into a public issue tracker, so it must
+   * be safe to paste there without anyone having to check it first.
+   */
+  const copyFieldReport = async () => {
+    const bySource = new Map<string, UnsupportedField[]>();
+    for (const field of unsupported) {
+      const list = bySource.get(field.source_type) ?? [];
+      list.push(field);
+      bySource.set(field.source_type, list);
+    }
+
+    const lines = ["## Unsupported provider fields", ""];
+    for (const [sourceType, fields] of [...bySource].sort()) {
+      lines.push(`### ${sourceType}`, "");
+      lines.push("| Field | Type | Seen |", "| --- | --- | ---: |");
+      for (const field of fields) {
+        lines.push(`| \`${field.field_path}\` | ${field.value_kind} | ${field.occurrences} |`);
+      }
+      lines.push("");
+    }
+
+    try {
+      await navigator.clipboard.writeText(lines.join("\n"));
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access can be refused; the table above is still readable.
+    }
+  };
 
   const missingTotal = gaps.reduce((sum, gap) => sum + gap.missing_dates.length, 0);
   const cards = [
@@ -178,6 +255,86 @@ export default function DataQualityTab({ apiBase }: Props) {
           </div>
         </div>
       </article>
+
+      {/*
+        Fields this platform is being given and does not store. The question a user
+        cannot otherwise ask — "is my device sending something that never arrives?"
+        — and the reason four Apple Health quantities went missing for months
+        without anyone being able to notice.
+      */}
+      {/*
+        Continuous metrics report interrupted spans, not missing days. They are
+        shown separately because they answer a different question — "the watch
+        stopped for a week" rather than "no value on the 3rd".
+      */}
+      {cadenceGaps.length > 0 && (
+        <article className="rounded-3xl border border-slate-200 bg-white p-6">
+          <h2 className="mb-1 font-bold text-slate-900">{t("quality.interruptionsTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+            {t("quality.interruptionsHint")}
+          </p>
+          <ul className="space-y-2">
+            {cadenceGaps.map((gap) => (
+              <li key={gap.metric_type} className="rounded-2xl bg-slate-50 px-3.5 py-2.5">
+                <div className="text-xs font-bold text-slate-900">{gap.metric_type}</div>
+                <ul className="mt-1 space-y-0.5">
+                  {gap.missing_ranges.slice(0, 5).map((range) => (
+                    <li key={range.start} className="text-[11px] text-slate-600">
+                      {formatDate(range.start)} – {formatDate(range.end)}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </article>
+      )}
+
+      {unsupported.length > 0 && (
+        <article className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
+          <h2 className="mb-1 font-bold text-amber-900">{t("quality.unsupportedTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-amber-800">
+            {t("quality.unsupportedHint")}
+          </p>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-amber-200 text-[11px] font-bold uppercase tracking-wider text-amber-700">
+                  <th className="pb-2 pr-3">{t("quality.unsupportedConnector")}</th>
+                  <th className="pb-2 pr-3">{t("quality.unsupportedField")}</th>
+                  <th className="pb-2 pr-3">{t("quality.unsupportedKind")}</th>
+                  <th className="pb-2 pr-3 text-right">{t("quality.unsupportedSeen")}</th>
+                  <th className="pb-2 text-right">{t("quality.unsupportedLastSeen")}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-100">
+                {unsupported.map((field) => (
+                  <tr key={`${field.source_id}:${field.field_path}`}>
+                    <td className="py-2 pr-3 font-semibold text-amber-900">
+                      {field.connector_name || field.source_type}
+                    </td>
+                    <td className="py-2 pr-3 font-mono text-amber-900">{field.field_path}</td>
+                    <td className="py-2 pr-3 text-amber-700">{field.value_kind}</td>
+                    <td className="py-2 pr-3 text-right text-amber-700">{field.occurrences}</td>
+                    <td className="py-2 text-right text-amber-700">
+                      {formatDate(field.last_seen_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => void copyFieldReport()}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+          >
+            {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
+          </button>
+        </article>
+      )}
 
       <div className="grid gap-5 lg:grid-cols-2">
         <article className="rounded-3xl border border-slate-200 bg-white p-6">

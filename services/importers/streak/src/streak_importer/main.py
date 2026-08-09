@@ -6,7 +6,6 @@ Submits transformed IngestEvents to NATS subject 'qs.ingest.streak'.
 
 import json
 import logging
-import uuid
 from contextlib import asynccontextmanager
 
 import nats
@@ -104,9 +103,20 @@ async def ingest_streak_payload(
             status_code=403, detail="X-Tenant-ID does not match the authenticated API key."
         )
 
-    source_id = identity.source_id or str(
-        uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}:{settings.SOURCE_TYPE}")
-    )
+    # The key names the connector instance. No synthetic fallback: a guessed id
+    # would be the second component of every idempotency key derived here, so two
+    # devices pushing under different keys would merge into one series.
+    source_id = identity.source_id
+    if not source_id:
+        logger.error(
+            "[req_id=%s] API key %s resolves to no connector; refusing the push.",
+            x_request_id,
+            identity.key_prefix,
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="This API key is not bound to a connector. Re-create it in the dashboard.",
+        )
 
     try:
         payload = await request.json()

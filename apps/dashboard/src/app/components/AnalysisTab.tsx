@@ -52,7 +52,9 @@ function correlationColor(r: number): string {
 
 /** Cell text must stay legible on both the pale and the saturated steps. */
 function cellInk(r: number): string {
-  const t = useT();
+  // No `useT()` here: this is a plain helper called from inside a `.map()` over SVG
+  // cells, not a component, so a hook call would break the rules of hooks. The
+  // result was never used either -- the function returns a colour.
   return Math.abs(r) >= 0.7 ? "#ffffff" : INK.primary;
 }
 
@@ -192,7 +194,9 @@ export default function AnalysisTab({
     } finally {
       setLoading(false);
     }
-  }, [apiBase, windowDays, minStrength]);
+    // `t` belongs here: without it the error message keeps the language captured at
+    // first render, so switching to German left this one string in English.
+  }, [apiBase, windowDays, minStrength, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,19 +261,27 @@ export default function AnalysisTab({
         {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
       </header>
 
-      {/* Filters — one row above the charts */}
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+      {/*
+        Filters — one row above the charts.
+
+        `items-end` pinned every child to the bottom of the row. The two selects are
+        taller than the checkbox and the docs link, so those two dropped onto the
+        selects' baseline instead of sitting centred in the card. `items-center`
+        aligns them on the row's middle, which is where they look like they belong.
+      */}
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
         <label className="text-xs font-semibold text-slate-600">
-          Zeitraum
+          {t("analysis.window")}
           <select
             value={windowDays}
             onChange={(e) => setWindowDays(Number(e.target.value))}
             className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
           >
-            <option value={30}>30 Tage</option>
-            <option value={90}>90 Tage</option>
-            <option value={180}>180 Tage</option>
-            <option value={365}>365 Tage</option>
+            {[30, 90, 180, 365].map((days) => (
+              <option key={days} value={days}>
+                {t("common.days_other", { count: days })}
+              </option>
+            ))}
           </select>
         </label>
         <label className="text-xs font-semibold text-slate-600">
@@ -280,9 +292,11 @@ export default function AnalysisTab({
             className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
           >
             <option value={0}>{t("analysis.all")}</option>
-            <option value={0.2}>ab 20 %</option>
-            <option value={0.4}>ab 40 %</option>
-            <option value={0.6}>ab 60 %</option>
+            {[20, 40, 60].map((percent) => (
+              <option key={percent} value={percent / 100}>
+                {t("analysis.fromPercent", { percent })}
+              </option>
+            ))}
           </select>
         </label>
         <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
@@ -291,7 +305,7 @@ export default function AnalysisTab({
             checked={onlySignificant}
             onChange={(e) => setOnlySignificant(e.target.checked)}
           />
-          nur statistisch signifikante
+          {t("analysis.onlySignificant")}
         </label>
         {data?.docs_url && (
           <a
@@ -358,9 +372,15 @@ export default function AnalysisTab({
             />
           </div>
 
+          {/*
+            The service still sends `disclaimer`, in English, for consumers that are not
+            this interface. Rendering it verbatim left the warning English even with the
+            rest of the page in German, so the wording lives in the catalogue instead
+            (rule 17: services answer in English, the edge localizes).
+          */}
           <p className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
-            {data.disclaimer}
+            {t("analysis.disclaimer")}
           </p>
 
           {correlations.length > 0 && (

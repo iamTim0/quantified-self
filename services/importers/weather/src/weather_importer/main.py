@@ -7,7 +7,12 @@ from typing import Any
 import httpx
 import nats
 
-from weather_importer.client import ProviderClient, WeatherApiError
+from weather_importer.client import (
+    DEFAULT_BASE_URL,
+    DEFAULT_HOURLY_VARIABLES,
+    ProviderClient,
+    WeatherApiError,
+)
 from weather_importer.config import settings
 from weather_importer.internal_auth import internal_headers
 from weather_importer.sync_task import SyncTask, parse_sync_task, resolve_window
@@ -20,12 +25,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def credentials(tenant_id: str, request_id: str) -> dict[str, Any] | None:
+async def credentials(
+    tenant_id: str, request_id: str, source_ref: str | None = None
+) -> dict[str, Any] | None:
+    """Fetch this connector's credential from Core.
+
+    Addressed by connector id when the sync task carries one: a tenant may hold
+    several connectors of this type, and the type alone would hand back an
+    arbitrary one of them.
+    """
+    reference = source_ref or "weather"
     headers = internal_headers(request_id, tenant_id)
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             response = await client.get(
-                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/weather/token",
+                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{reference}/token",
                 headers=headers,
             )
             return response.json() if response.status_code == 200 else None
@@ -40,7 +54,7 @@ async def report_sync_result_to_core(
     """Close out the sync run so Core can advance the adaptive resume point."""
     url = (
         f"{settings.CORE_SERVICE_URL}"
-        f"/api/v1/internal/data/sources/{task.source_type}/status"
+        f"/api/v1/internal/data/sources/{task.source_id or task.source_type}/status"
     )
     payload: dict[str, Any] = {
         "sync_status": status,
@@ -66,7 +80,7 @@ async def process(message: Any, connection: Any) -> None:
             logger.warning("Missing tenant_id in weather task payload; dropping.")
             return
 
-        secret = await credentials(task.tenant_id, task.request_id)
+        secret = await credentials(task.tenant_id, task.request_id, task.source_id)
         if not secret or secret.get("status") != "active":
             logger.info(
                 "[req_id=%s] No active weather connector for tenant %s; staying idle.",
@@ -76,19 +90,35 @@ async def process(message: Any, connection: Any) -> None:
             return
 
         config = secret.get("config") or {}
-        base_url = config.get("base_url") or settings.API_BASE_URL
+        # Open-Meteo is what a connector reaches with nothing configured, so a
+        # missing base_url is a default rather than a failure. It used to be a
+        # silent `return`: the connector reported neither an import nor an error,
+        # and looked simply idle forever.
+        base_url = config.get("base_url") or settings.API_BASE_URL or DEFAULT_BASE_URL
         source_id = secret.get("source_id")
-        if not base_url or not source_id:
+        if not source_id:
+            logger.warning(
+                "[req_id=%s] Core returned no source_id for tenant %s; cannot key data points.",
+                task.request_id,
+                task.tenant_id,
+            )
+            await report_sync_result_to_core(
+                task, status="error", message="Connector has no source_id."
+            )
             return
 
         window_start, window_end = resolve_window(task, config)
+        variables = config.get("hourly_variables")
         client = ProviderClient(
             base_url,
             # Open-Meteo needs no credential; only send one if configured.
             secret.get("access_token"),
             latitude=config.get("latitude"),
             longitude=config.get("longitude"),
-            timezone=config.get("timezone", "UTC"),
+            variables=tuple(variables) if variables else DEFAULT_HOURLY_VARIABLES,
+            # Expert mode: the user supplied a complete URL, query included, and it
+            # is used as written rather than rebuilt from a location.
+            request_url=config.get("request_url"),
         )
 
         logger.info(

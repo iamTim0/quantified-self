@@ -21,9 +21,13 @@ NOW = datetime(2026, 8, 6, 12, 0, tzinfo=timezone.utc)
 TENANT = "11111111-1111-1111-1111-111111111111"
 
 
+SOURCE = "22222222-2222-2222-2222-222222222222"
+
+
 def _payload(**overrides) -> dict:
     base = {
         "tenant_id": TENANT,
+        "source_id": SOURCE,
         "source_type": "whoop",
         "request_id": "req_abc",
         "sync_run_id": "run_1",
@@ -33,6 +37,27 @@ def _payload(**overrides) -> dict:
     }
     base.update(overrides)
     return base
+
+
+def test_the_task_carries_the_connector_instance():
+    """Which connector to sync, not just which kind.
+
+    A tenant may hold several connectors of one type. The id decides whose
+    credential is fetched and is the second component of every idempotency key
+    the run produces, so a task without it cannot be acted on unambiguously.
+    """
+    task = parse_sync_task(_payload())
+    assert task is not None
+    assert task.source_id == SOURCE
+
+
+def test_a_payload_without_a_source_id_still_parses():
+    """An older Core published no source_id; the importer falls back to the type."""
+    payload = _payload()
+    del payload["source_id"]
+    task = parse_sync_task(payload)
+    assert task is not None
+    assert task.source_id is None
 
 
 def test_parses_a_full_payload():

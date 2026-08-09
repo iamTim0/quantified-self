@@ -2,9 +2,28 @@ import asyncio
 import sys
 
 import pytest
+import pytest_asyncio
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def dispose_pooled_connections():
+    """Return every pooled connection at the end of each test.
+
+    The engine is now pooled rather than `NullPool` — a connection per data point
+    was the dominant cost of a large import. Pooling is right for the two
+    long-running processes that hold the engine, but pytest-asyncio gives each
+    test its own event loop, and an asyncpg connection belongs to the loop that
+    opened it. Without this, the second test to run would borrow a connection
+    created in a loop that no longer exists and fail somewhere unrelated to what
+    it was testing.
+    """
+    yield
+    from core.db.session import engine
+
+    await engine.dispose()
 
 
 @pytest.fixture(autouse=True)

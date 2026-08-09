@@ -12,6 +12,10 @@ dependencies = [
     # Mints the service credential this presents to Core's gRPC endpoint.
     "pyjwt>=2.13.0",
     "qs-proto",
+    # The metric registry, for the cadence each metric is expected at. Judging
+    # coverage against the calendar excluded every event-driven metric from every
+    # analysis for having exactly the density it is supposed to have.
+    "qs-shared-schemas",
 ]
 # Neither numpy nor grpcio-tools is here. The statistics are stdlib-only
 # (see analysis/insights.py -- math, statistics, collections), and grpcio-tools
@@ -22,6 +26,7 @@ requires-python = ">=3.12"
 # reaches this service through packages/proto/generate.py (AGENTS.md rule 7).
 [tool.uv.sources]
 qs-proto = { path = "../../packages/proto", editable = true }
+qs-shared-schemas = { path = "../../packages/shared-schemas", editable = true }
 
 [build-system]
 requires = ["hatchling"]

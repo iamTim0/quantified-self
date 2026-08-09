@@ -5,24 +5,36 @@
 The calendar importer reads an **ICS/iCalendar feed** and turns it into time series for
 appointments, meeting duration and busy time.
 
-## No API key for ICS feeds
+## There is no API key
 
-A valid `.ics` URL works **without an API key**. That holds in particular for
-Outlook/Microsoft 365, Google Calendar, iCloud and Nextcloud. An API key is only needed when
-your provider offers no ICS feed at all, but only its own REST API.
+A calendar is an ICS feed, and the only credential such a feed can carry is inside its own
+URL. There is no API key field, for any provider — Outlook/Microsoft 365, Google Calendar,
+iCloud and Nextcloud all publish ICS.
 
-The importer distinguishes four kinds of access and detects them automatically from your
+The importer distinguishes three kinds of access and detects them automatically from your
 configuration:
 
 | Mode | When | Credentials |
 | --- | --- | --- |
-| `public_ics` | A publicly shared `.ics` URL | none |
+| `public_ics` | A publicly shared feed URL | none |
 | `private_ics` | A private, "secret" feed address (a long token in the path or as a query parameter) | the URL itself is the secret |
 | `basic_auth` | A CalDAV server with a username and password | username + password |
-| `api_key` | A provider REST API without ICS | bearer token |
 
 You can also set the mode explicitly with `auth_mode` in the connector configuration, if the
 automatic detection gets it wrong.
+
+A fourth mode, `api_key`, used to exist and has been removed. It never did what its name
+suggested: it added an `Authorization: Bearer` header and then still required an ICS body in
+reply, so a JSON REST calendar was never actually supported. All it achieved in practice was
+to demand a credential for any feed whose path did not end in `.ics` — which made perfectly
+ordinary feeds impossible to add.
+
+## Several calendars
+
+The connector can be configured more than once. Give each instance a **name** — "Work",
+"Family" — and they are imported, scheduled and shown independently. Each keeps its own data:
+the connector's id is part of every idempotency key, so two calendars never merge into one
+series and one importing does not hold up the other.
 
 !!! warning "A private feed URL is a credential"
     A private ICS address gives anyone who knows it full access to your calendar. It is
@@ -33,7 +45,7 @@ automatic detection gets it wrong.
 
 1. Create an iCalendar/ICS subscription link in your calendar product.
 2. Open the **Calendar** connector in the dashboard.
-3. Enter the ICS URL in the **Calendar feed URL (.ics)** field. Leave the API key field empty.
+3. Give it a name, and enter the ICS URL in the **Calendar feed URL** field.
 4. Optionally set the poll interval and the period, then start the sync.
 
 ### Where to get the link

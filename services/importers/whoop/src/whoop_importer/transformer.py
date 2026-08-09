@@ -17,12 +17,19 @@ was introduced:
 
 from typing import Any, NamedTuple
 
-from shared_schemas import idempotency_key
+from shared_schemas import FieldReportCollector, idempotency_key
 from shared_schemas.metrics import METRIC_CATALOG, MetricUnit, convert
 
 
 class _Mapping(NamedTuple):
-    """Where a value sits in the WHOOP payload, and what it has to become."""
+    """Where a value sits in the WHOOP payload, and what it has to become.
+
+    ``section`` is the nested object the API wraps its numbers in — always
+    ``"score"`` there. The emailed CSV export is flat, so it passes an empty
+    section and the field is read from the record directly. The names and units
+    are the same either way, which is the point of sharing this table: an export
+    and a polled sync must produce the same metric under the same name.
+    """
 
     metric_type: str
     section: str
@@ -71,14 +78,36 @@ def transform_whoop_records(
     records: list[dict[str, Any]],
     tenant_id: str,
     source_id: str,
+    *,
+    require_scored: bool = True,
+    mappings: dict[str, tuple[_Mapping, ...]] | None = None,
+    report: FieldReportCollector | None = None,
 ) -> list[dict[str, Any]]:
-    """Transform WHOOP records into standard DataPoints."""
+    """Transform WHOOP records into standard DataPoints.
+
+    ``mappings`` names where the numbers sit and what unit they arrive in. The
+    export declares its own because it reports the same quantities in different
+    units — its energy column is already kilocalories where the API sends
+    kilojoules, and reading one as the other is wrong by a factor of four. What it
+    must *not* change is the metric names, which is why both tables spell them the
+    same (rule 15).
+
+    ``report`` is optional and currently only supplied by the export reader — the
+    polled path has no submit side yet, so passing one there would collect
+    sightings nobody reads. See `docs/features/data-quality.md`.
+
+    ``require_scored`` guards the API path, where an unscored record is one WHOOP
+    has not finished processing and whose numbers would change. The CSV export has
+    no such column — every row in it is final — so the export passes ``False``
+    rather than having every row silently discarded.
+    """
     data_points: list[dict[str, Any]] = []
+    report = report or FieldReportCollector()
 
     for record in records:
         if not isinstance(record, dict):
             continue
-        if record.get("score_state") != "SCORED":
+        if require_scored and record.get("score_state") != "SCORED":
             continue
 
         ts = str(record.get("start") or record.get("created_at") or "")
@@ -92,10 +121,13 @@ def transform_whoop_records(
             "kind": kind,
         }
 
-        for mapping in METRICS.get(kind, ()):
-            val = (record.get(mapping.section) or {}).get(mapping.field)
+        consumed: set[str] = {"score_state", "start", "created_at", "id", "cycle_id"}
+        for mapping in (mappings or METRICS).get(kind, ()):
+            container = (record.get(mapping.section) or {}) if mapping.section else record
+            val = container.get(mapping.field)
             if not isinstance(val, (int, float)) or isinstance(val, bool):
                 continue
+            consumed.add(mapping.section or mapping.field)
 
             value = float(val)
             if mapping.provider_unit is not None:
@@ -125,5 +157,11 @@ def transform_whoop_records(
                     ),
                 }
             )
+            report.mapped(f"{kind}.{mapping.field}", val, mapping.metric_type)
+
+        for key, value in record.items():
+            if key in consumed:
+                continue
+            report.unmapped(f"{kind}.{key}", value)
 
     return data_points

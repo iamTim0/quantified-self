@@ -49,7 +49,11 @@ async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> 
     async with async_session_maker() as session:
         session.add(
             DataSource(
-                id=source_id, tenant_id=tenant_id, source_type=source_type, config=cfg
+                id=source_id,
+                tenant_id=tenant_id,
+                source_type=source_type,
+                display_name=source_type,
+                config=cfg,
             )
         )
         await session.commit()
@@ -337,7 +341,11 @@ async def test_sync_history_is_listed_and_tenant_scoped(mock_nats):
 
         assert len(mine.json()["runs"]) == 1
         assert mine.json()["runs"][0]["mode"] == "smart"
-        assert theirs.json()["runs"] == []
+        # Tenant B has no whoop connector, so there is nothing to report history
+        # for. 404 rather than an empty list on purpose: an empty list would say
+        # "this connector exists and has never run", which is a fact about
+        # somebody else's workspace.
+        assert theirs.status_code == 404
     finally:
         await cleanup_test_tenant(tenant_a)
         await cleanup_test_tenant(tenant_b)

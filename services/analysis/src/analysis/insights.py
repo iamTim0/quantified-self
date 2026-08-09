@@ -26,6 +26,8 @@ from datetime import date, datetime, timedelta, timezone
 from statistics import fmean, median, pstdev
 from typing import Any, Iterable, Literal
 
+from shared_schemas.metrics import METRIC_CATALOG, Cadence
+
 # Bumped whenever the maths changes, so a stored or cached result can be traced back
 # to the code that produced it.
 ANALYSIS_VERSION = "2.0.0"
@@ -553,21 +555,53 @@ def compare_periods(
 # ─── 6. data quality of the analysis input ───────────────────
 
 
-def series_quality(daily: dict[str, float], window_days: int) -> dict[str, Any]:
-    """How trustworthy the input to an analysis is."""
+def series_quality(
+    daily: dict[str, float], window_days: int, metric_type: str | None = None
+) -> dict[str, Any]:
+    """How trustworthy the input to an analysis is.
+
+    Coverage is measured against what the metric is *expected* to produce, not
+    against the calendar. Judged against the calendar, an event-driven metric can
+    never clear 50 % — nobody trains or weighs themselves daily — so body weight,
+    workouts and every calendar-event metric were permanently excluded from every
+    analysis for having exactly the density they are supposed to have.
+
+    What stays unconditional is the sample size: a correlation over eight points is
+    not worth showing whatever the cadence, so `MIN_SAMPLE_FOR_CORRELATION` still
+    applies to all of them.
+    """
     observed = len(daily)
+    cadence = _cadence_of(metric_type)
     coverage = observed / window_days if window_days else 0.0
+
+    if cadence is Cadence.DAILY:
+        # A daily metric really should be there every day; half is a low bar.
+        enough_density = coverage >= 0.5
+    else:
+        # For anything else the sample size is the only meaningful test.
+        enough_density = True
+
+    sufficient = observed >= MIN_SAMPLE_FOR_CORRELATION and enough_density
     return {
         "observed_days": observed,
         "window_days": window_days,
         "coverage_pct": round(coverage * 100, 1),
-        "sufficient": observed >= MIN_SAMPLE_FOR_CORRELATION and coverage >= 0.5,
+        "cadence": cadence.value,
+        "sufficient": sufficient,
         "note": (
             "Enough data to work with."
-            if observed >= MIN_SAMPLE_FOR_CORRELATION and coverage >= 0.5
+            if sufficient
             else "Too few days for a reliable statement — analyses are hidden."
         ),
     }
+
+
+def _cadence_of(metric_type: str | None) -> Cadence:
+    """The registry's cadence, or ``EVENT`` for a name it does not catalogue."""
+    if not metric_type:
+        return Cadence.EVENT
+    definition = METRIC_CATALOG.get(metric_type)
+    return definition.cadence if definition is not None else Cadence.EVENT
 
 
 # ─── assembly ────────────────────────────────────────────────

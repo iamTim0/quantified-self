@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     # to fall back on. The tenant comes from the sync task on NATS, which is the
     # only place that knows it (AGENTS.md rule 2).
     NATS_URL: str = "nats://localhost:4222"
-    CORE_SERVICE_URL: str = "http://localhost:8001"
+    CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
     WHOOP_API_BASE_URL: str = "https://api.prod.whoop.com/developer"
     POLL_INTERVAL_HOURS: int = 24
     POLL_LOOKBACK_DAYS: int = 30

@@ -7,6 +7,7 @@ Verifies:
 Maps to Fizzbee Invariants:
 - SecretsAlwaysEncryptedAtRest
 - SecretMaskedInReadResponse
+- InstanceNamesUniquePerTenantType
 """
 
 import pytest
@@ -31,6 +32,7 @@ async def test_configure_and_list_connectors():
     # Step 1: Configure Oura Ring connector
     payload = {
         "source_type": "oura",
+        "display_name": "Oura Ring",
         "access_token": "oura_personal_token_secret_9999",
         "status": "active"
     }
@@ -77,7 +79,7 @@ async def test_push_connector_configures_without_a_provider_credential():
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             res = await ac.post(
                 "/api/v1/data/sources/configure",
-                json={"source_type": "apple_health", "status": "active"},
+                json={"source_type": "apple_health", "display_name": "Phone", "status": "active"},
                 headers=headers,
             )
             assert res.status_code == 200, res.text
@@ -87,6 +89,172 @@ async def test_push_connector_configures_without_a_provider_credential():
         # Must still appear in the list even though it has no encrypted_token.
         types = [c["source_type"] for c in listed.json()["connectors"]]
         assert "apple_health" in types
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_two_connectors_of_one_type_coexist():
+    """The point of the whole change: several calendars, told apart by name.
+
+    `UNIQUE (tenant_id, source_type)` made the second configure overwrite the
+    first, silently, so a user who added a family calendar lost their work one.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            work = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "display_name": "Work",
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/work.ics"},
+                },
+                headers=headers,
+            )
+            family = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "display_name": "Family",
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/family.ics"},
+                },
+                headers=headers,
+            )
+            assert work.status_code == 200, work.text
+            assert family.status_code == 200, family.text
+
+            work_id = work.json()["source_id"]
+            family_id = family.json()["source_id"]
+            assert work_id != family_id
+
+            listed = await ac.get("/api/v1/data/sources", headers=headers)
+
+            # Each instance hands out its own configuration, not the other's.
+            work_token = await ac.get(
+                f"/api/v1/internal/data/sources/{work_id}/token",
+                headers=service_headers(tenant_id),
+            )
+            family_token = await ac.get(
+                f"/api/v1/internal/data/sources/{family_id}/token",
+                headers=service_headers(tenant_id),
+            )
+
+        calendars = [c for c in listed.json()["connectors"] if c["source_type"] == "calendar"]
+        assert sorted(c["display_name"] for c in calendars) == ["Family", "Work"]
+
+        assert work_token.json()["config"]["ics_url"] == "https://example.com/work.ics"
+        assert family_token.json()["config"]["ics_url"] == "https://example.com/family.ics"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_two_connectors_may_not_share_a_name():
+    """Verifies Fizzbee Invariant: InstanceNamesUniquePerTenantType.
+
+    Otherwise the list a user picks from shows two identical rows.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+    body = {
+        "source_type": "calendar",
+        "display_name": "Work",
+        "status": "active",
+        "config": {"ics_url": "https://example.com/work.ics"},
+    }
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            first = await ac.post("/api/v1/data/sources/configure", json=body, headers=headers)
+            second = await ac.post("/api/v1/data/sources/configure", json=body, headers=headers)
+
+        assert first.status_code == 200, first.text
+        assert second.status_code == 409, second.text
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_creating_a_connector_requires_a_name():
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/work.ics"},
+                },
+                headers=auth_headers(tenant_id),
+            )
+        assert res.status_code == 422, res.text
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_editing_by_id_updates_that_instance_only():
+    """Editing used to mean "overwrite whichever row has this type"."""
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            work = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "display_name": "Work",
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/work.ics"},
+                },
+                headers=headers,
+            )
+            family = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "display_name": "Family",
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/family.ics"},
+                },
+                headers=headers,
+            )
+            family_id = family.json()["source_id"]
+
+            await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "calendar",
+                    "source_id": family_id,
+                    "status": "active",
+                    "config": {"ics_url": "https://example.com/family-v2.ics"},
+                },
+                headers=headers,
+            )
+
+            work_token = await ac.get(
+                f"/api/v1/internal/data/sources/{work.json()['source_id']}/token",
+                headers=service_headers(tenant_id),
+            )
+            family_token = await ac.get(
+                f"/api/v1/internal/data/sources/{family_id}/token",
+                headers=service_headers(tenant_id),
+            )
+
+        assert family_token.json()["config"]["ics_url"] == "https://example.com/family-v2.ics"
+        assert work_token.json()["config"]["ics_url"] == "https://example.com/work.ics"
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -105,6 +273,7 @@ async def test_calendar_ics_url_configures_without_an_api_key():
                 "/api/v1/data/sources/configure",
                 json={
                     "source_type": "calendar",
+                    "display_name": "Work calendar",
                     "status": "active",
                     "config": {"ics_url": ics_url},
                 },
@@ -127,6 +296,96 @@ async def test_calendar_ics_url_configures_without_an_api_key():
 
 
 @pytest.mark.asyncio
+async def test_weather_configures_and_lists_without_an_api_key():
+    """Open-Meteo issues no keys, so demanding one made weather unconfigurable.
+
+    The listing assertion is the half that mattered most: a weather connector
+    saved without a token used to be filtered out of `GET /sources` as
+    "unconfigured", so it could not even be found again to be repaired.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "weather",
+                    "display_name": "Home",
+                    "status": "active",
+                    "config": {"latitude": 52.52, "longitude": 13.41},
+                },
+                headers=headers,
+            )
+            assert res.status_code == 200, res.text
+
+            listed = await ac.get("/api/v1/data/sources", headers=headers)
+            internal = await ac.get(
+                "/api/v1/internal/data/sources/weather/token",
+                headers=service_headers(tenant_id),
+            )
+
+        assert listed.status_code == 200, listed.text
+        assert any(c["source_type"] == "weather" for c in listed.json()["connectors"])
+
+        assert internal.status_code == 200, internal.text
+        data = internal.json()
+        assert data["access_token"] is None
+        assert data["config"]["latitude"] == 52.52
+        assert data["config"]["longitude"] == 13.41
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_weather_without_coordinates_is_rejected():
+    """The importer cannot work without them, so saving one is a 422, not a surprise."""
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "weather",
+                    "display_name": "Home",
+                    "status": "active",
+                    "config": {"base_url": "https://api.open-meteo.com"},
+                },
+                headers=auth_headers(tenant_id),
+            )
+        assert res.status_code == 422, res.text
+        assert "latitude" in res.json()["detail"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_weather_coordinates_out_of_range_are_rejected():
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "weather",
+                    "display_name": "Home",
+                    "status": "active",
+                    "config": {"latitude": 991.0, "longitude": 13.41},
+                },
+                headers=auth_headers(tenant_id),
+            )
+        assert res.status_code == 422, res.text
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_pull_connector_still_requires_a_credential():
     """The relaxation must not leak to connectors that genuinely need a token."""
     transport = ASGITransport(app=app)
@@ -136,7 +395,7 @@ async def test_pull_connector_still_requires_a_credential():
         async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
             res = await ac.post(
                 "/api/v1/data/sources/configure",
-                json={"source_type": "whoop", "status": "active"},
+                json={"source_type": "whoop", "display_name": "Whoop band", "status": "active"},
                 headers=auth_headers(tenant_id),
             )
         assert res.status_code == 400
@@ -153,6 +412,7 @@ async def test_configure_yazio_and_delete_connector(monkeypatch):
     # Step 1: Configure Yazio with direct Bearer Token
     payload = {
         "source_type": "yazio",
+        "display_name": "Yazio",
         "access_token": "yazio_token_secret_1234",
         "status": "active"
     }

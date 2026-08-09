@@ -68,46 +68,54 @@ def patched_client(monkeypatch):
 
 def test_plain_ics_url_needs_no_credential():
     """This is the reported bug: a public .ics must not require an API key."""
-    assert infer_auth_mode({"ics_url": PUBLIC_ICS}, None) == "public_ics"
+    assert infer_auth_mode({"ics_url": PUBLIC_ICS}) == "public_ics"
 
 
 def test_tokenized_ics_url_is_recognised_as_private():
     """The URL itself is the secret; it must be treated as a credential."""
-    assert infer_auth_mode({"ics_url": SECRET_ICS}, None) == "private_ics"
-    assert infer_auth_mode({"ics_url": QUERY_ICS}, None) == "private_ics"
+    assert infer_auth_mode({"ics_url": SECRET_ICS}) == "private_ics"
+    assert infer_auth_mode({"ics_url": QUERY_ICS}) == "private_ics"
 
 
 def test_username_and_password_select_basic_auth():
     assert (
         infer_auth_mode(
-            {"base_url": "https://caldav.example.test/", "username": "u", "password": "p"},
-            None,
+            {"base_url": "https://caldav.example.test/", "username": "u", "password": "p"}
         )
         == "basic_auth"
     )
 
 
-def test_non_ics_url_with_token_uses_api_key():
-    assert infer_auth_mode({"base_url": "https://api.example.test"}, "tok") == "api_key"
+def test_a_non_ics_url_is_still_fetched_as_a_feed():
+    """There is no API mode any more, so an unusual path is not a reason to refuse.
+
+    The removed `api_key` mode only added a bearer header and still demanded an ICS
+    body in reply, so it never supported a JSON calendar -- it just made a feed
+    without a `.ics` suffix impossible to add without inventing a credential.
+    """
+    assert infer_auth_mode({"base_url": "https://cal.example.test/feed"}) == "public_ics"
 
 
 def test_explicit_auth_mode_wins():
-    assert infer_auth_mode({"ics_url": PUBLIC_ICS, "auth_mode": "api_key"}, "t") == "api_key"
+    assert (
+        infer_auth_mode({"base_url": "https://caldav.example.test/", "auth_mode": "basic_auth"})
+        == "basic_auth"
+    )
 
 
 def test_missing_url_is_rejected():
     with pytest.raises(CalendarFetchError):
-        build_feed_config({}, None)
+        build_feed_config({})
 
 
 def test_non_http_url_is_rejected():
     with pytest.raises(CalendarFetchError):
-        build_feed_config({"ics_url": "file:///etc/passwd"}, None)
+        build_feed_config({"ics_url": "file:///etc/passwd"})
 
 
 def test_safe_url_hides_the_secret_part():
     """A private feed URL must never be loggable in full."""
-    feed = build_feed_config({"ics_url": QUERY_ICS}, None)
+    feed = build_feed_config({"ics_url": QUERY_ICS})
     assert "token=abcdef123456" not in feed.safe_url
     assert "calendar.example.test" in feed.safe_url
 
@@ -120,7 +128,7 @@ async def test_public_feed_is_fetched_without_authorization(patched_client):
     transport = patched_client(
         httpx.Response(200, text=MINIMAL_ICS, headers={"content-type": "text/calendar"})
     )
-    feed = build_feed_config({"ics_url": PUBLIC_ICS}, None)
+    feed = build_feed_config({"ics_url": PUBLIC_ICS})
 
     body = await fetch_feed(feed)
 
@@ -129,17 +137,16 @@ async def test_public_feed_is_fetched_without_authorization(patched_client):
 
 
 @pytest.mark.asyncio
-async def test_api_key_mode_sends_a_bearer_token(patched_client):
+async def test_no_request_ever_carries_a_bearer_token(patched_client):
+    """The API mode is gone; nothing in this importer sends Authorization."""
     transport = patched_client(
         httpx.Response(200, text=MINIMAL_ICS, headers={"content-type": "text/calendar"})
     )
-    feed = build_feed_config(
-        {"base_url": "https://api.example.test/cal", "auth_mode": "api_key"}, "secret-token"
-    )
+    feed = build_feed_config({"base_url": "https://cal.example.test/feed"})
 
     await fetch_feed(feed)
 
-    assert transport.requests[0].headers["authorization"] == "Bearer secret-token"
+    assert "authorization" not in {k.lower() for k in transport.requests[0].headers}
 
 
 @pytest.mark.asyncio
@@ -148,7 +155,7 @@ async def test_ics_served_as_text_plain_is_still_accepted(patched_client):
     patched_client(
         httpx.Response(200, text=MINIMAL_ICS, headers={"content-type": "text/plain"})
     )
-    feed = build_feed_config({"ics_url": PUBLIC_ICS}, None)
+    feed = build_feed_config({"ics_url": PUBLIC_ICS})
 
     assert "BEGIN:VCALENDAR" in await fetch_feed(feed)
 
@@ -161,7 +168,7 @@ async def test_html_login_page_is_reported_as_an_auth_problem(patched_client):
             200, text="<html>Sign in</html>", headers={"content-type": "text/html"}
         )
     )
-    feed = build_feed_config({"ics_url": SECRET_ICS}, None)
+    feed = build_feed_config({"ics_url": SECRET_ICS})
 
     with pytest.raises(CalendarAuthError):
         await fetch_feed(feed)
@@ -171,7 +178,7 @@ async def test_html_login_page_is_reported_as_an_auth_problem(patched_client):
 @pytest.mark.parametrize("status", [401, 403])
 async def test_rejected_credentials_raise_auth_error(patched_client, status):
     patched_client(httpx.Response(status, text="nope"))
-    feed = build_feed_config({"ics_url": PUBLIC_ICS}, None)
+    feed = build_feed_config({"ics_url": PUBLIC_ICS})
 
     with pytest.raises(CalendarAuthError):
         await fetch_feed(feed)
@@ -180,7 +187,7 @@ async def test_rejected_credentials_raise_auth_error(patched_client, status):
 @pytest.mark.asyncio
 async def test_revoked_feed_url_reports_404_clearly(patched_client):
     patched_client(httpx.Response(404, text="gone"))
-    feed = build_feed_config({"ics_url": SECRET_ICS}, None)
+    feed = build_feed_config({"ics_url": SECRET_ICS})
 
     with pytest.raises(CalendarFetchError, match="revoked"):
         await fetch_feed(feed)
@@ -190,7 +197,7 @@ async def test_revoked_feed_url_reports_404_clearly(patched_client):
 async def test_error_message_never_contains_the_feed_url(patched_client):
     """A failure must not leak a private calendar address into logs."""
     patched_client(httpx.Response(500, text="boom"))
-    feed = build_feed_config({"ics_url": QUERY_ICS}, None)
+    feed = build_feed_config({"ics_url": QUERY_ICS})
 
     with pytest.raises(CalendarFetchError) as excinfo:
         await fetch_feed(feed)
@@ -203,7 +210,7 @@ async def test_json_response_is_rejected_as_not_a_calendar(patched_client):
     patched_client(
         httpx.Response(200, text='{"events": []}', headers={"content-type": "application/json"})
     )
-    feed = build_feed_config({"ics_url": PUBLIC_ICS}, None)
+    feed = build_feed_config({"ics_url": PUBLIC_ICS})
 
     with pytest.raises(CalendarFetchError):
         await fetch_feed(feed)

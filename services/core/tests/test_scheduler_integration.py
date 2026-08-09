@@ -35,6 +35,7 @@ async def _connector(tenant_id: str, source_type: str) -> str:
                 id=source_id,
                 tenant_id=tenant_id,
                 source_type=source_type,
+                display_name=source_type,
                 config={"poll_interval_hours": 1, "lookback_days": 7},
             )
         )

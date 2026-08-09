@@ -40,6 +40,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.connectors import is_scheduled
 from core.db.models import DataSource, SyncRun
 from core.db.session import async_session_maker
 
@@ -115,21 +116,26 @@ def is_due(config: dict[str, Any] | None, *, now: datetime) -> bool:
 
 
 async def has_in_flight_run(
-    session: AsyncSession, tenant_id: str, source_type: str, *, now: datetime
+    session: AsyncSession, tenant_id: str, source_id: str, *, now: datetime
 ) -> bool:
-    """Is a sync for this connector already queued or running (and not stale)?"""
+    """Is a sync for this connector already queued or running (and not stale)?
+
+    Keyed on the connector instance. Keyed on the *type*, one of a tenant's two
+    calendars importing would have blocked the other for up to `STALE_RUN_AFTER`,
+    and the second would have looked simply broken.
+    """
     cutoff = now - STALE_RUN_AFTER
     result = await session.execute(
         select(SyncRun.id)
         .where(
             SyncRun.tenant_id == tenant_id,
-            SyncRun.source_type == source_type,
+            SyncRun.source_id == source_id,
             SyncRun.status.in_(IN_FLIGHT_STATUSES),
             SyncRun.started_at >= cutoff,
         )
         .limit(1)
     )
-    return result.scalar_one_or_none() is not None
+    return result.scalars().first() is not None
 
 
 async def find_due_connectors(
@@ -146,13 +152,21 @@ async def find_due_connectors(
     due: list[DueConnector] = []
     for source in rows:
         config = source.config or {}
+        # Push connectors have no task subject anybody listens on. Planning a sync
+        # for one produced a `SyncRun` that could only ever expire as stale, and
+        # left the connector looking permanently queued in the meantime.
+        if not is_scheduled(source.source_type):
+            continue
+        if config.get("status") == "inactive":
+            continue
         if not is_due(config, now=now):
             continue
-        if await has_in_flight_run(session, source.tenant_id, source.source_type, now=now):
+        if await has_in_flight_run(session, source.tenant_id, source.id, now=now):
             logger.debug(
-                "Connector %s/%s is due but already has a run in flight",
+                "Connector %s/%s (%s) is due but already has a run in flight",
                 source.tenant_id,
                 source.source_type,
+                source.id,
             )
             continue
         due.append(

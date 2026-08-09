@@ -124,32 +124,16 @@ async def process_message(msg):
                 )
 
             if sync_run_id:
+                # The run is the record of this import, and the importer closes it
+                # out when it is actually finished. The connector row is left alone
+                # here on purpose: it used to be stamped "idle" by the *first*
+                # message of a batch, so a fifty-thousand-point Apple Health import
+                # reported "done" while the other 49,999 were still queued — and
+                # every message rewrote the same row, which serialised the whole
+                # import behind one row lock for nothing.
                 await _tally(session, tenant_id, sync_run_id, inserted=inserted)
-
-            # Update DataSource sync_status to idle
-            source_id = data.get("source_id")
-            source_type = data.get("source_type") or (data.get("metadata") or {}).get(
-                "source_type"
-            )
-            if source_id or source_type:
-                if source_id:
-                    s_stmt = select(DataSource).where(
-                        DataSource.tenant_id == tenant_id,
-                        DataSource.id == source_id,
-                    )
-                else:
-                    s_stmt = select(DataSource).where(
-                        DataSource.tenant_id == tenant_id,
-                        DataSource.source_type == source_type,
-                    )
-                res = await session.execute(s_stmt)
-                ds = res.scalar_one_or_none()
-                if ds:
-                    cfg = dict(ds.config or {})
-                    cfg["sync_status"] = "idle"
-                    cfg["last_sync_at"] = datetime.now(timezone.utc).isoformat()
-                    cfg["last_sync_message"] = "Data points imported."
-                    ds.config = cfg
+            else:
+                await _mark_source_seen(session, tenant_id, data)
 
             await session.commit()
 
@@ -157,6 +141,45 @@ async def process_message(msg):
     except Exception:
         logger.exception("Error processing message")
         # Not acking — message will be redelivered by JetStream (at-least-once)
+
+
+async def _mark_source_seen(session, tenant_id: str, data: dict) -> None:
+    """Record that a connector produced data, for events with no run attached.
+
+    Only reachable for an importer that publishes without a `sync_run_id`. With a
+    run, the run *is* the status and this write would contradict it mid-import.
+    """
+    source_id = data.get("source_id")
+    source_type = data.get("source_type") or (data.get("metadata") or {}).get("source_type")
+    if not source_id and not source_type:
+        return
+
+    if source_id:
+        stmt = select(DataSource).where(
+            DataSource.tenant_id == tenant_id, DataSource.id == source_id
+        )
+    else:
+        # Ordered and limited rather than `scalar_one_or_none()`, which raised
+        # MultipleResultsFound as soon as a tenant held two connectors of one type
+        # — and since the handler does not ack on exception, that message would
+        # have been redelivered by JetStream forever.
+        stmt = (
+            select(DataSource)
+            .where(
+                DataSource.tenant_id == tenant_id,
+                DataSource.source_type == source_type,
+            )
+            .order_by(DataSource.created_at, DataSource.id)
+            .limit(1)
+        )
+
+    ds = (await session.execute(stmt)).scalars().first()
+    if ds:
+        cfg = dict(ds.config or {})
+        cfg["sync_status"] = "idle"
+        cfg["last_sync_at"] = datetime.now(timezone.utc).isoformat()
+        cfg["last_sync_message"] = "Data points imported."
+        ds.config = cfg
 
 
 async def _tally(session, tenant_id: str, sync_run_id: str, *, inserted: bool) -> None:

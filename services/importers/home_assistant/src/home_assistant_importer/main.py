@@ -20,12 +20,21 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-async def credentials(tenant_id: str, request_id: str) -> dict[str, Any] | None:
+async def credentials(
+    tenant_id: str, request_id: str, source_ref: str | None = None
+) -> dict[str, Any] | None:
+    """Fetch this connector's credential from Core.
+
+    Addressed by connector id when the sync task carries one: a tenant may hold
+    several connectors of this type, and the type alone would hand back an
+    arbitrary one of them.
+    """
+    reference = source_ref or "home_assistant"
     headers = internal_headers(request_id, tenant_id)
     async with httpx.AsyncClient(timeout=10) as client:
         try:
             response = await client.get(
-                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/home_assistant/token",
+                f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{reference}/token",
                 headers=headers,
             )
             return response.json() if response.status_code == 200 else None
@@ -40,7 +49,7 @@ async def report_sync_result_to_core(
     """Close out the sync run so Core can advance the adaptive resume point."""
     url = (
         f"{settings.CORE_SERVICE_URL}"
-        f"/api/v1/internal/data/sources/{task.source_type}/status"
+        f"/api/v1/internal/data/sources/{task.source_id or task.source_type}/status"
     )
     payload: dict[str, Any] = {
         "sync_status": status,
@@ -66,7 +75,7 @@ async def process(message: Any, connection: Any) -> None:
             logger.warning("Missing tenant_id in home_assistant task payload; dropping.")
             return
 
-        secret = await credentials(task.tenant_id, task.request_id)
+        secret = await credentials(task.tenant_id, task.request_id, task.source_id)
         if not secret or secret.get("status") != "active" or not secret.get("access_token"):
             logger.info(
                 "[req_id=%s] No active Home Assistant connector for tenant %s; staying idle.",

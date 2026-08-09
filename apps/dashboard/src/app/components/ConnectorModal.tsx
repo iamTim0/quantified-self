@@ -8,6 +8,26 @@ import { useT, type MessageKey } from "../lib/i18n/provider";
 
 export type ConnectorDirection = "active" | "passive";
 
+/**
+ * Open-Meteo, which needs no API key. Shown in the form as a prefilled default
+ * rather than hidden, so a self-hosted or commercial endpoint can replace it.
+ */
+export const WEATHER_DEFAULT_BASE_URL = "https://api.open-meteo.com";
+
+/** One place returned by Core's `/api/v1/data/geocode` proxy. */
+interface GeocodeResult {
+  name: string;
+  country: string | null;
+  admin1: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+/** "Berlin, Berlin, Germany" from whichever of the three parts came back. */
+function placeLabel(place: GeocodeResult): string {
+  return [place.name, place.admin1, place.country].filter(Boolean).join(", ");
+}
+
 export interface ProviderCatalogItem {
   id: string;
   name: string;
@@ -106,6 +126,9 @@ interface ConnectorModalProps {
   tenantId: string;
   apiBase?: string;
   initialSourceType?: string;
+  /** The connector being edited. Absent means "create a new instance". */
+  initialSourceId?: string;
+  initialDisplayName?: string;
   initialPollInterval?: number;
   initialLookbackDays?: number;
   isEditing?: boolean;
@@ -118,6 +141,8 @@ export default function ConnectorModal({
   tenantId,
   apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000"),
   initialSourceType,
+  initialSourceId,
+  initialDisplayName,
   initialPollInterval = 6,
   initialLookbackDays = 30,
   isEditing = false,
@@ -126,6 +151,9 @@ export default function ConnectorModal({
   const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
   const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
 
+  // What the user calls this instance. Required when creating one: with several
+  // connectors of a type, nothing else tells them apart.
+  const [displayName, setDisplayName] = useState("");
   const [accessToken, setAccessToken] = useState("");
   const [yazioAuthMode, setYazioAuthMode] = useState<"token" | "login">("token");
   const [yazioEmail, setYazioEmail] = useState("");
@@ -133,6 +161,23 @@ export default function ConnectorModal({
   const [dawarichUrl, setDawarichUrl] = useState("http://localhost:3000");
   const [dawarichApiKey, setDawarichApiKey] = useState("");
   const [providerBaseUrl, setProviderBaseUrl] = useState("");
+
+  // Weather is configured by place, not by URL. The coordinates are what actually
+  // gets stored -- the search only fills them in, and stays editable afterwards so
+  // a location the lookup does not know can still be entered by hand.
+  const [weatherBaseUrl, setWeatherBaseUrl] = useState(WEATHER_DEFAULT_BASE_URL);
+  const [weatherPlaceQuery, setWeatherPlaceQuery] = useState("");
+  const [weatherPlaces, setWeatherPlaces] = useState<GeocodeResult[]>([]);
+  const [weatherPlaceLabel, setWeatherPlaceLabel] = useState("");
+  const [weatherLatitude, setWeatherLatitude] = useState("");
+  const [weatherLongitude, setWeatherLongitude] = useState("");
+  const [weatherSearching, setWeatherSearching] = useState(false);
+  const [weatherSearchError, setWeatherSearchError] = useState("");
+  // "guided" builds the request from a location; "custom" sends the user's own
+  // URL verbatim, which is the only way to reach the archive endpoint or ask for
+  // variables the guided mode does not offer.
+  const [weatherMode, setWeatherMode] = useState<"guided" | "custom">("guided");
+  const [weatherRequestUrl, setWeatherRequestUrl] = useState("");
 
   const [pollIntervalHours, setPollIntervalHours] = useState(initialPollInterval);
   const [lookbackDays, setLookbackDays] = useState(initialLookbackDays);
@@ -160,15 +205,28 @@ export default function ConnectorModal({
         setStep("select_provider");
         setSelectedProvider(null);
       }
+      setDisplayName(initialDisplayName ?? "");
       setAccessToken("");
       setYazioEmail("");
       setYazioPassword("");
       setDawarichUrl("http://localhost:3000");
       setDawarichApiKey("");
+      // Was missing, so configuring Home Assistant and then opening Weather showed
+      // the Home Assistant URL still sitting in the field.
+      setProviderBaseUrl("");
+      setWeatherBaseUrl(WEATHER_DEFAULT_BASE_URL);
+      setWeatherPlaceQuery("");
+      setWeatherPlaces([]);
+      setWeatherPlaceLabel("");
+      setWeatherLatitude("");
+      setWeatherLongitude("");
+      setWeatherSearchError("");
+      setWeatherMode("guided");
+      setWeatherRequestUrl("");
       setMessage(null);
       setError(null);
     }
-  }, [isOpen, initialSourceType, initialPollInterval, initialLookbackDays]);
+  }, [isOpen, initialSourceType, initialSourceId, initialDisplayName, initialPollInterval, initialLookbackDays]);
 
   if (!isOpen) return null;
 
@@ -178,12 +236,56 @@ export default function ConnectorModal({
     setStep("configure_provider");
   };
 
+  /**
+   * Resolve a place name through Core rather than from the browser.
+   *
+   * The dashboard ships a `connect-src` allowlist, and calling the geocoder
+   * directly would both need that widened and hand the user's IP address and home
+   * town to a third party.
+   */
+  const searchWeatherPlace = async () => {
+    const query = weatherPlaceQuery.trim();
+    if (query.length < 2) return;
+    setWeatherSearching(true);
+    setWeatherSearchError("");
+    try {
+      const res = await apiFetch(
+        `${apiBase}/api/v1/data/geocode?query=${encodeURIComponent(query)}`,
+      );
+      if (!res.ok) throw new Error("lookup failed");
+      const data = await res.json();
+      const results: GeocodeResult[] = data.results || [];
+      setWeatherPlaces(results);
+      if (results.length === 0) setWeatherSearchError(t("modal.weatherNoPlaces"));
+    } catch {
+      setWeatherPlaces([]);
+      setWeatherSearchError(t("modal.weatherSearchFailed"));
+    } finally {
+      setWeatherSearching(false);
+    }
+  };
+
+  const chooseWeatherPlace = (place: GeocodeResult) => {
+    setWeatherLatitude(String(place.latitude));
+    setWeatherLongitude(String(place.longitude));
+    setWeatherPlaceLabel(placeLabel(place));
+    setWeatherPlaces([]);
+    setWeatherSearchError("");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProvider) return;
 
     setMessage(null);
     setError(null);
+
+    // A name is what tells two connectors of the same type apart, so it is
+    // required when creating one. Editing keeps the existing name if left blank.
+    if (!isEditing && !displayName.trim()) {
+      setError(t("modal.needDisplayName"));
+      return;
+    }
 
     setLoading(true);
     try {
@@ -231,19 +333,59 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
-        // A public or tokenised .ics URL is complete on its own. Demanding an API
-        // key for an Outlook/Office feed was the reported bug, so only ask for one
-        // when the URL clearly is not a calendar feed.
-        const isIcsUrl = url.split("?")[0].toLowerCase().endsWith(".ics");
+        // The URL is the whole configuration. There is no API mode any more, so
+        // there is nothing to demand a credential for -- and a feed whose path
+        // does not end in .ics is perfectly normal.
         payloadConfig = { ics_url: url, base_url: url };
-        if (!isIcsUrl && !finalToken && !isEditing) {
-          setError(
-            t("modal.calendarUrlSuspect"),
-          );
+        finalToken = "";
+      } else if (selectedProvider.id === "weather" && isEditing && !weatherRequestUrl.trim()
+                 && !weatherLatitude.trim() && !weatherLongitude.trim()) {
+        // Editing only the interval or the name. The stored configuration is not
+        // handed to this modal, so an empty form means "leave it alone" rather
+        // than "clear it" — Core merges, so omitting `config` keeps what is there.
+        payloadConfig = undefined;
+      } else if (selectedProvider.id === "weather" && weatherMode === "custom") {
+        const url = weatherRequestUrl.trim();
+        if (!/^https?:\/\//i.test(url)) {
+          setError(t("modal.weatherNeedRequestUrl"));
           setLoading(false);
           return;
         }
-      } else if (["home_assistant", "weather"].includes(selectedProvider.id)) {
+        // Sent as written. The importer preserves the query instead of replacing
+        // it, so everything copied from the provider's own page survives.
+        payloadConfig = { request_url: url };
+      } else if (selectedProvider.id === "weather") {
+        // Coordinates are the whole configuration. The form never collected them
+        // before, so every weather connector created here failed in the importer
+        // with a message about fields the user had no way to fill in.
+        const latitude = Number(weatherLatitude.trim());
+        const longitude = Number(weatherLongitude.trim());
+        if (
+          !weatherLatitude.trim() ||
+          !weatherLongitude.trim() ||
+          Number.isNaN(latitude) ||
+          Number.isNaN(longitude)
+        ) {
+          setError(t("modal.weatherNeedCoordinates"));
+          setLoading(false);
+          return;
+        }
+        if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+          setError(t("modal.weatherCoordinatesRange"));
+          setLoading(false);
+          return;
+        }
+        payloadConfig = {
+          latitude,
+          longitude,
+          base_url: weatherBaseUrl.trim() || WEATHER_DEFAULT_BASE_URL,
+        };
+        if (weatherPlaceLabel.trim()) {
+          payloadConfig.place_label = weatherPlaceLabel.trim();
+        }
+        // Deliberately no credential check: Open-Meteo issues no keys, and
+        // demanding one is what made this connector impossible to set up.
+      } else if (selectedProvider.id === "home_assistant") {
         if (!providerBaseUrl.trim()) {
           setError(t("modal.needBaseUrl"));
           setLoading(false);
@@ -273,6 +415,10 @@ export default function ConnectorModal({
         },
         body: JSON.stringify({
           source_type: selectedProvider.id,
+          // Present only when editing: Core reads its absence as "create a new
+          // instance", which is what makes a second calendar possible.
+          source_id: initialSourceId || undefined,
+          display_name: displayName.trim() || undefined,
           access_token: finalToken || undefined,
           status: "active",
           // The Core contract requires a positive value; passive importers ignore it and wait for webhook events.
@@ -434,11 +580,33 @@ export default function ConnectorModal({
                 <div>
                   <span className="font-bold block">{t("modal.credentialsStored")}</span>
                   <span className="text-[11px] text-emerald-700 leading-relaxed block mt-0.5">
-                    Du kannst Abfrage-Frequenz und Zeitraum anpassen, ohne das Passwort neu einzugeben.
+                    {t("modal.credentialsStoredBody")}
                   </span>
                 </div>
               </div>
             )}
+
+            {/*
+              The name comes first and applies to every connector type: it is the
+              only thing distinguishing a work calendar from a family one.
+            */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                {t("modal.displayNameLabel")}
+              </label>
+              <input
+                type="text"
+                required={!isEditing}
+                maxLength={128}
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder={t("modal.displayNamePlaceholder")}
+                className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+              />
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                {t("modal.displayNameHint")}
+              </p>
+            </div>
 
             {selectedProvider?.id === "yazio" && (
               <>
@@ -546,7 +714,7 @@ export default function ConnectorModal({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    Kalender-Feed URL (.ics)
+                    {t("modal.calendarUrlLabel")}
                   </label>
                   <input
                     type="url"
@@ -557,33 +725,204 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
                   />
                   <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                    {t("modal.icsHint")}
-                    ohne API Key. Die URL einer privaten Feed-Adresse ist selbst das Geheimnis und
-                    wird verschlüsselt gespeichert sowie nie protokolliert.{" "}
+                    {t("modal.icsHint")}{" "}
                     <a href="/docs/importers/calendar/" className="text-[#0d5c3a] underline" target="_blank" rel="noreferrer">
-                      Einrichtungsanleitung
+                      {t("modal.setupGuide")}
                     </a>
                   </p>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    API Key <span className="text-slate-400 font-normal text-[11px] lowercase">{t("modal.apiKeyOptional")}</span>
-                  </label>
-                  <input
-                    type="password"
-                    value={accessToken}
-                    onChange={(event) => setAccessToken(event.target.value)}
-                    placeholder={t("modal.apiKeyOptionalPlaceholder")}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
-                  />
                 </div>
               </div>
             )}
 
-            {selectedProvider && ["home_assistant", "weather"].includes(selectedProvider.id) && (
+            {selectedProvider?.id === "weather" && (
               <div className="space-y-3">
-                <input type="url" required value={providerBaseUrl} onChange={(event) => setProviderBaseUrl(event.target.value)} placeholder="https://api.example.com" className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none" />
-                <input type="password" required={!isEditing} value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder={isEditing ? "•••••••• (API Key beibehalten)" : "Bearer Token / API Key"} className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none" />
+                <div className="flex bg-slate-100 border border-slate-200 rounded-2xl p-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setWeatherMode("guided")}
+                    className={`flex-1 py-2 rounded-xl font-bold transition-colors ${
+                      weatherMode === "guided"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {t("modal.weatherModeGuided")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setWeatherMode("custom")}
+                    className={`flex-1 py-2 rounded-xl font-bold transition-colors ${
+                      weatherMode === "custom"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-500"
+                    }`}
+                  >
+                    {t("modal.weatherModeCustom")}
+                  </button>
+                </div>
+
+                {weatherMode === "custom" && (
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                      {t("modal.weatherRequestUrlLabel")}
+                    </label>
+                    <input
+                      type="url"
+                      required={!isEditing}
+                      value={weatherRequestUrl}
+                      onChange={(event) => setWeatherRequestUrl(event.target.value)}
+                      placeholder="https://archive-api.open-meteo.com/v1/archive?latitude=52.52&longitude=13.41&hourly=temperature_2m"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs font-mono outline-none"
+                    />
+                    <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                      {t("modal.weatherRequestUrlHint")}
+                    </p>
+                  </div>
+                )}
+
+                {weatherMode === "guided" && (
+                <>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    {t("modal.weatherPlaceLabel")}
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={weatherPlaceQuery}
+                      onChange={(event) => setWeatherPlaceQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          // The modal is a form; Enter here means "search", not "save".
+                          event.preventDefault();
+                          void searchWeatherPlace();
+                        }
+                      }}
+                      placeholder={t("modal.weatherPlacePlaceholder")}
+                      className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void searchWeatherPlace()}
+                      disabled={weatherSearching || weatherPlaceQuery.trim().length < 2}
+                      className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      {weatherSearching ? t("modal.weatherSearching") : t("modal.weatherSearch")}
+                    </button>
+                  </div>
+                  {weatherSearchError && (
+                    <p className="mt-1.5 text-[11px] text-rose-600">{weatherSearchError}</p>
+                  )}
+                  {weatherPlaces.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {weatherPlaces.map((place) => (
+                        <li key={`${place.latitude},${place.longitude}`}>
+                          <button
+                            type="button"
+                            onClick={() => chooseWeatherPlace(place)}
+                            className="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-[#0d5c3a] text-xs text-slate-700"
+                          >
+                            <MapPin className="inline w-3 h-3 mr-1.5 text-[#0d5c3a]" />
+                            {placeLabel(place)}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {weatherPlaceLabel && (
+                    <p className="mt-1.5 text-[11px] text-slate-500">
+                      {t("modal.weatherChosenPlace", { place: weatherPlaceLabel })}
+                    </p>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                      {t("modal.weatherLatitude")}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      required={!isEditing}
+                      value={weatherLatitude}
+                      onChange={(event) => setWeatherLatitude(event.target.value)}
+                      placeholder="52.52"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                      {t("modal.weatherLongitude")}
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      required={!isEditing}
+                      value={weatherLongitude}
+                      onChange={(event) => setWeatherLongitude(event.target.value)}
+                      placeholder="13.41"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    {t("modal.weatherBaseUrl")}
+                  </label>
+                  <input
+                    type="url"
+                    value={weatherBaseUrl}
+                    onChange={(event) => setWeatherBaseUrl(event.target.value)}
+                    placeholder={WEATHER_DEFAULT_BASE_URL}
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                  />
+                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                    {t("modal.weatherBaseUrlHint")}{" "}
+                    <a
+                      href="/docs/importers/weather/"
+                      className="text-[#0d5c3a] underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {t("modal.setupGuide")}
+                    </a>
+                  </p>
+                </div>
+                </>
+                )}
+              </div>
+            )}
+
+            {selectedProvider?.id === "home_assistant" && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    {t("modal.baseUrlLabel")}
+                  </label>
+                  <input
+                    type="url"
+                    required
+                    value={providerBaseUrl}
+                    onChange={(event) => setProviderBaseUrl(event.target.value)}
+                    placeholder="https://homeassistant.local:8123"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                    {t("modal.tokenLabel")}
+                  </label>
+                  <input
+                    type="password"
+                    required={!isEditing}
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    placeholder={isEditing ? t("modal.keepTokenPlaceholder") : t("modal.tokenPlaceholder")}
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                  />
+                </div>
               </div>
             )}
 
@@ -591,6 +930,7 @@ export default function ConnectorModal({
               <ApiKeyManager
                 apiBase={apiBase}
                 sourceType="apple_health"
+                sourceId={initialSourceId}
                 ingestPath="/api/v1/ingest/apple-health"
                 providerLabel="Health Auto Export"
               />
@@ -600,6 +940,7 @@ export default function ConnectorModal({
               <ApiKeyManager
                 apiBase={apiBase}
                 sourceType="streak"
+                sourceId={initialSourceId}
                 ingestPath="/api/v1/ingest/streak"
                 providerLabel="Streak 2.0 REST Export"
               />

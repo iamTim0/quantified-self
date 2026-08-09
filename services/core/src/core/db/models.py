@@ -81,6 +81,15 @@ class User(Base):
 
 
 class DataSource(Base):
+    """One configured connector instance.
+
+    A tenant may hold several of the same type — three calendars, two weather
+    locations — so the row, not the type, is the thing everything else refers to.
+    `display_name` is what tells them apart to a reader; `id` is what tells them
+    apart to the system, and it is already the second component of every
+    `idempotency_key`, so two instances keep separate data without any re-keying.
+    """
+
     __tablename__ = "data_sources"
 
     id: Mapped[str] = mapped_column(
@@ -90,9 +99,25 @@ class DataSource(Base):
         UUID(as_uuid=False), ForeignKey("tenants.id"), nullable=False, index=True
     )
     source_type: Mapped[str] = mapped_column(String, nullable=False)  # e.g., 'oura', 'whoop'
+    #: What the user calls this instance. Required, because "which of my three
+    #: calendars is this?" has no answer the system could invent.
+    display_name: Mapped[str] = mapped_column(String(128), nullable=False)
     config: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        # Two instances of a type are fine; two with the same name are not, because
+        # then the list the user picks from has two identical rows. Declared here as
+        # well as in the migration -- the ORM used to know about none of this, which
+        # is how the constraint and the model drifted apart in the first place.
+        UniqueConstraint(
+            "tenant_id",
+            "source_type",
+            "display_name",
+            name="uq_data_sources_tenant_type_name",
+        ),
     )
 
 
@@ -224,6 +249,15 @@ class ApiKey(Base):
     # Which connector this key may push to; a key scoped to apple_health cannot
     # be replayed against the streak endpoint.
     source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Which *instance* it pushes to. Once a tenant can hold two Apple Health
+    # connectors, the type alone no longer answers "whose data is this?" — and the
+    # answer decides the `source_id` that goes into every idempotency key.
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     scopes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=lambda: ["ingest"])
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")  # active | revoked
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -268,6 +302,58 @@ class SyncRun(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class IngestFieldReport(Base):
+    """A provider field an importer saw, and whether it became a data point.
+
+    The shape of what arrives, never its contents: a path, the *kind* of value that
+    sat there, and how often it was seen. Storing payloads instead would keep a
+    second copy of the most sensitive data in the system, and would make the
+    account deletion incomplete unless it hunted that copy down too.
+
+    Rolling rather than append-only — one row per (tenant, connector, path), upserted
+    — so the table grows with the *provider's schema* and not with the data. That is
+    why it needs no retention policy: a provider has a few hundred fields no matter
+    how many years of readings pass through.
+    """
+
+    __tablename__ = "ingest_field_reports"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: Dotted path into the provider payload, e.g. `metrics.heart_rate.Avg`.
+    field_path: Mapped[str] = mapped_column(String(512), nullable=False)
+    #: `number`, `string`, `bool`, `array`, `object`, `null`. Not the value.
+    value_kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: The canonical metric this path became. NULL is the interesting case: seen,
+    #: understood well enough to name, and not stored.
+    metric_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    occurrences: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_sync_run_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "source_id", "field_path", name="uq_field_reports_tenant_source_path"
+        ),
+    )
 
 
 class OidcProvider(Base):
