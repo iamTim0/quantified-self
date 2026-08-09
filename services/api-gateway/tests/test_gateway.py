@@ -11,11 +11,67 @@ Maps to Fizzbee Invariants:
 - TenantHeaderAlwaysInjected
 """
 
+import contextlib
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import jwt
 import pytest
 from httpx import ASGITransport, AsyncClient
+from starlette.routing import Match
+
+
+@contextlib.contextmanager
+def _upstreams(handler):
+    """Answer every upstream the Gateway talks to from memory.
+
+    Any path an API route does not claim lands on the catch-all UI proxy, which
+    tries three *real* addresses in turn. A test that lets it do that asserts on
+    the machine it runs on: it pays a DNS failure for the container name plus a
+    full connect timeout for ``host.docker.internal`` -- about 13s per request on
+    Windows -- and it can hang outright, because the UI proxy deliberately has no
+    read deadline, so a dev server that accepts the connection and then compiles
+    holds the test open for as long as it likes. It also passes for the wrong
+    reason whenever something *is* listening on port 3000.
+
+    ``handler`` sees the requests to Core and Analysis too, since those handlers
+    construct their clients from the same module attribute. That is the point:
+    a test can assert which upstream was reached, not merely what came back.
+    """
+    from gateway import main as gateway_main
+
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(handler)
+
+    def patched(*args, **kwargs):
+        kwargs["transport"] = transport
+        return original(*args, **kwargs)
+
+    remembered = gateway_main._ui_base
+    gateway_main.httpx.AsyncClient = patched
+    try:
+        yield
+    finally:
+        gateway_main.httpx.AsyncClient = original
+        # Which base answered is cached across requests on purpose; leaking a
+        # mocked one into the next test is not.
+        gateway_main._ui_base = remembered
+
+
+def _resolved_endpoint(path: str, method: str = "GET"):
+    """The handler the router would dispatch to, without sending anything.
+
+    Which handler answers *is* the security property for the internal paths, and
+    asking the router directly states it without depending on any upstream.
+    """
+    from gateway.main import app
+
+    scope = {"type": "http", "path": path, "method": method, "headers": [], "root_path": ""}
+    for route in app.routes:
+        match, _ = route.matches(scope)
+        if match is Match.FULL:
+            return route.endpoint
+    return None
 
 
 def _make_token(
@@ -66,14 +122,26 @@ async def test_dev_token_endpoint_no_longer_exists():
 
     Verifies Fizzbee Invariant: UnauthenticatedRequestsBlocked
     """
-    from gateway.main import app
+    from gateway import main as gateway_main
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        response = await ac.get("/api/v1/auth/dev-token")
+    # The backdoor was a route the *Gateway* served itself, so that is what this
+    # pins: the path must resolve to the ordinary auth proxy and to nothing
+    # special. Re-adding a handler for it here would take this endpoint away from
+    # `proxy_auth_service` and fail on the next line — which asserting only on the
+    # response body would not, since the body depends on whatever Core answers.
+    assert (
+        _resolved_endpoint("/api/v1/auth/dev-token") is gateway_main.proxy_auth_service
+    )
 
-    # The route is gone; whatever the catch-all dashboard proxy answers, it must
-    # never be a usable token.
+    # Core does not serve it either, so the upstream answers as the real one does.
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, text="not found")
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get("/api/v1/auth/dev-token")
+
     assert response.status_code != 200 or "access_token" not in response.text
 
 
@@ -150,23 +218,46 @@ async def test_internal_paths_are_not_publicly_proxied():
     """`/api/v1/internal/*` hands out decrypted connector secrets.
 
     It used to be proxied for any logged-in user. It must no longer resolve to the
-    Core proxy route at all.
+    Core proxy route at all -- so this asserts on the routing decision, and then on
+    the answer with Core standing by to hand out a credential to anyone who asks.
 
     Verifies Fizzbee Invariant: SecretMaskedInReadResponse
     """
-    from gateway.main import app
+    from gateway import main as gateway_main
+
+    internal = "/api/v1/internal/data/sources/oura/token"
+
+    # The Core proxy claims `/api/v1/data/*` only; an internal path must fall
+    # through to the UI catch-all instead. A route resolves to exactly one
+    # endpoint, so naming the one that answers also rules Core out — and says
+    # which handler it was when it fails.
+    assert _resolved_endpoint(internal) is gateway_main.proxy_dashboard_ui
+    # ...and the sibling path it must not be confused with still reaches Core.
+    assert _resolved_endpoint("/api/v1/data/metrics") is gateway_main.proxy_core_service
+
+    # The UI proxy is passed the same path, so the two upstreams are told apart by
+    # where the request went, not by what it asked for.
+    core = httpx.URL(gateway_main.settings.CORE_SERVICE_URL)
+    reached: list[str] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        reached.append(str(request.url))
+        if (request.url.host, request.url.port) == (core.host, core.port):
+            # Core answers this path with a decrypted token. If the Gateway ever
+            # forwards here again, the assertion below fails on the real payload
+            # rather than on a stand-in for it.
+            return httpx.Response(200, json={"access_token": "plaintext-provider-secret"})
+        return httpx.Response(404, text="not found")
 
     token = _make_token()
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
-        response = await ac.get(
-            "/api/v1/internal/data/sources/oura/token",
-            headers={"Authorization": f"Bearer {token}"},
-        )
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get(internal, headers={"Authorization": f"Bearer {token}"})
 
-    # Falls through to the dashboard catch-all (503 with no dashboard running),
-    # never to Core. What matters is that no credential comes back.
     assert "access_token" not in response.text
+    assert not any(httpx.URL(url).host == core.host and httpx.URL(url).port == core.port
+                   for url in reached), reached
 
 
 async def _emit(parts):
@@ -189,7 +280,6 @@ async def test_the_ui_proxy_streams_the_whole_body_through():
     already arrived. A short body would very likely survive that, so this sends
     enough chunks to fail if the connection is dropped early.
     """
-    import httpx
     from gateway import main as gateway_main
 
     chunks = [f"chunk-{i:04d}:".encode() + b"x" * 4096 for i in range(64)]
@@ -202,21 +292,11 @@ async def test_the_ui_proxy_streams_the_whole_body_through():
             content=_emit(chunks),
         )
 
-    transport = httpx.MockTransport(upstream)
-    original = httpx.AsyncClient
-
-    def patched(*args, **kwargs):
-        kwargs["transport"] = transport
-        return original(*args, **kwargs)
-
-    gateway_main.httpx.AsyncClient = patched
-    try:
+    with _upstreams(upstream):
         async with AsyncClient(
             transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
         ) as ac:
             response = await ac.get("/some/page")
-    finally:
-        gateway_main.httpx.AsyncClient = original
 
     assert response.status_code == 200
     assert response.content == expected
@@ -240,7 +320,6 @@ async def test_the_ui_proxy_stops_paying_for_a_base_that_does_not_answer(monkeyp
     because outside a container loopback is the answer and inside one it is
     refused immediately rather than stalling.
     """
-    import httpx
     from gateway import main as gateway_main
 
     attempted: list[str] = []
@@ -251,26 +330,16 @@ async def test_the_ui_proxy_stops_paying_for_a_base_that_does_not_answer(monkeyp
             raise httpx.ConnectError("no route to host", request=request)
         return httpx.Response(200, content=b"ok")
 
-    transport = httpx.MockTransport(upstream)
-    original = httpx.AsyncClient
-
-    def patched(*args, **kwargs):
-        kwargs["transport"] = transport
-        return original(*args, **kwargs)
-
     # The container-name-first case, which is what a Compose deployment has.
     monkeypatch.setattr(gateway_main.settings, "DASHBOARD_URL", "http://dashboard:3000")
     monkeypatch.setattr(gateway_main, "_ui_base", None)
-    gateway_main.httpx.AsyncClient = patched
-    try:
+    with _upstreams(upstream):
         async with AsyncClient(
             transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
         ) as ac:
             first = await ac.get("/")
             after_first = list(attempted)
             second = await ac.get("/")
-    finally:
-        gateway_main.httpx.AsyncClient = original
 
     assert first.status_code == 200
     assert second.status_code == 200
