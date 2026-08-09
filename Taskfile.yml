@@ -141,12 +141,13 @@ tasks:
       - uv run --directory packages/shared-schemas python generate_catalog.py
 
   test:all:
-    desc: "Run complete test suite (Packages, Specs, Core, Gateway, E2E, and Importers)"
+    desc: "Run complete test suite (Packages, Specs, Core, Gateway, Analysis, E2E, and Importers)"
     cmds:
       - task: test:packages
       - task: test:specs
       - task: test:core
       - task: test:gateway
+      - task: test:analysis
       - task: test:e2e
       - task: test:importers
 
@@ -165,11 +166,22 @@ tasks:
     cmds:
       - uv run --directory services/api-gateway --with pytest --with pytest-asyncio pytest tests
 
+  test:analysis:
+    desc: "Run Analysis Service tests (statistics, service boundary)"
+    # httpx is a test-only dependency here: the boundary test drives the app through
+    # Starlette's TestClient, which the service itself never does.
+    cmds:
+      - uv run --directory services/analysis --with pytest --with pytest-asyncio --with httpx pytest tests
+
   test:e2e:
     desc: "Run end-to-end integration tests for all importers, dashboard API, and UI flows"
     # Runs in Core's environment because the dashboard tests import core.main, and
     # pulls in the extra runtime deps the importer transformers need. tests/e2e/conftest.py
     # puts every service's src/ on sys.path. Requires Postgres on :5433.
+    #
+    # Both paths are quoted: on Windows ROOT_DIR contains backslashes, and unquoted
+    # the shell ate them -- `--rootdir C:\Users\…` arrived as `C:Users…`, which pytest
+    # resolved relative to services/core and refused with "Directory not found".
     env:
       PYTHONPATH: "{{.ROOT_DIR}}"
     cmds:
@@ -177,12 +189,31 @@ tasks:
         uv run --directory services/core
         --with pytest --with pytest-asyncio --with nats-py
         --with icalendar --with recurring-ical-events
-        pytest {{.ROOT_DIR}}/tests/e2e --rootdir {{.ROOT_DIR}}
+        pytest "{{.ROOT_DIR}}/tests/e2e" --rootdir "{{.ROOT_DIR}}"
 
   test:importers:
     desc: "Run unit tests across all importer microservices"
+    # `uv run` rather than the venv's own pytest: the binary sits in .venv/bin on
+    # POSIX and .venv/Scripts on Windows, and hardcoding either makes the task run
+    # on one platform only.
+    #
+    # A directory counts as an importer when it has a pyproject.toml. The glob also
+    # matches whatever a previous checkout left behind -- a bare `.venv` next to an
+    # empty `src/` collects no tests, pytest exits 5, and the task failed on a
+    # service that does not exist.
+    #
+    # The failure is remembered rather than raised: every importer runs, and the
+    # task fails at the end. Exiting on the first one means eight runs to find
+    # eight broken importers, and it would disagree with CI, whose matrix over the
+    # same set sets `fail-fast: false` on purpose.
     cmds:
-      - for dir in services/importers/*/; do (cd "$dir" && .venv/bin/pytest tests); done
+      - |
+        status=0
+        for dir in services/importers/*/; do
+          [ -f "$dir/pyproject.toml" ] || continue
+          uv run --directory "$dir" --with pytest --with pytest-asyncio pytest tests || status=1
+        done
+        exit $status
 
   test:specs:
     desc: "Run Fizzbee model spec invariant tests"

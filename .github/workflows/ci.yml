@@ -283,14 +283,30 @@ jobs:
       - name: Tool tests
         run: uv run --with pytest pytest tools/tests -q
 
+  importer-list:
+    name: Importer list
+    runs-on: ubuntu-latest
+    outputs:
+      importers: ${{ steps.list.outputs.importers }}
+    steps:
+      - uses: actions/checkout@v4
+      # Discovered, not written out. This list was eight names by hand, and
+      # `task test:importers` globs the directory -- so a ninth importer was
+      # tested locally and silently never in CI. One source now answers both.
+      - id: list
+        run: |
+          importers=$(python tools/build_images.py --importers)
+          echo "importers=$importers" >> "$GITHUB_OUTPUT"
+          echo "$importers"
+
   test-importers:
     name: Importers
     runs-on: ubuntu-latest
+    needs: importer-list
     strategy:
       fail-fast: false
       matrix:
-        importer:
-          [apple_health, calendar, dawarich, home_assistant, streak, weather, whoop, yazio]
+        importer: ${{ fromJSON(needs.importer-list.outputs.importers) }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

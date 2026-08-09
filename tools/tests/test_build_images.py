@@ -8,10 +8,11 @@ published -- silently, because no build fails when a build does not happen.
 import re
 from pathlib import Path
 
-from tools.build_images import IMAGES, find_unlisted_dockerfiles, matrix
+from tools.build_images import IMAGES, find_unlisted_dockerfiles, importers, matrix
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
+CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 
 
 def test_every_dockerfile_is_either_published_or_explicitly_not():
@@ -73,6 +74,33 @@ def test_matrix_shape_matches_what_the_workflow_reads():
     entries = matrix()
     assert len(entries) == len(IMAGES)
     assert all(set(entry) == {"image", "context", "dockerfile", "cache"} for entry in entries)
+
+
+def test_every_importer_directory_is_discovered():
+    """`--importers` is what CI expands into its test matrix.
+
+    Discovery is by `pyproject.toml`, which is also what `task test:importers`
+    looks for, so the local run and the CI run cover the same set. A new importer
+    is therefore tested in CI the moment it exists, without a list to remember.
+    """
+    with_pyproject = {
+        path.parent.name
+        for path in (REPO_ROOT / "services" / "importers").glob("*/pyproject.toml")
+    }
+    assert set(importers()) == with_pyproject
+    assert importers() == sorted(importers()), "the matrix order must be stable"
+
+
+def test_ci_reads_the_importer_matrix_instead_of_listing_it():
+    """A hardcoded matrix is the drift this discovery exists to remove.
+
+    Reading the workflow as text keeps this dependency-free, the same choice the
+    compose test above makes. It asserts on the expansion, not on formatting: if
+    somebody replaces it with a literal list again, the `fromJSON` disappears.
+    """
+    text = CI_WORKFLOW.read_text(encoding="utf-8")
+    assert "build_images.py --importers" in text
+    assert "fromJSON(needs.importer-list.outputs.importers)" in text
 
 
 def test_cache_modes_are_valid_and_bounded():

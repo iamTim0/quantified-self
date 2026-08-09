@@ -10,6 +10,7 @@ to the compose file and the Taskfile and then silently never gets published.
     python tools/build_images.py core dashboard   # build some of them
     python tools/build_images.py --matrix         # the GitHub Actions matrix
     python tools/build_images.py --check          # every Dockerfile is listed?
+    python tools/build_images.py --importers      # the importer test matrix
 
 Building locally is worth doing before cutting a release: the release workflow is
 the first thing that ever builds all of these together, and a Dockerfile can rot
@@ -115,6 +116,28 @@ def find_unlisted_dockerfiles() -> list[str]:
     return sorted(found)
 
 
+def importers() -> list[str]:
+    """Every importer service, discovered rather than listed.
+
+    A directory under `services/importers/` is an importer when it has a
+    `pyproject.toml`. That rule is what `task test:importers` uses, and CI reads its
+    matrix from here for the same reason `release.yml` reads `--matrix`: the CI
+    matrix used to be eight names written out by hand, so a ninth importer was
+    tested on the contributor's machine and never in CI -- the same silence as a
+    Dockerfile missing from `IMAGES`, and just as invisible.
+
+    Deliberately not derived from `IMAGES`: an importer is worth testing before it
+    is worth publishing, and that order should not be a reason for it to go
+    untested.
+    """
+    root = REPO_ROOT / "services" / "importers"
+    if not root.is_dir():
+        return []
+    return sorted(
+        path.name for path in root.iterdir() if (path / "pyproject.toml").is_file()
+    )
+
+
 def build(selected: list[str], *, prefix: str, version: str) -> int:
     docker = shutil.which("docker")
     if docker is None:
@@ -159,12 +182,19 @@ def main() -> int:
     parser.add_argument(
         "--check", action="store_true", help="fail if a Dockerfile is not in the manifest"
     )
+    parser.add_argument(
+        "--importers", action="store_true", help="print the importer names as a JSON array"
+    )
     parser.add_argument("--prefix", default=DEFAULT_IMAGE_PREFIX, help="registry prefix for tags")
     parser.add_argument("--version", default="local", help="tag to build as")
     args = parser.parse_args()
 
     if args.matrix:
         print(json.dumps(matrix()))
+        return 0
+
+    if args.importers:
+        print(json.dumps(importers()))
         return 0
 
     if args.check:
