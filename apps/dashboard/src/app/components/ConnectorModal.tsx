@@ -482,8 +482,12 @@ export default function ConnectorModal({
   const fileOnly = supportsFileImport && importMode === "file";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-xl bg-white border border-slate-200/90 rounded-3xl p-6 shadow-2xl space-y-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="my-auto w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain bg-white border border-slate-200/90 rounded-3xl p-6 shadow-2xl space-y-6"
+      >
         {/* Header */}
         <div className="flex justify-between items-center pb-4 border-b border-slate-100">
           <div className="flex items-center gap-3">

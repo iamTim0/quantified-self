@@ -553,7 +553,7 @@ export const de: Record<MessageKey, string> = {
   "modal.baseUrlLabel": "Basis-URL",
   "modal.calendarUrlLabel": "Kalender-Feed-URL",
   "modal.displayNameLabel": "Name",
-  "modal.displayNamePlaceholder": "z. B. Arbeitskalender",
+  "modal.displayNamePlaceholder": "z. B. Privat",
   "modal.displayNameHint":
     "Erscheint auf der Connector-Karte. Denselben Anbieter kannst du mehrfach einrichten — der Name unterscheidet die Instanzen.",
   "modal.needDisplayName": "Bitte gib diesem Connector einen Namen.",

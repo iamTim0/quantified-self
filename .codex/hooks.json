@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python .agents/scripts/pre_command_guard.py",
+            "command": "python3 .agents/scripts/pre_command_guard.py",
             "timeout": 10,
             "statusMessage": "Checking command safety"
           }
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-          "command": "python .agents/scripts/validate_docs.py",
+            "command": "python3 .agents/scripts/validate_docs.py",
             "timeout": 15,
             "statusMessage": "Validating documentation"
           }

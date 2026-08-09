@@ -544,7 +544,7 @@ export const en = {
   "modal.baseUrlLabel": "Base URL",
   "modal.calendarUrlLabel": "Calendar feed URL",
   "modal.displayNameLabel": "Name",
-  "modal.displayNamePlaceholder": "e.g. Work calendar",
+  "modal.displayNamePlaceholder": "e.g. Personal",
   "modal.displayNameHint":
     "Shown on the connector card. You can set up the same provider more than once — the name is what tells them apart.",
   "modal.needDisplayName": "Please give this connector a name.",

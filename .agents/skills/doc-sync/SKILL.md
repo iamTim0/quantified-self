@@ -22,4 +22,4 @@ Activate this skill whenever:
 - [ ] **Docstrings**: Ensure new public functions, classes, and tests have clear docstrings referencing spec invariants.
 
 ## 3. Automation
-The workspace uses a `Stop` hook running `python .agents/scripts/validate_docs.py` to block completion if broken markdown links or un-documented microservice changes exist. It is registered per client in `.agents/hooks.json` (Gemini/Antigravity), `.codex/hooks.json` (Codex), and `.claude/settings.json` (Claude Code).
+The workspace uses a `Stop` hook running `python3 .agents/scripts/validate_docs.py` to block completion if broken markdown links or un-documented microservice changes exist. It is registered per client in `.agents/hooks.json` (Gemini/Antigravity), `.codex/hooks.json` (Codex), and `.claude/settings.json` (Claude Code).
