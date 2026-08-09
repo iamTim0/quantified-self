@@ -73,7 +73,6 @@ export const de: Record<MessageKey, string> = {
     "Diese Texte sind eine Vorlage und ersetzen keine Rechtsberatung. Vor dem produktiven Einsatz durch eine qualifizierte Stelle prüfen lassen.",
   "legal.translationNote":
     "Dies ist eine Übersetzung als Lesehilfe. Verbindlich ist die deutsche Fassung.",
-  "legal.germanVersion": "Deutsche Fassung",
 
   // ── Anmeldung ──────────────────────────────────────────────────────────────
   "auth.tagline": "Deine persönliche Gesundheits- und Analyse-Plattform.",

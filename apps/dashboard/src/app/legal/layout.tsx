@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, type ReactNode } from "react";
 
 import LanguageSwitcher from "../components/LanguageSwitcher";
-import { useT } from "../lib/i18n/provider";
+import { useI18n } from "../lib/i18n/provider";
 
 /**
  * Layout for legal texts.
@@ -15,12 +16,24 @@ import { useT } from "../lib/i18n/provider";
  * text. Uses a generous measure and system-default text sizing so browser zoom and
  * reader modes behave predictably.
  *
- * A client component, unlike the pages it used to wrap: the language switcher has
- * to change this text immediately, and a server-rendered layout would keep the
- * previous language until the next full load.
+ * A client component, unlike the documents it wraps: it carries the language
+ * switcher, and it is what makes the switch take effect on a server-rendered page.
  */
 export default function LegalLayout({ children }: { children: ReactNode }) {
-  const t = useT();
+  const { locale, t } = useI18n();
+  const router = useRouter();
+  const rendered = useRef(locale);
+
+  // The documents are server components, so switching the language has to re-fetch
+  // this route rather than re-render in place. `setLocale` has already written the
+  // `qs-locale` cookie synchronously, so the refresh renders in the new language.
+  // Guarded on the locale actually having changed: without the ref this would fire
+  // a needless refresh on every mount.
+  useEffect(() => {
+    if (rendered.current === locale) return;
+    rendered.current = locale;
+    router.refresh();
+  }, [locale, router]);
 
   return (
     <div className="min-h-screen bg-white text-slate-900">

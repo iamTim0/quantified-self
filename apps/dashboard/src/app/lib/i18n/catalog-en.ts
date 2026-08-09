@@ -73,7 +73,6 @@ export const en = {
     "These texts are a template and are no substitute for legal advice. Have them reviewed by a qualified party before production use.",
   "legal.translationNote":
     "This is a courtesy translation. The German version is the legally binding one.",
-  "legal.germanVersion": "German version",
 
   // ── Sign in / sign up ──────────────────────────────────────────────────────
   "auth.tagline": "Your personal health and analytics platform.",
