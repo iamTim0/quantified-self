@@ -1,0 +1,51 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "yazio",
+  "ingest_subject": "qs.ingest.yazio",
+  "task_subject": "qs.task.sync.yazio",
+  "entrypoint": "yazio_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "YAZIO diary API JSON",
+      "format": "rest_json",
+      "source_of_truth": {
+        "kind": "repository_adapter",
+        "reference": "services/importers/yazio/src/yazio_importer/client.py"
+      }
+    }
+  ],
+  "metrics": [
+    "nutrition_carbohydrates",
+    "nutrition_energy",
+    "nutrition_fat",
+    "nutrition_fiber",
+    "nutrition_item_amount",
+    "nutrition_item_energy",
+    "nutrition_meal_energy",
+    "nutrition_protein",
+    "nutrition_recipe_portions"
+  ],
+  "dynamic_namespaces": [],
+  "capabilities": {
+    "scheduled_sync": true,
+    "webhook": false,
+    "file_upload": false
+  }
+}

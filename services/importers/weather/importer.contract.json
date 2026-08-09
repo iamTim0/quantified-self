@@ -1,0 +1,50 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "weather",
+  "ingest_subject": "qs.ingest.weather",
+  "task_subject": "qs.task.sync.weather",
+  "entrypoint": "weather_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "Open-Meteo-compatible forecast JSON",
+      "format": "rest_json",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "reference": "https://open-meteo.com/en/docs"
+      }
+    }
+  ],
+  "metrics": [
+    "weather_cloud_cover",
+    "weather_humidity",
+    "weather_precipitation",
+    "weather_pressure",
+    "weather_temperature",
+    "weather_temperature_apparent",
+    "weather_uv_index",
+    "weather_wind_speed"
+  ],
+  "dynamic_namespaces": [],
+  "capabilities": {
+    "scheduled_sync": true,
+    "webhook": false,
+    "file_upload": false
+  }
+}

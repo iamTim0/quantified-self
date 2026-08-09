@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from shared_schemas import idempotency_key
+from shared_schemas.metrics import canonical_metric_type
 
 from calendar_importer.ics import CalendarEvent
 
@@ -50,6 +51,7 @@ def _event(
     metadata: dict[str, Any],
     key_source_id: str | None = None,
 ) -> dict[str, Any]:
+    metric_type = canonical_metric_type(metric_type)
     iso = timestamp.astimezone(timezone.utc).isoformat()
     return {
         "tenant_id": tenant_id,

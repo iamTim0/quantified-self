@@ -4,6 +4,12 @@ Every importer follows the same pattern: configure the data source in the dashbo
 the encrypted credentials in Core, run the importer-specific worker, and publish
 tenant-scoped events to NATS JetStream.
 
+The machine-readable compatibility boundary for each importer is its
+`services/importers/<name>/importer.contract.json`. See the generated
+[importer contract catalog](../importer-contracts.md) for the supported input formats,
+upstream schema references and normalized metric set. Update the contract and its
+transformer tests together whenever a provider changes its payload.
+
 | Importer | Kind | Data access | NATS subject | Main metrics |
 | --- | --- | --- | --- | --- |
 | Yazio | active | Yazio API / OAuth token | `qs.ingest.yazio` | Calories, macros, meals |

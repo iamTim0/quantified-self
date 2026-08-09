@@ -19,15 +19,25 @@ worse than merely inconsistent:
 from typing import Any
 
 from shared_schemas import idempotency_key
+from shared_schemas.metrics import canonical_metric_type
 
 from yazio_importer.config import settings
-
 
 #: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
 #: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
 #: identical docstring to keep in step, and its `timestamp: str` annotation would hide
 #: that the shared function also takes a `datetime`.
 generate_idempotency_key = idempotency_key
+
+METRIC_NUTRITION_ENERGY = canonical_metric_type("nutrition_energy")
+METRIC_NUTRITION_PROTEIN = canonical_metric_type("nutrition_protein")
+METRIC_NUTRITION_CARBOHYDRATES = canonical_metric_type("nutrition_carbohydrates")
+METRIC_NUTRITION_FAT = canonical_metric_type("nutrition_fat")
+METRIC_NUTRITION_FIBER = canonical_metric_type("nutrition_fiber")
+METRIC_NUTRITION_MEAL_ENERGY = canonical_metric_type("nutrition_meal_energy")
+METRIC_NUTRITION_ITEM_ENERGY = canonical_metric_type("nutrition_item_energy")
+METRIC_NUTRITION_ITEM_AMOUNT = canonical_metric_type("nutrition_item_amount")
+METRIC_NUTRITION_RECIPE_PORTIONS = canonical_metric_type("nutrition_recipe_portions")
 
 
 def transform_consumed_items(
@@ -104,7 +114,11 @@ def transform_consumed_items(
             item_fat = float(p_info.get("fat_g", 0.0)) * ratio
 
         val_flt = float(item_cal) if item_cal is not None else float(amount)
-        metric_type = "nutrition_item_energy" if item_cal is not None else "nutrition_item_amount"
+        metric_type = (
+            METRIC_NUTRITION_ITEM_ENERGY
+            if item_cal is not None
+            else METRIC_NUTRITION_ITEM_AMOUNT
+        )
 
         if item_cal is not None:
             total_cal += float(item_cal)
@@ -159,7 +173,7 @@ def transform_consumed_items(
             or (f"Rezept #{rid[:8]}" if rid else "Unbekanntes Rezept")
         )
 
-        metric_type = "nutrition_recipe_portions"
+        metric_type = METRIC_NUTRITION_RECIPE_PORTIONS
         item_source_id = f"{source_id}_recipe_{r_id}"
 
         idempotency_key = generate_idempotency_key(
@@ -205,7 +219,7 @@ def transform_consumed_items(
         total_fat += float(fat_val)
         total_carb += float(carb_val)
 
-        metric_type = "nutrition_item_energy"
+        metric_type = METRIC_NUTRITION_ITEM_ENERGY
         item_source_id = f"{source_id}_simple_{s_id}"
 
         idempotency_key = generate_idempotency_key(
@@ -254,7 +268,7 @@ def transform_consumed_items(
             total_carb += c_val
             total_fat += f_val
 
-            metric_type = "nutrition_item_energy"
+            metric_type = METRIC_NUTRITION_ITEM_ENERGY
             item_source_id = f"{source_id}_{item_id}"
 
             idempotency_key = generate_idempotency_key(
@@ -292,11 +306,13 @@ def transform_consumed_items(
     raw_fiber_val = summary.get("fiber_g") or summary.get("fiber")
 
     daily_metrics = {
-        "nutrition_energy": float(raw_cal_val) if raw_cal_val is not None else None,
-        "nutrition_protein": float(raw_prot_val) if raw_prot_val is not None else None,
-        "nutrition_carbohydrates": float(raw_carb_val) if raw_carb_val is not None else None,
-        "nutrition_fat": float(raw_fat_val) if raw_fat_val is not None else None,
-        "nutrition_fiber": float(raw_fiber_val) if raw_fiber_val is not None else None,
+        METRIC_NUTRITION_ENERGY: float(raw_cal_val) if raw_cal_val is not None else None,
+        METRIC_NUTRITION_PROTEIN: float(raw_prot_val) if raw_prot_val is not None else None,
+        METRIC_NUTRITION_CARBOHYDRATES: float(raw_carb_val)
+        if raw_carb_val is not None
+        else None,
+        METRIC_NUTRITION_FAT: float(raw_fat_val) if raw_fat_val is not None else None,
+        METRIC_NUTRITION_FIBER: float(raw_fiber_val) if raw_fiber_val is not None else None,
     }
 
     for metric_type, val in daily_metrics.items():
@@ -328,7 +344,7 @@ def transform_consumed_items(
             if isinstance(meal_info, dict) and ("calories" in meal_info or "energy" in meal_info):
                 cal_val = meal_info.get("calories") or meal_info.get("energy")
                 if cal_val is not None:
-                    metric_type = "nutrition_meal_energy"
+                    metric_type = METRIC_NUTRITION_MEAL_ENERGY
                     # Every meal shares the metric now, so the meal has to enter the
                     # key instead of the name -- otherwise breakfast and dinner on one
                     # day hash identically and Core keeps whichever arrived first.

@@ -18,7 +18,12 @@ was introduced:
 from typing import Any, NamedTuple
 
 from shared_schemas import FieldReportCollector, idempotency_key
-from shared_schemas.metrics import METRIC_CATALOG, MetricUnit, convert
+from shared_schemas.metrics import (
+    METRIC_CATALOG,
+    MetricUnit,
+    canonical_metric_type,
+    convert,
+)
 
 
 class _Mapping(NamedTuple):
@@ -123,6 +128,7 @@ def transform_whoop_records(
 
         consumed: set[str] = {"score_state", "start", "created_at", "id", "cycle_id"}
         for mapping in (mappings or METRICS).get(kind, ()):
+            metric_type = canonical_metric_type(mapping.metric_type)
             container = (record.get(mapping.section) or {}) if mapping.section else record
             val = container.get(mapping.field)
             if not isinstance(val, (int, float)) or isinstance(val, bool):
@@ -134,7 +140,7 @@ def transform_whoop_records(
                 value = convert(
                     value,
                     mapping.provider_unit,
-                    METRIC_CATALOG[mapping.metric_type].unit,
+                    METRIC_CATALOG[metric_type].unit,
                 )
 
             point_metadata = dict(metadata)
@@ -148,16 +154,16 @@ def transform_whoop_records(
                 {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": mapping.metric_type,
+                    "metric_type": metric_type,
                     "timestamp": ts,
                     "value": value,
                     "metadata": point_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, mapping.metric_type, ts
+                        tenant_id, source_id, metric_type, ts
                     ),
                 }
             )
-            report.mapped(f"{kind}.{mapping.field}", val, mapping.metric_type)
+            report.mapped(f"{kind}.{mapping.field}", val, metric_type)
 
         for key, value in record.items():
             if key in consumed:

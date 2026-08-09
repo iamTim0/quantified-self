@@ -1,0 +1,48 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "streak",
+  "ingest_subject": "qs.ingest.streak",
+  "task_subject": null,
+  "entrypoint": "streak_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "Streak export or webhook JSON",
+      "format": "json",
+      "source_of_truth": {
+        "kind": "repository_adapter",
+        "reference": "services/importers/streak/src/streak_importer/transformer.py"
+      }
+    }
+  ],
+  "metrics": [
+    "strength_session_sets",
+    "strength_session_volume",
+    "strength_set_heart_rate_max",
+    "strength_set_reps",
+    "strength_set_volume",
+    "strength_set_weight"
+  ],
+  "dynamic_namespaces": [],
+  "capabilities": {
+    "scheduled_sync": false,
+    "webhook": true,
+    "file_upload": false
+  }
+}

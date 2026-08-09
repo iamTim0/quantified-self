@@ -283,6 +283,12 @@ jobs:
       - name: Tool tests
         run: uv run --with pytest pytest tools/tests -q
 
+      - name: Validate importer contracts
+        run: python tools/importer_contracts.py
+
+      - name: Importer contract catalog current
+        run: python tools/generate_importer_contracts.py --check
+
   importer-list:
     name: Importer list
     runs-on: ubuntu-latest

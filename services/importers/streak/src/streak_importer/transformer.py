@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from shared_schemas import idempotency_key
+from shared_schemas.metrics import canonical_metric_type
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,13 @@ logger = logging.getLogger(__name__)
 #: identical docstring to keep in step, and its `timestamp: str` annotation would hide
 #: that the shared function also takes a `datetime`.
 generate_idempotency_key = idempotency_key
+
+METRIC_SET_WEIGHT = canonical_metric_type("strength_set_weight")
+METRIC_SET_REPS = canonical_metric_type("strength_set_reps")
+METRIC_SET_VOLUME = canonical_metric_type("strength_set_volume")
+METRIC_SET_HEART_RATE_MAX = canonical_metric_type("strength_set_heart_rate_max")
+METRIC_SESSION_VOLUME = canonical_metric_type("strength_session_volume")
+METRIC_SESSION_SETS = canonical_metric_type("strength_session_sets")
 
 
 def parse_timestamp(date_str: Any) -> str | None:
@@ -113,12 +121,12 @@ def transform_streak_export_json(
                 dp_weight = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "strength_set_weight",
+                    "metric_type": METRIC_SET_WEIGHT,
                     "timestamp": set_ts,
                     "value": weight_val,
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"strength_set_weight_{set_id}", set_ts
+                        tenant_id, source_id, f"{METRIC_SET_WEIGHT}_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -131,12 +139,12 @@ def transform_streak_export_json(
                 dp_reps = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "strength_set_reps",
+                    "metric_type": METRIC_SET_REPS,
                     "timestamp": set_ts,
                     "value": reps_val,
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"strength_set_reps_{set_id}", set_ts
+                        tenant_id, source_id, f"{METRIC_SET_REPS}_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -150,12 +158,12 @@ def transform_streak_export_json(
                     dp_vol = {
                         "tenant_id": tenant_id,
                         "source_id": source_id,
-                        "metric_type": "strength_set_volume",
+                        "metric_type": METRIC_SET_VOLUME,
                         "timestamp": set_ts,
                         "value": set_vol,
                         "metadata": base_metadata,
                         "idempotency_key": generate_idempotency_key(
-                            tenant_id, source_id, f"strength_set_volume_{set_id}", set_ts
+                            tenant_id, source_id, f"{METRIC_SET_VOLUME}_{set_id}", set_ts
                         ),
                         "source_type": "streak",
                     }
@@ -166,12 +174,12 @@ def transform_streak_export_json(
                 dp_pulse = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
-                    "metric_type": "strength_set_heart_rate_max",
+                    "metric_type": METRIC_SET_HEART_RATE_MAX,
                     "timestamp": set_ts,
                     "value": float(max_pulse),
                     "metadata": base_metadata,
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"strength_set_heart_rate_max_{set_id}", set_ts
+                        tenant_id, source_id, f"{METRIC_SET_HEART_RATE_MAX}_{set_id}", set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -189,24 +197,24 @@ def transform_streak_export_json(
             dp_w_vol = {
                 "tenant_id": tenant_id,
                 "source_id": source_id,
-                "metric_type": "strength_session_volume",
+                "metric_type": METRIC_SESSION_VOLUME,
                 "timestamp": workout_ts,
                 "value": total_workout_volume,
                 "metadata": workout_summary_meta,
                 "idempotency_key": generate_idempotency_key(
-                    tenant_id, source_id, "strength_session_volume", workout_ts
+                    tenant_id, source_id, METRIC_SESSION_VOLUME, workout_ts
                 ),
                 "source_type": "streak",
             }
             dp_w_sets = {
                 "tenant_id": tenant_id,
                 "source_id": source_id,
-                "metric_type": "strength_session_sets",
+                "metric_type": METRIC_SESSION_SETS,
                 "timestamp": workout_ts,
                 "value": float(total_workout_sets),
                 "metadata": workout_summary_meta,
                 "idempotency_key": generate_idempotency_key(
-                    tenant_id, source_id, "strength_session_sets", workout_ts
+                    tenant_id, source_id, METRIC_SESSION_SETS, workout_ts
                 ),
                 "source_type": "streak",
             }

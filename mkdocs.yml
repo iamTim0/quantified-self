@@ -23,6 +23,7 @@ nav:
   - Licensing: licensing.md
   - Importers:
       - Standard: importer-standard.md
+      - Contract catalog: importer-contracts.md
       - Overview: importers/index.md
       - Yazio: importers/yazio.md
       - WHOOP: importers/whoop.md

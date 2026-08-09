@@ -26,6 +26,7 @@ from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
     UnsupportedConversionError,
+    canonical_metric_type,
     convert,
 )
 
@@ -231,7 +232,7 @@ def canonical_name(raw_name: str) -> str:
     to the registry.
     """
     if raw_name in METRIC_NAME_MAP:
-        return METRIC_NAME_MAP[raw_name]
+        return canonical_metric_type(METRIC_NAME_MAP[raw_name])
     cleaned = "".join(ch if ch.isalnum() else "_" for ch in raw_name).strip("_").lower()
     if not cleaned:
         return f"{NAMESPACE}metric"
@@ -241,7 +242,7 @@ def canonical_name(raw_name: str) -> str:
     # anyway put the same reading in `apple_health_blood_pressure_systolic`, next to
     # the real one and never meeting it.
     if cleaned in METRIC_CATALOG:
-        return cleaned
+        return canonical_metric_type(cleaned)
     return f"{NAMESPACE}{cleaned}"
 
 

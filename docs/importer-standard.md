@@ -95,6 +95,27 @@ Two consequences worth stating outright:
 
 See [Metrics](metrics.md) for the rules, the full catalog and how to add an entry.
 
+## Contract-first importer definition
+
+Every importer has a machine-readable `importer.contract.json` in its service root.
+It is the source of truth for the importer's input formats, upstream schema references,
+NATS subjects, service-boundary guarantees, capabilities and the registry metrics it may
+emit. The contract is validated by `python tools/importer_contracts.py` and the human
+catalog at [Importer contract catalog](importer-contracts.md) is generated with
+`task importers:contracts`.
+
+OpenAPI is an upstream reference when a provider exposes an API schema. It is not a
+requirement for every importer: iCalendar is governed by RFC 5545, Apple Health's
+official export is an XML archive, and WHOOP's account export is a ZIP of CSV files.
+Those formats are represented explicitly in the same contract instead of being forced
+into an API-only schema. A generated provider schema may be recorded with
+`generated: true` and `generated_from` when an upstream schema is available locally;
+the importer contract remains the repository-owned compatibility boundary.
+
+When an input format changes, update the contract and its transformer tests together.
+CI then catches a missing contract, an incorrect subject, a non-canonical metric, a
+missing required module, a broken source reference or stale generated documentation.
+
 ### Idempotency
 All ingestion events require a deterministic `idempotency_key` to ensure duplicate events are safely ignored downstream. The key must be generated as follows:
 `idempotency_key = SHA256(tenant_id + source_id + metric_type + timestamp)`
