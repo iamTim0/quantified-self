@@ -161,6 +161,20 @@ services:
   # makes that a restart instead of a rebuild. For sustained UI work, run
   # `next dev` natively on the host, where the file events work.
   dashboard:
+    # Its own tag, and that is not cosmetic. This is the one service whose image
+    # differs between the two configurations -- `target: dev` here, the Dockerfile's
+    # last stage (`runner`) without this file. Both used to build the same default
+    # tag, `infra-dashboard`, so whichever ran last won:
+    #
+    #   task dev:docker   # builds the dev stage as infra-dashboard
+    #   task dev:up       # no --build, so it *reuses* that dev image
+    #
+    # and the container died with `error: Script not found "dev"`. The dev stage
+    # copies only node_modules, because the source is supposed to arrive through the
+    # bind mount below -- without it, /app has no package.json for `bun run dev` to
+    # read. An error that says nothing about the actual cause, from a command that
+    # should have been the safe one.
+    image: qs-dashboard-dev
     build:
       target: dev
     volumes:

@@ -16,9 +16,13 @@ tasks:
       - bun install --cwd apps/dashboard
 
   dev:up:
-    desc: "Start all services in the background using docker compose"
+    desc: "Start all services in containers, dashboard as a production build. Open http://localhost:8080"
+    # `--build`, like dev:docker: without it this reused whatever image happened to
+    # be tagged, which is how a dev-stage dashboard ended up behind the production
+    # compose file. The build is cached, so the cost is seconds and the gain is that
+    # "start the stack" means the code that is checked out.
     cmds:
-      - docker compose --env-file .env -f infra/docker-compose.yml up -d
+      - docker compose --env-file .env -f infra/docker-compose.yml up -d --build
 
   # ─── Container development ─────────────────────────────────────────────────
   # The same stack as dev:up, reading its code from the checkout. One address for
