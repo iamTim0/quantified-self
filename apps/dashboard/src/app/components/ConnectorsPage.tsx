@@ -51,6 +51,8 @@ export interface ConnectorItem {
 interface ConnectorsPageProps {
   apiBase: string;
   tenantId: string;
+  /** Refresh data without remounting an open import dialog. */
+  refreshTrigger: number;
   onOpenConfigureModal: (connector?: ConnectorItem, sourceType?: string) => void;
 }
 
@@ -87,6 +89,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
 export default function ConnectorsPage({
   apiBase,
   tenantId,
+  refreshTrigger,
   onOpenConfigureModal,
 }: ConnectorsPageProps) {
   const { t, formatDateTime } = useI18n();
@@ -127,7 +130,7 @@ export default function ConnectorsPage({
     if (tenantId) {
       fetchConnectors();
     }
-  }, [apiBase, tenantId]);
+  }, [apiBase, tenantId, refreshTrigger]);
 
   // Live refresh of queue status and last-sync timestamps. The badge above the
   // table states this interval, and reads it from here so the two cannot drift.

@@ -429,10 +429,12 @@ export default function DashboardPage() {
           )}
 
           {activeTab === "connectors" && (
+            // Refresh connector data through the prop so an open import dialog
+            // survives a visibility refresh.
             <ConnectorsPage
-              key={refreshTrigger}
               apiBase={API_BASE}
               tenantId={tenantId}
+              refreshTrigger={refreshTrigger}
               onOpenConfigureModal={(c, st) => handleOpenConfigureModal(c, st)}
             />
           )}
