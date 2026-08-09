@@ -1,6 +1,20 @@
 version: '3'
 
 tasks:
+  setup:
+    desc: "Install every service's dependencies and the dashboard's (first thing after a clone)"
+    # README's "Clone & Setup" told the reader to run this, and it did not exist -- the
+    # first command a contributor typed answered `task: Task "setup" does not exist`.
+    #
+    # `uv sync` per service rather than one root environment: each service has its own
+    # pyproject.toml on purpose (rule 6), and a shared venv would let an importer import
+    # something it does not declare and still pass locally.
+    cmds:
+      - for dir in packages/shared-schemas services/core services/api-gateway services/analysis services/importers/*/; do
+          test -f "$dir/pyproject.toml" && (echo "==> $dir" && uv sync --directory "$dir") || true;
+        done
+      - bun install --cwd apps/dashboard
+
   dev:up:
     desc: "Start all services in the background using docker compose"
     cmds:
@@ -141,8 +155,9 @@ tasks:
       - uv run --directory packages/shared-schemas python generate_catalog.py
 
   test:all:
-    desc: "Run complete test suite (Packages, Specs, Core, Gateway, Analysis, E2E, and Importers)"
+    desc: "Run complete test suite (Tools, Packages, Specs, Core, Gateway, Analysis, E2E, Importers)"
     cmds:
+      - task: test:tools
       - task: test:packages
       - task: test:specs
       - task: test:core
@@ -150,6 +165,15 @@ tasks:
       - task: test:analysis
       - task: test:e2e
       - task: test:importers
+
+  test:tools:
+    desc: "Run the repository-wide invariant tests (image manifest, service boundaries)"
+    # These were reachable from CI only, which is the wrong way round for a tripwire: a
+    # contributor who imports asyncpg into an importer or re-inlines the idempotency hash
+    # runs `task test:all`, sees green, and finds out after pushing. First in test:all
+    # because they are the cheapest and the most structural.
+    cmds:
+      - uv run --with pytest pytest tools/tests -q
 
   test:packages:
     desc: "Run shared package tests (metric registry, ingest schemas, catalog drift)"
