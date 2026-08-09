@@ -1,330 +1,305 @@
-# Release und Deployment
+# Release and deployment
 
-Diese Seite beschreibt beide Hälften eines Deployments: wie aus einem Commit auf
-`main` ein veröffentlichtes Release mit Container-Images wird, und wie dieses
-Release auf einem Server läuft. Für den laufenden Betrieb danach — Pflichtvariablen,
-Schlüsselwechsel, Backup, Monitoring — siehe [Betrieb](operations.md).
+This page describes both halves of a deployment: how a commit on `main` becomes a published
+release with container images, and how that release runs on a server. For running it afterwards
+— required variables, key rotation, backup, monitoring — see [Operations](operations.md).
 
-## Warum überhaupt Images
+## Why images at all
 
-Vorher beschrieb `docker-compose.coolify.yml` den Produktions-Stack und baute alle
-dreizehn Images **auf dem Zielserver**. Das hatte drei Konsequenzen, die im Alltag
-wehtun:
+Before, `docker-compose.coolify.yml` described the production stack and built all thirteen images
+**on the target server**. That had three consequences that hurt in practice:
 
-- Ein Deployment brauchte das Repository, eine Toolchain und mehrere Minuten CPU
-  auf einer Maschine, die eigentlich nur laufen lassen soll.
-- Was in Produktion lief, war genau einmal gebaut worden, von niemandem, ohne
-  Nachweis aus welchem Commit.
-- Ein Rollback bedeutete „hoffentlich baut der alte Stand noch genauso".
+- A deployment needed the repository, a toolchain and several minutes of CPU on a machine that is
+  only supposed to run things.
+- What ran in production had been built exactly once, by nobody, with no record of which commit it
+  came from.
+- A rollback meant "let's hope the old state still builds the same way".
 
-Jetzt baut `.github/workflows/release.yml` die Images einmal, signiert ihre
-Herkunft und lädt sie in die GitHub Container Registry (GHCR). Ein Deployment ist damit ein Download und ein Neustart, und
-`docker-compose.prod.yml` enthält keinen einzigen `build:`-Eintrag mehr.
+Now `.github/workflows/release.yml` builds the images once, signs their provenance and uploads them
+to the GitHub Container Registry (GHCR). A deployment is a download and a restart, and
+`docker-compose.prod.yml` no longer contains a single `build:` entry.
 
-## Ein Release erzeugen
+## Cutting a release
 
-Der Workflow startet **ausschließlich manuell**. Neben `workflow_dispatch` steht
-kein `push:`- und kein `schedule:`-Trigger — ein Merge nach `main` veröffentlicht
-also nichts. Das ist Absicht: ein Image zu veröffentlichen, das ein Deployment
-zieht, und dabei `latest` zu verschieben, ist eine Entscheidung.
+The workflow starts **manually only**. Alongside `workflow_dispatch` there is no `push:` and no
+`schedule:` trigger — so a merge to `main` publishes nothing. That is deliberate: publishing an image
+that a deployment will pull, and moving `latest` while doing so, is a decision.
 
-Der vorgesehene Ablauf:
+The intended sequence:
 
-1. Änderung nach `main` mergen.
-2. Warten, bis die CI für diesen Commit grün ist.
-3. **Actions → Release → Run workflow**, Branch `main`, Version eintragen.
+1. Merge the change to `main`.
+2. Wait for CI to be green for that commit.
+3. **Actions → Release → Run workflow**, branch `main`, enter the version.
 
-Schritt 2 muss man nicht selbst kontrollieren. Der `guard`-Job fragt die CI-Runs
-für **genau diesen Commit-SHA** ab — nicht „den letzten Lauf auf main", was sich
-unterscheidet, sobald zwei Commits kurz hintereinander landen — und bricht ab,
-wenn dort kein erfolgreicher Lauf steht.
+You do not have to check step 2 yourself. The `guard` job queries the CI runs for **exactly that
+commit SHA** — not "the last run on main", which differs as soon as two commits land close together —
+and aborts if there is no successful run for it.
 
-### Eingaben
+### Inputs
 
-| Eingabe | Bedeutung |
+| Input | Meaning |
 | --- | --- |
-| `version` | Semantische Version ohne führendes `v`, z. B. `1.0.0` oder `1.1.0-rc.1`. Ein vorhandenes `v<version>`-Tag lässt den Lauf abbrechen. |
-| `platforms` | `linux/amd64` (Standard) oder `linux/amd64,linux/arm64`. arm64 wird emuliert und verdreifacht die Laufzeit etwa — das Next.js-Build unter QEMU ist der Grund. |
-| `tag_latest` | Verschiebt zusätzlich `:latest`. Bei einem Pre-Release wird es ignoriert. |
-| `prerelease` | Markiert das GitHub-Release als Vorabversion. Eine Version mit Suffix (`-rc.1`) setzt das ohnehin selbst. |
-| `dry_run` | Baut alle Images, pusht nichts und erzeugt kein Release. Der Weg, einen Release-Lauf zu testen. |
-| `allow_failed_ci` | Veröffentlicht trotz roter oder fehlender CI. Bewusste Ausnahme, keine Abkürzung. |
+| `version` | Semantic version without a leading `v`, e.g. `1.0.0` or `1.1.0-rc.1`. An existing `v<version>` tag aborts the run. |
+| `platforms` | `linux/amd64` (the default) or `linux/amd64,linux/arm64`. arm64 is emulated and roughly triples the runtime — the Next.js build under QEMU is why. |
+| `tag_latest` | Also moves `:latest`. Ignored for a pre-release. |
+| `prerelease` | Marks the GitHub release as a pre-release. A version with a suffix (`-rc.1`) sets that by itself anyway. |
+| `dry_run` | Builds every image, pushes nothing and creates no release. The way to test a release run. |
+| `allow_failed_ci` | Publishes despite red or missing CI. A deliberate exception, not a shortcut. |
 
-### Was der Lauf produziert
+### What a run produces
 
-Pro Image bis zu vier Tags:
+Up to four tags per image:
 
 ```text
-ghcr.io/iamtim0/quantified-self/core:1.0.0        # die Version
-ghcr.io/iamtim0/quantified-self/core:sha-a1b2c3d  # der Commit
-ghcr.io/iamtim0/quantified-self/core:1.0          # wandernder Minor-Tag
-ghcr.io/iamtim0/quantified-self/core:latest       # wandernd, nie bei Pre-Releases
+ghcr.io/iamtim0/quantified-self/core:1.0.0        # the version
+ghcr.io/iamtim0/quantified-self/core:sha-a1b2c3d  # the commit
+ghcr.io/iamtim0/quantified-self/core:1.0          # moving minor tag
+ghcr.io/iamtim0/quantified-self/core:latest       # moving, never for pre-releases
 ```
 
-`sha-…` ist der Tag, der ein veröffentlichtes Image ohne Vertrauen in einen
-verschiebbaren Namen auf einen Quellstand zurückführt.
+`sha-…` is the tag that traces a published image back to a source state without trusting a name that
+can move.
 
-Die beiden **wandernden** Tags setzt ein eigener Job (`promote`), erst nachdem
-alle dreizehn Images gebaut sind. Der Grund ist `fail-fast: false`: schlägt das
-zwölfte Image fehl, sind die anderen zwölf längst gepusht. Würden sie `latest`
-gleich mitziehen, zeigte `latest` für zwölf Images auf die neue Version und für
-das dreizehnte auf die alte — ein Stack, den niemand zusammengestellt und niemand
-getestet hat. Zusätzlich wandern sie nur bei einem Lauf vom Default-Branch: ein
-Lauf aus einem nicht gemergten Branch veröffentlicht `1.0.0` und `sha-…`, bewegt
-aber nichts, worauf ein Deployment zeigt.
+The two **moving** tags are set by a job of their own (`promote`), only after all thirteen images are
+built. The reason is `fail-fast: false`: if the twelfth image fails, the other twelve have long since
+been pushed. If they moved `latest` along with them, `latest` would point at the new version for
+twelve images and at the old one for the thirteenth — a stack nobody assembled and nobody tested. On
+top of that they only move on a run from the default branch: a run from an unmerged branch publishes
+`1.0.0` and `sha-…`, but moves nothing a deployment points at.
 
-Für jedes Image schreibt der Workflow außerdem eine signierte Build-Provenance in
-die Registry (`actions/attest-build-provenance`), prüfbar mit:
+For every image the workflow also writes a signed build provenance into the registry
+(`actions/attest-build-provenance`), verifiable with:
 
 ```bash
 gh attestation verify --owner iamTim0 \
   oci://ghcr.io/iamtim0/quantified-self/core:1.0.0
 ```
 
-Dazu entsteht ein GitHub-Release mit dem Tag `v<version>`, dem Changelog und einem
-Anhang `quantified-self-<version>-deploy.tar.gz`. Dieses Bundle enthält genau das,
-was ein Server braucht — `docker-compose.prod.yml`, `infra/db/init.sql`, eine
-vorbereitete `.env` mit gepinnter Version und eine Kurzanleitung. Kein Quellcode,
-kein Git, keine Toolchain.
+Along with that, a GitHub release is created with the tag `v<version>`, the changelog and an attached
+`quantified-self-<version>-deploy.tar.gz`. That bundle contains exactly what a server needs —
+`docker-compose.prod.yml`, `infra/db/init.sql`, a prepared `.env` with the version pinned, and a short
+README. No source code, no Git, no toolchain.
 
-Die Release-Notes listen außerdem den Digest jedes Images. Wo es reproduzierbar
-sein muss, pinnt man den Digest statt des Tags.
+The release notes also list the digest of every image. Where it has to be reproducible, pin the digest
+rather than the tag.
 
-### Einmalig: Sichtbarkeit der Packages
+### One-off: package visibility
 
-**GHCR-Packages sind nach dem ersten Push privat, auch in einem öffentlichen
-Repository.** Die Sichtbarkeit erbt nicht. Solange sie privat sind, scheitert
-`docker compose pull` für jeden außer dem Besitzer mit `denied`.
+**GHCR packages are private after the first push, even in a public repository.** Visibility is not
+inherited. While they are private, `docker compose pull` fails with `denied` for everyone but the
+owner.
 
-Einmal pro Package unter `github.com/users/<owner>/packages` → *Package settings* →
-*Change visibility* → *Public*. Danach nie wieder.
+Once per package, under `github.com/users/<owner>/packages` → *Package settings* → *Change visibility*
+→ *Public*. Never again after that.
 
-Weitere Secrets braucht der Workflow nicht: das automatische `GITHUB_TOKEN` darf
-in diesem Repository Packages und Releases schreiben.
+The workflow needs no further secrets: the automatic `GITHUB_TOKEN` may write packages and releases in
+this repository.
 
-### Vor dem Release lokal prüfen
+### Checking locally before a release
 
-Die dreizehn Images werden nirgends sonst zusammen gebaut, und ein Dockerfile kann
-verrotten, ohne dass ein Test es merkt — genau das war beim Dashboard passiert: es
-hatte zwei Lockfiles, die CI installierte aus `package-lock.json`, das Dockerfile
-aus einem veralteten `pnpm-lock.yaml`. Inzwischen gibt es nur `bun.lock` und ein
-Werkzeug, das es überall liest. Trotzdem gilt:
+The thirteen images are not built together anywhere else, and a Dockerfile can rot without a test
+noticing — which is exactly what had happened to the dashboard: it had two lockfiles, CI installed from
+`package-lock.json` and the Dockerfile from a stale `pnpm-lock.yaml`. There is only `bun.lock` now, and
+one tool that reads it everywhere. Even so:
 
 ```bash
-task images:build                    # alle dreizehn, wie im Release-Workflow
-task images:build -- core dashboard  # nur bestimmte
+task images:build                    # all thirteen, as in the release workflow
+task images:build -- core dashboard  # only certain ones
 ```
 
-Die Liste der Images steht einmal in `tools/build_images.py`; der Workflow liest
-seine Build-Matrix daraus. Ein neuer Importer, der dort fehlt,
-lässt die CI fehlschlagen, statt einfach nie veröffentlicht zu werden.
+The list of images lives once, in `tools/build_images.py`; the workflow reads its build matrix from it.
+A new importer missing from it makes CI fail rather than simply never being published.
 
 ## Deployment
 
-### Voraussetzungen
+### Prerequisites
 
-- Ein Host mit Docker und Docker Compose v2. Nichts weiter — kein Python, kein
-  Node, kein Checkout.
-- Ein DNS-Name, der auf den Host zeigt, in `PUBLIC_HOST`.
-- TLS davor: ein Reverse Proxy, die Ingress von Coolify, oder das
-  `cloudflared`-Profil dieses Stacks.
+- A host with Docker and Docker Compose v2. Nothing else — no Python, no Node, no checkout.
+- A DNS name pointing at the host, in `PUBLIC_HOST`.
+- TLS in front: a reverse proxy, Coolify's ingress, or this stack's `cloudflared` profile.
 
-### Erstinstallation
+### First install
 
 ```bash
-# 1. Bundle des Releases holen und auspacken. Die Versions-URL, nicht
-#    /releases/latest/download/ — der Alias zeigt auf das neueste Release und
-#    sucht dort genau diesen Dateinamen, läuft also ins 404, sobald etwas
-#    Neueres erscheint.
+# 1. Fetch and unpack the release bundle. Use the versioned URL, not
+#    /releases/latest/download/ — that alias points at the newest release and
+#    looks for exactly this filename there, so it 404s as soon as something
+#    newer appears.
 curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
 cd quantified-self-1.0.0
 
-# 2. Konfiguration ausfüllen: PUBLIC_HOST, die drei Secrets und
-#    POSTGRES_PASSWORD. Letzteres ist nur jetzt wählbar — PostgreSQL setzt es
-#    beim Initialisieren des leeren Volumes in Schritt 4.
-python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # je Secret einmal
+# 2. Fill in the configuration: PUBLIC_HOST, the three secrets and
+#    POSTGRES_PASSWORD. That last one can only be chosen now — PostgreSQL sets it
+#    while initializing the empty volume in step 4.
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"   # once per secret
 $EDITOR .env
 
-# 3. Prüfen, bevor etwas startet. Nennt jede fehlende Variable beim Namen.
+# 3. Check before anything starts. Names every missing variable.
 docker compose -f docker-compose.prod.yml config >/dev/null
 
-# 4. Images ziehen und starten.
+# 4. Pull the images and start.
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
-# 5. Migrieren.
+# 5. Migrate.
 docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
 
-# 6. Erstes Konto anlegen — es gibt keines, und Selbstregistrierung ist zu.
+# 6. Create the first account — there is none, and self-registration is closed.
 docker compose -f docker-compose.prod.yml run --rm core \
-  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
+  python -m core.create_owner --email you@example.com --workspace "My data"
 ```
 
-Aus einem Checkout heraus geht dasselbe kürzer:
+From a checkout the same thing is shorter:
 
 ```bash
-task prod:config    # Schritt 3
-task prod:up        # Schritte 4 und 5
-task prod:owner -- --email du@example.com --workspace "Meine Daten"
+task prod:config    # step 3
+task prod:up        # steps 4 and 5
+task prod:owner -- --email you@example.com --workspace "My data"
 ```
 
-Schritt 5 ist bewusst ein eigener Schritt und kein Container-Start: mehrere
-gleichzeitig startende Repliken würden sonst gegeneinander migrieren.
+Step 5 is deliberately a step of its own and not a container start: several replicas coming up at once
+would otherwise migrate against each other.
 
-!!! danger "Ohne die drei Secrets startet nichts"
-    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` und `ENCRYPTION_KEY` haben
-    Entwicklungs-Defaults, die in diesem Repository stehen. `docker-compose.prod.yml`
-    verwendet `${VAR:?…}`, bricht also ab, bevor ein Container startet. Details und
-    die Reihenfolge-Falle bei `ENCRYPTION_KEY` unter
-    [Erforderliche Konfiguration](operations.md#erforderliche-konfiguration).
+!!! danger "Without the three secrets nothing starts"
+    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have development defaults that are
+    printed in this repository. `docker-compose.prod.yml` uses `${VAR:?…}`, so it aborts before a
+    container starts. The details, and the ordering trap around `ENCRYPTION_KEY`, are under
+    [Required configuration](operations.md#required-configuration).
 
-### Variablen dieses Stacks
+### This stack's variables
 
-Über die Pflichtvariablen aus [Betrieb](operations.md#erforderliche-konfiguration)
-hinaus steuern diese das Deployment selbst:
+Beyond the required variables from [Operations](operations.md#required-configuration), these control the
+deployment itself:
 
-| Variable | Standard | Zweck |
+| Variable | Default | Purpose |
 | --- | --- | --- |
-| `QS_VERSION` | `latest` | Welche Release-Images gezogen werden. Für alles, was rollbackfähig sein soll, eine echte Version eintragen. |
-| `QS_IMAGE_PREFIX` | `ghcr.io/iamtim0/quantified-self` | Registry-Pfad. Für einen Fork oder eine Spiegelung anpassen. |
-| `QS_HTTP_PORT` | `80` | Host-Port für Traefik — der einzige, der öffentlich sein muss. |
-| `QS_GATEWAY_PORT` | `8000` | Direktzugang zum Gateway an Traefik vorbei. Kann entfallen. |
-| `QS_APPLE_HEALTH_PORT` | `8005` | Ziel der iPhone-Automation. |
-| `QS_STREAK_PORT` | `8006` | Eingehende Streak-Daten (zusätzlich als `/ingest` über Traefik geroutet). |
-| `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | Traefik-Dashboard, **nur auf Loopback** gebunden. |
-| `POSTGRES_PASSWORD` | `qs_dev_password` | Nur im Compose-Netz erreichbar. Siehe Hinweis unten. |
-| `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | CORS-Ursprünge des Gateways. Der Standard ist die eigene Origin in beiden Schemata — **nicht** `*`: das Gateway läuft mit `allow_credentials=True`, und ein Wildcard lässt Starlette jede fragende Origin zurückspiegeln. Beide Schemata, weil vor dem Stack ein Proxy oder Tunnel TLS beenden kann und `QS_HTTP_PORT` bewusst http ist. |
-| `TUNNEL_TOKEN` | leer | Nur mit `--profile tunnel`. Leer lassen, wenn kein Cloudflare-Tunnel benutzt wird — ohne Profil startet der Container gar nicht. |
+| `QS_VERSION` | `latest` | Which release images are pulled. For anything that should be rollback-capable, enter a real version. |
+| `QS_IMAGE_PREFIX` | `ghcr.io/iamtim0/quantified-self` | The registry path. Adjust it for a fork or a mirror. |
+| `QS_HTTP_PORT` | `80` | The host port for Traefik — the only one that has to be public. |
+| `QS_GATEWAY_PORT` | `8000` | Direct access to the Gateway, bypassing Traefik. Can be dropped. |
+| `QS_APPLE_HEALTH_PORT` | `8005` | The target of the iPhone automation. |
+| `QS_STREAK_PORT` | `8006` | Inbound Streak data (also routed as `/ingest` through Traefik). |
+| `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | The Traefik dashboard, bound **to loopback only**. |
+| `POSTGRES_PASSWORD` | `qs_dev_password` | Reachable only inside the compose network. See the note below. |
+| `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | The Gateway's CORS origins. The default is its own origin under both schemes — **not** `*`: the Gateway runs with `allow_credentials=True`, and a wildcard makes Starlette reflect back whichever origin asks. Both schemes, because a proxy or tunnel in front of the stack may terminate TLS and `QS_HTTP_PORT` is deliberately http. |
+| `TUNNEL_TOKEN` | empty | Only with `--profile tunnel`. Leave it empty if no Cloudflare tunnel is used — without the profile the container does not start at all. |
 
-`POSTGRES_PASSWORD` ist bewusst kein `:?`-Pflichtwert wie die drei Secrets:
-PostgreSQL setzt das Passwort **einmalig** beim Initialisieren eines leeren
-Volumes. Ein neuer Wert gegen ein bestehendes Volume ändert nichts am Passwort in
-der Datenbank — er macht nur, dass Core sich nicht mehr verbinden kann. Wer es
-ändern will, tut das zuerst per `ALTER USER` in `psql` und dann hier.
+`POSTGRES_PASSWORD` is deliberately not a `:?` required value like the three secrets: PostgreSQL sets the
+password **once**, while initializing an empty volume. A new value against an existing volume changes
+nothing about the password in the database — it only stops Core from connecting. To change it, do it with
+`ALTER USER` in `psql` first, and then here.
 
-### Routing: vier Rollen
+### Routing: four roles
 
-Traefik verteilt nach Rolle, nicht nach aufgezählten Pfaden. Vier Regeln, jede mit
-genau einer Aussage:
+Traefik routes by role, not by enumerated paths. Four rules, each making exactly one statement:
 
-| Priorität | Route | Regel | Dienst |
+| Priority | Route | Rule | Service |
 | --- | --- | --- | --- |
-| 30 | `ingest` | ``PathPrefix(`/ingest`)`` | Streak-Importer |
-| 20 | `docs` | ``PathPrefix(`/docs`)`` | Dokumentation |
-| 10 | `api` | ``PathPrefix(`/api`) \|\| Path(`/health`)`` | API-Gateway |
+| 30 | `ingest` | ``PathPrefix(`/ingest`)`` | Streak importer |
+| 20 | `docs` | ``PathPrefix(`/docs`)`` | Documentation |
+| 10 | `api` | ``PathPrefix(`/api`) \|\| Path(`/health`)`` | API Gateway |
 | 1 | `workspace` | ``PathPrefix(`/`)`` | Dashboard |
 
-Höhere Priorität gewinnt. Jede Route beschreibt nur, was ihr gehört; der
-**Workspace nimmt alles Übrige** — denn genau das ist eine UI: der Standardfall.
+Higher priority wins. Each route describes only what belongs to it; the **workspace takes everything
+else** — because that is precisely what a UI is: the default case.
 
-Vorher stand in jeder Regel derselbe Host-Ausdruck und dahinter eine Aufzählung von
-Pfaden. Die des Dashboards lautete ``Path(`/`) || PathPrefix(`/_next`)`` und traf
-damit 2 der 12 Routen, die die App tatsächlich baut: `/explorer`, `/connectors`,
-`/auth/callback` und jeder Reload liefen in Traefiks 404, während Navigation im
-Browser funktionierte. Die Seiten einer Single-Page-App im Proxy aufzuzählen ist
-eine Liste, die beim nächsten Feature veraltet — ein Catch-all nicht.
+Before, every rule carried the same host expression followed by an enumeration of paths. The dashboard's
+read ``Path(`/`) || PathPrefix(`/_next`)`` and so matched 2 of the 12 routes the app actually builds:
+`/explorer`, `/connectors`, `/auth/callback` and every reload ran into Traefik's 404, while navigating in
+the browser worked. Enumerating a single-page app's pages in the proxy is a list that goes stale at the
+next feature — a catch-all does not.
 
-**Kein `Host()` mehr.** Der Ausdruck war viermal dieselbe Deployment-Tatsache, und
-das angehängte ``|| Host(`localhost`)`` entschied ohnehin fast nichts. Hostnamen
-durchsetzen gehört dorthin, wo TLS endet: Tunnel, Coolify-Ingress oder Reverse
-Proxy. `PUBLIC_HOST` behält seine Aufgabe (Traefik-Auslieferung, CORS-Standard) —
-es muss nur nicht mehr in Proxy-Regeln kopiert werden.
+**No more `Host()`.** The expression was the same deployment fact four times over, and the appended
+``|| Host(`localhost`)`` decided almost nothing anyway. Enforcing hostnames belongs where TLS ends: the
+tunnel, Coolify's ingress or a reverse proxy. `PUBLIC_HOST` keeps its job (Traefik delivery, the CORS
+default) — it just no longer has to be copied into proxy rules.
 
-Ebenfalls entfallen ist ``PathPrefix(`/api/v1/ingest/streak`)`` in der
-Ingest-Regel: dieser Pfad überlagerte bei Priorität 100 die API-Route, und das
-Gateway leitet ihn selbst an den Importer weiter — dort bekommt er zugleich seine
-`X-Request-ID`. Authentifiziert wird der API-Key in beiden Fällen vom Importer.
+``PathPrefix(`/api/v1/ingest/streak`)`` is gone from the ingest rule too: at priority 100 that path
+shadowed the API route, and the Gateway forwards it to the importer itself — where it also picks up its
+`X-Request-ID`. In both cases the API key is authenticated by the importer.
 
-### Netzwerkgrenzen
+### Network boundaries
 
-Öffentlich gehört **nur Traefik** (`QS_HTTP_PORT`) und dadurch Gateway, Dashboard
-und Dokumentation; erreichbar bleiben außerdem die beiden Importer, an die externe
-Geräte senden. Zwei Dinge sind gegenüber dem alten Produktions-Compose bewusst
-anders: Core veröffentlicht keine Host-Ports mehr, und das Traefik-Dashboard hängt
-auf Loopback. Begründung und Zugriffsweg unter
-[Netzwerkgrenzen](operations.md#netzwerkgrenzen).
+Only **Traefik** belongs in public (`QS_HTTP_PORT`), and through it the Gateway, the dashboard and the
+documentation; the two importers that external devices send to also stay reachable. Two things are
+deliberately different from the old production compose file: Core no longer publishes host ports, and the
+Traefik dashboard listens on loopback. The reasoning and the way in are under
+[Network boundaries](operations.md#network-boundaries).
 
-### Wo das Dashboard seine API sucht
+### Where the dashboard looks for its API
 
-Next.js ersetzt `NEXT_PUBLIC_*` beim **Build** im Client-Bundle. In einem
-veröffentlichten Image lässt sich `NEXT_PUBLIC_API_URL` zur Laufzeit deshalb nicht
-mehr setzen — die Variable am Container hat keine Wirkung, und
-`docker-compose.prod.yml` setzt sie folgerichtig nicht.
+Next.js substitutes `NEXT_PUBLIC_*` into the client bundle at **build** time. In a published image
+`NEXT_PUBLIC_API_URL` therefore cannot be set at run time — the variable on the container has no effect,
+and `docker-compose.prod.yml` duly does not set it.
 
-Das Release-Image wird absichtlich **ohne** diese Variable gebaut. Ohne sie fällt
-die UI auf `window.location.origin` zurück, also auf Traefik, der `/api` an das
-Gateway routet. Ein Image passt damit auf jeden Host.
+The release image is deliberately built **without** that variable. Without it the UI falls back to
+`window.location.origin`, that is, to Traefik, which routes `/api` to the Gateway. One image then fits
+every host.
 
-Wer die UI unter einer anderen Origin als die API betreiben muss, baut das Image
-selbst:
+Anyone who has to run the UI on a different origin from the API builds the image themselves:
 
 ```bash
 docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
-  -t meine-registry/dashboard:1.0.0 apps/dashboard
+  -t my-registry/dashboard:1.0.0 apps/dashboard
 ```
 
-### Aktualisieren
+### Updating
 
 ```bash
-$EDITOR .env    # QS_VERSION auf die neue Version
+$EDITOR .env    # QS_VERSION to the new version
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
 ```
 
-Die Importer sind zustandslos und dürfen jederzeit ersetzt werden. Der Reihenfolge
-wegen wichtig ist nur die Migration: erst die neuen Images, dann `alembic upgrade
-head` — nie umgekehrt.
+The importers are stateless and may be replaced at any time. The only ordering that matters is the
+migration: the new images first, then `alembic upgrade head` — never the other way round.
 
-### Zurückrollen
+### Rolling back
 
-`QS_VERSION` auf die vorige Version, `pull`, `up -d`. Das funktioniert, weil die
-Images unter ihrem Versions-Tag unverändert liegen bleiben.
+`QS_VERSION` to the previous version, `pull`, `up -d`. That works because the images stay unchanged under
+their version tag.
 
-**Nur die Datenbank rollt nicht mit.** Enthielt das Release dazwischen eine
-Migration, muss sie vor dem Zurückrollen zurückgenommen werden, sonst trifft alter
-Code auf ein neueres Schema:
+**Only the database does not roll back with it.** If the release in between contained a migration, it has
+to be reversed before rolling back, otherwise old code meets a newer schema:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm core alembic downgrade -1
 ```
 
-Jede Migration in diesem Repository hat ein funktionierendes `downgrade()` — Regel 7
-verlangt es, und die CI prüft es bei jedem Lauf. Welche Migration ein Release
-mitgebracht hat, steht im Changelog des Releases.
+Every migration in this repository has a working `downgrade()` — rule 7 requires it, and CI checks it on
+every run. Which migration a release brought with it is in that release's changelog.
 
-### Prüfen, ob es wirklich läuft
+### Checking that it really works
 
-Von außen, nicht von der Maschine selbst:
+From outside, not from the machine itself:
 
 ```bash
-OWNER_EMAIL=du@example.com OWNER_PASSWORD='…' \
-  bash tools/smoke_deployment.sh https://dein-host.example
+OWNER_EMAIL=you@example.com OWNER_PASSWORD='…' \
+  bash tools/smoke_deployment.sh https://your-host.example
 ```
 
-Ohne Zugangsdaten laufen die unauthentifizierten Prüfungen. Mit ihnen meldet das
-Skript zusätzlich, was das Deployment über seine eigene Konfiguration denkt — das
-ist der Teil, der „antwortet" von „ist richtig eingerichtet" unterscheidet. Das
-Dashboard zeigt dieselben Befunde Inhabern als Banner, siehe
-[Selbstauskunft im Dashboard](operations.md#selbstauskunft-im-dashboard).
+Without credentials the unauthenticated checks run. With them the script also reports what the deployment
+thinks of its own configuration — that is the part that distinguishes "it answers" from "it is set up
+correctly". The dashboard shows the same findings to owners as a banner, see
+[What the dashboard says about itself](operations.md#what-the-dashboard-says-about-itself).
 
-## Weiterhin mit Coolify
+## Still with Coolify
 
-Der Stack ist nicht mehr Coolify-spezifisch, läuft dort aber weiter: als Docker
-Compose-Anwendung mit `docker-compose.prod.yml` als Compose-Datei. Die Variablen
-aus `.env` gehören dann in die Environment-Variablen der Anwendung, und Coolify
-zieht die Images, statt sie zu bauen. `QS_VERSION` ist damit der einzige Wert, den
-ein Deployment für ein Update ändern muss.
+The stack is no longer Coolify-specific, but it still runs there: as a Docker Compose application with
+`docker-compose.prod.yml` as the compose file. The variables from `.env` then belong in the application's
+environment variables, and Coolify pulls the images instead of building them. `QS_VERSION` is then the only
+value a deployment has to change for an update.
 
-## Wenn es klemmt
+## When it goes wrong
 
-| Symptom | Ursache |
+| Symptom | Cause |
 | --- | --- |
-| `denied` beim `pull` | Die Packages sind noch privat. Siehe [Sichtbarkeit der Packages](#einmalig-sichtbarkeit-der-packages). |
-| `required variable JWT_SECRET is missing` | Genau so gedacht. Die drei Secrets setzen. |
-| `manifest unknown` | `QS_VERSION` zeigt auf eine Version, für die es kein Release gibt. |
-| Importer laufen, importieren aber nichts | `INTERNAL_SERVICE_SECRET` muss auf Core **und allen acht Importern** identisch sein — im alten Produktions-Compose fehlte er bei den Importern, wodurch jeder Credential-Abruf abgelehnt wurde. |
-| Dashboard lädt, API-Aufrufe scheitern | Die UI ruft ihre eigene Origin auf. Prüfen, dass Traefik `/api` an das Gateway routet und `PUBLIC_HOST` stimmt. |
-| Der Release-Workflow bricht sofort ab | Entweder existiert das Tag schon, oder die CI ist für diesen Commit nicht grün. Der Fehlertext sagt welches von beidem. |
+| `denied` on `pull` | The packages are still private. See [package visibility](#one-off-package-visibility). |
+| `required variable JWT_SECRET is missing` | Exactly as intended. Set the three secrets. |
+| `manifest unknown` | `QS_VERSION` points at a version for which there is no release. |
+| Importers run but import nothing | `INTERNAL_SERVICE_SECRET` has to be identical on Core **and on all eight importers** — in the old production compose file it was missing from the importers, so every credential fetch was rejected. |
+| The dashboard loads, API calls fail | The UI calls its own origin. Check that Traefik routes `/api` to the Gateway and that `PUBLIC_HOST` is right. |
+| The release workflow aborts immediately | Either the tag already exists, or CI is not green for that commit. The error text says which. |
 
-Weitere Fehlerbilder unter [Fehlerbehebung](troubleshooting.md).
+More failure modes under [Troubleshooting](troubleshooting.md).

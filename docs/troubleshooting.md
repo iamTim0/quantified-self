@@ -1,260 +1,234 @@
-# Fehlerbehebung
+# Troubleshooting
 
 ## Import
 
-### Ein Import meldet „übersprungen", obwohl Daten fehlen
+### An import reports "skipped" although data is missing
 
-Der Smart-Modus überspringt nur Bereiche, die er als vollständig erkennt. Prüfe
-zuerst die Abdeckung:
+Smart mode only skips ranges it recognizes as complete. Check the coverage first:
 
 ```http
 GET /api/v1/data/coverage?start=<iso>&end=<iso>&source_type=whoop
 Authorization: Bearer <jwt>
 ```
 
-Stimmt die Einschätzung nicht, importiere den Zeitraum mit **Alles erzwingen**
-erneut. Idempotenz verhindert doppelte Zeilen. Siehe
-[Smart- und Force-Import](features/smart-import.md).
+If that assessment is wrong, import the period again with **Force everything**. Idempotency
+prevents duplicate rows. See [Smart and force import](features/smart-import.md).
 
-### Ein Sync bleibt auf „queued" stehen
+### A sync stays on "queued"
 
-Der Task wurde veröffentlicht, aber kein Importer hat ihn abgeschlossen.
+The task was published, but no importer completed it.
 
-1. Läuft der Importer? `docker compose ps`
-2. Erreicht er NATS? Im Log steht `Subscribed to NATS subject 'qs.task.sync.…'`.
-3. Hat der Importer die Zugangsdaten bekommen? Bei fehlender Konfiguration
-   protokolliert er „staying idle" und tut absichtlich nichts.
-4. Prüfe den Lauf: `GET /api/v1/data/sources/{type}/sync-runs`.
+1. Is the importer running? `docker compose ps`
+2. Does it reach NATS? The log says `Subscribed to NATS subject 'qs.task.sync.…'`.
+3. Did the importer get the credentials? Without a configuration it logs "staying idle" and
+   deliberately does nothing.
+4. Check the run: `GET /api/v1/data/sources/{type}/sync-runs`.
 
-### Es kommen Daten an, aber keine neuen
+### Data arrives, but nothing new
 
-Normal, wenn der Zeitraum bereits importiert war: die Idempotenzprüfung verwirft
-Duplikate. `points_accepted` gegen `points_duplicate` in der Importhistorie
-vergleichen. Sind alle Punkte Duplikate, ist nichts kaputt.
+Normal when the period had already been imported: the idempotency check discards duplicates.
+Compare `points_accepted` against `points_duplicate` in the import history. If every point is a
+duplicate, nothing is broken.
 
-### Ein Connector meldet dauerhaft „Auth Fehler (401)"
+### A connector keeps reporting "auth error (401)"
 
-Der gespeicherte Token ist abgelaufen oder wurde widerrufen. Zugangsdaten im
-Connector-Dialog neu hinterlegen. Für WHOOP gibt es keinen automatischen
-Refresh-Flow — ein abgelaufener OAuth-Token muss ersetzt werden.
+The stored token has expired or was revoked. Enter the credentials again in the connector dialog.
+For WHOOP, Core renews the token itself before it expires — a persistent `401` there means the
+refresh token was rejected too, and the connector has to be connected again.
 
-## Kalender
+## Calendar
 
-| Meldung | Ursache | Lösung |
+| Message | Cause | Fix |
 | --- | --- | --- |
-| „returned an HTML page instead of a calendar" | Login-Wall oder zurückgezogene Geheimadresse | Feed-URL im Kalenderprodukt neu erzeugen |
-| „not found (404)" | Adresse widerrufen | Link neu erzeugen |
-| „not iCalendar data" | URL zeigt auf die Web-Ansicht | ICS-Link statt Kalender-Weblink verwenden |
-| Keine Termine | Alle Termine außerhalb des Fensters | Zeitraum erweitern |
+| "returned an HTML page instead of a calendar" | A login wall, or a withdrawn secret address | Create the feed URL again in the calendar product |
+| "not found (404)" | The address was revoked | Create the link again |
+| "not iCalendar data" | The URL points at the web view | Use the ICS link, not the calendar's web link |
+| No events | Every event is outside the window | Widen the period |
 
-Ein `.ics`-Link braucht **keinen** API Key. Wird trotzdem einer verlangt, ist die
-URL vermutlich keine Feed-URL. Siehe [Kalender](importers/calendar.md).
+An `.ics` link needs **no** API key. If one is demanded anyway, the URL is probably not a feed URL.
+See [Calendar](importers/calendar.md).
 
-## Anmeldung
+## Signing in
 
-### Nach dem Logout bin ich wieder angemeldet
+### After signing out I am signed in again
 
-Das war ein Fehler und ist behoben. Trat er erneut auf, wäre eine veraltete
-Dashboard-Version im Browser-Cache die wahrscheinlichste Ursache — hart neu laden.
+That was a bug and it is fixed. If it happened again, a stale dashboard version in the browser cache
+would be the most likely cause — do a hard reload.
 
-### Alle Anfragen liefern 401
+### Every request returns 401
 
-- Ist das Zugriffstoken älter als seine Laufzeit (Standard 12 Stunden)? Das
-  Dashboard erneuert automatisch, sofern ein Erneuerungstoken vorliegt.
-- Wurde das Passwort geändert? Das beendet **alle** Sitzungen.
-- Wurde ein verbrauchtes Erneuerungstoken erneut vorgelegt? Das gilt als
-  möglicher Diebstahl und beendet ebenfalls alle Sitzungen. Neu anmelden.
-- Hat der Anmeldeanbieter die Sitzung beendet? Ein
-  [Back-Channel-Logout](features/oidc.md#back-channel-logout) beendet alle
-  Sitzungen des Kontos. Im Log steht dann `Back-Channel logout from … ended every
-  session for user=…`.
+- Is the access token older than its lifetime (12 hours by default)? The dashboard renews
+  automatically as long as a refresh token is present.
+- Was the password changed? That ends **every** session.
+- Was a spent refresh token presented again? That counts as possible theft and likewise ends every
+  session. Sign in again.
+- Did the sign-in provider end the session? A
+  [back-channel logout](features/oidc.md#back-channel-logout) ends every session of the account. The
+  log then says `Back-Channel logout from … ended every session for user=…`.
 
-### Ich lande beim Aufruf einer Unterseite auf der Anmeldeseite
+### Opening a sub-page lands me on the sign-in page
 
-Das ist der [Route-Guard](features/authentication.md#serverseitiger-route-guard).
-Er prüft, ob ein `qs_csrf`-Cookie vorhanden ist, und leitet sonst auf
-`/?next=<Ziel>` um; nach der Anmeldung geht es dort weiter. Wer sein Cookie-
-Verzeichnis geleert oder Cookies für diese Seite blockiert hat, sieht das bei
-jedem Aufruf.
+That is the [route guard](features/authentication.md#the-server-side-route-guard). It checks whether
+a `qs_csrf` cookie is present and otherwise redirects to `/?next=<target>`; after signing in you
+carry on there. Anyone who cleared their cookie store, or blocks cookies for this site, sees it on
+every visit.
 
-### 403 statt 401
+### 403 instead of 401
 
-Authentifizierung war erfolgreich, die Berechtigung fehlt. Häufigste Fälle: ein
-`X-Tenant-ID`-Header widerspricht dem Token, oder die Rolle darf keine API-Keys
-verwalten (nur `owner` und `admin`).
+Authentication succeeded, the permission is missing. The most common cases: an `X-Tenant-ID` header
+contradicts the token, or the role may not manage API keys (only `owner` and `admin` may).
 
-## Eingehende Daten (Apple Health, Streak)
+## Inbound data (Apple Health, Streak)
 
-| Antwort | Bedeutung |
+| Response | Meaning |
 | --- | --- |
-| `401` | Kein oder unbekannter Schlüssel, widerrufen oder abgelaufen |
-| `403` | Schlüssel gehört zu einem anderen Connector oder der Tenant-Header widerspricht ihm |
-| `503` | Core nicht erreichbar — bewusst kein „durchwinken"; das Gerät soll erneut senden |
+| `401` | No key, an unknown key, or one that was revoked or has expired |
+| `403` | The key belongs to a different connector, or the tenant header contradicts it |
+| `503` | Core unreachable — deliberately not a "wave it through"; the device should send again |
 
-Der vollständige Schlüssel ist nach der Erstellung nicht mehr abrufbar. Ist er
-verloren, rotiere ihn und trage den neuen in der App ein.
+The full key cannot be retrieved after it is created. If it is lost, rotate it and enter the new one
+in the app.
 
-## Karte
+## Map
 
-Die Karte zeigt standardmäßig eine reine Vektor-Route und lädt **absichtlich**
-keine Kacheln. Über „Karte laden" lassen sich Kacheln anfordern. Bleibt die Karte
-danach leer, blockiert die CSP vermutlich die Kachel-Hosts — `MAP_TILE_HOSTS`
-prüfen.
+By default the map shows a pure vector route and **deliberately** loads no tiles. "Load map" requests
+tiles. If the map stays empty after that, the CSP is probably blocking the tile hosts — check
+`MAP_TILE_HOSTS`.
 
-## Analysen
+## Analyses
 
-### Eine Metrik taucht nicht auf
+### A metric does not appear
 
-Analysen laufen nur bei ausreichender Datenbasis: mindestens zehn Tage und über
-50 % Abdeckung im gewählten Fenster. Der Reiter **Datenqualität** zeigt pro Metrik,
-woran es liegt. Das ist Absicht — eine Korrelation über vier Tage ist Rauschen mit
-einer Zahl daran.
+Analyses only run on a sufficient basis: at least ten days and more than 50 % coverage in the chosen
+window. The **Data quality** tab shows per metric what is missing. That is deliberate — a correlation
+over four days is noise with a number attached.
 
-### Ein Zusammenhang wirkt unplausibel
+### A relationship looks implausible
 
-Alle Ergebnisse sind Zusammenhänge, keine Ursachen. Prüfe in der Detailansicht
-Stichprobengröße, p-Wert und die Hinweise. Weichen Pearson und Spearman stark
-voneinander ab, steckt meist ein Ausreißer dahinter.
+Every result is a relationship, not a cause. Check the sample size, the p-value and the caveats in the
+detail view. When Pearson and Spearman diverge strongly, an outlier is usually behind it.
 
-## Datenbank
+## Database
 
-### Tests scheitern mit „Connect call failed … 5433"
+### Tests fail with "Connect call failed … 5433"
 
-Postgres läuft nicht: `task dev:up`.
+Postgres is not running: `task dev:up`.
 
-### Migration schlägt fehl mit „value too long for type character varying(32)"
+### A migration fails with "value too long for type character varying(32)"
 
-Die Alembic-Revisions-ID ist zu lang. `alembic_version.version_num` fasst 32
-Zeichen; Revisions-IDs müssen darunter bleiben.
+The Alembic revision ID is too long. `alembic_version.version_num` holds 32 characters; revision IDs
+have to stay below that.
 
-## Lokale Entwicklung
+## Local development
 
-### Jeder API-Aufruf des Dev-Servers antwortet mit 404
+### Every API call to the dev server answers 404
 
-`GET /api/v1/auth/config 404`, `/api/v1/auth/me 404` im Log von `next dev`: die
-404 kommt von Next selbst, nicht vom Gateway. Die UI ruft ihren eigenen Ursprung
-auf, und der ist hier der Dev-Server. `next.config.ts` schreibt `/api/*` deshalb
-im Entwicklungsmodus an den Gateway um (`DEV_GATEWAY_URL`, Standard
-`http://127.0.0.1:8000`).
+`GET /api/v1/auth/config 404`, `/api/v1/auth/me 404` in the `next dev` log: that 404 comes from Next
+itself, not from the Gateway. The UI calls its own origin, and here that is the dev server.
+`next.config.ts` therefore rewrites `/api/*` to the Gateway in development mode (`DEV_GATEWAY_URL`,
+`http://127.0.0.1:8000` by default).
 
-Kommt die 404 trotzdem: läuft der Gateway? Der Dev-Server liest `next.config.ts`
-nur beim Start neu — nach einer Änderung daran startet er selbst durch, nach
-einem Wechsel von `DEV_GATEWAY_URL` nicht.
+If the 404 persists: is the Gateway running? The dev server only re-reads `next.config.ts` on start —
+it restarts itself after a change to that file, but not after a change to `DEV_GATEWAY_URL`.
 
-### Jede Seite braucht ungefähr 13 Sekunden
+### Every page takes about 13 seconds
 
-Gemessen und behoben: der Gateway hat die UI unter drei Adressen gesucht und mit
-der falschen angefangen. `dashboard` löst außerhalb von Docker nicht auf (~2,7 s
-DNS-Fehler), `host.docker.internal` löst auf, aber dort hört nichts zu — also lief
-der Verbindungs-Timeout von 10 s vollständig ab, bevor `127.0.0.1:3000` in ~50 ms
-antwortete. Zusammen 12,7 s, und zwar **pro Anfrage**, weil das Ergebnis nirgends
-gemerkt wurde.
+Measured and fixed: the Gateway looked for the UI at three addresses and started with the wrong one.
+`dashboard` does not resolve outside Docker (~2.7 s of DNS failure), `host.docker.internal` does
+resolve but nothing listens there — so the 10 s connect timeout ran out in full before
+`127.0.0.1:3000` answered in ~50 ms. Together 12.7 s, and that **per request**, because the result was
+not remembered anywhere.
 
-Der Standard ist jetzt loopback, die Reihenfolge stellt loopback vor
-`host.docker.internal`, und die Adresse, die geantwortet hat, wird gemerkt. Im
-Container setzen beide Compose-Dateien `DASHBOARD_URL` ausdrücklich auf den
-Containernamen.
+The default is loopback now, the order puts loopback before `host.docker.internal`, and the address
+that answered is remembered. In containers, both compose files set `DASHBOARD_URL` explicitly to the
+container name.
 
-Tritt es wieder auf, ist `DASHBOARD_URL` falsch gesetzt: ein Name, der nicht
-auflöst, kostet dieselbe Verzögerung erneut.
+If it happens again, `DASHBOARD_URL` is set wrongly: a name that does not resolve costs the same delay
+all over again.
 
-### Der Analyse-Reiter meldet 503
+### The analysis tab reports 503
 
-Der Gateway schleift `/api/v1/analysis/*` an den Analysis-Service durch. Läuft
-er? `task dev:local` startet ihn mit; einzeln geht `task run:analysis` (Port
-8010). `ANALYSIS_SERVICE_URL` muss auf denselben Port zeigen.
+The Gateway proxies `/api/v1/analysis/*` to the Analysis service. Is it running? `task dev:local`
+starts it along with the rest; on its own there is `task run:analysis` (port 8010).
+`ANALYSIS_SERVICE_URL` has to point at the same port.
 
-### `http://localhost:8080` antwortet mit 404
+### `http://localhost:8080` answers 404
 
-Traefik läuft, hat aber nichts zu verteilen. Es findet seine Routen ausschließlich
-über Docker-Labels, und die gibt es nur an Containern — im Modus `dev:local` laufen
-die Dienste als Prozesse auf dem Host und sind für Traefik unsichtbar. Dann ist
-`:3000` die richtige Adresse, nicht `:8080`.
+Traefik is running but has nothing to route. It finds its routes exclusively through Docker labels, and
+those only exist on containers — in `dev:local` mode the services run as processes on the host and are
+invisible to Traefik. Then `:3000` is the right address, not `:8080`.
 
-Prüfen lässt sich das ohne Raten: `curl -s http://localhost:8081/api/http/routers`
-listet auf, was Traefik tatsächlich kennt. Stehen dort nur `api@internal` und
-`dashboard@internal`, ist keine einzige Anwendungsroute geladen.
+You can check that without guessing: `curl -s http://localhost:8081/api/http/routers` lists what Traefik
+actually knows. If it holds only `api@internal` and `dashboard@internal`, not one application route is
+loaded.
 
-### Die Oberfläche bleibt auf `:8000` weiß
+### The interface stays blank on `:8000`
 
-Erwartet. Der Gateway kann `next dev` durchschleifen, aber die Seite hydriert
-dahinter nicht — untersucht und im Quelltext festgehalten (`proxy_dashboard_ui` in
-`services/api-gateway/src/gateway/main.py`): das durchgereichte Dokument ist
-byteweise identisch, der HMR-Socket verbindet, und die Seite wird trotzdem nie
-interaktiv. Der Port des Gateways ist für produktionsnahe Prüfungen gegen einen
-gebauten Stand gedacht, nicht für die Entwicklung.
+Expected. The Gateway can proxy `next dev` through, but the page does not hydrate behind it —
+investigated and recorded in the source (`proxy_dashboard_ui` in
+`services/api-gateway/src/gateway/main.py`): the proxied document is byte-for-byte identical, the HMR
+socket connects, and the page still never becomes interactive. The Gateway's port is meant for
+production-like checks against a built state, not for development.
 
-Hinter **Traefik** hydriert derselbe Dev-Server dagegen einwandfrei; das ist mit
-einem Browsertest gegen `:8080` nachgemessen. Es liegt also am Durchschleifen im
-Gateway, nicht an `next dev`.
+Behind **Traefik**, by contrast, the same dev server hydrates perfectly; that was measured with a
+browser test against `:8080`. So it is the proxying in the Gateway, not `next dev`.
 
-### Eine UI-Änderung wird im Container-Stack nicht sichtbar
+### A UI change does not become visible in the container stack
 
-Kein Fehler in der Konfiguration, sondern eine Grenze der Plattform. Turbopack
-erkennt Änderungen über inotify, und ein Docker-Bind-Mount eines Windows- oder
-macOS-Verzeichnisses liefert diese Ereignisse nicht in den Container. Der Container
-liest die Datei korrekt — ein `tail` darin zeigt die Änderung sofort —, nur erfährt
-der Beobachter nichts davon. Eine neu angelegte Route antwortet dauerhaft mit 404,
-eine geänderte liefert weiter das alte Markup, und zwar ohne jede Meldung.
+Not a misconfiguration but a limit of the platform. Turbopack detects changes through inotify, and a
+Docker bind mount of a Windows or macOS directory does not deliver those events into the container. The
+container reads the file correctly — a `tail` inside it shows the change immediately — the watcher just
+never hears about it. A newly created route answers 404 forever, a changed one keeps serving the old
+markup, and neither says anything about it.
 
-`watchOptions.pollIntervalMs` aus `next.config.ts` ist die dokumentierte Antwort auf
-genau diesen Fall und wurde zuerst versucht. Sie erreicht den Turbopack-Beobachter
-nachweislich, half aber nicht: bei 1 s Intervall war eine geänderte Route auch nach
-45 s nicht übernommen. Die Einstellung wurde deshalb wieder entfernt, statt als
-scheinbare Lösung stehen zu bleiben — wer sie erneut erwägt, hat sie hiermit
-bereits ausprobiert.
+`watchOptions.pollIntervalMs` from `next.config.ts` is the documented answer to exactly this case and was
+tried first. It demonstrably reaches the Turbopack watcher, but did not help: at a 1 s interval a changed
+route had still not been picked up after 45 s. The setting was therefore removed again rather than left
+standing as an apparent fix — anyone considering it again has hereby already tried it.
 
-Was hilft: `docker compose … restart dashboard` (rund zehn Sekunden, kein Neubau,
-weil der Code gemountet ist), oder für längere Arbeit an der Oberfläche `next dev`
-nativ auf dem Host.
+What does help: `docker compose … restart dashboard` (about ten seconds, no rebuild, because the code is
+mounted), or, for longer work on the interface, `next dev` natively on the host.
 
-Die Python-Dienste sind davon nicht betroffen: uvicorn startet mit `StatReload`,
-das die Dateien abfragt statt auf Ereignisse zu warten, und übernimmt Änderungen
-über denselben Mount zuverlässig.
+The Python services are unaffected: uvicorn starts with `StatReload`, which polls the files instead of
+waiting for events, and picks up changes reliably over the same mount.
 
-### `/docs` läuft in eine Weiterleitungsschleife
+### `/docs` runs into a redirect loop
 
-Behoben, hier steht das Warum. `mkdocs serve` liest `site_url` aus `mkdocs.yml`,
-das auf `/docs/` endet, und liefert die Seite unter genau diesem Präfix aus — im
-eigenen Log als `Serving on http://0.0.0.0:8003/docs/` zu sehen. Traefik hat das
-Präfix zusätzlich abgeschnitten, MkDocs bekam `GET /` und antwortete mit
-`302 → /docs/`, was erneut abgeschnitten wurde.
+Fixed; the reasoning is here. `mkdocs serve` reads `site_url` from `mkdocs.yml`, which ends in `/docs/`,
+and serves the site under exactly that prefix — visible in its own log as
+`Serving on http://0.0.0.0:8003/docs/`. Traefik stripped the prefix on top of that, MkDocs received
+`GET /` and answered `302 → /docs/`, which was stripped again.
 
-Im Entwicklungs-Stack gibt es deshalb keine `stripprefix`-Middleware. In der
-Produktion schon, und das ist richtig: dort ist die Dokumentation ein per
-`mkdocs build` erzeugtes Abbild, das an der Wurzel liegt.
+So there is no `stripprefix` middleware in the development stack. In production there is, and that is
+right: there the documentation is an image built by `mkdocs build` that sits at the root.
 
-Beim Nachmessen lohnt `curl` **ohne** `-L`: mit gefolgten Weiterleitungen meldet es
-die 200 der Anmeldeseite, auf der man am Ende landet, und die Schleife sieht aus
-wie ein Erfolg.
+When measuring this, `curl` **without** `-L` is worth it: with redirects followed it reports the 200 of
+the sign-in page you end up on, and the loop looks like a success.
 
-## Konfiguration
+## Configuration
 
-### Core oder Gateway startet nicht: „refuses to start with published secrets"
+### Core or the Gateway will not start: "refuses to start with published secrets"
 
-Genau das ist beabsichtigt. `ENVIRONMENT` ist produktiv gesetzt und mindestens
-einer der Werte `JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY` fehlt
-oder entspricht einem Default, der in diesem Repository steht. Die Meldung nennt
-alle betroffenen Variablen auf einmal. Siehe
-[Betrieb](operations.md#erforderliche-konfiguration).
+That is exactly the intent. `ENVIRONMENT` is set to something production-like and at least one of
+`JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY` is missing or matches a default that is
+printed in this repository. The message names every affected variable at once. See
+[Operations](operations.md#required-configuration).
 
-Für lokale Entwicklung `ENVIRONMENT=dev` setzen — dann wird nur gewarnt.
+For local development set `ENVIRONMENT=dev` — then it only warns.
 
-### `docker compose` bricht ab mit „set JWT_SECRET"
+### `docker compose` aborts with "set JWT_SECRET"
 
-`docker-compose.prod.yml` verwendet `${VAR:?…}`. Eine fehlende Variable stoppt
-den Deploy, bevor ein Container startet. Vorher hätte derselbe Deploy mit dem
-öffentlichen Default weitergelaufen, ohne etwas zu sagen.
+`docker-compose.prod.yml` uses `${VAR:?…}`. A missing variable stops the deploy before a container
+starts. Before, the same deploy would have carried on with the public default without saying anything.
 
-### Connector-Zugangsdaten lassen sich nicht mehr entschlüsseln
+### Connector credentials can no longer be decrypted
 
-`ENCRYPTION_KEY` unterscheidet sich von dem, mit dem sie gespeichert wurden. Mit
-dem alten Wert umschlüsseln statt ihn zu erraten:
+`ENCRYPTION_KEY` differs from the one they were stored with. Re-encrypt with the old value rather than
+guessing at it:
 
 ```bash
-python -m core.rotate_encryption_key --old "$ALT" --new "$NEU" --dry-run
+python -m core.rotate_encryption_key --old "$OLD" --new "$NEW" --dry-run
 ```
 
-Der Probelauf sagt, welche Werte auf welchem Schlüssel liegen, und schreibt
-nichts. Der vollständige Ablauf steht unter
-[`ENCRYPTION_KEY` wechseln](operations.md#encryption_key-wechseln).
+The dry run says which values are on which key, and writes nothing. The full procedure is under
+[Rotating `ENCRYPTION_KEY`](operations.md#rotating-encryption_key).

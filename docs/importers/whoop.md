@@ -1,68 +1,69 @@
-# WHOOP Importer
+# WHOOP importer
 
-## Ziel
+## Purpose
 
-Der WHOOP-Importer normalisiert Rohdaten in tenant-scoped Quantified-Self-Metriken und veröffentlicht sie über NATS JetStream. Core übernimmt Speicherung, Deduplizierung und spätere API-Abfragen.
+The WHOOP importer normalizes raw data into tenant-scoped Quantified Self metrics and
+publishes them over NATS JetStream. Core takes care of storage, deduplication and the later
+API queries.
 
-## Datenzugang
+## Data access
 
-- Quelle: WHOOP OAuth Access Token.
-- Credentials werden im Dashboard konfiguriert und in Core verschlüsselt gespeichert.
-- Der Importer fragt Credentials dynamisch über Core ab und bleibt ohne gültige Konfiguration idle.
+- Source: a WHOOP OAuth access token.
+- The credentials are configured in the dashboard and stored encrypted in Core.
+- The importer fetches them from Core at run time and stays idle without a valid configuration.
 
-### Token-Erneuerung
+### Token renewal
 
-WHOOP-Access-Tokens laufen nach etwa einer Stunde ab, das Abfrageintervall liegt
-aber typischerweise bei sechs. Ohne Erneuerung funktionierte der Connector also
-genau eine Stunde, danach kamen nur noch `401`-Antworten, bis jemand von Hand ein
-neues Token einsetzte.
+WHOOP access tokens expire after about an hour, but the poll interval is typically six. So
+without renewal the connector worked for exactly one hour, after which nothing came back but
+`401`s until somebody pasted in a new token by hand.
 
-Core erneuert das Token deshalb selbst, **bevor** es abläuft (fünf Minuten
-Vorlauf). Auf ein `401` zu reagieren hieße, jeden Import mit einem sicher
-fehlschlagenden Request zu beginnen.
+Core therefore renews the token itself, **before** it expires (five minutes of lead time).
+Reacting to a `401` instead would mean starting every import with a request that is certain
+to fail.
 
-Dafür werden neben dem Access Token gebraucht:
+Besides the access token, that needs:
 
-| Feld | Zweck |
+| Field | Purpose |
 | --- | --- |
-| `refresh_token` | wird verschlüsselt gespeichert, verlässt Core nie |
-| `client_id` | OAuth-Client der WHOOP-Anwendung |
-| `client_secret` | wird verschlüsselt gespeichert |
-| `expires_in` | Laufzeit des Access Tokens in Sekunden |
+| `refresh_token` | stored encrypted, never leaves Core |
+| `client_id` | the OAuth client of the WHOOP application |
+| `client_secret` | stored encrypted |
+| `expires_in` | lifetime of the access token, in seconds |
 
-WHOOP tauscht bei jeder Erneuerung auch den Refresh Token aus und entwertet den
-vorherigen; der neue wird gespeichert. Kommt in der Antwort keiner mit, bleibt der
-bisherige erhalten — ihn zu löschen würde einen noch gültigen Connector
-unerneuerbar machen.
+WHOOP also swaps the refresh token on every renewal and invalidates the previous one; the new
+one is stored. If the response carries none, the existing one is kept — deleting it would
+make a still-valid connector impossible to renew.
 
-Wird der Refresh Token abgelehnt (Zugriff widerrufen), antwortet Core mit `409`
-und der Hinweis, den Connector neu zu verbinden. Ein bereits abgelaufenes Token
-zurückzugeben würde den Fehler nur verschieben.
+If the refresh token is rejected (access revoked), Core answers `409` and says to connect the
+connector again. Returning an already-expired token would only defer the error.
 
-Der Importer bekommt ausschließlich das kurzlebige Access Token. Refresh Token und
-Client Secret überqueren die Dienstgrenze nicht.
+The importer only ever receives the short-lived access token. The refresh token and the client
+secret do not cross the service boundary.
 
-## Einrichtung
+## Setup
 
-1. Im Dashboard unter **Connectors** die Datenquelle öffnen.
-2. Zugangsdaten oder Export-Konfiguration eintragen.
-3. Speichern; Core verschlüsselt die Credentials mit Fernet AES-256.
-4. Bei aktiven Importern **Jetzt Sync** klicken oder den Worker zyklisch laufen lassen.
+1. Open the data source under **Connectors** in the dashboard.
+2. Enter the credentials, or the export configuration.
+3. Save; Core encrypts the credentials with Fernet AES-256.
+4. For active importers, click **Sync now**, or wait for Core's scheduler to find the
+   connector due. The importer has no timer of its own — it acts on the task Core
+   publishes; see [Architecture](../architecture.md#scheduled-imports).
 
-## Datenfluss
+## Data flow
 
 ```text
-Externe Quelle -> Importer -> qs.ingest.whoop -> Core -> data_points
+external source -> importer -> qs.ingest.whoop -> Core -> data_points
 ```
 
-## Wichtige Metriken
+## Main metrics
 
 - `whoop_recovery_score`
-- `whoop_sleep_performance_percent`
-- `whoop_strain_score`
-- `whoop_workout_duration_minutes`
+- `whoop_sleep_performance`
+- `whoop_strain`
+- `workout_duration`
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=whoop_recovery_score&start_time=<iso>&end_time=<iso>&limit=1000
@@ -71,33 +72,33 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten:
+Filter by further `metric_type` values as needed:
 
-| `metric_type` | Bedeutung | Einheit |
+| `metric_type` | Meaning | Unit |
 | --- | --- | --- |
-| `whoop_recovery_score` | Recovery | `%` |
-| `whoop_strain` | Strain des Tages | `index` (0-21) |
-| `whoop_workout_strain` | Strain einer Einheit | `index` (0-21) |
-| `whoop_sleep_performance` | Sleep Performance | `%` |
-| `sleep_efficiency` | Schlafeffizienz | `%` |
-| `heart_rate_resting` | Ruhepuls | `bpm` |
-| `heart_rate_average` | Durchschnittspuls des Tages | `bpm` |
-| `hrv_rmssd` | Herzratenvariabilität (RMSSD) | `ms` |
-| `blood_oxygen` | Sauerstoffsättigung | `%` |
-| `respiratory_rate` | Atemfrequenz | `br/min` |
-| `skin_temperature` | Hauttemperatur | `°C` |
-| `energy_total` | Gesamtumsatz des Tages | `kcal` |
-| `workout_energy` | Energie einer Einheit | `kcal` |
-| `workout_distance` | Distanz einer Einheit | `km` |
-| `workout_heart_rate_average` | Durchschnittspuls einer Einheit | `bpm` |
+| `whoop_recovery_score` | recovery | `%` |
+| `whoop_strain` | strain for the day | `index` (0–21) |
+| `whoop_workout_strain` | strain of one session | `index` (0–21) |
+| `whoop_sleep_performance` | sleep performance | `%` |
+| `sleep_efficiency` | sleep efficiency | `%` |
+| `heart_rate_resting` | resting heart rate | `bpm` |
+| `heart_rate_average` | average heart rate for the day | `bpm` |
+| `hrv_rmssd` | heart-rate variability (RMSSD) | `ms` |
+| `blood_oxygen` | blood oxygen | `%` |
+| `respiratory_rate` | respiratory rate | `br/min` |
+| `skin_temperature` | skin temperature | `°C` |
+| `energy_total` | total energy burned for the day | `kcal` |
+| `workout_energy` | energy of one session | `kcal` |
+| `workout_distance` | distance of one session | `km` |
+| `workout_heart_rate_average` | average heart rate of one session | `bpm` |
 
-WHOOP liefert Energie in **Kilojoule** und Distanzen in **Metern**. Der Importer
-rechnet beides auf die Einheiten der Registry um (kcal beziehungsweise km), damit
-dieselbe Größe von Apple Health und von WHOOP vergleichbar ist. Der Rohwert bleibt
-in `metadata.provider_value`, die Quelleinheit in `metadata.provider_unit`.
+WHOOP reports energy in **kilojoules** and distances in **metres**. The importer converts both
+into the registry's units (kcal and km respectively), so that the same quantity from Apple
+Health and from WHOOP is comparable. The raw value stays in `metadata.provider_value`, its
+source unit in `metadata.provider_unit`.
 
-`whoop_recovery_score`, `whoop_strain` und `whoop_sleep_performance` behalten ihr
-Herstellerpräfix: Es sind WHOOP-eigene Kennzahlen ohne Entsprechung bei anderen
-Quellen.
+`whoop_recovery_score`, `whoop_strain` and `whoop_sleep_performance` keep their vendor prefix:
+they are WHOOP's own figures, with no equivalent at any other source.
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that
+still point at it — is in [Metrics](../metrics.md).

@@ -1,14 +1,14 @@
-# Tenant-gebundene API-Keys
+# Tenant-bound API keys
 
-## Wofür
+## What they are for
 
-Manche Datenquellen senden Daten aktiv an die Plattform, statt abgefragt zu werden —
-derzeit **Apple Health** (Health Auto Export) und **Streak**. Diese Dienste
-authentifizieren sich mit einem API-Key, den du im Dashboard erzeugst.
+Some data sources send data to the platform actively instead of being polled — currently
+**Apple Health** (Health Auto Export) and **Streak**. Those services authenticate with an API key you
+create in the dashboard.
 
-## Ein Header genügt
+## One header is enough
 
-Der externe Dienst sendet ausschließlich:
+The external service sends nothing but:
 
 ```http
 POST /api/v1/ingest/apple-health
@@ -16,63 +16,60 @@ Authorization: Bearer <api-key>
 Content-Type: application/json
 ```
 
-Ein separater `X-Tenant-ID`-Header ist **nicht** erforderlich und wird auch nicht
-akzeptiert, wenn er einem anderen Tenant zugeordnet ist als der Key. Der Tenant wird
-serverseitig aus dem Key ermittelt.
+A separate `X-Tenant-ID` header is **not** required, and is not accepted either if it names a
+different tenant from the key's. The tenant is determined server-side from the key.
 
-Aus Kompatibilitätsgründen wird weiterhin auch `X-Api-Key: <api-key>` akzeptiert,
-weil bestehende Health-Auto-Export- und Streak-Konfigurationen diesen Header
-verwenden.
+For compatibility, `X-Api-Key: <api-key>` is still accepted as well, because existing Health Auto
+Export and Streak configurations use that header.
 
-## Wie die Zuordnung funktioniert
+## How the mapping works
 
-1. Der Importer bildet lokal den SHA-256-Hash des präsentierten Keys.
-2. Er fragt Core nach dem **Hash** — der Key selbst verlässt den Randdienst nie.
-3. Core sucht den Hash, prüft Status, Ablaufdatum und erlaubte Datenquelle und
-   liefert die zugehörige `tenant_id` zurück.
-4. Jedes daraus erzeugte Event trägt diese `tenant_id`, einen deterministischen
-   `idempotency_key` und die `X-Request-ID`.
+1. The importer computes the SHA-256 hash of the presented key locally.
+2. It asks Core about the **hash** — the key itself never leaves the edge service.
+3. Core looks the hash up, checks the status, the expiry and the permitted data source, and returns
+   the matching `tenant_id`.
+4. Every event derived from it carries that `tenant_id`, a deterministic `idempotency_key` and the
+   `X-Request-ID`.
 
-Schlägt irgendein Schritt fehl — unbekannter Key, widerrufener Key, abgelaufener Key,
-Key für eine andere Datenquelle, oder Core nicht erreichbar — wird der Request
-abgelehnt. Es gibt keinen Pfad, auf dem unauthentifizierte Daten angenommen werden.
+If any step fails — unknown key, revoked key, expired key, a key for a different data source, or Core
+unreachable — the request is rejected. There is no path on which unauthenticated data is accepted.
 
-## Was gespeichert wird
+## What is stored
 
-| Feld | Zweck |
+| Field | Purpose |
 | --- | --- |
-| `key_prefix` | die ersten 12 Zeichen, zur Wiedererkennung in UI und Logs |
-| `key_hash` | SHA-256 des Keys; das Einzige, woraus der Tenant abgeleitet wird |
-| `tenant_id` | Besitzer |
-| `source_type` | erlaubte Datenquelle |
-| `scopes` | Berechtigungen, standardmäßig nur `ingest` |
-| `status` | `active` oder `revoked` |
-| `expires_at` | optionales Ablaufdatum |
-| `last_used_at` | letzte erfolgreiche Verwendung |
-| `created_at`, `created_by_user_id` | Herkunft |
+| `key_prefix` | the first 12 characters, for recognition in the UI and in logs |
+| `key_hash` | SHA-256 of the key; the only thing the tenant is derived from |
+| `tenant_id` | the owner |
+| `source_type` | the permitted data source |
+| `scopes` | permissions, `ingest` only by default |
+| `status` | `active` or `revoked` |
+| `expires_at` | optional expiry |
+| `last_used_at` | last successful use |
+| `created_at`, `created_by_user_id` | provenance |
 
-Der vollständige Key wird **nur einmal** bei der Erzeugung angezeigt und danach nie
-wieder — weder in der Liste, noch in Logs, Fehlermeldungen oder Events.
+The full key is shown **once**, when it is created, and never again — not in the list, and not in
+logs, error messages or events.
 
-## Rotation ohne Unterbrechung
+## Rotation without an interruption
 
-Beim Rotieren wird ein zweiter Key erzeugt, während der alte aktiv bleibt:
+Rotating creates a second key while the old one stays active:
 
-1. `POST /api/v1/data/api-keys/{id}/rotate` → neuer Key wird einmalig angezeigt.
-2. Externen Dienst auf den neuen Key umstellen.
-3. `POST /api/v1/data/api-keys/{id}/revoke` für den alten Key.
+1. `POST /api/v1/data/api-keys/{id}/rotate` → the new key is shown once.
+2. Switch the external service to the new key.
+3. `POST /api/v1/data/api-keys/{id}/revoke` for the old key.
 
-Mehrere aktive Keys pro Tenant sind ausdrücklich vorgesehen. Erst der Widerruf
-beendet die Gültigkeit des alten Keys — sofort und ohne Cache.
+Several active keys per tenant are explicitly intended. Only the revocation ends the old key's
+validity — immediately, and with no cache in the way.
 
 ## API
 
-| Methode | Pfad | Rolle | Zweck |
+| Method | Path | Role | Purpose |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/data/api-keys` | owner, admin | Key erzeugen (zeigt Key einmalig) |
-| `GET` | `/api/v1/data/api-keys` | alle | Keys auflisten (ohne Key-Material) |
-| `POST` | `/api/v1/data/api-keys/{id}/rotate` | owner, admin | Nachfolger erzeugen |
-| `POST` | `/api/v1/data/api-keys/{id}/revoke` | owner, admin | Sofort ungültig machen |
+| `POST` | `/api/v1/data/api-keys` | owner, admin | Create a key (shows it once) |
+| `GET` | `/api/v1/data/api-keys` | everyone | List the keys (without key material) |
+| `POST` | `/api/v1/data/api-keys/{id}/rotate` | owner, admin | Create a successor |
+| `POST` | `/api/v1/data/api-keys/{id}/revoke` | owner, admin | Invalidate immediately |
 
 ```http
 POST /api/v1/data/api-keys
@@ -81,16 +78,14 @@ Authorization: Bearer <jwt>
 { "name": "iPhone Health Auto Export", "source_type": "apple_health", "expires_in_days": 365 }
 ```
 
-## Sicherheitseigenschaften
+## Security properties
 
-- Ein Key für `apple_health` funktioniert nicht am Streak-Endpunkt (`403`).
-- Ein Key eines anderen Tenants ist unsichtbar und nicht widerrufbar (`404`).
-- Ein widersprüchlicher `X-Tenant-ID`-Header führt zu `403`, nicht zu stiller
-  Korrektur.
-- Fehlender oder ungültiger Key: `401`. Fehlende Berechtigung: `403`.
+- A key for `apple_health` does not work on the Streak endpoint (`403`).
+- Another tenant's key is invisible and cannot be revoked (`404`).
+- A contradictory `X-Tenant-ID` header produces a `403`, not a silent correction.
+- Missing or invalid key: `401`. Missing permission: `403`.
 
-## Grenzen
+## Limits
 
-- Keys sind derzeit nur für Push-Quellen (`apple_health`, `streak`) vorgesehen.
-- Es gibt noch kein automatisches Ablauf-Reminder oder Nutzungs-Reporting über
-  `last_used_at` hinaus.
+- Keys are currently only intended for push sources (`apple_health`, `streak`).
+- There is not yet an automatic expiry reminder or any usage reporting beyond `last_used_at`.

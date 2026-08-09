@@ -1,112 +1,105 @@
-# Kalender Importer
+# Calendar importer
 
-## Ziel
+## Purpose
 
-Der Kalender-Importer liest einen **ICS/iCalendar-Feed** und erzeugt daraus Zeitreihen
-für Termine, Meetingdauer und belegte Zeit.
+The calendar importer reads an **ICS/iCalendar feed** and turns it into time series for
+appointments, meeting duration and busy time.
 
-## Kein API Key für ICS-Feeds
+## No API key for ICS feeds
 
-Eine gültige `.ics`-URL funktioniert **ohne API Key**. Das gilt insbesondere für
-Outlook/Microsoft 365, Google Calendar, iCloud und Nextcloud. Ein API Key ist nur
-dann nötig, wenn dein Anbieter gar keinen ICS-Feed anbietet, sondern ausschließlich
-eine eigene REST-API.
+A valid `.ics` URL works **without an API key**. That holds in particular for
+Outlook/Microsoft 365, Google Calendar, iCloud and Nextcloud. An API key is only needed when
+your provider offers no ICS feed at all, but only its own REST API.
 
-Der Importer unterscheidet vier Zugriffsarten und erkennt sie automatisch aus deiner
-Konfiguration:
+The importer distinguishes four kinds of access and detects them automatically from your
+configuration:
 
-| Modus | Wann | Zugangsdaten |
+| Mode | When | Credentials |
 | --- | --- | --- |
-| `public_ics` | Öffentlich freigegebene `.ics`-URL | keine |
-| `private_ics` | Private/„geheime" Feed-Adresse (langer Token im Pfad oder als Query-Parameter) | die URL selbst ist das Geheimnis |
-| `basic_auth` | CalDAV-Server mit Benutzername/Passwort | Benutzername + Passwort |
-| `api_key` | Anbieter-REST-API ohne ICS | Bearer Token |
+| `public_ics` | A publicly shared `.ics` URL | none |
+| `private_ics` | A private, "secret" feed address (a long token in the path or as a query parameter) | the URL itself is the secret |
+| `basic_auth` | A CalDAV server with a username and password | username + password |
+| `api_key` | A provider REST API without ICS | bearer token |
 
-Du kannst den Modus über `auth_mode` in der Connector-Konfiguration auch explizit
-setzen, falls die automatische Erkennung nicht passt.
+You can also set the mode explicitly with `auth_mode` in the connector configuration, if the
+automatic detection gets it wrong.
 
-!!! warning "Private Feed-URLs sind Zugangsdaten"
-    Eine private ICS-Adresse erlaubt jedem, der sie kennt, den vollständigen Zugriff
-    auf deinen Kalender. Sie wird deshalb verschlüsselt gespeichert (Fernet AES-256)
-    und niemals in Logs, Fehlermeldungen oder API-Antworten ausgegeben — dort
-    erscheint nur `https://host/…`.
+!!! warning "A private feed URL is a credential"
+    A private ICS address gives anyone who knows it full access to your calendar. It is
+    therefore stored encrypted (Fernet AES-256) and never written to logs, error messages or API
+    responses — those only ever show `https://host/…`.
 
-## Einrichtung
+## Setup
 
-1. Im Kalenderprodukt einen iCalendar-/ICS-Abonnement-Link erzeugen.
-2. Im Dashboard den Connector **Kalender** öffnen.
-3. Die ICS-URL im Feld **Kalender-Feed URL (.ics)** eintragen. Das API-Key-Feld
-   bleibt leer.
-4. Optional Abfrageintervall und Zeitraum einstellen, dann Sync starten.
+1. Create an iCalendar/ICS subscription link in your calendar product.
+2. Open the **Calendar** connector in the dashboard.
+3. Enter the ICS URL in the **Calendar feed URL (.ics)** field. Leave the API key field empty.
+4. Optionally set the poll interval and the period, then start the sync.
 
-### Bezugsquellen
+### Where to get the link
 
-- **Google Calendar**: Kalendereinstellungen → „Geheime Adresse im iCal-Format".
-- **Apple/iCloud**: Kalender freigeben → öffentlichen Kalenderlink kopieren
-  (`webcal://` durch `https://` ersetzen).
-- **Outlook/Microsoft 365**: Kalender veröffentlichen → ICS-Link kopieren.
-- **Nextcloud**: Kalender teilen → Abonnement-Link kopieren.
+- **Google Calendar**: calendar settings → "Secret address in iCal format".
+- **Apple/iCloud**: share the calendar → copy the public calendar link (replace `webcal://` with `https://`).
+- **Outlook/Microsoft 365**: publish the calendar → copy the ICS link.
+- **Nextcloud**: share the calendar → copy the subscription link.
 
-## Wiederholungen und Zeitzonen
+## Recurrence and time zones
 
-- `RRULE`, `EXDATE` und `RECURRENCE-ID` werden ausgewertet. Eine wöchentliche Serie
-  erzeugt einen Datenpunkt pro Termin, nicht einen für die gesamte Serie.
-- Verschobene Einzeltermine einer Serie (`RECURRENCE-ID`) ersetzen den Serientermin.
-- `DTSTART;TZID=` und `VTIMEZONE` werden aufgelöst und nach UTC normalisiert.
-- Ganztägige Termine (`VALUE=DATE`) und Termine ohne Zeitzone werden in der
-  konfigurierten Anzeige-Zeitzone verankert (`timezone` in der Connector-Konfiguration,
-  Standard `UTC`). „War ich am Dienstag beschäftigt?" ist eine lokale Frage.
-- Abgesagte Termine (`STATUS:CANCELLED`) und als frei markierte Einträge
-  (`TRANSP:TRANSPARENT`) werden importiert, zählen aber nicht als belegte Zeit.
+- `RRULE`, `EXDATE` and `RECURRENCE-ID` are evaluated. A weekly series produces one data point
+  per occurrence, not one for the whole series.
+- A moved single occurrence of a series (`RECURRENCE-ID`) replaces the series occurrence.
+- `DTSTART;TZID=` and `VTIMEZONE` are resolved and normalized to UTC.
+- All-day events (`VALUE=DATE`) and events without a time zone are anchored in the configured
+  display time zone (`timezone` in the connector configuration, `UTC` by default). "Was I busy on
+  Tuesday?" is a local question.
+- Cancelled events (`STATUS:CANCELLED`) and entries marked as free (`TRANSP:TRANSPARENT`) are
+  imported, but do not count as busy time.
 
-## Metriken
+## Metrics
 
-| Metrik | Bedeutung |
+| Metric | Meaning |
 | --- | --- |
-| `calendar_event_count` | Anzahl der Termine pro Tag (`count`) |
-| `calendar_busy_duration` | Summe belegter Zeit pro Tag (`min`) |
-| `calendar_meeting_duration` | Dauer eines einzelnen Termins (`min`) |
+| `calendar_event_count` | number of events per day (`count`) |
+| `calendar_busy_duration` | total busy time per day (`min`) |
+| `calendar_meeting_duration` | duration of a single event (`min`) |
 
-`calendar_busy_hours` gibt es nicht mehr. Die Metrik trug dieselbe Zahl wie
-`calendar_busy_minutes`, nur in einer anderen Einheit - allein deshalb, weil die
-Einheit im Namen stand. Die Korrelationsanalyse meldete die beiden folgerichtig als
-perfekt korrelierte Serien. Die Einheit steht jetzt in der Registry, eine Metrik
-genügt, und die Darstellung in Stunden ist Sache der Oberfläche.
+`calendar_busy_hours` is gone. It carried the same number as `calendar_busy_minutes`, only in a
+different unit — purely because the unit was part of the name. The correlation analysis duly
+reported the two as perfectly correlated series. The unit now lives in the registry, one metric
+is enough, and presenting it in hours is the interface's business.
 
-Pro-Termin-Datenpunkte werden über UID und ggf. `RECURRENCE-ID` eindeutig
-identifiziert. Zwei verschiedene Termine zur selben Minute kollidieren daher nicht.
+Per-event data points are identified by their UID and, where present, `RECURRENCE-ID`. Two
+different events in the same minute therefore do not collide.
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=calendar_busy_duration&start_time=<iso>&end_time=<iso>
 Authorization: Bearer <jwt>
 ```
 
-Der Tenant wird aus dem Token abgeleitet; ein separater `X-Tenant-ID`-Header ist
-nicht erforderlich.
+The tenant is derived from the token; a separate `X-Tenant-ID` header is not required.
 
-## Fehlerbehebung
+## Troubleshooting
 
-| Symptom | Ursache | Lösung |
+| Symptom | Cause | Fix |
 | --- | --- | --- |
-| „Calendar URL returned an HTML page" | Der Feed verlangt eine Anmeldung, oder die geheime Adresse wurde zurückgezogen | Neue Feed-URL im Kalenderprodukt erzeugen |
-| „Calendar feed not found (404)" | Adresse widerrufen oder Kalender gelöscht | Link neu erzeugen |
-| „not iCalendar data" | Die URL zeigt auf eine Web-Ansicht statt auf den Feed | ICS-Link statt Kalender-Weblink verwenden |
-| Keine Termine importiert | Alle Termine liegen außerhalb des Importzeitraums | Zeitraum im Importdialog erweitern |
+| "Calendar URL returned an HTML page" | The feed wants a sign-in, or the secret address was withdrawn | Create a new feed URL in the calendar product |
+| "Calendar feed not found (404)" | The address was revoked, or the calendar was deleted | Create the link again |
+| "not iCalendar data" | The URL points at a web view instead of at the feed | Use the ICS link, not the calendar's web link |
+| No events imported | Every event lies outside the import period | Widen the period in the import dialog |
 
-## Einschränkungen
+## Limitations
 
-- Reine CalDAV-Discovery (`PROPFIND`) wird nicht unterstützt, nur direkte
-  Feed-URLs.
-- Ein Feed mit mehr als 10.000 Terminen im Zeitraum wird abgeschnitten; das wird
-  protokolliert.
-- Teilnehmerlisten, Beschreibungen und Anhänge werden nicht importiert.
+- Pure CalDAV discovery (`PROPFIND`) is not supported, only direct feed URLs.
+- A feed with more than 10,000 events in the period is truncated; that is logged.
+- Attendee lists, descriptions and attachments are not imported.
 
-## Referenzen
+## References
 
-- [iCalendar.org](https://icalendar.org/) für Standardressourcen und Validatoren.
-- [RFC 5545 / iCalendar Überblick](https://en.wikipedia.org/wiki/ICalendar) als
-  Einstieg in Felder wie `VEVENT`, `DTSTART` und `DTEND`.
+- [iCalendar.org](https://icalendar.org/) for standard resources and validators.
+- [RFC 5545 / iCalendar overview](https://en.wikipedia.org/wiki/ICalendar) as an introduction to
+  fields like `VEVENT`, `DTSTART` and `DTEND`.
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that still
+point at it — is in [Metrics](../metrics.md).

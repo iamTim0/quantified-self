@@ -18,12 +18,12 @@ Start here:
 
 | Page | What it covers |
 | --- | --- |
-| [Architektur](docs/architecture.md) | Services, data flow, idempotency, tenant isolation |
-| [Betrieb](docs/operations.md) | Deployment, required secrets, monitoring, backup |
-| [Smart-/Force-Import](docs/features/smart-import.md) | Adaptive windows and duplicate detection |
-| [Authentifizierung](docs/features/authentication.md) | Sessions, logout, tenant mapping |
-| [API-Keys](docs/features/api-keys.md) | Tenant-bound inbound keys |
-| [Fehlerbehebung](docs/troubleshooting.md) | Common failures and what they mean |
+| [Architecture](docs/architecture.md) | Services, data flow, idempotency, tenant isolation |
+| [Operations](docs/operations.md) | Deployment, required secrets, monitoring, backup |
+| [Smart and force import](docs/features/smart-import.md) | Adaptive windows and duplicate detection |
+| [Authentication](docs/features/authentication.md) | Sessions, logout, tenant mapping |
+| [API keys](docs/features/api-keys.md) | Tenant-bound inbound keys |
+| [Troubleshooting](docs/troubleshooting.md) | Common failures and what they mean |
 
 ## Deploying it
 
@@ -64,7 +64,7 @@ OWNER_EMAIL=you@example.com OWNER_PASSWORD='…' \
 > ship with development defaults that are committed to this repository. The
 > production stack now refuses to start without real values, and `ENCRYPTION_KEY`
 > needs stored credentials re-encrypted *before* it changes. See
-> [Betrieb](docs/operations.md).
+> [Operations](docs/operations.md).
 
 ## Architecture Overview
 
@@ -261,7 +261,7 @@ ships `apps/dashboard/THIRD-PARTY-NOTICES.txt`, generated from the production
 dependency closure plus the two self-hosted OFL webfonts, with `bun run notices
 --check` in CI so it cannot drift. What is worth knowing before offering this as a
 service to other people — Yazio's app credentials, health data under Art. 9 GDPR,
-the §13 source obligation — is in [Lizenzen](docs/licensing.md).
+the §13 source obligation — is in [Licensing](docs/licensing.md).
 
 ## Documentation Site
 

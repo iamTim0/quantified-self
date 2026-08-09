@@ -1,54 +1,59 @@
-# Quantified Self Dokumentation
+# Quantified Self documentation
 
-Diese Dokumentation ist als separate, statische Website für Betrieb und Anwenderhilfe gedacht. Wir nutzen **Material for MkDocs**, weil es Markdown als Pflegeformat, Suche, Navigation und ein schlankes Python-basiertes Build-System kombiniert. MkDocs beschreibt sich selbst als statischen Generator für Projektdokumentation aus Markdown-Dateien, Material for MkDocs ergänzt eine professionelle, durchsuchbare Oberfläche.
+This documentation is a separate, static site for operators and users. It is built with
+**Material for MkDocs**, which combines Markdown as the maintenance format with search,
+navigation and a lean Python build. MkDocs describes itself as a static generator for
+project documentation written in Markdown; Material for MkDocs adds a searchable,
+responsive interface on top.
 
-## Lokaler Betrieb
+## Running it locally
 
 ```bash
 task docs:serve
 ```
 
-Im Docker-Setup wird die Dokumentation über Traefik unter `/docs` geroutet und bleibt damit bewusst von der Produkt-UI getrennt.
+In the Docker setup the documentation is routed through Traefik under `/docs`, which keeps
+it deliberately separate from the product UI.
 
-## Architekturprinzipien
+## Architectural principles
 
-- Importer sind stateless und veröffentlichen ausschließlich tenant-scoped NATS-Events auf `qs.ingest.<source_type>`.
-- Credentials werden dynamisch aus Core geladen und nicht im Importer gespeichert.
-- Jedes Event enthält `tenant_id`, `source_id`, `metric_type`, `timestamp` und einen deterministischen `idempotency_key`.
-- Core bleibt der einzige Service mit Datenbankzugriff; der Analysedienst liest über gRPC.
-- Verteilte Abläufe werden vor der Implementierung in `specs/` spezifiziert und modellgeprüft.
+- Importers are stateless and publish nothing but tenant-scoped NATS events on `qs.ingest.<source_type>`.
+- Credentials are fetched from Core at run time and never stored in an importer.
+- Every event carries `tenant_id`, `source_id`, `metric_type`, `timestamp` and a deterministic `idempotency_key`.
+- Core stays the only service with database access; the Analysis service reads over gRPC.
+- Distributed interactions are specified in `specs/` and model-checked before they are implemented.
 
-## Einstiegspunkte
+## Where to start
 
-| Seite | Inhalt |
+| Page | Contents |
 | --- | --- |
-| [Architektur](architecture.md) | Dienste, Datenfluss, Idempotenz, Tenant-Isolation, Scheduler |
-| [Release & Deployment](deployment.md) | Images veröffentlichen, Stack aufsetzen, aktualisieren, zurückrollen |
-| [Betrieb](operations.md) | Pflichtvariablen, Schlüsselwechsel, Monitoring, Backup |
-| [Authentifizierung](features/authentication.md) | Sitzungen, Cookies, Logout, Route-Guard |
-| [Externe Anmeldung (OIDC)](features/oidc.md) | Anbieterverwaltung, Kontenverknüpfung, Back-Channel-Logout |
-| [API-Keys](features/api-keys.md) | Tenant-gebundene eingehende Schlüssel |
-| [Lizenzen](licensing.md) | Eigene Lizenz, weitergegebene Fremdsoftware, was ein Dienst für andere ändert |
-| [Fehlerbehebung](troubleshooting.md) | Häufige Fehlerbilder und was sie bedeuten |
+| [Architecture](architecture.md) | Services, data flow, idempotency, tenant isolation, scheduler |
+| [Release and deployment](deployment.md) | Publishing images, standing up the stack, updating, rolling back |
+| [Operations](operations.md) | Required variables, key rotation, monitoring, backup |
+| [Authentication](features/authentication.md) | Sessions, cookies, logout, route guard |
+| [External sign-in (OIDC)](features/oidc.md) | Provider administration, account linking, back-channel logout |
+| [API keys](features/api-keys.md) | Tenant-bound inbound keys |
+| [Licensing](licensing.md) | Our own licence, redistributed third-party software, what a network service changes |
+| [Troubleshooting](troubleshooting.md) | Common failure modes and what they mean |
 
-!!! danger "Vor dem ersten produktiven Deployment"
-    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` und `ENCRYPTION_KEY` haben Defaults,
-    die im Repository stehen. Der Produktions-Stack startet damit nicht mehr, und
-    `ENCRYPTION_KEY` verlangt eine Umschlüsselung **vor** der Umstellung. Siehe
-    [Betrieb](operations.md#erforderliche-konfiguration).
+!!! danger "Before the first production deployment"
+    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have defaults that are
+    printed in this repository. The production stack no longer starts on them, and
+    `ENCRYPTION_KEY` requires a re-encryption pass **before** it is changed. See
+    [Operations](operations.md#required-configuration).
 
-## Rechtliches
+## Legal
 
-Die Rechtstexte werden in der Anwendung selbst gepflegt, damit sie immer zur laufenden
-Version passen:
+The legal texts are maintained inside the application itself, so that they always match
+the running version:
 
-- [Datenschutzerklärung](/legal/datenschutz)
-- [Impressum](/legal/impressum)
+- [Privacy policy](/legal/datenschutz)
+- [Imprint](/legal/impressum)
 
-Beide sind Vorlagen mit Platzhaltern und müssen vor einem produktiven Einsatz durch eine
-qualifizierte Stelle geprüft werden.
+Both are templates with placeholders and must be reviewed by a qualified party before any
+production use. Both are bilingual, and the German wording is the binding one.
 
-## Externe Referenzen
+## External references
 
-- [MkDocs](https://www.mkdocs.org/) für Markdown-basierte Projektdokumentation.
-- [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) für Suche, Navigation und responsives Design.
+- [MkDocs](https://www.mkdocs.org/) for Markdown-based project documentation.
+- [Material for MkDocs](https://squidfunk.github.io/mkdocs-material/) for search, navigation and responsive design.

@@ -1,43 +1,46 @@
-# Wetter Importer
+# Weather importer
 
-## Ziel
+## Purpose
 
-Der Wetter-Importer liest Wetter-Zeitreihen von einer Open-Meteo-kompatiblen API und erzeugt Kontextmetriken für Schlaf-, Aktivitäts- und Stimmungsauswertungen.
+The weather importer reads weather time series from an Open-Meteo-compatible API and
+produces context metrics for sleep, activity and mood analyses.
 
-## Empfohlener Standard: Open-Meteo
+## Recommended default: Open-Meteo
 
-Open-Meteo bietet HTTP-GET APIs mit JSON-Antworten, einheitlichen Parametern und für nicht-kommerzielle Nutzung ohne API-Key. Für kommerzielle Nutzung oder höhere Limits sollte ein bezahlter Endpoint mit API-Key eingeplant werden.
+Open-Meteo offers HTTP GET APIs with JSON responses, consistent parameters, and no API key
+for non-commercial use. For commercial use or higher limits, plan for a paid endpoint with
+an API key.
 
-## Beispielquellen
+## Example sources
 
 - [Open-Meteo Forecast API](https://open-meteo.com/en/docs)
 - [Open-Meteo Historical Weather API](https://open-meteo.com/)
-- Nationale Wetterdienste oder selbst gehostete Gateways, sofern sie Open-Meteo-kompatible JSON-Zeitreihen liefern.
+- National weather services or self-hosted gateways, as long as they serve Open-Meteo-compatible JSON time series.
 
-## Einrichtung
+## Setup
 
-1. Standortkoordinaten oder eine vorkonfigurierte API URL im Dashboard-Connector speichern.
-2. Optional Variablen wie Temperatur, Niederschlag, Luftdruck und UV-Index festlegen.
-3. Sync starten; der Importer veröffentlicht `qs.ingest.weather` Events.
+1. Save the location coordinates, or a pre-configured API URL, in the dashboard connector.
+2. Optionally choose the variables: temperature, precipitation, pressure, UV index.
+3. Start the sync; the importer publishes `qs.ingest.weather` events.
 
-## Metriken
+## Metrics
 
-| Metrik | Bedeutung | Empfehlung |
+| Metric | Meaning | Recommendation |
 | --- | --- | --- |
-| `weather_temperature` | Außentemperatur (`°C`) | Mit Schlafqualität, Puls und Aktivitätsniveau vergleichen. |
-| `weather_temperature_apparent` | Gefühlte Temperatur (`°C`) | Belastung bei Outdoor-Aktivität einordnen. |
-| `weather_humidity` | Luftfeuchtigkeit (`%`) | Schlafqualität und Raumklima gegenüberstellen. |
-| `weather_precipitation` | Niederschlag (`mm`) | Kontext für Outdoor-Aktivität und GPS-Routen. |
-| `weather_pressure` | Luftdruck (`hPa`) | Optional für Migräne-/Stimmungsanalysen. |
-| `weather_wind_speed` | Windgeschwindigkeit (`km/h`) | Kontext für Lauf- und Radeinheiten. |
-| `weather_cloud_cover` | Bewölkung (`%`) | Zusammen mit dem UV-Index als Lichtkontext. |
-| `weather_uv_index` | UV-Index (`index`) | Kontext für Tageslicht-/Outdoor-Exposition. |
+| `weather_temperature` | outside temperature (`°C`) | Compare against sleep quality, heart rate and activity level. |
+| `weather_temperature_apparent` | apparent temperature (`°C`) | Put the strain of outdoor activity in context. |
+| `weather_humidity` | humidity (`%`) | Set against sleep quality and indoor climate. |
+| `weather_precipitation` | precipitation (`mm`) | Context for outdoor activity and GPS routes. |
+| `weather_pressure` | air pressure (`hPa`) | Optional, for migraine or mood analyses. |
+| `weather_wind_speed` | wind speed (`km/h`) | Context for running and cycling sessions. |
+| `weather_cloud_cover` | cloud cover (`%`) | Together with the UV index, as a light context. |
+| `weather_uv_index` | UV index (`index`) | Context for daylight and outdoor exposure. |
 
-Die Namen trugen früher ihre Einheit als Suffix (`weather_temperature_c`,
-`weather_wind_speed_kmh`). Die Einheit steht jetzt in der Registry - ein Wechsel der
-Einheit wird damit zu einer Umrechnung statt zu einer zweiten Metrik.
+The names used to carry their unit as a suffix (`weather_temperature_c`,
+`weather_wind_speed_kmh`). The unit now lives in the registry, which turns a change of unit
+into a conversion rather than into a second metric.
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=weather_temperature&start_time=<iso>&end_time=<iso>
@@ -45,4 +48,5 @@ Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 ```
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that
+still point at it — is in [Metrics](../metrics.md).

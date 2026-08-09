@@ -1,233 +1,226 @@
-# Metriken
+# Metrics
 
-Jede Messgröße, die die Plattform speichert, ist genau einmal definiert — in der
-Registry unter `packages/shared-schemas/src/shared_schemas/metrics.py`. Diese Seite
-erklärt, warum es sie gibt, welche Regeln sie durchsetzt und welche Metriken es gibt.
+Every quantity the platform stores is defined exactly once — in the registry at
+`packages/shared-schemas/src/shared_schemas/metrics.py`. This page explains why it exists, which
+rules it enforces, and which metrics there are.
 
-## Warum eine zentrale Definition
+## Why a central definition
 
-`metric_type` war vorher ein freier String. Jeder Importer hat seine Namen selbst
-erfunden, und niemand konnte widersprechen:
+`metric_type` used to be a free string. Every importer invented its own names, and nothing could
+contradict it:
 
-- Apple Health schrieb `workout_avg_heart_rate`, WHOOP `workout_average_heart_rate` —
-  dieselbe Größe, zwei Serien, die sich nie begegneten.
-- WHOOP lieferte verbrannte Energie in **Kilojoule**, Apple Health in **Kilokalorien**,
-  unter Namen, die beides verschwiegen. Die Konflikterkennung in
-  `services/core/src/core/analytics.py` verglich also 8400 mit 2000 und meldete einen
-  Widerspruch.
-- Der Kalender-Importer schrieb `calendar_busy_minutes` **und** `calendar_busy_hours` —
-  dieselbe Zahl zweimal, nur weil die Einheit im Namen steckte. Die Korrelationsanalyse
-  meldete die beiden pflichtgemäß als perfekt korreliert.
-- Das Dashboard suchte nach `steps`, `sleep_score`, `readiness_score`, `hrv_balance`,
-  `resting_hr` und `carbs`. Keinen dieser Namen hat je ein Importer erzeugt; die Hälfte
-  der Kacheln war dauerhaft leer.
+- Apple Health wrote `workout_avg_heart_rate`, WHOOP `workout_average_heart_rate` — the same
+  quantity, two series that never met.
+- WHOOP reported burned energy in **kilojoules**, Apple Health in **kilocalories**, under names that
+  concealed both. So the conflict detection in `services/core/src/core/analytics.py` compared 8400
+  with 2000 and reported a contradiction.
+- The calendar importer wrote `calendar_busy_minutes` **and** `calendar_busy_hours` — the same
+  number twice, purely because the unit was part of the name. The correlation analysis duly reported
+  the two as perfectly correlated.
+- The dashboard looked for `steps`, `sleep_score`, `readiness_score`, `hrv_balance`, `resting_hr` and
+  `carbs`. No importer ever produced any of those names; half the tiles were permanently empty.
 
-Die Registry macht diese Zustände unmöglich, statt sie zu dokumentieren.
+The registry makes these states impossible instead of documenting them.
 
-## Die beiden Regeln
+## The two rules
 
-**1. Eine Größe, ein Name.** Der Name sagt, *was* gemessen wurde — nie, *wer* gemessen
-hat, und nie, *in welcher Einheit*. Zwei Quellen, die dieselbe physikalische Größe
-liefern, schreiben denselben `metric_type`.
+**1. One quantity, one name.** The name says *what* was measured — never *who* measured it, and never
+*in which unit*. Two sources reporting the same physical quantity write the same `metric_type`.
 
-Ausnahme mit Absicht: herstellereigene Kennzahlen behalten ihr Präfix
-(`whoop_strain`, `whoop_recovery_score`, `oura_sleep_score`). Ein Whoop-Strain ist mit
-nichts außerhalb von Whoop vergleichbar, und ein Name ohne Präfix würde genau das
-suggerieren.
+There is one deliberate exception: a vendor's own figures keep their prefix (`whoop_strain`,
+`whoop_recovery_score`, `oura_sleep_score`). A Whoop strain is comparable with nothing outside Whoop,
+and a name without the prefix would suggest exactly that it is.
 
-**2. Ein Name, eine Einheit.** Die Einheit steht in der Registry, nicht im Namen. Die
-Importer rechnen beim Transformieren um — WHOOPs Kilojoule werden zu Kilokalorien,
-Apple Healths Meilen zu Kilometern, Stunden zu Minuten. Der Rohwert bleibt dabei in
-`metadata.provider_value` erhalten, zusammen mit `metadata.units`: eine Umrechnung ist
-ein Eingriff in fremde Daten, und die Frage „warum steht hier etwas anderes als in
-meiner Health-App" muss beantwortbar bleiben.
+**2. One name, one unit.** The unit lives in the registry, not in the name. The importers convert
+while transforming — WHOOP's kilojoules become kilocalories, Apple Health's miles become kilometres,
+hours become minutes. The raw value is kept in `metadata.provider_value` along with `metadata.units`:
+a conversion is an intervention in somebody else's data, and "why does this differ from what my
+health app shows" has to stay answerable.
 
-Deshalb enthält kein kanonischer Name ein Einheitensuffix. Ein Test in
-`packages/shared-schemas/tests/test_metrics.py` sorgt dafür, dass das so bleibt.
+That is why no canonical name carries a unit suffix. A test in
+`packages/shared-schemas/tests/test_metrics.py` keeps it that way.
 
-## Wo die Registry greift
+## Where the registry takes effect
 
-| Stelle | Verhalten |
+| Place | Behaviour |
 | --- | --- |
-| Transformer der Importer | rufen `canonical_metric_type()` auf, **bevor** der `idempotency_key` gebildet wird |
-| `shared_schemas.IngestEvent` | weist alles zurück, was nicht kanonisch ist — auch Aliase |
-| Core NATS-Consumer | prüft jedes Event; unbekannte Namen werden mit Log-Eintrag verworfen statt gespeichert |
-| Core Batch-/CSV-Import | bildet Aliase auf den kanonischen Namen ab, sonst HTTP 422 |
-| `GET /api/v1/data/metrics/catalog` | liefert die vollständige Registry |
-| Dashboard | nutzt `apps/dashboard/src/app/lib/metrics/catalog.ts`, generiert aus derselben Quelle |
+| The importers' transformers | call `canonical_metric_type()` **before** the `idempotency_key` is derived |
+| `shared_schemas.IngestEvent` | rejects anything that is not canonical — aliases included |
+| Core's NATS consumer | validates every event; unknown names are discarded with a log entry rather than stored |
+| Core's batch/CSV import | maps aliases onto the canonical name, otherwise HTTP 422 |
+| `GET /api/v1/data/metrics/catalog` | serves the complete registry |
+| Dashboard | uses `apps/dashboard/src/app/lib/metrics/catalog.ts`, generated from the same source |
 
-Der `idempotency_key` ist `SHA256(tenant_id + source_id + metric_type + timestamp)`
-(AGENTS.md Regel 4). Deshalb ist die Reihenfolge im ersten Punkt keine Stilfrage: Wer
-erst den Schlüssel bildet und danach den Namen normalisiert, speichert einen Datenpunkt
-unter einem Namen, den sein Schlüssel nicht beschreibt — und importiert dieselbe Messung
-beim nächsten Lauf ein zweites Mal. Genau darum weist `IngestEvent` Aliase zurück,
-anstatt sie stillschweigend umzuschreiben.
+The `idempotency_key` is `SHA256(tenant_id + source_id + metric_type + timestamp)` (AGENTS.md rule 4).
+That is why the order in the first row is not a matter of style: derive the key first and normalize
+the name afterwards, and you store a data point under a name its key does not describe — and import
+the same reading a second time on the next run. It is exactly why `IngestEvent` rejects aliases
+instead of quietly rewriting them.
 
-## Aliase
+## Aliases
 
-Ein Alias ist ein alter oder herstellereigener Name, der auf eine kanonische Metrik
-zeigt. Er darf **gelesen**, aber nicht **geschrieben** werden. Das ist der Weg, auf dem
-eine CSV-Spalte namens `carbs` in `nutrition_carbohydrates` landet, statt eine eigene
-Metrik zu gründen.
+An alias is a former or vendor-specific name that points at a canonical metric. It may be **read**
+but not **written**. That is how a CSV column called `carbs` ends up in `nutrition_carbohydrates`
+instead of founding a metric of its own.
 
-`calendar_busy_hours` ist bewusst **kein** Alias von `calendar_busy_duration`: Der Name
-trug dieselbe Größe in einer anderen Einheit, und eine Abbildung würde 8 Stunden und
-8 Minuten in dieselbe Serie legen. Die Metrik ist ersatzlos entfallen.
+`calendar_busy_hours` is deliberately **not** an alias of `calendar_busy_duration`: the name carried
+the same quantity in a different unit, and a mapping would put 8 hours and 8 minutes into the same
+series. The metric was dropped with nothing in its place.
 
-## Dynamische Namensräume
+## Dynamic namespaces
 
-Manche Quellen haben keinen festen Metriksatz. Welche Entitäten eine Home-Assistant-
-Installation exportiert, entscheidet die Einrichtung des Nutzers, nicht der Hersteller.
-Für diese Fälle gibt es registrierte Präfixe: Namen darunter sind erlaubt, ohne
-katalogisiert zu sein, und tragen ihre Einheit in `metadata.unit` statt in der Registry.
+Some sources have no fixed set of metrics. Which entities a Home Assistant installation exports is
+decided by the user's own setup, not by a vendor. For those cases there are registered prefixes:
+names below them are legal without being catalogued, and they carry their unit in `metadata.unit`
+rather than in the registry.
 
-Das ist keine Hintertür für Importer, die ihre Metriken katalogisieren könnten — es ist
-die ehrliche Antwort, wenn die Einheit erst zur Laufzeit bekannt ist.
+This is not a back door for importers that could catalogue their metrics — it is the honest answer
+when the unit is only known at run time.
 
-## Eine Metrik hinzufügen
+## Adding a metric
 
-1. Eintrag in `packages/shared-schemas/src/shared_schemas/metrics.py` ergänzen — Name,
-   Einheit, Aggregation, Kategorie, Labels, Quellen, plausibler Wertebereich.
-2. `task metrics:generate` ausführen. Das schreibt den TypeScript-Katalog des Dashboards
-   und die Tabelle unten neu.
-3. `task test:packages` ausführen. Die Tests prüfen unter anderem, dass kein Name seine
-   Einheit als Suffix trägt und dass kein Importer einen unregistrierten Namen schreibt.
-4. Die Seite des betroffenen Importers unter `docs/importers/` ergänzen.
+1. Add the entry to `packages/shared-schemas/src/shared_schemas/metrics.py` — name, unit,
+   aggregation, category, labels, sources, plausible value range.
+2. Run `task metrics:generate`. That rewrites the dashboard's TypeScript catalog and the table below.
+3. Run `task test:packages`. Among other things, the tests check that no name carries its unit as a
+   suffix and that no importer writes an unregistered name.
+4. Extend the page of the importer concerned under `docs/importers/`.
 
-Wird eine Metrik **umbenannt**, gehört der alte Name als Alias in denselben Eintrag —
-sonst sind die bereits gespeicherten Zeilen aus der Anwendung heraus nicht mehr
-erreichbar.
+When a metric is **renamed**, the former name belongs in the same entry as an alias — otherwise the
+rows already stored can no longer be reached from the application.
 
-## Der Katalog
+## The catalog
 
-Erzeugt aus der Registry; Änderungen hier werden beim nächsten `task metrics:generate`
-überschrieben.
+Generated from the registry; changes made here are overwritten by the next `task metrics:generate`.
+
+Each metric carries a label in both interface languages. The table below shows the English one; the
+dashboard picks whichever matches the reader's language.
 
 <!-- BEGIN GENERATED METRIC TABLE -->
 
-### Aktivität
+### Activity
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `steps` | Schritte | `count` | Summe | apple_health | `step_count`, `steps_count` |
-| `distance` | Zurückgelegte Distanz | `km` | Summe | apple_health | `distance_walking_running`, `walking_running_distance` |
-| `energy_active` | Aktive Energie | `kcal` | Summe | apple_health | `active_energy`, `active_energy_burned` |
-| `energy_resting` | Grundumsatz | `kcal` | Summe | apple_health | `resting_energy`, `basal_energy_burned` |
-| `energy_total` | Gesamtumsatz | `kcal` | Summe | whoop | `cycle_kilojoule` |
-| `exercise_duration` | Bewegungsminuten | `min` | Summe | apple_health | `apple_exercise_time` |
-| `stand_duration` | Stehminuten | `min` | Summe | apple_health | `apple_stand_time` |
-| `whoop_strain` | Whoop Strain (Tag) | `index` | Maximum | whoop | `strain` |
-| `oura_activity_score` | Oura Activity Score | `index` | Mittelwert | oura | `activity_score` |
+| `steps` | Steps | `count` | `sum` | apple_health | `step_count`, `steps_count` |
+| `distance` | Distance travelled | `km` | `sum` | apple_health | `distance_walking_running`, `walking_running_distance` |
+| `energy_active` | Active energy | `kcal` | `sum` | apple_health | `active_energy`, `active_energy_burned` |
+| `energy_resting` | Resting energy | `kcal` | `sum` | apple_health | `resting_energy`, `basal_energy_burned` |
+| `energy_total` | Total energy burned | `kcal` | `sum` | whoop | `cycle_kilojoule` |
+| `exercise_duration` | Exercise time | `min` | `sum` | apple_health | `apple_exercise_time` |
+| `stand_duration` | Stand time | `min` | `sum` | apple_health | `apple_stand_time` |
+| `whoop_strain` | Whoop strain (day) | `index` | `max` | whoop | `strain` |
+| `oura_activity_score` | Oura activity score | `index` | `average` | oura | `activity_score` |
 
-### Herz & Kreislauf
+### Heart and circulation
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `heart_rate` | Puls | `bpm` | Mittelwert | apple_health | — |
-| `heart_rate_average` | Durchschnittspuls (Tag) | `bpm` | Mittelwert | whoop | `cycle_average_heart_rate` |
-| `heart_rate_resting` | Ruhepuls | `bpm` | Mittelwert | apple_health, whoop | `resting_heart_rate`, `resting_hr`, `resting_heart_rate_bpm` |
-| `heart_rate_walking_average` | Gehpuls (Durchschnitt) | `bpm` | Mittelwert | apple_health | `walking_heart_rate_average` |
-| `hrv_rmssd` | HRV (RMSSD) | `ms` | Mittelwert | whoop | `hrv_rmssd_milli` |
-| `hrv_sdnn` | HRV (SDNN) | `ms` | Mittelwert | apple_health | `heart_rate_variability_sdnn`, `hrv` |
-| `blood_oxygen` | Sauerstoffsättigung | `%` | Mittelwert | apple_health, whoop | `spo2_percentage`, `spo2`, `oxygen_saturation` |
-| `respiratory_rate` | Atemfrequenz | `br/min` | Mittelwert | apple_health, whoop | — |
+| `heart_rate` | Heart rate | `bpm` | `average` | apple_health | — |
+| `heart_rate_average` | Average heart rate (day) | `bpm` | `average` | whoop | `cycle_average_heart_rate` |
+| `heart_rate_resting` | Resting heart rate | `bpm` | `average` | apple_health, whoop | `resting_heart_rate`, `resting_hr`, `resting_heart_rate_bpm` |
+| `heart_rate_walking_average` | Walking heart rate average | `bpm` | `average` | apple_health | `walking_heart_rate_average` |
+| `hrv_rmssd` | HRV (RMSSD) | `ms` | `average` | whoop | `hrv_rmssd_milli` |
+| `hrv_sdnn` | HRV (SDNN) | `ms` | `average` | apple_health | `heart_rate_variability_sdnn`, `hrv` |
+| `blood_oxygen` | Blood oxygen | `%` | `average` | apple_health, whoop | `spo2_percentage`, `spo2`, `oxygen_saturation` |
+| `respiratory_rate` | Respiratory rate | `br/min` | `average` | apple_health, whoop | — |
 
-### Schlaf
+### Sleep
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `sleep_duration` | Schlafdauer | `min` | Summe | apple_health | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
-| `sleep_duration_deep` | Tiefschlaf | `min` | Summe | apple_health | `sleep_deep_duration` |
-| `sleep_duration_rem` | REM-Schlaf | `min` | Summe | apple_health | `sleep_rem_duration` |
-| `sleep_duration_light` | Leichtschlaf | `min` | Summe | apple_health | `sleep_core_duration`, `sleep_light_duration` |
-| `sleep_duration_awake` | Wachzeit | `min` | Summe | apple_health | `sleep_awake_duration` |
-| `sleep_duration_in_bed` | Zeit im Bett | `min` | Summe | apple_health | `sleep_inbed_duration`, `sleep_in_bed_duration` |
-| `sleep_efficiency` | Schlafeffizienz | `%` | Mittelwert | whoop | `sleep_efficiency_percentage` |
-| `whoop_sleep_performance` | Whoop Sleep Performance | `%` | Mittelwert | whoop | `sleep_performance_percentage`, `whoop_sleep_performance_percent` |
-| `whoop_recovery_score` | Whoop Recovery | `%` | Mittelwert | whoop | `recovery_score` |
-| `oura_sleep_score` | Oura Sleep Score | `index` | Mittelwert | oura | `sleep_score` |
-| `oura_readiness_score` | Oura Readiness Score | `index` | Mittelwert | oura | `readiness_score` |
+| `sleep_duration` | Sleep duration | `min` | `sum` | apple_health | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
+| `sleep_duration_deep` | Deep sleep | `min` | `sum` | apple_health | `sleep_deep_duration` |
+| `sleep_duration_rem` | REM sleep | `min` | `sum` | apple_health | `sleep_rem_duration` |
+| `sleep_duration_light` | Light sleep | `min` | `sum` | apple_health | `sleep_core_duration`, `sleep_light_duration` |
+| `sleep_duration_awake` | Awake time | `min` | `sum` | apple_health | `sleep_awake_duration` |
+| `sleep_duration_in_bed` | Time in bed | `min` | `sum` | apple_health | `sleep_inbed_duration`, `sleep_in_bed_duration` |
+| `sleep_efficiency` | Sleep efficiency | `%` | `average` | whoop | `sleep_efficiency_percentage` |
+| `whoop_sleep_performance` | Whoop sleep performance | `%` | `average` | whoop | `sleep_performance_percentage`, `whoop_sleep_performance_percent` |
+| `whoop_recovery_score` | Whoop recovery | `%` | `average` | whoop | `recovery_score` |
+| `oura_sleep_score` | Oura sleep score | `index` | `average` | oura | `sleep_score` |
+| `oura_readiness_score` | Oura readiness score | `index` | `average` | oura | `readiness_score` |
 
-### Körper
+### Body
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `body_weight` | Körpergewicht | `kg` | letzter Wert | apple_health | `body_mass`, `weight` |
-| `body_fat` | Körperfettanteil | `%` | letzter Wert | apple_health | `body_fat_percentage` |
-| `vo2_max` | VO2max | `mL/kg/min` | letzter Wert | apple_health | — |
-| `skin_temperature` | Hauttemperatur | `°C` | Mittelwert | whoop | `skin_temp_celsius` |
+| `body_weight` | Body weight | `kg` | `last` | apple_health | `body_mass`, `weight` |
+| `body_fat` | Body fat | `%` | `last` | apple_health | `body_fat_percentage` |
+| `vo2_max` | VO2 max | `mL/kg/min` | `last` | apple_health | — |
+| `skin_temperature` | Skin temperature | `°C` | `average` | whoop | `skin_temp_celsius` |
 
-### Ernährung
+### Nutrition
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `nutrition_energy` | Kalorien | `kcal` | Summe | yazio, apple_health | `calories`, `yazio_calories`, `calories_consumed`, `dietary_energy_consumed`, `nutrition_calories_kcal` |
-| `nutrition_protein` | Protein | `g` | Summe | yazio | `protein`, `yazio_protein`, `nutrition_protein_g` |
-| `nutrition_carbohydrates` | Kohlenhydrate | `g` | Summe | yazio | `carbohydrates`, `carbs`, `yazio_carbs`, `nutrition_carbs_g` |
-| `nutrition_fat` | Fett | `g` | Summe | yazio | `fat`, `yazio_fat`, `nutrition_fat_g` |
-| `nutrition_fiber` | Ballaststoffe | `g` | Summe | yazio | `fiber`, `yazio_fiber`, `nutrition_fiber_g` |
-| `nutrition_meal_energy` | Kalorien je Mahlzeit | `kcal` | Summe | yazio | — |
-| `nutrition_item_energy` | Kalorien je Eintrag | `kcal` | Summe | yazio | `consumed_item_calories` |
-| `nutrition_item_amount` | Menge je Eintrag | `g` | Summe | yazio | `consumed_product` |
-| `nutrition_recipe_portions` | Rezeptportionen | `count` | Summe | yazio | `consumed_recipe_portion` |
+| `nutrition_energy` | Calories | `kcal` | `sum` | yazio, apple_health | `calories`, `yazio_calories`, `calories_consumed`, `dietary_energy_consumed`, `nutrition_calories_kcal` |
+| `nutrition_protein` | Protein | `g` | `sum` | yazio | `protein`, `yazio_protein`, `nutrition_protein_g` |
+| `nutrition_carbohydrates` | Carbohydrates | `g` | `sum` | yazio | `carbohydrates`, `carbs`, `yazio_carbs`, `nutrition_carbs_g` |
+| `nutrition_fat` | Fat | `g` | `sum` | yazio | `fat`, `yazio_fat`, `nutrition_fat_g` |
+| `nutrition_fiber` | Fibre | `g` | `sum` | yazio | `fiber`, `yazio_fiber`, `nutrition_fiber_g` |
+| `nutrition_meal_energy` | Calories per meal | `kcal` | `sum` | yazio | — |
+| `nutrition_item_energy` | Calories per item | `kcal` | `sum` | yazio | `consumed_item_calories` |
+| `nutrition_item_amount` | Amount per item | `g` | `sum` | yazio | `consumed_product` |
+| `nutrition_recipe_portions` | Recipe portions | `count` | `sum` | yazio | `consumed_recipe_portion` |
 
-### Training (Ausdauer)
+### Training (endurance)
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `workout_duration` | Trainingsdauer | `min` | Summe | apple_health | `whoop_workout_duration_minutes` |
-| `workout_distance` | Trainingsdistanz | `km` | Summe | apple_health, whoop | `workout_distance_meter` |
-| `workout_energy` | Trainingsenergie | `kcal` | Summe | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
-| `workout_heart_rate_average` | Trainingspuls (Durchschnitt) | `bpm` | Mittelwert | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
-| `workout_heart_rate_max` | Trainingspuls (Maximum) | `bpm` | Maximum | apple_health | `workout_max_heart_rate` |
-| `whoop_workout_strain` | Whoop Strain (Training) | `index` | Maximum | whoop | `workout_strain` |
+| `workout_duration` | Workout duration | `min` | `sum` | apple_health | `whoop_workout_duration_minutes` |
+| `workout_distance` | Workout distance | `km` | `sum` | apple_health, whoop | `workout_distance_meter` |
+| `workout_energy` | Workout energy | `kcal` | `sum` | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
+| `workout_heart_rate_average` | Workout heart rate (average) | `bpm` | `average` | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
+| `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health | `workout_max_heart_rate` |
+| `whoop_workout_strain` | Whoop strain (workout) | `index` | `max` | whoop | `workout_strain` |
 
-### Krafttraining
+### Strength training
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `strength_set_weight` | Satzgewicht | `kg` | Maximum | streak | `workout_set_weight_kg` |
-| `strength_set_reps` | Wiederholungen | `count` | Summe | streak | `workout_set_reps` |
-| `strength_set_volume` | Satzvolumen | `kg` | Summe | streak | `workout_set_volume` |
-| `strength_set_heart_rate_max` | Maximalpuls im Satz | `bpm` | Maximum | streak | `workout_set_heart_rate_max` |
-| `strength_session_volume` | Trainingsvolumen | `kg` | Summe | streak | `workout_total_volume` |
-| `strength_session_sets` | Sätze | `count` | Summe | streak | `workout_total_sets` |
+| `strength_set_weight` | Set weight | `kg` | `max` | streak | `workout_set_weight_kg` |
+| `strength_set_reps` | Repetitions | `count` | `sum` | streak | `workout_set_reps` |
+| `strength_set_volume` | Set volume | `kg` | `sum` | streak | `workout_set_volume` |
+| `strength_set_heart_rate_max` | Set peak heart rate | `bpm` | `max` | streak | `workout_set_heart_rate_max` |
+| `strength_session_volume` | Session volume | `kg` | `sum` | streak | `workout_total_volume` |
+| `strength_session_sets` | Sets | `count` | `sum` | streak | `workout_total_sets` |
 
-### Standort
+### Location
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `location_point` | Standortpunkte | `count` | Summe | dawarich | — |
-| `location_latitude` | Breitengrad | `°` | letzter Wert | dawarich | — |
-| `location_longitude` | Längengrad | `°` | letzter Wert | dawarich | — |
+| `location_point` | Location points | `count` | `sum` | dawarich | — |
+| `location_latitude` | Latitude | `°` | `last` | dawarich | — |
+| `location_longitude` | Longitude | `°` | `last` | dawarich | — |
 
-### Kalender
+### Calendar
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `calendar_event_count` | Termine | `count` | Summe | calendar | — |
-| `calendar_busy_duration` | Belegte Zeit | `min` | Summe | calendar | `calendar_busy_minutes` |
-| `calendar_meeting_duration` | Termindauer | `min` | Summe | calendar | `calendar_meeting_duration_minutes` |
+| `calendar_event_count` | Calendar events | `count` | `sum` | calendar | — |
+| `calendar_busy_duration` | Busy time | `min` | `sum` | calendar | `calendar_busy_minutes` |
+| `calendar_meeting_duration` | Meeting duration | `min` | `sum` | calendar | `calendar_meeting_duration_minutes` |
 
-### Umwelt
+### Environment
 
-| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `weather_temperature` | Außentemperatur | `°C` | Mittelwert | weather | `weather_temperature_c` |
-| `weather_temperature_apparent` | Gefühlte Temperatur | `°C` | Mittelwert | weather | `weather_apparent_temperature_c` |
-| `weather_humidity` | Luftfeuchtigkeit | `%` | Mittelwert | weather | `weather_humidity_pct` |
-| `weather_precipitation` | Niederschlag | `mm` | Summe | weather | `weather_precipitation_mm` |
-| `weather_pressure` | Luftdruck | `hPa` | Mittelwert | weather | `weather_pressure_hpa` |
-| `weather_wind_speed` | Windgeschwindigkeit | `km/h` | Mittelwert | weather | `weather_wind_speed_kmh` |
-| `weather_cloud_cover` | Bewölkung | `%` | Mittelwert | weather | `weather_cloud_cover_pct` |
-| `weather_uv_index` | UV-Index | `index` | Maximum | weather | — |
+| `weather_temperature` | Outdoor temperature | `°C` | `average` | weather | `weather_temperature_c` |
+| `weather_temperature_apparent` | Apparent temperature | `°C` | `average` | weather | `weather_apparent_temperature_c` |
+| `weather_humidity` | Humidity | `%` | `average` | weather | `weather_humidity_pct` |
+| `weather_precipitation` | Precipitation | `mm` | `sum` | weather | `weather_precipitation_mm` |
+| `weather_pressure` | Air pressure | `hPa` | `average` | weather | `weather_pressure_hpa` |
+| `weather_wind_speed` | Wind speed | `km/h` | `average` | weather | `weather_wind_speed_kmh` |
+| `weather_cloud_cover` | Cloud cover | `%` | `average` | weather | `weather_cloud_cover_pct` |
+| `weather_uv_index` | UV index | `index` | `max` | weather | — |
 
-### Dynamische Namensräume
+### Dynamic namespaces
 
-| Präfix | Bedeutung | Quellen |
+| Prefix | Meaning | Sources |
 | --- | --- | --- |
 | `home_assistant_` | Home Assistant | home_assistant |
-| `apple_health_` | Apple Health (nicht katalogisiert) | apple_health |
-| `custom_` | Eigene Metrik | manueller Import |
+| `apple_health_` | Apple Health (uncatalogued) | apple_health |
+| `custom_` | Custom metric | manual import |
 
 <!-- END GENERATED METRIC TABLE -->

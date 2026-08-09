@@ -1,47 +1,50 @@
-# Yazio Importer
+# Yazio importer
 
-## Ziel
+## Purpose
 
-Der Yazio-Importer normalisiert Rohdaten in tenant-scoped Quantified-Self-Metriken und veröffentlicht sie über NATS JetStream. Core übernimmt Speicherung, Deduplizierung und spätere API-Abfragen.
+The Yazio importer normalizes raw data into tenant-scoped Quantified Self metrics and
+publishes them over NATS JetStream. Core takes care of storage, deduplication and the later
+API queries.
 
-## Datenzugang
+## Data access
 
-- Quelle: Yazio OAuth/API Token aus der App-Integration.
-- Credentials werden im Dashboard konfiguriert und in Core verschlüsselt gespeichert.
-- Der Importer fragt Credentials dynamisch über Core ab und bleibt ohne gültige Konfiguration idle.
+- Source: a Yazio OAuth/API token from the app integration.
+- The credentials are configured in the dashboard and stored encrypted in Core.
+- The importer fetches them from Core at run time and stays idle without a valid configuration.
 
-!!! note "Der OAuth-Client ist nicht unser Geheimnis"
-    Die Anmeldung bei Yazio verwendet deren Mobil-App-Client. Dessen `client_id`
-    und `client_secret` stecken in einer ausgelieferten App, sind damit öffentlich
-    und lassen sich von uns auch nicht wechseln. Sie standen fest verdrahtet in
-    `client.py`, was wie ein geleaktes Geheimnis aussah, und liegen jetzt als
-    `YAZIO_CLIENT_ID` / `YAZIO_CLIENT_SECRET` in der Konfiguration — mit denselben
-    Werten als Default, ersetzbar für eine Installation mit eigenem Client.
+!!! note "The OAuth client is not our secret"
+    Signing in to Yazio uses their mobile app's client. Its `client_id` and `client_secret`
+    sit inside a shipped app, which makes them public, and we could not rotate them anyway.
+    They used to be hardcoded in `client.py`, where they looked like a leaked secret; they
+    now live in the configuration as `YAZIO_CLIENT_ID` / `YAZIO_CLIENT_SECRET` — with the
+    same values as the default, replaceable for an installation with its own client.
 
-    Die Zugangsdaten der Nutzerin sind davon unberührt: die kommen aus dem
-    Dashboard und werden verschlüsselt aus Core geladen.
+    The user's own credentials are untouched by this: they come from the dashboard and are
+    loaded encrypted from Core.
 
-## Einrichtung
+## Setup
 
-1. Im Dashboard unter **Connectors** die Datenquelle öffnen.
-2. Zugangsdaten oder Export-Konfiguration eintragen.
-3. Speichern; Core verschlüsselt die Credentials mit Fernet AES-256.
-4. Bei aktiven Importern **Jetzt Sync** klicken oder den Worker zyklisch laufen lassen.
+1. Open the data source under **Connectors** in the dashboard.
+2. Enter the credentials, or the export configuration.
+3. Save; Core encrypts the credentials with Fernet AES-256.
+4. For active importers, click **Sync now**, or wait for Core's scheduler to find the
+   connector due. The importer has no timer of its own — it acts on the task Core
+   publishes; see [Architecture](../architecture.md#scheduled-imports).
 
-## Datenfluss
+## Data flow
 
 ```text
-Externe Quelle -> Importer -> qs.ingest.yazio -> Core -> data_points
+external source -> importer -> qs.ingest.yazio -> Core -> data_points
 ```
 
-## Wichtige Metriken
+## Main metrics
 
-- `nutrition_calories_kcal`
-- `nutrition_protein_g`
-- `nutrition_carbs_g`
-- `nutrition_fat_g`
+- `nutrition_energy`
+- `nutrition_protein`
+- `nutrition_carbohydrates`
+- `nutrition_fat`
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=nutrition_energy&start_time=<iso>&end_time=<iso>&limit=1000
@@ -50,26 +53,27 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten:
+Filter by further `metric_type` values as needed:
 
-| `metric_type` | Bedeutung | Einheit |
+| `metric_type` | Meaning | Unit |
 | --- | --- | --- |
-| `nutrition_energy` | Kalorien des Tages | `kcal` |
-| `nutrition_protein` | Protein des Tages | `g` |
-| `nutrition_carbohydrates` | Kohlenhydrate des Tages | `g` |
-| `nutrition_fat` | Fett des Tages | `g` |
-| `nutrition_fiber` | Ballaststoffe des Tages | `g` |
-| `nutrition_meal_energy` | Kalorien je Mahlzeit; die Mahlzeit steht in `metadata.meal_category` | `kcal` |
-| `nutrition_item_energy` | Kalorien je Eintrag | `kcal` |
-| `nutrition_item_amount` | Menge eines Eintrags ohne Kalorienangabe | `g` |
-| `nutrition_recipe_portions` | Anzahl Rezeptportionen | `count` |
+| `nutrition_energy` | calories for the day | `kcal` |
+| `nutrition_protein` | protein for the day | `g` |
+| `nutrition_carbohydrates` | carbohydrates for the day | `g` |
+| `nutrition_fat` | fat for the day | `g` |
+| `nutrition_fiber` | fibre for the day | `g` |
+| `nutrition_meal_energy` | calories per meal; the meal is in `metadata.meal_category` | `kcal` |
+| `nutrition_item_energy` | calories per entry | `kcal` |
+| `nutrition_item_amount` | amount of an entry that carries no calorie figure | `g` |
+| `nutrition_recipe_portions` | number of recipe portions | `count` |
 
-`nutrition_energy` ist dieselbe Metrik, unter der auch Apple Health seine
-Nahrungsenergie ablegt - beide Quellen landen in einer Serie.
+`nutrition_energy` is the same metric Apple Health writes its dietary energy to — both
+sources land in one series.
 
-Mahlzeiten sind keine eigenen Metriken mehr. Früher entstand pro
-Mahlzeitenbezeichnung ein eigener Name (`breakfast_calories`, `lunch_calories`, ...),
-abhängig davon, welche Bezeichnungen der Anbieter gerade lieferte. Die Mahlzeit ist
-eine Eigenschaft des Messwerts und steht deshalb in `metadata.meal_category`.
+Meals are no longer metrics of their own. A separate name used to appear per meal label
+(`breakfast_calories`, `lunch_calories`, …), depending on which labels the provider happened
+to return. The meal is a property of the measurement, so it lives in
+`metadata.meal_category`.
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that
+still point at it — is in [Metrics](../metrics.md).

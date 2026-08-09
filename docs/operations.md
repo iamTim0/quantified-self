@@ -1,337 +1,305 @@
-# Betrieb, Deployment und Monitoring
+# Operations, deployment and monitoring
 
-## Lokale Entwicklung
+## Local development
 
 ```bash
-task dev:up            # Postgres, NATS, Traefik, Dashboard, Docs
-task dev:docker        # derselbe Stack, aber mit dem Checkout gemountet
-task db:migrate        # Alembic auf head
-task dev:local         # Backends lokal statt im Container
-task docs:serve        # Dokumentation auf :8003
+task dev:up            # Postgres, NATS, Traefik, dashboard, docs
+task dev:docker        # the same stack, but with the checkout mounted
+task db:migrate        # Alembic to head
+task dev:local         # backends locally instead of in containers
+task docs:serve        # documentation on :8003
 ```
 
-Ohne Postgres auf `:5433` schlagen die Integrationstests fehl — das ist erwartet,
-kein Defekt.
+Without Postgres on `:5433` the integration tests fail — that is expected, not a defect.
 
-### Welche Adresse man öffnet
+### Which address to open
 
-Die UI ruft immer ihren **eigenen** Ursprung auf. Es gibt deshalb pro Betriebsart
-genau eine Adresse, unter der sowohl die Seite als auch `/api` beantwortet werden:
+The UI always calls its **own** origin. So there is exactly one address per mode of operation at
+which both the page and `/api` are answered:
 
-| Betriebsart | Adresse | Wer verteilt |
+| Mode | Address | Who routes |
 | --- | --- | --- |
-| `task dev:up` (alles im Container) | `http://localhost:8080` | Traefik: `/` → Dashboard, `/api` → Gateway |
-| `task dev:docker` (Container + Checkout gemountet) | `http://localhost:8080` | dieselbe Traefik-Verteilung |
-| `task dev:local` (Backends lokal) | `http://localhost:3000` | der Dev-Server: `/api` wird an den Gateway umgeschrieben |
+| `task dev:up` (everything in containers) | `http://localhost:8080` | Traefik: `/` → dashboard, `/api` → Gateway |
+| `task dev:docker` (containers + checkout mounted) | `http://localhost:8080` | the same Traefik routing |
+| `task dev:local` (backends locally) | `http://localhost:3000` | the dev server: `/api` is rewritten to the Gateway |
 
-Nur unter `:8080` beantwortet auch `/docs` — die Dokumentation ist ein eigener
-Container hinter derselben Traefik. Im Modus `dev:local` läuft er nicht, und jeder
-`/docs/…`-Link aus der Oberfläche (Sidebar, Connector-Dialoge, API-Keys) landet
-deshalb im Nichts. Wer mit der Dokumentation arbeitet, nimmt `dev:docker`.
+Only `:8080` also answers `/docs` — the documentation is a container of its own behind the same
+Traefik. In `dev:local` it is not running, so every `/docs/…` link in the interface (sidebar,
+connector dialogs, API keys) leads nowhere. If you are working on the documentation, use
+`dev:docker`.
 
-Die veröffentlichten Ports der einzelnen Dienste (`:3000` im Container-Stack,
-`:8000` am Gateway) sind zum Debuggen da, nicht zum Benutzen. Wer den
-Container-Port 3000 direkt öffnet, umgeht Traefik — dann beantwortet niemand
-`/api`, und die Anmeldemaske kann nicht einmal feststellen, ob Registrierung
-erlaubt ist.
+The individual services' published ports (`:3000` in the container stack, `:8000` on the Gateway)
+are there for debugging, not for using. Open container port 3000 directly and you bypass Traefik —
+then nobody answers `/api`, and the sign-in screen cannot even establish whether registration is
+allowed.
 
-Der Gateway liefert die UI zusätzlich unter seinem eigenen Port aus, indem er sie
-durchschleift. Das ist für produktionsnahe Prüfungen gedacht — die Browser-Tests
-laufen genau darüber, weil ein einziger Ursprung die Session-Cookies so verhält
-wie im Betrieb. Für die tägliche Entwicklung ist `:3000` die richtige Adresse:
-dort funktioniert Hot Reload.
+The Gateway also serves the UI on its own port by proxying it through. That is meant for
+production-like checks — the browser tests run over exactly that, because a single origin makes the
+session cookies behave the way they do in operation. For day-to-day development `:3000` is the right
+address: hot reload works there.
 
-### Im Container entwickeln (`task dev:docker`)
+### Developing inside containers (`task dev:docker`)
 
-Derselbe Stack wie `dev:up`, aber jeder Dienst liest seinen Code aus dem Checkout
-statt aus dem Image (`infra/docker-compose.dev.yml`). Damit braucht eine Änderung
-keinen Neubau, und es bleibt bei einer einzigen Adresse für Oberfläche, `/api` und
-`/docs`.
+The same stack as `dev:up`, but every service reads its code from the checkout rather than from the
+image (`infra/docker-compose.dev.yml`). A change then needs no rebuild, and there is still a single
+address for the interface, `/api` and `/docs`.
 
-Was eine Änderung kostet, hängt vom Dienst ab:
+What a change costs depends on the service:
 
-| Dienst | Wirkt |
+| Service | Takes effect |
 | --- | --- |
-| Core, Gateway, Analysis | sofort — `uvicorn --reload` |
-| Importer | nach `docker compose … restart <dienst>` (Sekunden, kein Neubau) |
-| Dashboard | nach `… restart dashboard` (~10 s) |
-| Dokumentation | sofort — `mkdocs serve` beobachtet `docs/` selbst |
+| Core, Gateway, Analysis | immediately — `uvicorn --reload` |
+| Importers | after `docker compose … restart <service>` (seconds, no rebuild) |
+| Dashboard | after `… restart dashboard` (~10 s) |
+| Documentation | immediately — `mkdocs serve` watches `docs/` itself |
 
-Das Dashboard ist der eine Fall ohne Hot Reload, und das ist eine Eigenschaft der
-Plattform, kein Konfigurationsfehler: Turbopack erkennt Änderungen über inotify,
-und ein Bind-Mount eines Windows- oder macOS-Verzeichnisses liefert diese Ereignisse
-nicht in den Container. Der Container *liest* die geänderte Datei korrekt, sobald er
-gefragt wird — nur erfährt der Beobachter nie davon, sodass der Dev-Server seinen
-zwischengespeicherten Stand weiter ausliefert. Wer längere Zeit an der Oberfläche
-arbeitet, startet `next dev` nativ auf dem Host; für alles andere ist der Neustart
-billiger als der Moduswechsel.
+The dashboard is the one case without hot reload, and that is a property of the platform rather than
+a misconfiguration: Turbopack detects changes through inotify, and a bind mount of a Windows or macOS
+directory does not deliver those events into the container. The container *reads* the changed file
+correctly as soon as it is asked — the watcher simply never hears about it, so the dev server keeps
+serving its cached state. If you are working on the interface for a while, run `next dev` natively on
+the host; for everything else the restart is cheaper than switching modes.
 
-Nach einer Änderung an `package.json` oder `bun.lock` genügt ein Neubau nicht:
-`node_modules` liegt in einem benannten Volume, das nur einmal aus dem Image befüllt
-wird. Dafür gibt es `task dev:docker:reset`.
+After a change to `package.json` or `bun.lock` a rebuild is not enough: `node_modules` lives in a
+named volume that is only populated from the image once. `task dev:docker:reset` is there for that.
 
 ## Tests
 
 ```bash
-task test:all          # Specs, Core, Gateway, E2E, Importer
-task test:core         # nur Core (braucht Postgres)
-task test:importers    # alle acht Importer
+task test:all          # packages, specs, Core, Gateway, Analysis, e2e, importers
+task test:core         # Core only (needs Postgres)
+task test:analysis     # the statistics and the service boundary
+task test:packages     # the metric registry and catalog drift
+task test:importers    # every importer with a pyproject.toml
 task lint:all          # Ruff, ESLint, tsc
 task docs:build        # MkDocs --strict
 ```
 
-## Erforderliche Konfiguration
+## Required configuration
 
-| Variable | Zweck | Produktionspflicht |
+| Variable | Purpose | Required in production |
 | --- | --- | --- |
-| `DATABASE_URL` | PostgreSQL-Verbindung | ja |
-| `NATS_URL` | Broker | ja |
-| `JWT_SECRET` | Signatur der Nutzer-Token | **ja — Default ist unsicher** |
-| `INTERNAL_SERVICE_SECRET` | Signatur/Geheimnis interner Dienstaufrufe | **ja** |
-| `ENCRYPTION_KEY` | Fernet-Schlüssel für Connector-Zugangsdaten | **ja** |
-| `ACCESS_TOKEN_TTL_MINUTES` | Laufzeit Zugriffstoken (Standard 720) | nein |
-| `REFRESH_TOKEN_TTL_DAYS` | Laufzeit Erneuerungstoken (Standard 30) | nein |
-| `ALLOW_REGISTRATION` | Selbstregistrierung erlauben. **Standard `false`** — das erste Konto legt `python -m core.create_owner` an | nein |
-| `PUBLIC_HOST` | Hostname, unter dem Traefik ausliefert. Steht bewusst nirgends im Repository | ja |
-| `ALLOWED_ORIGINS` | CORS-Ursprünge des Gateways | ja |
-| `MAP_TILE_HOSTS` | erlaubte Kachel-Hosts in der CSP | nein |
+| `DATABASE_URL` | PostgreSQL connection | yes |
+| `NATS_URL` | Broker | yes |
+| `JWT_SECRET` | Signature of the user tokens | **yes — the default is unsafe** |
+| `INTERNAL_SERVICE_SECRET` | Secret for internal service calls | **yes** |
+| `ENCRYPTION_KEY` | Fernet key for connector credentials | **yes** |
+| `ACCESS_TOKEN_TTL_MINUTES` | Access token lifetime (720 by default) | no |
+| `REFRESH_TOKEN_TTL_DAYS` | Refresh token lifetime (30 by default) | no |
+| `ALLOW_REGISTRATION` | Allow self-registration. **`false` by default** — the first account is created by `python -m core.create_owner` | no |
+| `PUBLIC_HOST` | The hostname Traefik serves under. Deliberately nowhere in the repository | yes |
+| `ALLOWED_ORIGINS` | The Gateway's CORS origins | yes |
+| `MAP_TILE_HOSTS` | Tile hosts allowed by the CSP | no |
 
-!!! danger "Ohne diese drei Werte startet der Produktions-Stack nicht mehr"
-    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` und `ENCRYPTION_KEY` haben
-    Entwicklungs-Defaults, die im Repository stehen. Wer sie kennt, kann Token
-    fälschen und gespeicherte Zugangsdaten entschlüsseln.
+!!! danger "Without these three values the production stack no longer starts"
+    `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have development defaults that are
+    printed in this repository. Anyone who knows them can forge tokens and decrypt stored
+    credentials.
 
-    Bis vor Kurzem war das eine Bitte: das Produktions-Compose enthielt
-    `${JWT_SECRET:-dev-secret-key-quantified-self-2026}`, ein Deployment ohne
-    gesetzte Variable lief also mit dem öffentlichen Wert — und sagte nichts.
-    `docker-compose.prod.yml` verwendet `${VAR:?…}`; fehlt eine Variable, bricht
-    `docker compose` ab, bevor ein Container startet. Zusätzlich verweigern Core
-    und Gateway den Start, wenn `ENVIRONMENT` produktiv ist und ein Wert einem
-    veröffentlichten Default entspricht.
+    Until recently this was a request: the production compose file contained
+    `${JWT_SECRET:-dev-secret-key-quantified-self-2026}`, so a deployment without the variable set
+    ran on the public value — and said nothing about it. `docker-compose.prod.yml` uses
+    `${VAR:?…}`; if a variable is missing, `docker compose` aborts before a container starts. On top
+    of that, Core and the Gateway refuse to start when `ENVIRONMENT` is production-like and a value
+    matches a published default.
 
     ```bash
     python -c "import secrets; print(secrets.token_urlsafe(48))"
     ```
 
-    `INTERNAL_SERVICE_SECRET` muss auf Core **und** allen Importern identisch sein.
+    `INTERNAL_SERVICE_SECRET` has to be identical on Core **and** on every importer.
 
-### `ENCRYPTION_KEY` wechseln
+### Rotating `ENCRYPTION_KEY`
 
-Dieser Schlüssel ist der einzige, der sich nicht einfach ersetzen lässt: er
-entschlüsselt bereits gespeicherte Connector-Zugangsdaten und OIDC-Client-Secrets.
-Wird er ohne Vorbereitung geändert, sind alle hinterlegten Tokens dauerhaft
-unlesbar — die Importer laufen leer und es gibt nichts, worauf man zurückfallen
-könnte.
+This key is the one that cannot simply be replaced: it decrypts connector credentials and OIDC client
+secrets that are already stored. Change it without preparation and every stored token is permanently
+unreadable — the importers run empty and there is nothing to fall back to.
 
-Deshalb zuerst umschlüsseln, dann umstellen:
+So re-encrypt first, then switch:
 
 ```bash
-# 1. Probelauf. Zeigt, was passieren würde, und schreibt nichts.
+# 1. Dry run. Shows what would happen and writes nothing.
 docker compose -f docker-compose.prod.yml run --rm core \
-  python -m core.rotate_encryption_key --old "$ALT" --new "$NEU" --dry-run
+  python -m core.rotate_encryption_key --old "$OLD" --new "$NEW" --dry-run
 
-# 2. Umschlüsseln. Eine Transaktion; ein Abbruch lässt alles auf dem alten Schlüssel.
+# 2. Re-encrypt. One transaction; an abort leaves everything on the old key.
 docker compose -f docker-compose.prod.yml run --rm core \
-  python -m core.rotate_encryption_key --old "$ALT" --new "$NEU"
+  python -m core.rotate_encryption_key --old "$OLD" --new "$NEW"
 
-# 3. Erst jetzt ENCRYPTION_KEY auf den neuen Wert setzen und Core neu starten.
+# 3. Only now set ENCRYPTION_KEY to the new value and restart Core.
 ```
 
-Das Werkzeug bricht ab, sobald ein Wert sich mit **keinem** der beiden Schlüssel
-entschlüsseln lässt, und schreibt dann gar nichts. Eine Datenbank, die halb auf
-dem alten und halb auf dem neuen Schlüssel liegt, wäre der teure Fehler, denn
-nichts hielte fest, welche Zeile auf welchem liegt. Werte, die bereits auf dem
-neuen Schlüssel liegen, bleiben unangetastet — ein zweiter Lauf nach einem
-Abbruch ist also gefahrlos.
+The tool aborts as soon as a value decrypts with **neither** key, and then writes nothing at all. A
+database sitting half on the old key and half on the new one would be the expensive mistake, because
+nothing would record which row is on which. Values that are already on the new key are left
+untouched — so a second run after an abort is safe.
 
-!!! tip "Wenn der Probelauf »UNREADABLE« meldet"
-    Dann liegt mindestens ein Wert auf einem dritten Schlüssel. Das passiert, wenn
-    dieselbe Datenbank zwischenzeitlich mit unterschiedlicher Konfiguration
-    betrieben wurde. Diese Zugangsdaten sind nicht wiederherstellbar; sie müssen im
-    Dashboard neu hinterlegt werden. Danach läuft die Umschlüsselung durch.
+!!! tip "If the dry run reports »UNREADABLE«"
+    Then at least one value is on a third key. That happens when the same database was run with a
+    different configuration at some point in between. Those credentials cannot be recovered; they have
+    to be entered again in the dashboard. After that the re-encryption completes.
 
-### Das erste Konto anlegen
+### Creating the first account
 
-`ALLOW_REGISTRATION` steht standardmäßig auf `false`. Eine persönliche
-Analyseplattform, die für jeden offen ist, sollte eine Entscheidung sein und
-nicht das, was passiert, wenn man nichts konfiguriert. Damit gibt es allerdings
-zunächst keinen Weg hinein — dafür ist dieser Befehl da:
+`ALLOW_REGISTRATION` is `false` by default. A personal analytics platform that is open to everyone
+should be a decision, not what happens when nothing is configured. That does leave no way in to begin
+with — which is what this command is for:
 
 ```bash
 docker compose -f docker-compose.prod.yml run --rm core \
-  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
+  python -m core.create_owner --email you@example.com --workspace "My data"
 ```
 
-Das Passwort wird abgefragt, nicht als Argument übergeben: Kommandozeilen landen
-in der Shell-History, in `ps` und in CI-Logs. Für automatisierte Einrichtung geht
-`QS_OWNER_PASSWORD` als Umgebungsvariable. Mindestlänge sind 12 Zeichen — dieses
-Konto ist der gesamte Zugang, und wer es anlegt, kann frei wählen.
+The password is prompted for rather than passed as an argument: command lines end up in the shell
+history, in `ps` and in CI logs. For automated setup, `QS_OWNER_PASSWORD` works as an environment
+variable. The minimum length is 12 characters — this account is the entire way in, and whoever creates
+it is free to choose.
 
-Ein zweiter Aufruf mit derselben Adresse **überschreibt nichts**, sondern bricht
-ab. Ein Passwort zurückzusetzen ist `--reset-password` und damit eine bewusste
-Anweisung; das beendet zugleich alle bestehenden Sitzungen des Kontos.
+A second call with the same address **overwrites nothing**; it aborts. Resetting a password is
+`--reset-password` and therefore a deliberate instruction; it also ends every existing session of that
+account.
 
-Bewusst ein Befehl und kein Startschritt: Regel 9 verbietet Diensten das Anlegen
-von Daten beim Hochfahren, und warum, steht in der Geschichte dieses Repositories
-— `infra/db/init.sql` legte früher ein Konto mit einem mitgeliefertem
-Passwort-Hash an, sodass jeder Klon dieselben Zugangsdaten für dieselbe Adresse
-enthielt.
+Deliberately a command and not a startup step: rule 9 forbids services to create data while coming up,
+and this repository's own history says why — `infra/db/init.sql` used to create an account with a
+shipped password hash, so that every clone contained the same credentials for the same address.
 
-Wer Selbstregistrierung tatsächlich will, setzt `ALLOW_REGISTRATION=true` — und
-sollte wissen, dass die Anwendung dann für jeden offensteht, der die Adresse
-kennt.
+If you actually want self-registration, set `ALLOW_REGISTRATION=true` — and know that the application
+is then open to anyone who knows the address.
 
 ## Deployment
 
-`docker-compose.prod.yml` beschreibt den Produktions-Stack: Traefik, Gateway, Core,
-Analyse, Dashboard, Dokumentation und die acht Importer. Es **baut nichts**, sondern
-zieht die Images, die der Release-Workflow veröffentlicht hat — ein Deployment ist
-ein Download und ein Neustart.
+`docker-compose.prod.yml` describes the production stack: Traefik, Gateway, Core, Analysis, dashboard,
+documentation and the eight importers. It **builds nothing**; it pulls the images the release workflow
+published — a deployment is a download and a restart.
 
-Die vollständige Anleitung — Release erzeugen, Erstinstallation, Aktualisieren,
-Zurückrollen, Variablen dieses Stacks — steht unter
-[Release & Deployment](deployment.md). Kurz:
+The full walkthrough — cutting a release, first install, updating, rolling back, this stack's variables
+— is under [Release and deployment](deployment.md). In short:
 
 ```bash
-export PUBLIC_HOST=deine-domain.example
+export PUBLIC_HOST=your-domain.example
 export JWT_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
 export INTERNAL_SERVICE_SECRET=$(python -c "import secrets; print(secrets.token_urlsafe(48))")
 export ENCRYPTION_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(32))")
 export ALLOWED_ORIGINS=https://$PUBLIC_HOST
-export QS_VERSION=1.0.0        # welches Release laufen soll
+export QS_VERSION=1.0.0        # which release should run
 
-docker compose -f docker-compose.prod.yml config >/dev/null   # nennt fehlende Variablen
+docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variables
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
 docker compose -f docker-compose.prod.yml run --rm core \
-  python -m core.create_owner --email du@example.com --workspace "Meine Daten"
+  python -m core.create_owner --email you@example.com --workspace "My data"
 ```
 
-Migrationen laufen bewusst als eigener Schritt und nicht beim Start eines
-Dienstes: mehrere gleichzeitig startende Repliken würden sonst gegeneinander
-migrieren. Selbstregistrierung ist aus, deshalb der letzte Befehl — siehe
-[Das erste Konto anlegen](#das-erste-konto-anlegen).
+Migrations run as a step of their own on purpose, rather than when a service starts: several replicas
+coming up at once would otherwise migrate against each other. Self-registration is off, hence the last
+command — see [Creating the first account](#creating-the-first-account).
 
-Stehen schon Nutzdaten in der Datenbank, ist `ENCRYPTION_KEY` **nicht** frei
-wählbar — dann zuerst [umschlüsseln](#encryption_key-wechseln).
+If there is already real data in the database, `ENCRYPTION_KEY` is **not** free to choose — then
+[re-encrypt](#rotating-encryption_key) first.
 
-### Testen
+### Testing it
 
-`tools/smoke_deployment.sh` prüft ein Deployment von außen — erreichbar,
-verschlossen, und was es selbst über seine Konfiguration sagt:
+`tools/smoke_deployment.sh` checks a deployment from outside — reachable, closed, and what it says about
+its own configuration:
 
 ```bash
 bash tools/smoke_deployment.sh https://$PUBLIC_HOST
 
-# Mit Zugangsdaten zusätzlich Anmeldung, ein tenant-bezogener Lesezugriff
-# und die Selbstauskunft:
-OWNER_EMAIL=du@example.com OWNER_PASSWORD='…' \
+# With credentials it also checks sign-in, a tenant-scoped read,
+# and the self-report:
+OWNER_EMAIL=you@example.com OWNER_PASSWORD='…' \
   bash tools/smoke_deployment.sh https://$PUBLIC_HOST
 ```
 
-Geprüft wird:
+What it checks:
 
-| Prüfung | Erwartung |
+| Check | Expectation |
 | --- | --- |
 | `/health` | `200` |
-| `/` | `200` — Dashboard |
-| `/docs/` | die Dokumentation, am Seiteninhalt erkannt und nicht nur am Statuscode |
-| `POST /api/v1/auth/signup` | **`403`** — sonst steht die Anwendung jedem offen, der die Adresse kennt |
-| `/api/v1/data/metrics` ohne Sitzung | `401` |
-| `/api/v1/internal/…` | **nicht** `200` — dort liegen entschlüsselte Connector-Zugangsdaten |
-| Anmeldung + Lesezugriff | `200` |
-| `/api/v1/data/system/warnings` | leer |
+| `/` | `200` — the dashboard |
+| `/docs/` | the documentation, recognized by the page content and not only by the status code |
+| `POST /api/v1/auth/signup` | **`403`** — otherwise the application is open to anyone who knows the address |
+| `/api/v1/data/metrics` without a session | `401` |
+| `/api/v1/internal/…` | **not** `200` — decrypted connector credentials live there |
+| Sign-in + read | `200` |
+| `/api/v1/data/system/warnings` | empty |
 
-Der letzte Punkt ist der aussagekräftigste: er fragt die Anwendung, was sie
-selbst an ihrer Konfiguration auszusetzen hat. Ein korrekt eingerichtetes
-Produktions-Deployment meldet dort nichts.
+The last one is the most informative: it asks the application what it has to say against its own
+configuration. A correctly set up production deployment reports nothing there.
 
-!!! note "Über `http://` sind zwei Ergebnisse erwartbar"
-    Secure-Cookies können über unverschlüsseltes HTTP nicht übertragen werden. Ein
-    Deployment, das nur per `http` erreichbar ist, braucht daher
-    `COOKIE_SECURE=false` — und meldet dann `cookies_not_secure`. Das Skript
-    bewertet die Selbstauskunft deshalb nur bei `https`-Adressen und gibt sie
-    ansonsten bloß aus.
+!!! note "Over `http://`, two results are to be expected"
+    Secure cookies cannot be transmitted over unencrypted HTTP. A deployment that is only reachable
+    over `http` therefore needs `COOKIE_SECURE=false` — and then reports `cookies_not_secure`. So the
+    script only judges the self-report for `https` addresses, and otherwise just prints it.
 
-    `/docs/` schlägt außerdem fehl, wenn Traefik und der Docs-Container nicht
-    laufen: dann antwortet dort das Dashboard.
+    `/docs/` also fails when Traefik and the docs container are not running: the dashboard answers
+    there instead.
 
-### Netzwerkgrenzen
+### Network boundaries
 
-Nach außen gehören nur Traefik und dadurch Gateway, Dashboard und Docs. **Core
-darf nicht öffentlich erreichbar sein** — es liefert über
-`/api/v1/internal/*` entschlüsselte Connector-Zugangsdaten aus. Core authentifiziert
-zwar inzwischen selbst, aber die Portfreigabe bleibt unnötige Angriffsfläche.
+Only Traefik belongs on the outside, and through it the Gateway, the dashboard and the docs. **Core must
+not be publicly reachable** — it serves decrypted connector credentials over `/api/v1/internal/*`. Core
+does authenticate those calls itself these days, but the published port remains needless attack surface.
 
-Seit `docker-compose.prod.yml` ist das keine Bitte mehr, sondern der Zustand:
-**Core veröffentlicht keine Host-Ports.** Das alte Produktions-Compose gab `8001`
-und `50051` frei, obwohl Traefik sie nie geroutet hat. Innerhalb des Compose-Netzes
-ist Core unverändert unter `core:8001` und `core:50051` erreichbar.
+Since `docker-compose.prod.yml` that is no longer a request but the state of things: **Core publishes no
+host ports.** The old production compose file exposed `8001` and `50051`, although Traefik never routed
+them. Inside the compose network Core is reachable at `core:8001` and `core:50051` as before.
 
-Ebenso hängt das Traefik-Dashboard jetzt auf `127.0.0.1` statt auf allen
-Schnittstellen — es läuft mit `--api.insecure=true` und war damit auf einem
-öffentlichen Host eine unauthentifizierte Admin-UI. Zugriff über einen SSH-Tunnel:
-`ssh -L 8081:127.0.0.1:8081 user@host`.
+The Traefik dashboard likewise now listens on `127.0.0.1` instead of on every interface — it runs with
+`--api.insecure=true`, which on a public host made it an unauthenticated admin UI. Reach it through an
+SSH tunnel: `ssh -L 8081:127.0.0.1:8081 user@host`.
 
-Die Importer für Apple Health (`:8005`) und Streak (`:8006`) müssen erreichbar sein,
-weil externe Geräte an sie senden.
+The importers for Apple Health (`:8005`) and Streak (`:8006`) do have to be reachable, because external
+devices send to them.
 
-## Selbstauskunft im Dashboard
+## What the dashboard says about itself
 
-Die Punkte aus diesem Kapitel muss man nicht hier nachlesen, um sie zu bemerken:
-Core meldet sie über `GET /api/v1/data/system/warnings`, und das Dashboard zeigt
-sie Inhabern und Administratoren als Banner über dem Inhalt — auf jedem Tab, mit
-dem jeweiligen Befehl zum Kopieren.
+You do not have to read this chapter to notice the points in it: Core reports them over
+`GET /api/v1/data/system/warnings`, and the dashboard shows them to owners and administrators as a banner
+above the content — on every tab, with the relevant command to copy.
 
-Gemeldet werden veröffentlichte Standardwerte für `JWT_SECRET`,
-`ENCRYPTION_KEY` und `INTERNAL_SERVICE_SECRET`, offene Selbstregistrierung,
-fehlendes `Secure`-Flag auf den Cookies, und ein Passwort, dessen Hash in einer
-veröffentlichten Quelle stand. Details und die Begründung, wer was sehen darf,
-unter [Warnungen im Dashboard](features/authentication.md#warnungen-im-dashboard).
+Reported are published default values for `JWT_SECRET`, `ENCRYPTION_KEY` and `INTERNAL_SERVICE_SECRET`,
+open self-registration, a missing `Secure` flag on the cookies, and a password whose hash was in a
+published source. The details, and the reasoning about who may see what, are under
+[Warnings in the dashboard](features/authentication.md#warnings-in-the-dashboard).
 
-Ein produktives Deployment sollte hier nichts anzeigen. Tut es das doch, ist
-mindestens einer der Werte aus
-[Erforderliche Konfiguration](#erforderliche-konfiguration) nicht gesetzt.
+A production deployment should show nothing here. If it does, at least one of the values from
+[Required configuration](#required-configuration) is not set.
 
 ## Monitoring
 
-- **Healthchecks**: jeder Dienst bietet `GET /health`; die Docs zusätzlich `/healthz`.
-- **Korrelation**: jede Zeile trägt `[req_id=…]`. Ein Import lässt sich damit von der
-  Auslösung bis zum geschriebenen Datenpunkt verfolgen.
-- **Importhistorie**: `GET /api/v1/data/sources/{type}/sync-runs` zeigt Fenster,
-  Modus, Status und Zähler je Lauf — die verlässlichste Quelle für „warum fehlen
-  Daten".
+- **Health checks**: every service offers `GET /health`; the docs additionally `/healthz`.
+- **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
+  the data point that was written.
+- **Import history**: `GET /api/v1/data/sources/{type}/sync-runs` shows the window, mode, status and
+  counters per run — the most reliable answer to "why is data missing".
 
 ```bash
 task logs -- --service qs-core --level ERROR
 docker compose -f docker-compose.prod.yml logs -f core
 ```
 
-## Datensicherung
+## Backup
 
-Gesichert werden muss ausschließlich PostgreSQL — alle anderen Dienste sind
-zustandslos.
+PostgreSQL is the only thing that has to be backed up — every other service is stateless.
 
 ```bash
 docker compose exec postgres pg_dump -U qs_dev quantified_self | gzip > backup.sql.gz
 ```
 
-Zusätzlich zu sichern sind `ENCRYPTION_KEY` und `JWT_SECRET`: ohne den
-Verschlüsselungsschlüssel ist ein Backup der Connector-Zugangsdaten wertlos.
+`ENCRYPTION_KEY` and `JWT_SECRET` have to be backed up as well: without the encryption key, a backup of
+the connector credentials is worthless.
 
-## Skalierung
+## Scaling
 
-- Importer sind zustandslos und laufen in NATS-Queue-Groups; mehrere Repliken
-  teilen die Last automatisch.
-- Cores Ingest-Consumer nutzt ebenfalls eine Queue-Group.
-- Doppelläufe verhindert **Core**, nicht der Importer: ein Connector mit bereits
-  eingereihtem oder laufendem `SyncRun` wird nicht erneut eingeplant. Die
-  `active_syncs`-Menge in den Importern ist nur noch ein lokaler Puffer gegen eine
-  erneut zugestellte Nachricht — sie war nie eine verteilte Sperre, und bei
-  mehreren Repliken hätte sie nichts verhindert.
-- Der Scheduler ist über einen transaktionsgebundenen Postgres-Advisory-Lock
-  single-flight. Mehrere Core-Repliken sind damit unbedenklich: pro Tick plant
-  genau eine. Stirbt sie, gibt die Verbindung den Lock frei.
-- Der Analysedienst ist zustandslos und hält keine Datenbankverbindung; er
-  skaliert unabhängig von Core.
+- Importers are stateless and run in NATS queue groups; several replicas share the load automatically.
+- Core's ingest consumer uses a queue group too.
+- Duplicate runs are prevented by **Core**, not by the importer: a connector with a `SyncRun` already
+  queued or running is not scheduled again. The `active_syncs` set in the importers is now only a local
+  buffer against a redelivered message — it was never a distributed lock, and with several replicas it
+  would have prevented nothing.
+- The scheduler is single-flight through a transaction-scoped Postgres advisory lock. Several Core
+  replicas are therefore unproblematic: exactly one of them plans per tick. If it dies, the connection
+  releases the lock.
+- The Analysis service is stateless and holds no database connection; it scales independently of Core.

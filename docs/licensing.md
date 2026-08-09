@@ -1,128 +1,112 @@
-# Lizenzen
+# Licensing
 
-Diese Seite hält fest, unter welcher Lizenz dieses Projekt steht, welche fremde
-Software es weitergibt und welche Pflichten daraus folgen. Sie ist eine
-Bestandsaufnahme, **keine Rechtsberatung** — die Stellen, an denen es darauf
-ankommt, sind unten ausdrücklich als solche markiert.
+This page records which licence this project is under, which third-party software it
+redistributes, and which obligations follow from that. It is a stocktake, **not legal advice** —
+the places where that distinction matters are marked as such below.
 
-## Eigener Code: AGPL-3.0
+## Our own code: AGPL-3.0
 
-`LICENSE` im Repository-Wurzelverzeichnis: GNU Affero General Public License,
-Version 3, im Wortlaut der FSF, mit einer Copyright-Zeile davor. Damit das nicht
-nur dort steht:
+`LICENSE` in the repository root: the GNU Affero General Public License, version 3, in the FSF's
+wording, with a copyright line in front of it. So that this is not only stated there:
 
-- alle dreizehn `pyproject.toml` und die `package.json` des Dashboards deklarieren
+- all thirteen `pyproject.toml` files and the dashboard's `package.json` declare
   `license = "AGPL-3.0-only"`,
-- alle dreizehn Images tragen `org.opencontainers.image.licenses=AGPL-3.0-only`
-  als OCI-Label,
-- das Deployment-Bundle jedes Releases enthält `LICENSE`.
+- all thirteen images carry `org.opencontainers.image.licenses=AGPL-3.0-only` as an OCI label,
+- the deployment bundle of every release contains `LICENSE`.
 
-Vorher war das Projekt MIT lizenziert. Der Wechsel war möglich, weil zu diesem
-Zeitpunkt **niemand** eine Kopie erhalten hatte: das Repository war privat, die
-GHCR-Packages waren privat, und das eine Release `v0.1.0` wurde gelöscht. MIT ist
-eine Rechteeinräumung an Empfänger — ohne Empfänger gibt es nichts, was bindet. Die
-Commit-Historie kennt genau einen Autor, also war auch keine Zustimmung Dritter
-nötig.
+The project was MIT licensed before. The change was possible because at that point **nobody** had
+received a copy: the repository was private, the GHCR packages were private, and the single release
+`v0.1.0` was deleted. MIT is a grant of rights to recipients — with no recipients there is nothing
+that binds. The commit history has exactly one author, so no third party's consent was needed
+either.
 
-!!! warning "§13 ist eine Pflicht für den Betreiber, nicht nur für Weitergeber"
-    Wer die Software über ein Netzwerk benutzbar macht, muss den Nutzern den
-    **Corresponding Source der laufenden Version** anbieten. Ein Link auf den
-    Default-Branch genügt dafür nicht — deployter Stand und Branch-Spitze laufen
-    beim nächsten Merge auseinander.
+!!! warning "§13 is an obligation for the operator, not only for a redistributor"
+    Whoever makes the software usable over a network must offer its users the **corresponding
+    source of the running version**. A link to the default branch does not do that — the deployed
+    state and the branch tip diverge at the next merge.
 
-    Deshalb bekommt das Dashboard-Image die Version und den Commit als Build-Argument
-    (`SOURCE_VERSION`, `SOURCE_COMMIT`, gesetzt vom Release-Workflow), und der Footer
-    verlinkt genau diesen Stand. Ein lokaler Build ohne diese Argumente verlinkt das
-    Repository. Wer das Image selbst baut und öffentlich betreibt, muss die
-    Argumente setzen oder den Link anders korrekt füllen.
+    So the dashboard image gets the version and the commit as build arguments (`SOURCE_VERSION`,
+    `SOURCE_COMMIT`, set by the release workflow), and the footer links to exactly that state. A
+    local build without those arguments links the repository. Anyone who builds the image
+    themselves and operates it publicly has to set the arguments, or fill the link correctly some
+    other way.
 
-Die AGPL erlaubt Selbstbetrieb und Veränderung uneingeschränkt. Wer den Dienst
-für andere betreibt und den Code dafür ändert, muss diese Änderungen offenlegen.
-Für die Abhängigkeiten ist das unkritisch: alle sind MIT, BSD-2-Clause, ISC oder
-Apache-2.0, und Apache-2.0 ist mit GPLv3 vereinbar (mit v2 wäre es das nicht).
+The AGPL permits self-hosting and modification without restriction. Whoever runs the service for
+other people and changes the code to do so has to publish those changes. For the dependencies this
+is uncritical: all of them are MIT, BSD-2-Clause, ISC or Apache-2.0, and Apache-2.0 is compatible
+with GPLv3 (with v2 it would not be).
 
-## Weitergegebene fremde Software
+## Redistributed third-party software
 
-Ein Container-Image ist eine Kopie im Sinne der Lizenzen. MIT, BSD-2-Clause und
-ISC verlangen alle, dass ihr Copyright-Hinweis eine Kopie begleitet.
+A container image is a copy in the sense the licences mean. MIT, BSD-2-Clause and ISC all require
+their copyright notice to accompany a copy.
 
-**Python-Images** (Core, Analyse, Gateway, acht Importer): die Abhängigkeiten
-werden ins venv installiert, das die Dockerfiles als Ganzes ins Image kopieren —
-mit den Lizenzdateien in den `*.dist-info`-Verzeichnissen. Cores venv enthält 42.
+**Python images** (Core, Analysis, Gateway, eight importers): the dependencies are installed into
+the venv, which the Dockerfiles copy into the image as a whole — together with the licence files in
+the `*.dist-info` directories. Core's venv contains 42 of them.
 
-**Dashboard-Image**: `apps/dashboard/THIRD-PARTY-NOTICES.txt`, erzeugt von
-`scripts/generate-notices.ts` aus dem Produktions-Abhängigkeitsbaum (22 Pakete),
-plus den beiden selbst gehosteten Webfonts. Die Datei wird im Builder neu erzeugt
-und ins Runtime-Image kopiert; die CI prüft mit `bun run notices --check`, dass die
-committete Fassung zum Abhängigkeitsbaum passt.
+**Dashboard image**: `apps/dashboard/THIRD-PARTY-NOTICES.txt`, produced by
+`scripts/generate-notices.ts` from the production dependency tree (22 packages), plus the two
+self-hosted webfonts. The file is regenerated in the builder and copied into the runtime image; CI
+checks with `bun run notices --check` that the committed version matches the dependency tree.
 
-!!! note "Warum das eine eigene Datei braucht"
-    Früher lieferte das Image die vollständigen `node_modules` aus — und damit
-    zufällig 271 Lizenzdateien mit. Die Umstellung auf Nexts Standalone-Output hat
-    das Image von 636 MB auf 155 MB verkleinert, weil nur noch der tatsächlich
-    erreichte JavaScript-Code eingespurt wird — Lizenzdateien gehören nicht dazu.
-    Die Pflicht blieb, der Hinweis verschwand. Deshalb jetzt absichtlich statt
-    versehentlich.
+!!! note "Why that needs a file of its own"
+    The image used to ship the complete `node_modules` — and with it, incidentally, 271 licence
+    files. Moving to Next's standalone output shrank the image from 636 MB to 155 MB, because only
+    the JavaScript actually reached is traced in — and licence files are not part of that. The
+    obligation stayed, the notice disappeared. Hence deliberately now, rather than by accident.
 
-**Schriften**: `next/font/google` lädt Outfit und JetBrains Mono beim Build
-herunter und legt elf `.woff2` ins Bundle — das Dashboard hostet sie also selbst
-und gibt sie weiter. Beide stehen unter OFL-1.1, die Copyright-Hinweis und
-Lizenztext bei der Weitergabe verlangt. Die Texte liegen unter
-`apps/dashboard/licenses/` und stammen unverändert aus den Upstream-Projekten.
+**Fonts**: `next/font/google` downloads Outfit and JetBrains Mono at build time and puts eleven
+`.woff2` files into the bundle — so the dashboard self-hosts them and redistributes them. Both are
+under OFL-1.1, which requires the copyright notice and the licence text to travel with a copy. The
+texts are under `apps/dashboard/licenses/` and are taken unchanged from the upstream projects.
 
-**Kartenkacheln**: Die Attribution für OpenStreetMap und CARTO ist im
-`TileLayer` gesetzt und wird in der Karte gerendert — das ist die ODbL-Pflicht.
+**Map tiles**: the attribution for OpenStreetMap and CARTO is set on the `TileLayer` and is
+rendered in the map — that is the ODbL obligation.
 
-## Komponenten mit Bedingungen, die man kennen sollte
+## Components with conditions worth knowing about
 
-| Komponente | Lizenz | Was das bedeutet |
+| Component | Licence | What that means |
 | --- | --- | --- |
-| TimescaleDB | Apache-2 **und** TSL | Genutzt wird ausschließlich `create_hypertable` — das liegt im Apache-2-Teil. Die TSL-Features (Compression, Continuous Aggregates, Retention Policies) sind derzeit **nicht** im Einsatz. |
-| PostGIS | GPL-2.0 | Läuft als eigener PostgreSQL-Prozess und wird über SQL erreicht — getrennte Programme, keine Verlinkung. Mit AGPL-3.0 ist GPL-2.0-only ohnehin nur so vereinbar, nicht im selben Prozess. |
-| NATS, cloudflared, gRPC, asyncpg | Apache-2.0 | Verlangen die Weitergabe vorhandener `NOTICE`-Dateien — erfüllt, weil die Images die Pakete samt ihrer Lizenzdateien enthalten. |
-| Traefik, Material for MkDocs, Bun, Next.js, React | MIT | Hinweis muss mitreisen; siehe oben. |
-| Leaflet | BSD-2-Clause | Wie MIT, mit ausdrücklicher Klausel — steht in `THIRD-PARTY-NOTICES.txt`. |
-| Yazio-API | keine Lizenz, private API | Siehe unten. |
+| TimescaleDB | Apache-2 **and** TSL | Only `create_hypertable` is used, which is in the Apache-2 part. The TSL features (compression, continuous aggregates, retention policies) are **not** in use. |
+| PostGIS | GPL-2.0 | Runs as its own PostgreSQL process and is reached over SQL — separate programs, no linking. With AGPL-3.0, GPL-2.0-only is only compatible that way, not in the same process. |
+| NATS, cloudflared, gRPC, asyncpg | Apache-2.0 | Require any `NOTICE` files to be passed on — satisfied, because the images contain the packages along with their licence files. |
+| Traefik, Material for MkDocs, Bun, Next.js, React | MIT | The notice has to travel along; see above. |
+| Leaflet | BSD-2-Clause | Like MIT, with an explicit clause — it is in `THIRD-PARTY-NOTICES.txt`. |
+| Yazio API | no licence, private API | See below. |
 
-## Wenn daraus ein Dienst für andere wird
+## If this becomes a service for other people
 
-Für den Eigenbetrieb ändert sich nichts. Wer die Plattform **anderen als Dienst
-anbietet**, sollte diese sechs Punkte vorher geklärt haben. Die ersten beiden sind
-die praktisch riskantesten, und keiner davon ist eine Lizenzfrage im engeren Sinn.
+For self-hosting nothing changes. Whoever **offers the platform to others as a service** should have
+settled these six points first. The first two are the riskiest in practice, and neither of them is a
+licensing question in the narrow sense.
 
-1. **Yazio.** Der Importer spricht `yzapi.yazio.com` mit den OAuth-Client-Daten der
-   Yazio-App — sie stecken in `services/core/src/core/config.py`, weil sie in deren
-   App ausgeliefert werden. Für den eigenen Datenexport ist das eine Grauzone, die
-   in der Praxis niemanden stört. Für ein bezahltes Produkt ist es eine andere
-   Unterhaltung: fremde App-Zugangsdaten gegen eine nicht dokumentierte API sind
-   der wahrscheinlichste Grund, abgeschaltet zu werden. **Hier gehört ein Anwalt
-   hin, oder eine offizielle Freigabe.**
-2. **Gesundheitsdaten.** Das sind besondere Kategorien nach Art. 9 DSGVO. Für
-   fremde Nutzer heißt das mindestens: ausdrückliche Einwilligung, sehr
-   wahrscheinlich eine Datenschutz-Folgenabschätzung nach Art. 35, Verträge zur
-   Auftragsverarbeitung mit jedem Unterauftragnehmer, ein Verarbeitungsverzeichnis
-   und belastbare Auskunfts-, Export- und Löschwege. Tenant-Trennung und
-   verschlüsselte Connector-Zugangsdaten sind die halbe Miete, die andere Hälfte
-   ist Papier. **Auch das ist ein Anwaltsthema, nicht ein Code-Thema.**
-3. **Die eigene Lizenz** ist entschieden: AGPL-3.0. Selbstbetrieb bleibt für jeden
-   frei, aber wer den Dienst betreibt und den Code dafür ändert, muss die Änderungen
-   offenlegen. Der Preis dafür ist §13, siehe oben — die Pflicht trifft auch den
-   eigenen Betrieb.
-4. **WHOOP.** Offizielle Developer-API (`api.prod.whoop.com/developer`) — die
-   Nutzung läuft unter deren Developer-Terms, kommerzielle Nutzung braucht dort
-   üblicherweise eine Freigabe.
-5. **Kartenkacheln.** `tile.openstreetmap.org` ist nach OSMs Tile Usage Policy
-   nicht für kommerzielle oder verkehrsstarke Nutzung gedacht. Das ist eine
-   Konfigurationsfrage, kein Umbau: Provider über `NEXT_PUBLIC_MAP_TILE_PROVIDER`
-   wechseln und `MAP_TILE_HOSTS` in der CSP anpassen.
-6. **Wetter.** Der Importer bekommt seinen Host aus der Connector-Konfiguration,
-   das Projekt schreibt keinen Anbieter fest. Wer Open-Meteo nutzt: der freie Zugang
-   ist für nicht-kommerzielle Nutzung gedacht, kommerziell gibt es einen Tarif.
+1. **Yazio.** The importer talks to `yzapi.yazio.com` with the Yazio app's OAuth client credentials
+   — they are in `services/core/src/core/config.py`, because they are shipped inside that app. For
+   exporting your own data this is a grey area that bothers nobody in practice. For a paid product it
+   is a different conversation: somebody else's app credentials against an undocumented API is the
+   most likely reason to be cut off. **This is where a lawyer belongs, or an official clearance.**
+2. **Health data.** These are special categories under Art. 9 GDPR. For other people's users that
+   means at least: explicit consent, very probably a data protection impact assessment under Art. 35,
+   processor agreements with every subprocessor, a record of processing activities, and workable paths
+   for access, export and deletion. Tenant separation and encrypted connector credentials are half of
+   it; the other half is paperwork. **That too is a lawyer's subject, not a code subject.**
+3. **Our own licence** is decided: AGPL-3.0. Self-hosting stays free for anyone, but whoever runs the
+   service and changes the code to do so has to publish the changes. The price of that is §13, see
+   above — the obligation applies to running it yourself as well.
+4. **WHOOP.** An official developer API (`api.prod.whoop.com/developer`) — use falls under their
+   developer terms, and commercial use there normally needs a clearance.
+5. **Map tiles.** Under OSM's Tile Usage Policy, `tile.openstreetmap.org` is not intended for
+   commercial or high-traffic use. That is a configuration question, not a rebuild: switch the
+   provider with `NEXT_PUBLIC_MAP_TILE_PROVIDER` and adjust `MAP_TILE_HOSTS` in the CSP.
+6. **Weather.** The importer gets its host from the connector configuration; the project does not fix
+   a provider. If you use Open-Meteo: the free access is intended for non-commercial use, and there is
+   a paid tier for commercial use.
 
-## Prüfen
+## Checking
 
 ```bash
-task check:private                        # keine personenbezogenen Daten im Repo
-bun run --cwd apps/dashboard notices      # Hinweise neu erzeugen
-bun run --cwd apps/dashboard notices --check   # läuft auch in der CI
+task check:private                        # no personal data in the repository
+bun run --cwd apps/dashboard notices      # regenerate the notices
+bun run --cwd apps/dashboard notices --check   # also runs in CI
 ```

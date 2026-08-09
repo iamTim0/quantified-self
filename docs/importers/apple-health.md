@@ -1,78 +1,84 @@
-# Apple-Health-Importer
+# Apple Health importer
 
-Der Apple-Health-Importer übernimmt Gesundheits- und Aktivitätsdaten aus Apple Health in die Quantified-Self-Plattform. Die Rohdaten werden in ein einheitliches Metrikformat übersetzt und tenant-getrennt an den Core-Service übergeben.
+The Apple Health importer brings health and activity data from Apple Health into the
+Quantified Self platform. The raw data is translated into one uniform metric format and handed
+to the Core service, kept separate per tenant.
 
-## Voraussetzungen
+## Prerequisites
 
-- Apple Health ist auf dem iPhone eingerichtet.
-- Für den Export ist **Health Auto Export** oder eine kompatible JSON-/Webhook-Quelle konfiguriert.
-- Die Datenquelle ist im Dashboard für den richtigen Workspace (Tenant) eingerichtet.
-- Der Importer läuft und kann den Core-Service erreichen.
+- Apple Health is set up on the iPhone.
+- **Health Auto Export**, or a compatible JSON/webhook source, is configured for the export.
+- The data source is configured in the dashboard for the right workspace (tenant).
+- The importer is running and can reach the Core service.
 
-Der Importer erzeugt keine Demo- oder Ersatzdaten. Ohne gültige Konfiguration bleibt er idle.
+The importer produces no demo or stand-in data. Without a valid configuration it stays idle.
 
-## Einrichtung
+## Setup
 
-### 1. Apple-Health-Export vorbereiten
+### 1. Prepare the Apple Health export
 
-1. Öffne auf dem iPhone die Export-App beziehungsweise die für Apple Health eingerichtete Integration.
-2. Erteile nur die Leseberechtigungen für die Gesundheitskategorien, die importiert werden sollen.
-3. Aktiviere den JSON-Export oder den Webhook der Integration.
-4. Übernimm die von der Integration benötigten Verbindungsdaten für die Connector-Konfiguration.
+1. On the iPhone, open the export app or the integration you set up for Apple Health.
+2. Grant read permission only for the health categories you want to import.
+3. Enable the integration's JSON export or its webhook.
+4. Take the connection details the integration needs over into the connector configuration.
 
-Die konkreten Menünamen und verfügbaren Gesundheitskategorien hängen von der verwendeten Export-App und deren Version ab.
+The exact menu names and the health categories on offer depend on the export app and its
+version.
 
-### 2. Connector im Dashboard konfigurieren
+### 2. Configure the connector in the dashboard
 
-1. Öffne im Dashboard **Connectors**.
-2. Wähle **Apple Health**.
-3. Hinterlege die Export-Konfiguration beziehungsweise die Zugangsdaten der Quelle.
-4. Speichere die Konfiguration.
-5. Starte anschließend **Jetzt Sync**, falls diese Aktion angeboten wird. Alternativ übernimmt der laufende Worker den nächsten geplanten Abruf.
+1. Open **Connectors** in the dashboard.
+2. Choose **Apple Health**.
+3. Enter the export configuration, or the source's credentials.
+4. Save the configuration.
+5. Then start **Sync now**, if that action is offered. Otherwise the data arrives the next time
+   the export app sends it — Apple Health is a push source, so nothing on this side polls for it.
 
-Die Zugangsdaten werden vom Core-Service verschlüsselt gespeichert. Der Importer liest sie dynamisch aus dem Core-Service; sie gehören weder in eine `.env`-Datei noch in ein NATS-Event.
+The credentials are stored encrypted by the Core service. The importer reads them from Core at
+run time; they belong in neither an `.env` file nor a NATS event.
 
-## Datenfluss
+## Data flow
 
 ```text
-Apple Health / Export-App -> Apple-Health-Importer
-  -> NATS: qs.ingest.apple_health -> Core-Service -> data_points
+Apple Health / export app -> Apple Health importer
+  -> NATS: qs.ingest.apple_health -> Core service -> data_points
 ```
 
-Der Importer schreibt nicht direkt in die Datenbank. Der Core-Service ist der einzige Besitzer der Datenbank und dedupliziert anhand des `idempotency_key`. Jeder Import bleibt dem konfigurierten `tenant_id` zugeordnet.
+The importer does not write to the database. The Core service is the database's only owner and
+deduplicates on the `idempotency_key`. Every import stays attached to the configured
+`tenant_id`.
 
-## Importierte Metriken
+## Imported metrics
 
-| `metric_type` | Bedeutung | Einheit |
+| `metric_type` | Meaning | Unit |
 | --- | --- | --- |
-| `steps` | Anzahl der Schritte | `count` |
-| `distance` | Zurückgelegte Distanz | `km` |
-| `energy_active` | Aktive Energie | `kcal` |
-| `energy_resting` | Grundumsatz | `kcal` |
-| `heart_rate` | Puls | `bpm` |
-| `heart_rate_resting` | Ruhepuls | `bpm` |
-| `hrv_sdnn` | Herzratenvariabilität (SDNN) | `ms` |
-| `blood_oxygen` | Sauerstoffsättigung | `%` |
-| `sleep_duration` | Schlafdauer | `min` |
-| `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | Schlafphasen | `min` |
-| `body_weight` | Körpergewicht | `kg` |
-| `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | Trainingseinheiten | `min`, `km`, `kcal`, `bpm` |
+| `steps` | number of steps | `count` |
+| `distance` | distance travelled | `km` |
+| `energy_active` | active energy | `kcal` |
+| `energy_resting` | resting energy | `kcal` |
+| `heart_rate` | heart rate | `bpm` |
+| `heart_rate_resting` | resting heart rate | `bpm` |
+| `hrv_sdnn` | heart-rate variability (SDNN) | `ms` |
+| `blood_oxygen` | blood oxygen | `%` |
+| `sleep_duration` | sleep duration | `min` |
+| `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | sleep stages | `min` |
+| `body_weight` | body weight | `kg` |
+| `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | workout sessions | `min`, `km`, `kcal`, `bpm` |
 
-Health Auto Export liefert zu jeder Metrik die Einheit mit, und die richtet sich nach
-dem Gebietsschema des Telefons - Meilen oder Kilometer, Stunden oder Minuten. Der
-Importer liest diese Angabe und rechnet auf die Einheit der Registry um; der
-ursprüngliche Wert bleibt in `metadata.provider_value`, die gemeldete Einheit in
+Health Auto Export sends the unit along with each metric, and that unit follows the phone's
+locale — miles or kilometres, hours or minutes. The importer reads it and converts to the
+registry's unit; the original value stays in `metadata.provider_value`, the reported unit in
 `metadata.units`.
 
-HealthKit-Typen, die der Katalog nicht kennt, landen unter dem Präfix
-`apple_health_` (zum Beispiel `apple_health_dietary_water`). Sie gehen also nicht
-verloren, belegen aber auch keinen kanonischen Namen.
+HealthKit types the catalog does not know land under the prefix `apple_health_` (for example
+`apple_health_dietary_water`). They are not lost, but they do not occupy a canonical name
+either.
 
-Für Abfragen ist immer der exakte `metric_type`-Wert zu verwenden.
+Queries always use the exact `metric_type` value.
 
-## Daten abrufen
+## Retrieving the data
 
-Die Messwerte werden über die tenant-geschützte Core/Gateway-API abgefragt:
+The measurements are queried through the tenant-protected Core/Gateway API:
 
 ```http
 GET /api/v1/data/metrics?metric_type=steps&start_time=2026-01-01T00:00:00Z&end_time=2026-01-08T00:00:00Z&limit=1000
@@ -81,33 +87,44 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Der JWT muss zum Workspace gehören, der im `X-Tenant-ID`-Header angegeben ist. `X-Request-ID` dient der Nachverfolgung eines Imports über API, Importer und NATS hinweg.
+The JWT has to belong to the workspace named in the `X-Tenant-ID` header. `X-Request-ID` is
+what lets one import be followed across the API, the importer and NATS.
 
-Für andere Messwerte wird nur der Query-Parameter ersetzt, zum Beispiel `active_energy_kcal`, `resting_heart_rate_bpm` oder `sleep_duration_hours`.
+For other measurements only the query parameter changes, for example `energy_active`,
+`heart_rate_resting` or `sleep_duration`.
 
-## Kontrolle und Fehlerbehebung
+## Checking and troubleshooting
 
-### Es erscheinen keine Werte
+### No values appear
 
-Prüfe in dieser Reihenfolge:
+Check, in this order:
 
-1. Ist der Apple-Health-Export aktiv und enthält er tatsächlich Daten?
-2. Ist der Connector im richtigen Tenant gespeichert?
-3. Ist die Konfiguration vollständig und gültig?
-4. Wurde ein manueller Sync gestartet oder läuft der Worker?
-5. Wird der erwartete `metric_type` abgefragt und liegt der Zeitraum in `start_time`/`end_time`?
-6. Gibt es im Importer- oder Core-Log Einträge mit derselben `X-Request-ID`?
+1. Is the Apple Health export active, and does it actually contain data?
+2. Is the connector saved in the right tenant?
+3. Is the configuration complete and valid?
+4. Was a manual sync started, or is the worker running?
+5. Is the expected `metric_type` being queried, and does the period fall inside `start_time`/`end_time`?
+6. Are there entries with the same `X-Request-ID` in the importer or Core log?
 
-Ohne Connector-Konfiguration ist ein leerer Datenbestand erwartetes Verhalten. Der Importer erzeugt in diesem Fall keine Testdaten.
+Without a connector configuration, an empty data set is the expected behaviour. The importer
+produces no test data in that case.
 
-### Werte scheinen doppelt zu sein
+### Values appear to be duplicated
 
-Der Core-Service dedupliziert anhand des deterministisch gebildeten `idempotency_key`. Prüfe zunächst, ob tatsächlich derselbe Messwert mehrfach mit unterschiedlichen Zeitstempeln oder unterschiedlichen `metric_type`-Werten geliefert wurde.
+The Core service deduplicates on the deterministically derived `idempotency_key`. First check
+whether the same measurement really was delivered more than once with different timestamps or
+different `metric_type` values.
 
-## Datenschutz und Grenzen
+## Privacy and limits
 
-Apple-Health-Daten sind besonders schützenswert. Konfiguriere nur die benötigten Kategorien und gewähre Zugriff ausschließlich dem vorgesehenen Tenant. Zugangsdaten werden verschlüsselt abgelegt und dürfen nicht in Logs, Broker-Nachrichten oder Quellcode auftauchen.
+Apple Health data deserves particular protection. Configure only the categories you need, and
+grant access to the intended tenant only. Credentials are stored encrypted and must not turn up
+in logs, broker messages or source code.
 
-Die verfügbaren Daten hängen von Apple Health, den aktivierten Berechtigungen und der verwendeten Export-App ab. Ein erfolgreicher Connector-Sync garantiert daher nicht, dass für jeden Zeitraum Werte vorhanden sind. Die API liefert normalisierte Plattformmetriken; die ursprünglichen Apple-Health-Rohobjekte sind nicht das primäre Abfrageformat.
+Which data is available depends on Apple Health, the permissions that were granted, and the
+export app in use. A successful connector sync is therefore no guarantee that values exist for
+every period. The API returns normalized platform metrics; the original Apple Health raw objects
+are not the primary query format.
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that still
+point at it — is in [Metrics](../metrics.md).

@@ -32,6 +32,11 @@ To prevent redundant and overlapping syncs for the same tenant, importers must i
 
 Importers must maintain an `active_syncs: set[str]` lock containing the `tenant_id` of actively syncing tenants. If a sync task arrives for a `tenant_id` currently in the `active_syncs` set, the task MUST be skipped to avoid duplicate work and API rate limits.
 
+This lock is a second line of defence, not the primary guard. Core's scheduler already skips a
+connector whose import is still running, so it does not queue the duplicate job at all — see
+[Architecture](architecture.md#scheduled-imports). The lock still matters because it is
+process-local and therefore also covers a task replayed by JetStream.
+
 ## 4. Standardization Contract
 
 ### File Layout
@@ -60,7 +65,7 @@ Two consequences worth stating outright:
   *dynamic namespace* (`home_assistant_`, `apple_health_`) rather than inventing bare
   names.
 
-See [Metriken](metrics.md) for the rules, the full catalog and how to add an entry.
+See [Metrics](metrics.md) for the rules, the full catalog and how to add an entry.
 
 ### Idempotency
 All ingestion events require a deterministic `idempotency_key` to ensure duplicate events are safely ignored downstream. The key must be generated as follows:

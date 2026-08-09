@@ -1,35 +1,39 @@
-# Dawarich Importer
+# Dawarich importer
 
-## Ziel
+## Purpose
 
-Der Dawarich-Importer normalisiert Rohdaten in tenant-scoped Quantified-Self-Metriken und veröffentlicht sie über NATS JetStream. Core übernimmt Speicherung, Deduplizierung und spätere API-Abfragen.
+The Dawarich importer normalizes raw data into tenant-scoped Quantified Self metrics and
+publishes them over NATS JetStream. Core takes care of storage, deduplication and the later
+API queries.
 
-## Datenzugang
+## Data access
 
-- Quelle: Dawarich API-Key und Base URL.
-- Credentials werden im Dashboard konfiguriert und in Core verschlüsselt gespeichert.
-- Der Importer fragt Credentials dynamisch über Core ab und bleibt ohne gültige Konfiguration idle.
+- Source: a Dawarich API key and base URL.
+- The credentials are configured in the dashboard and stored encrypted in Core.
+- The importer fetches them from Core at run time and stays idle without a valid configuration.
 
-## Einrichtung
+## Setup
 
-1. Im Dashboard unter **Connectors** die Datenquelle öffnen.
-2. Zugangsdaten oder Export-Konfiguration eintragen.
-3. Speichern; Core verschlüsselt die Credentials mit Fernet AES-256.
-4. Bei aktiven Importern **Jetzt Sync** klicken oder den Worker zyklisch laufen lassen.
+1. Open the data source under **Connectors** in the dashboard.
+2. Enter the credentials, or the export configuration.
+3. Save; Core encrypts the credentials with Fernet AES-256.
+4. For active importers, click **Sync now**, or wait for Core's scheduler to find the
+   connector due. The importer has no timer of its own — it acts on the task Core
+   publishes; see [Architecture](../architecture.md#scheduled-imports).
 
-## Datenfluss
+## Data flow
 
 ```text
-Externe Quelle -> Importer -> qs.ingest.dawarich -> Core -> data_points
+external source -> importer -> qs.ingest.dawarich -> Core -> data_points
 ```
 
-## Wichtige Metriken
+## Main metrics
 
 - `location_point`
 - `location_latitude`
 - `location_longitude`
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=location_point&start_time=<iso>&end_time=<iso>&limit=1000
@@ -38,12 +42,13 @@ X-Tenant-ID: <tenant-id>
 X-Request-ID: <request-id>
 ```
 
-Filtere optional nach weiteren `metric_type` Werten:
+Filter by further `metric_type` values as needed:
 
-| `metric_type` | Bedeutung | Einheit |
+| `metric_type` | Meaning | Unit |
 | --- | --- | --- |
-| `location_point` | ein aufgezeichneter Standortpunkt | `count` |
-| `location_latitude` | Breitengrad | `°` |
-| `location_longitude` | Längengrad | `°` |
+| `location_point` | one recorded location point | `count` |
+| `location_latitude` | latitude | `°` |
+| `location_longitude` | longitude | `°` |
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that
+still point at it — is in [Metrics](../metrics.md).

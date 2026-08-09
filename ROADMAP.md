@@ -56,8 +56,8 @@
   - Full-text real-time search across food names, metric types, units, and raw metadata.
   - Multi-metric selection pills for side-by-side comparison on a unified timeline.
   - Aggregation modes: `SUM` (daily total calories/macros), `AVG` (daily average scores), `MAX` (daily peaks), `RAW`.
-- [x] **Saved Views ("Gespeicherte Ansichten")**:
-  - Preset views (e.g. *"🍏 Yazio Makronährstoffe"*, *"🔥 Kalorien & Produkte"*, *"🌙 Schlaf & Regeneration"*).
+- [x] **Saved Views**:
+  - Preset views (e.g. *"🍏 Yazio macronutrients"*, *"🔥 Calories and products"*, *"🌙 Sleep and recovery"*).
   - 1-click custom view saving, loading, and deletion persisted in `localStorage` & backend database.
 
 ---
@@ -79,10 +79,10 @@
 
 ## 🔵 Phase 6: Core Data Platform & UI Features (Upcoming)
 
-- [x] **🔍 Datenlücken-Erkennung (Data Gap Detection)**:
+- [x] **🔍 Data gap detection**:
   - Intelligent engine in Core / Analysis service detecting missing tracking days or timeline gaps across all connected sources.
   - Highlights data gaps visually in the Dashboard UI with 1-click backfill and manual entry triggers.
-- [ ] **📁 Universal CSV & DB Importer mit Visuellem Editor**:
+- [ ] **📁 Universal CSV and DB importer with a visual editor**:
   - Generic CSV & SQL/SQLite export importer featuring a drag-and-drop web upload interface.
   - **Visual Column Mapper & Data Editor**: Interactive UI allowing users to map arbitrary CSV columns to Quantified Self metrics, preview data tables, correct missing values or formatting errors visually, and execute batch imports.
 - [x] **📈 Deterministic Insight Foundation**:

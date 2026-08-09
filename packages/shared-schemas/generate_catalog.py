@@ -42,28 +42,30 @@ DOCS = REPO_ROOT / "docs" / "metrics.md"
 DOCS_BEGIN = "<!-- BEGIN GENERATED METRIC TABLE -->"
 DOCS_END = "<!-- END GENERATED METRIC TABLE -->"
 
-#: German category headings for the documentation, which is a German-language site.
+#: Category headings for the documentation site, which is English-only. The
+#: registry keeps a label per language for the *metrics*, because the dashboard
+#: shows those in both; the documentation only ever needs one.
 CATEGORY_LABELS = {
-    "activity": "Aktivität",
-    "heart": "Herz & Kreislauf",
-    "sleep": "Schlaf",
-    "body": "Körper",
-    "nutrition": "Ernährung",
-    "workout": "Training (Ausdauer)",
-    "strength": "Krafttraining",
-    "location": "Standort",
-    "calendar": "Kalender",
-    "environment": "Umwelt",
-    "home": "Smart Home",
-    "custom": "Eigene Metriken",
+    "activity": "Activity",
+    "heart": "Heart and circulation",
+    "sleep": "Sleep",
+    "body": "Body",
+    "nutrition": "Nutrition",
+    "workout": "Training (endurance)",
+    "strength": "Strength training",
+    "location": "Location",
+    "calendar": "Calendar",
+    "environment": "Environment",
+    "home": "Smart home",
+    "custom": "Own metrics",
 }
 
-AGGREGATION_LABELS = {
-    "average": "Mittelwert",
-    "sum": "Summe",
-    "last": "letzter Wert",
-    "max": "Maximum",
-}
+#: No label map for the aggregation. When the table was German one earned its
+#: keep; in English the four enum values already read as words, and renaming them
+#: for the table made the one page that documents an aggregation print something
+#: no caller may send — `catalog.ts` types it `"average" | "sum" | "last" | "max"`
+#: and `GET /api/v1/data/metrics/catalog` serves those. The table prints the value
+#: verbatim, which also removes a dict that would `KeyError` on a new enum member.
 
 HEADER = """/**
  * GENERATED FILE — DO NOT EDIT.
@@ -226,25 +228,25 @@ def render_docs_table() -> str:
     for category, definitions in by_category.items():
         lines.append(f"### {CATEGORY_LABELS.get(category, category)}")
         lines.append("")
-        lines.append("| `metric_type` | Bedeutung | Einheit | Aggregation | Quellen | Alte Namen |")
+        lines.append("| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |")
         lines.append("| --- | --- | --- | --- | --- | --- |")
         for d in definitions:
             unit = f"`{d.unit.value}`" if d.unit.value else "—"
             sources = ", ".join(d.sources) if d.sources else "—"
             aliases = ", ".join(f"`{a}`" for a in d.aliases) if d.aliases else "—"
             lines.append(
-                f"| `{d.key}` | {d.label_de} | {unit} | "
-                f"{AGGREGATION_LABELS[d.aggregation.value]} | {sources} | {aliases} |"
+                f"| `{d.key}` | {d.label_en} | {unit} | "
+                f"`{d.aggregation.value}` | {sources} | {aliases} |"
             )
         lines.append("")
 
-    lines.append("### Dynamische Namensräume")
+    lines.append("### Dynamic namespaces")
     lines.append("")
-    lines.append("| Präfix | Bedeutung | Quellen |")
+    lines.append("| Prefix | Meaning | Sources |")
     lines.append("| --- | --- | --- |")
     for ns in DYNAMIC_NAMESPACES:
-        sources = ", ".join(ns.sources) if ns.sources else "manueller Import"
-        lines.append(f"| `{ns.prefix}` | {ns.label_de} | {sources} |")
+        sources = ", ".join(ns.sources) if ns.sources else "manual import"
+        lines.append(f"| `{ns.prefix}` | {ns.label_en} | {sources} |")
 
     return "\n".join(lines)
 

@@ -1,14 +1,14 @@
-# Architektur und Datenfluss
+# Architecture and data flow
 
-## Überblick
+## Overview
 
-Die Plattform besteht aus unabhängig deploybaren Diensten mit einer strikten
-Zuständigkeitsverteilung. Die wichtigste Regel: **nur `services/core/` besitzt die
-Datenbank.** Kein anderer Dienst importiert einen Datenbanktreiber.
+The platform is a set of independently deployable services with a strict division of
+responsibility. The most important rule: **only `services/core/` owns the database.** No other
+service imports a database driver.
 
 ```text
                     ┌──────────────┐
-   Browser ────────►│  API Gateway │  JWT prüfen, X-Request-ID setzen
+   Browser ────────►│  API Gateway │  verify JWT, set X-Request-ID
                     └──────┬───────┘
                            │ HTTP (Authorization + X-Tenant-ID)
                     ┌──────▼───────┐
@@ -20,169 +20,154 @@ Datenbank.** Kein anderer Dienst importiert einen Datenbanktreiber.
                     └──┬────────▲──┘
                        │        │
                   ┌────▼────────┴────┐
-                  │    Importer      │  8 Dienste, zustandslos
+                  │    Importers     │  8 services, stateless
                   └──────────────────┘
 ```
 
-## Dienste
+## Services
 
-| Dienst | Aufgabe | Datenbankzugriff |
+| Service | Responsibility | Database access |
 | --- | --- | --- |
-| `services/api-gateway/` | Einstiegspunkt, JWT-Prüfung, Header-Injektion, Reverse Proxy | nein |
-| `services/core/` | REST-API, gRPC-Leseschnittstelle, Ingest-Consumer, Importplanung, Scheduler | **ja, exklusiv** |
-| `services/importers/*` | Abruf bzw. Empfang externer Daten | nein |
-| `services/analysis/` | Korrelationen, Trends, Auffälligkeiten, Routinen | nein, liest über gRPC von Core |
-| `apps/dashboard/` | Next.js-Oberfläche | nein |
+| `services/api-gateway/` | Entry point, JWT verification, header injection, reverse proxy | no |
+| `services/core/` | REST API, gRPC read interface, ingest consumer, import planning, scheduler | **yes, exclusively** |
+| `services/importers/*` | Fetching or receiving external data | no |
+| `services/analysis/` | Correlations, trends, anomalies, routines | no, reads from Core over gRPC |
+| `apps/dashboard/` | Next.js interface | no |
 
-## Datenfluss beim Import
+## The data flow of an import
 
-1. Die Nutzerin löst einen Import aus, oder ein Connector wird konfiguriert.
-2. **Core berechnet das Zeitfenster** aus Abfrageintervall und Importhistorie
-   (siehe [Smart- und Force-Import](features/smart-import.md)) und legt einen
-   `SyncRun` an.
-3. Core veröffentlicht `qs.task.sync.<source>` mit `tenant_id`, `request_id`,
-   `sync_run_id`, `mode`, `window_start` und `window_end`.
-4. Der Importer holt seine Zugangsdaten über
-   `GET /api/v1/internal/data/sources/<source>/token` — er speichert selbst keine.
-5. Der Importer ruft die Anbieter-API für genau dieses Fenster ab.
-6. Für jeden Datenpunkt wird ein deterministischer `idempotency_key` gebildet und
-   ein Event auf `qs.ingest.<source>` veröffentlicht.
-7. Cores Consumer schreibt mit `INSERT … ON CONFLICT DO NOTHING` und zählt
-   angenommene und doppelte Punkte auf den `SyncRun`.
-8. Der Importer meldet das Ergebnis; nur ein erfolgreicher Lauf verschiebt den
-   Wiederaufsetzpunkt.
+1. The user triggers an import, or a connector is configured.
+2. **Core computes the window** from the poll interval and the import history (see
+   [Smart and force import](features/smart-import.md)) and creates a `SyncRun`.
+3. Core publishes `qs.task.sync.<source>` with `tenant_id`, `request_id`, `sync_run_id`, `mode`,
+   `window_start` and `window_end`.
+4. The importer fetches its credentials over
+   `GET /api/v1/internal/data/sources/<source>/token` — it stores none itself.
+5. The importer calls the provider API for exactly that window.
+6. For every data point a deterministic `idempotency_key` is derived and an event is published on
+   `qs.ingest.<source>`.
+7. Core's consumer writes with `INSERT … ON CONFLICT DO NOTHING` and counts accepted and duplicate
+   points onto the `SyncRun`.
+8. The importer reports the outcome; only a successful run moves the resume point.
 
-Bei Push-Quellen (Apple Health, Streak) entfallen die Schritte 1–5: der externe
-Dienst sendet direkt an den Importer, der den Tenant aus dem API-Key auflöst.
+For push sources (Apple Health, Streak) steps 1–5 do not apply: the external service sends
+straight to the importer, which resolves the tenant from the API key.
 
-## Idempotenz
+## Idempotency
 
 ```text
 idempotency_key = SHA256(tenant_id + ":" + source_id + ":" + metric_type + ":" + timestamp)
 ```
 
-Die Eindeutigkeit in der Datenbank ist
-`UNIQUE (tenant_id, idempotency_key, timestamp)`. Der Zeitstempel gehört dazu, weil
-TimescaleDB die Partitionierungsspalte in jedem eindeutigen Index verlangt.
+The uniqueness constraint in the database is `UNIQUE (tenant_id, idempotency_key, timestamp)`. The
+timestamp is part of it because TimescaleDB requires the partitioning column in every unique index.
 
-!!! warning "Folge dieser Einschränkung"
-    Derselbe `idempotency_key` mit einem *anderen* Zeitstempel legt eine zweite
-    Zeile an. Transformer müssen Zeitstempel deshalb normalisieren und dürfen
-    niemals auf `now()` zurückfallen — genau dieser Fehler erzeugte früher bei
-    jedem Sync neue Duplikate.
+!!! warning "What follows from that constraint"
+    The same `idempotency_key` with a *different* timestamp creates a second row. Transformers must
+    therefore normalize timestamps and must never fall back to `now()` — that exact mistake used to
+    produce fresh duplicates on every sync.
 
-## Tenant-Isolation
+## Tenant isolation
 
-- Jede Abfrage filtert nach `tenant_id`.
-- Der Tenant wird ausschließlich aus dem geprüften Bearer-Token abgeleitet.
-- Ein `X-Tenant-ID`-Header darf mit dem Claim übereinstimmen, ihn aber nie
-  überschreiben; Widerspruch ergibt `403`.
-- Interne Endpunkte (`/api/v1/internal/*`) sind vom Gateway nicht nach außen
-  erreichbar.
+- Every query filters by `tenant_id`.
+- The tenant is derived from the verified bearer token and from nothing else.
+- An `X-Tenant-ID` header may agree with the claim but never override it; a contradiction is a `403`.
+- Internal endpoints (`/api/v1/internal/*`) are not reachable from outside through the Gateway.
 
-Details: [Authentifizierung & Sessions](features/authentication.md).
+Details: [Authentication and sessions](features/authentication.md).
 
-## Korrelation
+## Correlation
 
-Jede Anfrage trägt eine `X-Request-ID`. Sie wird über Gateway, Core, das
-NATS-Event und den Importer propagiert und erscheint in allen Logs als
-`[req_id=…]`.
+Every request carries an `X-Request-ID`. It is propagated across the Gateway, Core, the NATS event
+and the importer, and appears in every log as `[req_id=…]`.
 
-## Datenmodell (Auszug)
+## Data model (excerpt)
 
-| Tabelle | Zweck |
+| Table | Purpose |
 | --- | --- |
-| `tenants`, `users` | Arbeitsbereich und Identitäten getrennt. `users.sessions_valid_from` ist der Stichzeitpunkt, ab dem ältere Access Tokens abgelehnt werden |
-| `data_sources` | Ein Connector pro (tenant, source_type) |
-| `data_points` | Zeitreihe, TimescaleDB-Hypertable |
-| `sync_runs` | Import-/Auditprotokoll, Grundlage adaptiver Fenster |
-| `api_keys` | Tenant-gebundene eingehende Schlüssel, nur als Hash |
-| `refresh_tokens`, `revoked_access_tokens` | Sitzungen und Widerruf |
-| `tenant_shares` | Freigaben zwischen Arbeitsbereichen |
-| `explorer_views` | Gespeicherte Abfragen |
+| `tenants`, `users` | Workspace and identities kept separate. `users.sessions_valid_from` is the cut-off from which older access tokens are rejected |
+| `data_sources` | One connector per (tenant, source_type) |
+| `data_points` | The time series, a TimescaleDB hypertable |
+| `sync_runs` | Import and audit log, the basis for adaptive windows |
+| `api_keys` | Tenant-bound inbound keys, stored only as a hash |
+| `refresh_tokens`, `revoked_access_tokens` | Sessions and revocation |
+| `tenant_shares` | Grants between workspaces |
+| `explorer_views` | Saved queries |
 
-Migrationen laufen ausschließlich über Alembic in `services/core/alembic/` und
-müssen ein funktionierendes `downgrade()` enthalten. Die CI prüft das, indem sie
-nach dem Upgrade einen Rollback und ein erneutes Upgrade ausführt.
+Migrations run through Alembic in `services/core/alembic/` and nowhere else, and must contain a
+working `downgrade()`. CI checks that by running a rollback and a second upgrade after the first
+upgrade.
 
-## Analysen: eigener Dienst, Lesezugriff nur über gRPC
+## Analyses: their own service, reading only over gRPC
 
-Die Analysen liefen früher in Core und lasen SQL direkt im Request-Handler.
-`services/analysis/` war ein Platzhalter, und Cores gRPC-Server ein Stub — es gab
-also gar keinen Transport, über den ein eigener Dienst hätte lesen können.
+The analyses used to run inside Core and read SQL directly in the request handler.
+`services/analysis/` was a placeholder and Core's gRPC server was a stub — so there was no
+transport a separate service could have read over at all.
 
-Heute gilt:
+Today:
 
-- Core betreibt `CoreDataService` auf Port `50051` mit `QueryDataPoints`,
-  `GetDataPoint`, `ListMetricTypes` und `ListDataSources`.
-- Jeder Aufruf braucht ein internes Service-Credential; jede Abfrage filtert nach
-  `tenant_id`, das vorher als UUID validiert wird.
-- `DataSourceSummary` trägt nur `id` und `source_type`. Es gibt bewusst kein Feld,
-  in dem ein Connector-Zugangsdatum die Dienstgrenze überqueren könnte.
-- Der Analysedienst hält **keine** Datenbankverbindung. Ein Test liest den AST
-  jedes Moduls und schlägt fehl, sobald dort ein Datenbanktreiber importiert wird.
+- Core runs `CoreDataService` on port `50051` with `QueryDataPoints`, `GetDataPoint`,
+  `ListMetricTypes` and `ListDataSources`.
+- Every call needs an internal service credential; every query filters by `tenant_id`, which is
+  validated as a UUID first.
+- `DataSourceSummary` carries only `id` and `source_type`. There is deliberately no field in which a
+  connector credential could cross the service boundary.
+- The Analysis service holds **no** database connection. A test reads the AST of every module and
+  fails as soon as a database driver is imported there.
 
-Die Oberfläche ruft `/api/v1/analysis/insights` auf; das Gateway leitet dorthin
-weiter.
+The interface calls `/api/v1/analysis/insights`; the Gateway proxies it through.
 
-## Zeitgesteuerte Importe
+## Scheduled imports
 
-`poll_interval_hours` steuerte früher nur die Fenstergröße — ausgelöst wurde nie
-etwas. Core betreibt jetzt einen Scheduler, weil nur Core beides kennt, was die
-Entscheidung braucht: die Connector-Konfiguration und die Importhistorie.
+`poll_interval_hours` used to control only the window size — nothing was ever triggered. Core now
+runs a scheduler, because Core is the only service that knows both of the things the decision needs:
+the connector configuration and the import history.
 
-- Alle fünf Minuten wird geprüft, welche Connectoren fällig sind.
-- Ein Tick nimmt einen transaktionsgebundenen Postgres-Advisory-Lock, damit bei
-  mehreren Core-Instanzen nur eine plant.
-- Ein Connector mit bereits laufendem Import wird übersprungen. Nach sechs Stunden
-  gilt ein Lauf als verwaist, sonst würde ein abgestürzter Importer seinen
-  Connector dauerhaft blockieren.
-- Abschalten mit `SCHEDULER_ENABLED=false`.
+- Every five minutes it checks which connectors are due.
+- A tick takes a transaction-scoped Postgres advisory lock, so that with several Core instances only
+  one of them plans.
+- A connector with an import already running is skipped. After six hours a run counts as orphaned,
+  since otherwise a crashed importer would block its connector forever.
+- Turn it off with `SCHEDULER_ENABLED=false`.
 
-Damit ist auch die frühere prozesslokale `active_syncs`-Sperre in den Importern
-nicht mehr tragend: Core stellt den doppelten Auftrag gar nicht erst ein.
+That also means the importers' former process-local `active_syncs` lock no longer carries any weight:
+Core never queues the duplicate job in the first place.
 
-## Sitzungen beenden: zwei Mechanismen, weil einer nicht reicht
+## Ending sessions: two mechanisms, because one is not enough
 
-`revoked_access_tokens` ist auf `jti` indiziert und beendet **diese eine**
-Sitzung — das kann nichts anderes, denn ein Access Token ist sonst von jedem
-anderen ununterscheidbar.
+`revoked_access_tokens` is indexed on `jti` and ends **this one** session — which is all it can do,
+because an access token is otherwise indistinguishable from any other.
 
-`users.sessions_valid_from` beendet **alle**. Das kann die Denylist nicht, weil
-ein `jti` erst bekannt wird, wenn das Token vorgelegt wird; „alle offenen Tokens
-dieses Kontos" ist keine aufzählbare Menge. Der Stichzeitpunkt wird gegen das
-`iat` jedes Tokens geprüft und deckt damit alle auf einmal ab.
+`users.sessions_valid_from` ends **all of them**. The denylist cannot, because a `jti` only becomes
+known when the token is presented; "every outstanding token of this account" is not an enumerable
+set. The cut-off is checked against each token's `iat` and so covers all of them at once.
 
-Beide scheitern geschlossen: Ist die Datenbank nicht erreichbar, wird der Request
-abgelehnt und nicht durchgelassen — sonst würde ein Ausfall jedes abgemeldete
-Token wieder gültig machen.
+Both fail closed: if the database is unreachable the request is rejected rather than let through —
+otherwise an outage would make every signed-out token valid again.
 
-Ausgelöst wird der Stichzeitpunkt von Passwortänderung, `logout all_sessions`,
-erkanntem Refresh-Token-Replay und
-[Back-Channel-Logout](features/oidc.md#back-channel-logout).
+The cut-off is triggered by a password change, `logout all_sessions`, a detected refresh-token replay
+and [back-channel logout](features/oidc.md#back-channel-logout).
 
-## Das Gateway reicht die Oberfläche durch, ohne sie zu puffern
+## The Gateway passes the interface through without buffering it
 
-Der UI-Proxy las früher die vollständige Antwort, bevor er das erste Byte
-weitergab. Das hebt Streaming-SSR auf und hält jede Antwort einmal komplett im
-Speicher. Er streamt jetzt.
+The UI proxy used to read the complete response before forwarding the first byte. That defeats
+streaming SSR and holds every response in memory in full, once. It streams now.
 
-Der `httpx.AsyncClient` überlebt dabei bewusst den Handler, der ihn erzeugt hat:
-Der Body wird noch durch ihn gelesen, während Starlette schon sendet. Ihn beim
-Verlassen der Funktion zu schließen — was `async with` täte — würde jede Antwort
-auf das bis dahin Angekommene kürzen.
+The `httpx.AsyncClient` deliberately outlives the handler that created it: the body is still being
+read through it while Starlette is already sending. Closing it on the way out of the function — which
+`async with` would do — would truncate every response to whatever had arrived by then.
 
-!!! note "Was das nicht behoben hat"
-    Der Umbau sollte `next dev` hinter dem Gateway ermöglichen. Tut er nicht.
-    Nachgemessen: Das durchgereichte Dokument ist Byte für Byte identisch mit dem
-    direkt abgerufenen, alle Chunks ebenso, und der HMR-Socket verbindet sich —
-    die Seite hydriert trotzdem nicht, ohne jede Fehlermeldung. Die Pufferung war
-    also nicht die Ursache. Die Browser-Tests laufen weiterhin gegen einen
-    Produktions-Build, was ohnehin das ist, was deployt wird.
+!!! note "What that did not fix"
+    The rework was meant to make `next dev` work behind the Gateway. It does not. Measured
+    afterwards: the proxied document is byte-for-byte identical to the one fetched directly, so is
+    every chunk, and the HMR socket connects — and the page still does not hydrate, with no error
+    anywhere. So buffering was not the cause. The browser tests continue to run against a production
+    build, which is what gets deployed anyway.
 
-## Bekannte Einschränkungen
+## Known limitations
 
-- Analysen können bei sehr dünner Datenlage ausgelassen werden. Das ist Absicht:
-  ein schwach belegter Zusammenhang ist irreführender als gar keiner.
-- `next dev` funktioniert hinter dem Gateway nicht (siehe oben). Direkt auf
-  Port 3000 funktioniert es; nur die API-Aufrufe gehen dann ins Leere.
+- Analyses may be skipped when the data is very thin. That is deliberate: a weakly supported
+  relationship is more misleading than none.
+- `next dev` does not work behind the Gateway (see above). Straight on port 3000 it does: the dev
+  server rewrites `/api/*` to the Gateway, so the API calls still arrive. That rewrite is
+  development-only — in production the browser talks to one origin and Traefik does the routing.

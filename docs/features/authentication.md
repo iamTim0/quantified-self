@@ -1,106 +1,99 @@
-# Authentifizierung, Sessions und Tenant-Zuordnung
+# Authentication, sessions and tenant resolution
 
-## Überblick
+## Overview
 
-Die Plattform kennt zwei getrennte Anmelde-Welten:
+The platform has two separate worlds of sign-in:
 
-- **Nutzer-Sessions** für das Dashboard (Access Token + Refresh Token).
-- **Interne Service-Zugangsdaten** für die Kommunikation zwischen Importern und
-  Core.
+- **User sessions** for the dashboard (access token + refresh token).
+- **Internal service credentials** for the traffic between the importers and Core.
 
-Beide werden mit unterschiedlichen Schlüsseln signiert und haben unterschiedliche
-Audiences, damit ein kompromittierter Importer keine Nutzer-Tokens ausstellen kann.
+The two are signed with different keys and have different audiences, so that a compromised importer
+cannot issue user tokens.
 
-| | Nutzer | Interner Dienst |
+| | User | Internal service |
 | --- | --- | --- |
-| Signaturschlüssel | `JWT_SECRET` | `INTERNAL_SERVICE_SECRET` |
+| Signing key | `JWT_SECRET` | `INTERNAL_SERVICE_SECRET` |
 | `aud` | `qs-api` | `qs-internal` |
 | `token_type` | `access` | `service` |
-| Gültig auf | allen `/api/v1/data/*` | nur `/api/v1/internal/*` |
+| Valid on | all of `/api/v1/data/*` | `/api/v1/internal/*` only |
 
-## Wie das Token übertragen wird: Cookie oder Header
+## How the token travels: cookie or header
 
-Es gibt genau zwei Wege, und sie sind für unterschiedliche Aufrufer gedacht:
+There are exactly two ways, and they are meant for different callers:
 
-| Aufrufer | Übertragung | CSRF-Schutz nötig |
+| Caller | Transport | Needs CSRF protection |
 | --- | --- | --- |
-| Browser (Dashboard) | `qs_access`-Cookie, `HttpOnly` | ja — Double-Submit-Token |
-| Dienste, Skripte, Tests | `Authorization: Bearer <jwt>` | nein |
+| Browser (dashboard) | the `qs_access` cookie, `HttpOnly` | yes — a double-submit token |
+| Services, scripts, tests | `Authorization: Bearer <jwt>` | no |
 
-Das Cookie ist `HttpOnly`, also für JavaScript nicht lesbar. Ein XSS-Fehler in der
-Oberfläche kann die Sitzung damit nicht mehr auslesen und exfiltrieren.
+The cookie is `HttpOnly` and therefore not readable by JavaScript. An XSS flaw in the interface can no
+longer read the session out and exfiltrate it.
 
-Weil der Browser Cookies aber an *jeden* Request an diesen Origin anhängt — auch an
-einen, den eine fremde Seite auslöst — kommt ein zweiter Schutz dazu:
+But because the browser attaches cookies to *every* request to this origin — including one triggered by
+somebody else's page — a second protection comes with it:
 
-- `SameSite=Lax` verhindert, dass das Cookie bei Cross-Site-Subrequests mitgeht.
-  `Lax` statt `Strict`, damit die Rückleitung vom OIDC-Anbieter noch angemeldet
-  ankommt.
-- Ein **Double-Submit-Token**: Das Cookie `qs_csrf` ist bewusst *nicht* `HttpOnly`.
-  Die Oberfläche liest es und schickt denselben Wert im Header `X-CSRF-Token`
-  zurück. Eine fremde Seite kann das Cookie zwar mitsenden lassen, es aber nicht
-  lesen — die Same-Origin-Policy verhindert das — und deshalb den passenden Header
-  nicht bilden.
+- `SameSite=Lax` stops the cookie travelling on cross-site subrequests. `Lax` rather than `Strict`, so
+  that the redirect back from the OIDC provider still arrives signed in.
+- A **double-submit token**: the `qs_csrf` cookie is deliberately *not* `HttpOnly`. The interface reads
+  it and sends the same value back in the `X-CSRF-Token` header. Another site can have the cookie sent
+  along, but cannot read it — the same-origin policy prevents that — and therefore cannot form the
+  matching header.
 
-Der Header-Weg braucht keinen CSRF-Schutz: Kein Browser hängt von sich aus einen
-`Authorization`-Header an.
+The header route needs no CSRF protection: no browser attaches an `Authorization` header by itself.
 
-Bei **zustandsändernden** Requests (`POST`, `PUT`, `PATCH`, `DELETE`) über den
-Cookie-Weg ist `X-CSRF-Token` Pflicht. Fehlt oder widerspricht er dem Cookie → `403`.
+For **state-changing** requests (`POST`, `PUT`, `PATCH`, `DELETE`) over the cookie route,
+`X-CSRF-Token` is mandatory. Missing, or contradicting the cookie → `403`.
 
-## Tenant-Zuordnung ausschließlich aus dem Token
+## The tenant comes from the token and nowhere else
 
-Der Tenant wird **immer** aus dem validierten Token abgeleitet — gleich, ob es aus dem
-Cookie oder dem Header stammt. Ein `X-Tenant-ID`-Header darf mit dem Claim
-übereinstimmen, ihn aber niemals überschreiben — Widerspruch führt zu `403`.
+The tenant is **always** derived from the validated token — whether that came from the cookie or the
+header. An `X-Tenant-ID` header may agree with the claim but must never override it; a contradiction is
+a `403`.
 
 ```http
 GET /api/v1/data/metrics
 Authorization: Bearer <jwt>
 ```
 
-Das Gateway injiziert `X-Tenant-ID` weiterhin für nachgelagerte Dienste, aber Core
-prüft das Token unabhängig noch einmal selbst. Das Gateway ist damit eine zusätzliche
-Filterstufe, nicht die einzige Absicherung.
+The Gateway still injects `X-Tenant-ID` for downstream services, but Core validates the token
+independently a second time. That makes the Gateway an additional filtering stage, not the only
+safeguard.
 
-!!! note "Interne Endpunkte sind nicht öffentlich erreichbar"
-    `/api/v1/internal/*` gibt entschlüsselte Connector-Zugangsdaten heraus und wird
-    vom Gateway **nicht** nach außen weitergereicht. Importer erreichen Core direkt
-    über das interne Netz mit einem Service-Credential.
+!!! note "Internal endpoints are not publicly reachable"
+    `/api/v1/internal/*` hands out decrypted connector credentials and is **not** passed through to the
+    outside by the Gateway. Importers reach Core directly over the internal network with a service
+    credential.
 
-## Validierte Claims
+## Validated claims
 
-Bei jedem Nutzer-Token werden geprüft: Signatur, Aussteller (`iss = qs-core`),
-Audience (`aud = qs-api`), Ablaufzeit, Token-Typ sowie das Vorhandensein von
-`user_id`, `tenant_id` und `jti`. Fehlt die Rolle, gilt die geringste Berechtigung
-(`member`) — nicht die höchste.
+For every user token these are checked: the signature, the issuer (`iss = qs-core`), the audience
+(`aud = qs-api`), the expiry, the token type, and the presence of `user_id`, `tenant_id` and `jti`. If
+the role is missing, the lowest permission applies (`member`) — not the highest.
 
-Fehlerverhalten:
+Failure behaviour:
 
-- fehlendes oder ungültiges Token → `401`
-- gültiges Token ohne ausreichende Rolle → `403`
+- missing or invalid token → `401`
+- valid token without a sufficient role → `403`
 
-## Sessions: Laufzeiten und Erneuerung
+## Sessions: lifetimes and renewal
 
-| Credential | Cookie | Laufzeit | Widerrufbar |
+| Credential | Cookie | Lifetime | Revocable |
 | --- | --- | --- | --- |
-| Access Token | `qs_access` (`HttpOnly`, Pfad `/`) | 12 Stunden (`ACCESS_TOKEN_TTL_MINUTES`) | ja, über `jti`-Denylist |
-| Refresh Token | `qs_refresh` (`HttpOnly`, Pfad `/api/v1/auth`) | 30 Tage (`REFRESH_TOKEN_TTL_DAYS`) | ja, sofort |
-| CSRF-Token | `qs_csrf` (lesbar) | 30 Tage | rotiert bei jeder Erneuerung |
+| Access token | `qs_access` (`HttpOnly`, path `/`) | 12 hours (`ACCESS_TOKEN_TTL_MINUTES`) | yes, through the `jti` denylist |
+| Refresh token | `qs_refresh` (`HttpOnly`, path `/api/v1/auth`) | 30 days (`REFRESH_TOKEN_TTL_DAYS`) | yes, immediately |
+| CSRF token | `qs_csrf` (readable) | 30 days | rotates on every renewal |
 
-Refresh Tokens sind **keine** JWTs, sondern zufällige, undurchsichtige
-Zeichenketten. Gespeichert wird nur ihr SHA-256-Hash, damit ein Datenbankleck nicht
-direkt gegen die API einsetzbar ist.
+Refresh tokens are **not** JWTs but random, opaque strings. Only their SHA-256 hash is stored, so that a
+database leak is not directly usable against the API.
 
-Das Refresh-Cookie ist auf `/api/v1/auth` eingeschränkt. Es fährt damit nicht bei
-jeder Metrik-Abfrage mit, sondern nur dort, wo es gebraucht wird.
+The refresh cookie is restricted to `/api/v1/auth`. It therefore does not ride along on every metric
+query, only where it is needed.
 
-Konfiguration der Cookie-Attribute: `COOKIE_SECURE` (Standard `true`),
-`COOKIE_SAMESITE` (Standard `lax`), `COOKIE_DOMAIN` (Standard leer = host-only).
-`Secure=true` funktioniert auch lokal, weil Browser `http://localhost` als
-vertrauenswürdigen Origin behandeln.
+The cookie attributes are configured with `COOKIE_SECURE` (`true` by default), `COOKIE_SAMESITE` (`lax`
+by default) and `COOKIE_DOMAIN` (empty by default, meaning host-only). `Secure=true` works locally too,
+because browsers treat `http://localhost` as a trustworthy origin.
 
-### Rotation ist einmalig
+### Rotation is single-use
 
 ```http
 POST /api/v1/auth/refresh
@@ -108,13 +101,11 @@ Cookie: qs_refresh=<token>; qs_csrf=<csrf>
 X-CSRF-Token: <csrf>
 ```
 
-Nicht-Browser-Clients können den Token stattdessen im Body mitgeben
-(`{ "refresh_token": "<token>" }`).
+Non-browser clients can pass the token in the body instead (`{ "refresh_token": "<token>" }`).
 
-Jede Erneuerung verbraucht den präsentierten Token und gibt ein neues Paar aus. Wird
-ein bereits verbrauchter Token erneut vorgelegt, gilt das als Hinweis auf einen
-Diebstahl: **alle** Sessions dieses Nutzers werden widerrufen, statt eine weitere
-auszustellen.
+Every renewal spends the token that was presented and issues a new pair. If an already spent token is
+presented again, that counts as an indication of theft: **all** of that user's sessions are revoked
+rather than another one being issued.
 
 ## Logout
 
@@ -125,172 +116,148 @@ X-CSRF-Token: <csrf>
 { "all_sessions": false }
 ```
 
-- Der `jti` des Access Tokens landet auf der Denylist; weitere Requests damit → `401`.
-- Der Refresh Token wird widerrufen.
-- Mit `all_sessions: true` werden alle Sessions des Nutzers beendet — siehe
-  [Alle Sessions beenden](#alle-sessions-beenden) dazu, warum das mehr braucht als
-  das Widerrufen der Refresh Tokens.
-- Alle drei Cookies werden gelöscht — auch dann, wenn das präsentierte Token schon
-  abgelaufen oder unlesbar war. Andernfalls bliebe ein Cookie zurück und der nächste
-  Seitenaufruf sähe wieder angemeldet aus.
-- Die Antwort ist immer `204`, auch bei ungültigem oder fehlendem Token. Logout muss
-  auch dann funktionieren, wenn der Client sein Token verloren hat, und darf nicht
-  verraten, ob ein präsentiertes Token echt war.
+- The access token's `jti` goes on the denylist; further requests with it → `401`.
+- The refresh token is revoked.
+- With `all_sessions: true` every session of the user is ended — see
+  [Ending every session](#ending-every-session) for why that takes more than revoking the refresh
+  tokens.
+- All three cookies are deleted — including when the token presented had already expired or was
+  unreadable. Otherwise a cookie would be left behind and the next page view would look signed in again.
+- The response is always `204`, even for an invalid or missing token. Logout has to work when the client
+  has lost its token, and must not reveal whether a presented token was genuine.
 
-Das Dashboard hält selbst keine Anmeldedaten mehr, die es löschen könnte — die
-Sitzung *ist* das Cookie. Ein `401` aus einem beliebigen Request beendet die Session
-sofort, und ein Tab, der wieder in den Vordergrund kommt, fragt den Server erneut,
-statt seinem zuletzt gerenderten Zustand zu vertrauen. **Ein Seiten-Refresh nach dem
-Logout meldet nicht wieder an.**
+The dashboard itself no longer holds any credentials it could delete — the session *is* the cookie. A
+`401` from any request ends the session immediately, and a tab that comes back into the foreground asks
+the server again instead of trusting its last rendered state. **A page refresh after signing out does not
+sign you back in.**
 
-!!! warning "Entfernter Dev-Token-Endpunkt"
-    `GET /api/v1/auth/dev-token` gibt es nicht mehr. Er stellte 365 Tage gültige
-    `owner`-Tokens für jeden beliebigen als Query-Parameter übergebenen Tenant aus,
-    und das Dashboard rief ihn automatisch auf, sobald kein Token gespeichert war —
-    genau deshalb war man nach dem Logout sofort wieder angemeldet. Für lokale
-    Entwicklung bitte regulär registrieren und anmelden.
+!!! warning "The dev-token endpoint is gone"
+    `GET /api/v1/auth/dev-token` no longer exists. It issued `owner` tokens valid for 365 days for any
+    tenant passed as a query parameter, and the dashboard called it automatically whenever no token was
+    stored — which is exactly why signing out signed you straight back in. For local development,
+    register and sign in normally.
 
-### Alle Sessions beenden
+### Ending every session
 
-`all_sessions: true`, eine Passwortänderung und ein erkannter Refresh-Token-Replay
-lösen alle dasselbe aus — und das tat lange nicht, was es verspricht. Widerrufen
-wurden nur die Refresh Tokens. Damit lässt sich keine *neue* Sitzung mehr
-erzeugen, aber jedes bereits ausgestellte Access Token blieb bis zu zwölf Stunden
-gültig: nach einer Passwortänderung, nach einem erkannten Diebstahl und nach einer
-Abmeldung durch den Anbieter.
+`all_sessions: true`, a password change and a detected refresh-token replay all trigger the same thing —
+and for a long time that did not do what it promises. Only the refresh tokens were revoked. That prevents
+a *new* session being created, but every access token already issued stayed valid for up to twelve hours:
+after a password change, after a detected theft, and after the provider signed the user out.
 
-Die Denylist kann das nicht leisten. Sie ist auf `jti` indiziert, und ein `jti`
-wird erst bekannt, wenn das Token vorgelegt wird — „alle offenen Tokens dieses
-Kontos" ist keine Menge, die sich aufzählen lässt. Stattdessen trägt `users` jetzt
-eine Spalte `sessions_valid_from`. Jeder Request vergleicht sie mit dem `iat`
-seines Tokens; alles davor wird abgelehnt. Eine Zeile, ein Vergleich, alle Tokens.
+The denylist cannot do this. It is indexed on `jti`, and a `jti` only becomes known when the token is
+presented — "every outstanding token of this account" is not a set that can be enumerated. Instead,
+`users` now carries a `sessions_valid_from` column. Every request compares it against its token's `iat`;
+anything from before is rejected. One row, one comparison, every token.
 
-Ein neues Token nach dem Stichzeitpunkt ist davon nicht betroffen — Anmelden
-funktioniert also sofort wieder.
+A new token issued after the cut-off is unaffected — so signing in works again immediately.
 
-### Abmelden beim Anbieter
+### Signing out at the provider
 
-Wer sich über einen externen Anbieter angemeldet hat, hat dort eine zweite,
-eigene Sitzung. Wird nur die lokale beendet, führt der nächste Klick auf
-„Anmelden mit …" ohne Rückfrage sofort wieder hinein — die Abmeldung sieht dann
-wirkungslos aus.
+Anyone who signed in through an external provider has a second, separate session there. End only the
+local one and the next click on "Sign in with …" goes straight back in without a prompt — which makes the
+sign-out look ineffective.
 
-Ist im Discovery-Dokument ein `end_session_endpoint` hinterlegt, antwortet
-`/api/v1/auth/logout` deshalb mit `200` und einem `end_session_url`, dem die
-Oberfläche folgt. Ohne verknüpften Anbieter bleibt es beim `204`.
+So if the discovery document holds an `end_session_endpoint`, `/api/v1/auth/logout` answers `200` with an
+`end_session_url` for the interface to follow. Without a linked provider it stays a `204`.
 
-Bewusst **ohne** `id_token_hint`: der würde die Identität der Nutzerin in eine URL
-schreiben, die im Browserverlauf und in jedem Proxy-Log landet. Der Preis ist,
-dass manche Anbieter nachfragen, welches Konto abgemeldet werden soll — das ist
-der harmlosere Fehlerfall.
+Deliberately **without** `id_token_hint`: that would write the user's identity into a URL that ends up in
+the browser history and in every proxy log. The price is that some providers ask which account should be
+signed out — the more harmless failure mode.
 
-Das Ziel nach der Abmeldung stellt `POST_LOGOUT_REDIRECT_URI` ein. Es muss beim
-Anbieter registriert sein.
+`POST_LOGOUT_REDIRECT_URI` sets where the user lands after signing out. It has to be registered with the
+provider.
 
-Die Gegenrichtung — der Anbieter beendet die Sitzung und teilt uns das mit —
-beschreibt [Back-Channel-Logout](oidc.md#back-channel-logout).
+The other direction — the provider ends the session and tells us about it — is described in
+[back-channel logout](oidc.md#back-channel-logout).
 
-## Warnungen im Dashboard
+## Warnings in the dashboard
 
-Konfigurations- und Zugangsprobleme stehen nicht mehr nur in einer Logzeile, einer
-Commit-Nachricht oder dieser Dokumentation — sie erscheinen als Banner über dem
-Inhalt, auf jedem Tab. Eine Plattform, die Sitzungen mit einem Schlüssel
-signiert, der in ihrem eigenen Quellcode steht, sollte das dort sagen, wo die
-Betreiberin hinsieht.
+Configuration and access problems no longer live only in a log line, a commit message or this
+documentation — they appear as a banner above the content, on every tab. A platform that signs sessions
+with a key printed in its own source code should say so where the operator is looking.
 
-`GET /api/v1/data/system/warnings` liefert die Liste. Was gemeldet wird:
+`GET /api/v1/data/system/warnings` returns the list. What is reported:
 
-| Code | Schwere | Anlass |
+| Code | Severity | Trigger |
 | --- | --- | --- |
-| `insecure_jwt_secret` | kritisch | `JWT_SECRET` ist unbesetzt oder ein veröffentlichter Standardwert |
-| `insecure_encryption_key` | kritisch | dito für `ENCRYPTION_KEY` — mit dem Hinweis, **vorher** umzuschlüsseln |
-| `insecure_internal_secret` | kritisch | dito für `INTERNAL_SERVICE_SECRET` |
-| `password_published` | kritisch | Der Hash des eigenen Passworts stand in einer veröffentlichten Quelle |
-| `registration_open` | Warnung | `ALLOW_REGISTRATION` ist aktiv |
-| `cookies_not_secure` | Warnung | `COOKIE_SECURE` ist aus |
-| `development_environment` | Hinweis | erklärt, warum die Dienste trotz der obigen Punkte starten |
+| `insecure_jwt_secret` | critical | `JWT_SECRET` is unset or a published default value |
+| `insecure_encryption_key` | critical | the same for `ENCRYPTION_KEY` — with the note to re-encrypt **first** |
+| `insecure_internal_secret` | critical | the same for `INTERNAL_SERVICE_SECRET` |
+| `password_published` | critical | The hash of your own password was in a published source |
+| `registration_open` | warning | `ALLOW_REGISTRATION` is on |
+| `cookies_not_secure` | warning | `COOKIE_SECURE` is off |
+| `development_environment` | info | explains why the services start despite the points above |
 
-Drei Eigenschaften sind Absicht:
+Three properties are deliberate:
 
-- **Die Deployment-Warnungen sehen nur Inhaber und Administratoren.** Zu benennen,
-  *welcher* Schlüssel schwach ist, ist selbst eine kleine Offenlegung.
-- **`password_published` sieht die betroffene Person, unabhängig von der Rolle.**
-  Jemandem „dein Passwort ist öffentlich" vorzuenthalten, weil er nur Mitglied
-  ist, wäre absurd.
-- **Ausblenden gilt nur für die Sitzung.** Ein dauerhaftes „nicht mehr anzeigen"
-  auf „dein Signaturschlüssel ist öffentlich" ist der Weg, wie er öffentlich
-  bleibt. Jede Warnung nennt außerdem einen Befehl oder eine Einstellung, keinen
-  Ratschlag — „Erwäge, deine Secrets zu rotieren" ist die Form, die niemand
-  befolgt.
+- **Only owners and administrators see the deployment warnings.** Naming *which* key is weak is itself a
+  small disclosure.
+- **`password_published` is seen by the person affected, regardless of role.** Withholding "your password
+  is public" from somebody because they are only a member would be absurd.
+- **Dismissing lasts for the session only.** A permanent "do not show again" on "your signing key is
+  public" is how it stays public. Every warning also names a command or a setting rather than giving
+  advice — "consider rotating your secrets" is the form nobody follows.
 
-Der Wert eines Secrets wird nie ausgegeben, nur der Variablenname. Sonst wäre die
-Warnung über einen schwachen Schlüssel ein zweiter Weg, ihn zu lesen.
+A secret's value is never printed, only the variable's name. Otherwise the warning about a weak key would
+be a second way to read it.
 
-### Woher `password_published` weiß, was öffentlich ist
+The payloads are English, and each carries a stable `code`: the dashboard renders its own wording for a
+code it knows and falls back to the server's text for one it does not. A service does not localize its own
+output.
 
-Frühere Versionen legten in `infra/db/init.sql` ein Konto mit einem
-mitgelieferten bcrypt-Hash an. Wer das Repository hatte, hatte den Hash und die
-Adresse dazu; bcrypt verzögert einen Angriff, es verhindert ihn nicht. Konto und
-History sind bereinigt — nur macht das ein Passwort nicht wieder ungesehen. Ein
-Konto, das so eines **noch benutzt**, wird bei jeder Anmeldung gewarnt, bis es
-geändert ist.
+### How `password_published` knows what is public
 
-Gespeichert sind SHA-256-Digests der betroffenen Hashes, nicht die Hashes selbst.
-Einen echten bcrypt-Hash einzuchecken, um einen geleakten bcrypt-Hash zu
-erkennen, würde genau das wieder veröffentlichen, wovor gewarnt wird — und
-`.agents/scripts/check_private_info.py` würde es zu Recht ablehnen.
+Earlier versions created an account in `infra/db/init.sql` with a bcrypt hash shipped alongside. Whoever
+had the repository had the hash and the address to go with it; bcrypt delays an attack, it does not
+prevent one. The account and the history are cleaned up — which does not make a password unseen again. An
+account that **still uses** such a password is warned on every sign-in until it is changed.
 
-## Registrierung ist standardmäßig geschlossen
+What is stored are SHA-256 digests of the affected hashes, not the hashes themselves. Checking in a real
+bcrypt hash in order to recognize a leaked bcrypt hash would republish exactly what is being warned
+about — and `.agents/scripts/check_private_info.py` would rightly refuse it.
 
-`ALLOW_REGISTRATION` steht auf `false`. Das erste Konto wird mit
-`python -m core.create_owner` angelegt; der vollständige Ablauf steht unter
-[Das erste Konto anlegen](../operations.md#das-erste-konto-anlegen).
+## Registration is closed by default
 
-Zwei Eigenschaften des Befehls sind Absicht: das Passwort kommt aus einer
-Eingabeaufforderung und nie aus einem Argument, und ein zweiter Aufruf mit
-derselben Adresse bricht ab, statt das vorhandene Passwort stillschweigend zu
-ersetzen.
+`ALLOW_REGISTRATION` is `false`. The first account is created with `python -m core.create_owner`; the full
+procedure is under [Creating the first account](../operations.md#creating-the-first-account).
 
-## Serverseitiger Route-Guard
+Two properties of that command are deliberate: the password comes from a prompt and never from an
+argument, and a second call with the same address aborts instead of quietly replacing the existing
+password.
 
-Ein Deep-Link auf `/profile` ohne Sitzung rendert nicht mehr erst das Grundgerüst,
-wartet auf `/api/v1/auth/me` und tauscht dann das Anmeldeformular ein — mit
-`/profile` weiterhin in der Adresszeile. `apps/dashboard/src/proxy.ts` (in Next 16
-der neue Name für `middleware.ts`) leitet vorher auf `/?next=<Ziel>` um; nach der
-Anmeldung geht es dort weiter.
+## The server-side route guard
 
-Geprüft wird `qs_csrf`, nicht das Access Token. Das läuft nach zwölf Stunden ab,
-während die Sitzung dreißig Tage hält — auf ein fehlendes `qs_access` umzuleiten
-würde also jede zurückkehrende Nutzerin aus einer funktionierenden Sitzung werfen.
-`qs_refresh` ist auf `/api/v1/auth` beschränkt und wird bei einer Seitennavigation
-gar nicht gesendet. `qs_csrf` liegt auf `/`, lebt so lange wie der Refresh Token
-und ist für sich genommen kein Zugangsnachweis.
+A deep link to `/profile` without a session no longer renders the shell first, waits for
+`/api/v1/auth/me` and then swaps in the sign-in form — with `/profile` still in the address bar.
+`apps/dashboard/src/proxy.ts` (Next 16's new name for `middleware.ts`) redirects to `/?next=<target>`
+beforehand; after signing in you carry on there.
 
-!!! note "Kein Zugriffsschutz"
-    Der Guard ist eine Korrektur an Adresszeile und Darstellung, keine
-    Autorisierung — Next.js' eigene Dokumentation rät ausdrücklich davon ab, ihn
-    als solche zu verwenden. Jedes Byte an Tenant-Daten kommt aus einem Request,
-    den Gateway und Core prüfen. Wer das Cookie fälscht, bekommt dasselbe leere
-    Grundgerüst und ein `401`.
+What it checks is `qs_csrf`, not the access token. That expires after twelve hours while the session lasts
+thirty days — so redirecting on a missing `qs_access` would throw every returning user out of a working
+session. `qs_refresh` is restricted to `/api/v1/auth` and is not sent on a page navigation at all.
+`qs_csrf` sits on `/`, lives as long as the refresh token, and is not a credential in its own right.
 
-## Passwortänderung
+!!! note "Not an access control"
+    The guard is a correction to the address bar and to what is rendered, not authorization — Next.js's
+    own documentation explicitly advises against using it as one. Every byte of tenant data comes from a
+    request that the Gateway and Core validate. Forge the cookie and you get the same empty shell and a
+    `401`.
 
-`POST /api/v1/auth/change-password` ändert das Passwort des **aufrufenden** Nutzers
-(aufgelöst über `user_id` aus dem Token) und widerruft anschließend alle Sessions
-dieses Kontos, einschließlich des gerade verwendeten Tokens.
+## Changing a password
 
-## Korrelation
+`POST /api/v1/auth/change-password` changes the password of the **calling** user (resolved from `user_id`
+in the token) and then revokes every session of that account, including the token just used.
 
-Jeder Request trägt eine `X-Request-ID`, die über Gateway, Core, NATS-Events und
-Importer propagiert und in allen Logs als `[req_id=…]` ausgegeben wird. Login,
-Logout und Token-Erneuerung sind darüber nachvollziehbar.
+## Correlation
 
-## Bekannte Einschränkungen
+Every request carries an `X-Request-ID`, which is propagated across the Gateway, Core, the NATS events and
+the importers, and printed in every log as `[req_id=…]`. Sign-in, sign-out and token renewal can be
+followed through it.
 
-- Der eigentliche Zugriffsschutz greift weiterhin erst im Netzwerk-Request. Der
-  [Route-Guard](#serverseitiger-route-guard) korrigiert Adresszeile und Darstellung,
-  er autorisiert nichts.
-- Externe Anmeldung über OIDC ist verfügbar, aber standardmäßig deaktiviert; siehe
-  [Externe Anmeldung (OIDC)](oidc.md).
-- Rollen (`owner`, `admin`, `member`) werden für die Verwaltung der API-Keys und
-  der Anmeldeanbieter ausgewertet.
+## Known limitations
+
+- The actual access control still only takes effect at the network request. The
+  [route guard](#the-server-side-route-guard) corrects the address bar and what is rendered; it authorizes
+  nothing.
+- External sign-in over OIDC is available but off by default; see [External sign-in (OIDC)](oidc.md).
+- The roles (`owner`, `admin`, `member`) are evaluated for managing API keys and sign-in providers.

@@ -1,26 +1,23 @@
-# Smart- und Force-Import
+# Smart and force import
 
-## Was das Feature tut
+## What the feature does
 
-Beim Import eines Connectors prüft die Plattform zuerst, welche Teile des
-gewünschten Zeitraums **bereits vollständig vorhanden** sind, und importiert nur den
-Rest. Der Zeitraum selbst wird dabei automatisch an die tatsächliche Importfrequenz
-des Connectors angepasst.
+When a connector is imported, the platform first works out which parts of the requested period
+are **already complete**, and imports only the rest. The period itself is adapted automatically to
+how often the connector actually imports.
 
-Vorher wurde bei jedem Sync unabhängig vom Datenbestand ein fester Zeitraum (Standard
-30 Tage) erneut abgefragt. Das erzeugte bei jedem Lauf tausende Duplicate Events, die
-zwar durch die Idempotenzprüfung verworfen wurden, aber unnötig Rechenzeit und
-API-Kontingent des Anbieters verbrauchten.
+Before, every sync re-requested a fixed period (30 days by default) regardless of what was already
+stored. That produced thousands of duplicate events per run. The idempotency check discarded them,
+but they still spent processing time and the provider's API quota for nothing.
 
-## Warum Core und nicht der Importer entscheidet
+## Why Core decides, and not the importer
 
-Die Entscheidung braucht die Import-Historie, und nur `services/core/` besitzt die
-Datenbank (AGENTS.md Regel 1). Core berechnet deshalb das Fenster und schickt
-`window_start`, `window_end` und `mode` im NATS-Task `qs.task.sync.<source>` mit. Der
-Importer führt aus, was er bekommt.
+The decision needs the import history, and only `services/core/` owns the database (AGENTS.md rule
+1). So Core computes the window and sends `window_start`, `window_end` and `mode` along in the NATS
+task `qs.task.sync.<source>`. The importer executes what it is given.
 
 ```text
-Dashboard ──► Gateway ──► Core (berechnet Fenster, legt SyncRun an)
+Dashboard ──► Gateway ──► Core (computes the window, creates the SyncRun)
                             │
                             ├──► NATS qs.task.sync.<source>  { window_start, window_end, mode, sync_run_id }
                             │                                        │
@@ -29,78 +26,73 @@ Dashboard ──► Gateway ──► Core (berechnet Fenster, legt SyncRun an)
                             └──◄── NATS qs.ingest.<source> ◄─────────┘
 ```
 
-## Adaptive Importzeiträume
+## Adaptive import periods
 
-Der Überlappungszeitraum richtet sich nach dem konfigurierten Abfrageintervall:
+The overlap follows the configured poll interval:
 
-| Abfrageintervall | Überlappung |
+| Poll interval | Overlap |
 | --- | --- |
-| stündlich | 2 Stunden |
-| alle 3 Stunden | 6 Stunden |
-| alle 6 Stunden | 12 Stunden |
-| täglich | 48 Stunden |
-| wöchentlich | 72 Stunden (Obergrenze) |
+| hourly | 2 hours |
+| every 3 hours | 6 hours |
+| every 6 hours | 12 hours |
+| daily | 48 hours |
+| weekly | 72 hours (the cap) |
 
-Der nächste Import beginnt also um diese Überlappung **vor** dem Ende des letzten
-erfolgreichen Laufs. Damit gehen keine Daten verloren, die beim Anbieter verspätet
-eintreffen, und ein einzelner ausgefallener Lauf wird automatisch nachgeholt.
+So the next import starts that overlap **before** the end of the last successful run. Nothing is
+lost when data arrives late at the provider, and a single failed run is caught up automatically.
 
-Weitere Regeln:
+Further rules:
 
-- Ohne vorherigen erfolgreichen Lauf wird der volle konfigurierte Lookback verwendet.
-- Ist eine ältere Datenlücke bekannt, wird das Fenster bis dorthin ausgedehnt.
-- Das Fenster wird immer auf den konfigurierten Lookback begrenzt.
-- Nur ein Lauf mit Status `success` verschiebt den Wiederaufsetzpunkt.
+- Without a previous successful run, the full configured lookback is used.
+- If an older gap in the data is known, the window is extended back to it.
+- The window is always capped at the configured lookback.
+- Only a run with status `success` moves the resume point.
 
-## Duplikaterkennung auf Zeitraum-Ebene
+## Duplicate detection at the range level
 
-Die Prüfung läuft **grob nach fein**, nicht Datenpunkt für Datenpunkt:
+The check runs **coarse to fine**, not data point by data point:
 
-1. Eine einzige Aggregatabfrage zählt die Datenpunkte je Zeitblock über den gesamten
-   Zeitraum.
-2. Jeder Block wird gegen die beobachtete Datendichte (Median der nicht-leeren
-   Blöcke) als **vollständig**, **teilweise** oder **leer** eingestuft.
-3. Die Grenzen zwischen vorhandenen und fehlenden Bereichen werden durch
-   Intervallhalbierung verfeinert — etwa sechs Abfragen genügen, um einen Tagesblock
-   auf 15 Minuten genau aufzulösen.
+1. A single aggregate query counts the data points per time block across the whole period.
+2. Each block is classified as **complete**, **partial** or **empty** against the observed data
+   density (the median of the non-empty blocks).
+3. The boundaries between present and missing ranges are refined by bisection — about six queries
+   are enough to resolve a day-sized block to 15 minutes.
 
-### Sicherheitsregel
+### The safety rule
 
-Übersprungen wird **ausschließlich** ein Bereich, der nachweislich vollständig ist.
-Alles Unsichere wird importiert:
+A range is skipped **only** when it is demonstrably complete. Everything uncertain is imported:
 
-- teilweise gefüllte Blöcke,
-- unregelmäßige Messintervalle,
-- stark fragmentierte Abdeckung (viele abwechselnd vorhandene und fehlende Blöcke).
+- partially filled blocks,
+- irregular measurement intervals,
+- heavily fragmented coverage (many alternating present and missing blocks).
 
-Der Grund ist die Asymmetrie der Fehler: ein überflüssiger Import ist dank
-Idempotenz folgenlos, ein fälschlich übersprungener Bereich bedeutet dauerhaften
-Datenverlust.
+The reason is the asymmetry of the two mistakes: a redundant import is harmless thanks to
+idempotency, while a range skipped in error means permanent data loss.
 
-## Smart-Modus (Standard)
+## Smart mode (the default)
 
-Der Importdialog zeigt vor dem Start an, was passieren wird:
+Before it starts, the import dialog shows what is about to happen:
 
-> „Bereits vorhanden: 01.07.2026 00:00–05.07.2026 00:00. Importiert wird nur der neue
-> Zeitraum von 05.07.2026 00:00 bis 08.07.2026 12:00."
+> "Already stored: 2026-07-01 00:00–2026-07-05 00:00. Only the new period from 2026-07-05 00:00 to
+> 2026-07-08 12:00 will be imported."
 
-Ist der gesamte Zeitraum vorhanden, wird gar kein Task erzeugt:
+If the whole period is already there, no task is created at all:
 
-> „Der Zeitraum von … bis … ist bereits vollständig vorhanden und wird übersprungen."
+> "The period from … to … is already complete and will be skipped."
 
-## Force-Modus
+## Force mode
 
-Mit **„Alles erzwingen"** wird der komplette angegebene Zeitraum erneut verarbeitet.
+**Force everything** processes the entire given period again.
 
-- Idempotenz und Datenintegrität bleiben aktiv — es entstehen keine doppelten Zeilen.
-- Es entstehen mehr Duplicate Events und damit spürbar mehr Verarbeitungsaufwand.
-- Der Lauf wird im Importprotokoll mit `mode = force` gekennzeichnet.
+- Idempotency and data integrity stay in force — no duplicate rows appear.
+- More duplicate events are produced, and with them noticeably more processing work.
+- The run is marked `mode = force` in the import log.
 
-Force ist sinnvoll, wenn beim Anbieter rückwirkend Daten korrigiert wurden.
+Force is the right choice when the provider has corrected data retroactively.
 
 ## API
 
-### Importplan abrufen
+### Fetching an import plan
 
 ```http
 POST /api/v1/data/sources/{source_type}/import-plan
@@ -109,7 +101,7 @@ Authorization: Bearer <jwt>
 { "start": "2026-07-01T00:00:00Z", "end": "2026-07-08T00:00:00Z", "mode": "smart" }
 ```
 
-Antwort (gekürzt):
+Response (abridged):
 
 ```json
 {
@@ -119,14 +111,14 @@ Antwort (gekürzt):
   "recommended_range":{ "start": "...", "end": "..." },
   "skipped_ranges":   [ { "start": "...", "end": "..." } ],
   "confidence": "high",
-  "reason": "Bereits vorhanden: … Importiert wird nur der neue Zeitraum von … bis …"
+  "reason": "Already stored: … Only the new period from … to … will be imported."
 }
 ```
 
-Lässt man `start` und `end` weg, liefert der Endpunkt das automatisch abgeleitete
-Fenster samt Begründung in `window_reason`.
+Leave `start` and `end` out and the endpoint returns the automatically derived window, with its
+reasoning in `window_reason`.
 
-### Import auslösen
+### Triggering an import
 
 ```http
 POST /api/v1/data/sources/sync
@@ -135,31 +127,30 @@ Authorization: Bearer <jwt>
 { "source_type": "whoop", "mode": "smart" }
 ```
 
-Antwortstatus `skipped` bedeutet, dass nichts zu tun war.
+A response status of `skipped` means there was nothing to do.
 
-### Abdeckung abfragen
+### Querying coverage
 
 ```http
 GET /api/v1/data/coverage?start=<iso>&end=<iso>&source_type=whoop
 Authorization: Bearer <jwt>
 ```
 
-### Importhistorie
+### Import history
 
 ```http
 GET /api/v1/data/sources/{source_type}/sync-runs?limit=20
 Authorization: Bearer <jwt>
 ```
 
-Jeder Lauf enthält Fenster, Modus, Auslöser, Status, übersprungene Bereiche sowie
-die Zähler `points_received`, `points_accepted` und `points_duplicate`.
+Every run carries its window, mode, trigger, status and skipped ranges, plus the counters
+`points_received`, `points_accepted` and `points_duplicate`.
 
-## Interpretation und Grenzen
+## How to read it, and its limits
 
-- `confidence: "low"` heißt, dass die Datenlage keine sichere Bereichsaussage
-  zulässt. Dann wird bewusst der volle Zeitraum importiert.
-- Die erwartete Datendichte wird aus den vorhandenen Daten geschätzt. Bei sehr
-  wenigen Datenpunkten ist diese Schätzung ungenau, und der Planer verhält sich
-  entsprechend konservativ.
-- Die Abdeckungsanalyse betrachtet Datenpunkte, nicht deren inhaltliche Richtigkeit.
-  Ein Bereich kann vollständig und trotzdem fachlich falsch sein.
+- `confidence: "low"` means the data does not support a reliable statement about ranges. The full
+  period is then imported deliberately.
+- The expected data density is estimated from the data that is there. With very few data points that
+  estimate is imprecise, and the planner behaves conservatively to match.
+- The coverage analysis looks at data points, not at whether they are right. A range can be complete
+  and still be wrong.

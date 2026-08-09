@@ -1,16 +1,17 @@
-# Datenqualität
+# Data quality
 
-Das Data Quality Center zeigt, ob Daten vollständig, widerspruchsfrei und für Analysen geeignet sind.
+The Data Quality Center shows whether the data is complete, free of contradictions and fit
+for analysis.
 
-## Kennzahlen
+## Indicators
 
-| Kennzahl | Bedeutung | Empfehlung |
+| Indicator | Meaning | Recommendation |
 | --- | --- | --- |
-| Datenlücken | Tage ohne Messwert pro Metrik im 30-Tage-Fenster | Connector prüfen, Token erneuern oder Sync erneut starten. |
-| Quellenkonflikte | Messwerte gleicher Metrik weichen zwischen Quellen deutlich ab | Primärquelle festlegen oder Maßeinheiten prüfen. |
+| Data gaps | Days without a value for a metric, within the 30-day window | Check the connector, renew the token, or start the sync again. |
+| Source conflicts | Values for the same metric differ noticeably between sources | Pick a primary source, or check the units. |
 
-## Interpretation
+## How to read it
 
-- **0 Lücken**: Daten sind für einfache Trends und Korrelationen gut geeignet.
-- **1-3 Lücken**: Analyse ist meistens nutzbar, aber Ausreißer sollten vorsichtig interpretiert werden.
-- **Mehrere Lücken**: Empfehlungen können verzerrt sein; zuerst Datenquelle reparieren.
+- **0 gaps**: the data is fit for simple trends and correlations.
+- **1–3 gaps**: the analysis is usually usable, but read outliers carefully.
+- **Several gaps**: recommendations may be skewed; repair the data source first.

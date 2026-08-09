@@ -1,22 +1,24 @@
-# Korrelationen & einfache Analysen
+# Correlations and simple analyses
 
-Die Korrelationen-Ansicht bewertet, welche Metriken sich gemeinsam verändern. Der aktuelle Ansatz ist ressourcenschonend und deterministisch.
+The correlations view assesses which metrics change together. The current approach is
+deterministic and cheap to run.
 
-## Einordnung des Pearson-Koeffizienten
+## Reading the Pearson coefficient
 
-| Absolutwert | Stärke | Interpretation |
+| Absolute value | Strength | Interpretation |
 | --- | --- | --- |
-| `0.00–0.19` | sehr niedrig | Praktisch kein linearer Zusammenhang. |
-| `0.20–0.39` | niedrig | Schwaches Muster; mehr Daten sammeln. |
-| `0.40–0.59` | moderat | Beobachtbarer Zusammenhang, Hypothese prüfen. |
-| `0.60–0.79` | stark | Relevantes Muster, aber keine Kausalität. |
-| `0.80–1.00` | sehr stark | Sehr deutlicher gemeinsamer Verlauf; Datenqualität prüfen. |
+| `0.00–0.19` | very weak | Practically no linear relationship. |
+| `0.20–0.39` | weak | A thin pattern; collect more data. |
+| `0.40–0.59` | moderate | An observable relationship — treat it as a hypothesis. |
+| `0.60–0.79` | strong | A relevant pattern, but not causation. |
+| `0.80–1.00` | very strong | A very clear shared course; check the data quality. |
 
-## Günstige nächste ML-Algorithmen
+## Sensible next algorithms
 
-- Spearman-Korrelation für monotone, nicht-lineare Zusammenhänge.
-- Rolling Correlation für zeitabhängige Muster.
-- Isolation Forest oder robustes Z-Score-Scoring für Ausreißer.
-- Kleine Random-Forest-Regressoren pro Zielmetrik, um Feature-Wichtigkeiten zu schätzen.
+- Spearman correlation for monotonic, non-linear relationships.
+- Rolling correlation for time-dependent patterns.
+- Isolation Forest, or robust z-score scoring, for outliers.
+- Small random-forest regressors per target metric, to estimate feature importance.
 
-Alle Verfahren sollten tenant-scoped über Core/gRPC lesen und keine direkte Datenbankverbindung im Analysis Service nutzen.
+All of them must read tenant-scoped through Core over gRPC. The Analysis service never
+opens a database connection of its own.

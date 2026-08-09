@@ -6,7 +6,7 @@ site_dir: site
 repo_url: https://github.com/iamTim0/quantified-self
 theme:
   name: material
-  language: de
+  language: en
   features:
     - navigation.tabs
     - navigation.sections
@@ -15,32 +15,32 @@ theme:
     - search.highlight
 nav:
   - Start: index.md
-  - Architektur: architecture.md
-  - Metriken: metrics.md
-  - Release & Deployment: deployment.md
-  - Betrieb: operations.md
-  - Fehlerbehebung: troubleshooting.md
-  - Lizenzen: licensing.md
-  - Importer:
+  - Architecture: architecture.md
+  - Metrics: metrics.md
+  - Release and deployment: deployment.md
+  - Operations: operations.md
+  - Troubleshooting: troubleshooting.md
+  - Licensing: licensing.md
+  - Importers:
       - Standard: importer-standard.md
-      - Überblick: importers/index.md
+      - Overview: importers/index.md
       - Yazio: importers/yazio.md
       - WHOOP: importers/whoop.md
       - Apple Health: importers/apple-health.md
       - Dawarich: importers/dawarich.md
       - Streak: importers/streak.md
       - Home Assistant: importers/home-assistant.md
-      - Wetter: importers/weather.md
-      - Kalender: importers/calendar.md
+      - Weather: importers/weather.md
+      - Calendar: importers/calendar.md
   - Features:
-      - Smart- und Force-Import: features/smart-import.md
-      - Datenqualität: features/data-quality.md
-      - Korrelationen & einfache Analysen: features/correlations.md
-      - GPS-Visualisierung: features/gps-visualization.md
-  - Sicherheit:
-      - Authentifizierung & Sessions: features/authentication.md
-      - Externe Anmeldung (OIDC): features/oidc.md
-      - Tenant-gebundene API-Keys: features/api-keys.md
+      - Smart and force import: features/smart-import.md
+      - Data quality: features/data-quality.md
+      - Correlations and simple analyses: features/correlations.md
+      - GPS visualization: features/gps-visualization.md
+  - Security:
+      - Authentication and sessions: features/authentication.md
+      - External sign-in (OIDC): features/oidc.md
+      - Tenant-bound API keys: features/api-keys.md
 markdown_extensions:
   - admonition
   - toc:

@@ -1,12 +1,14 @@
-# GPS-Visualisierung
+# GPS visualization
 
-Die GPS-Karte zeigt Dawarich-Standortpunkte. Standardmäßig wird eine robuste SVG-Vector-Route genutzt, damit das Dashboard auch ohne extern ladbare Kartentiles funktioniert.
+The GPS map shows Dawarich location points. It defaults to a self-contained SVG vector
+route so that the dashboard still works when no map tiles can be loaded from outside.
 
-## Modi
+## Modes
 
-- **Vector Route**: Offline-fähige Projektion der GPS-Punkte in eine SVG-Bounding-Box.
-- **OpenStreetMap**: Optionale Leaflet-Karte, wenn externe Tiles erreichbar sind.
+- **Vector route**: an offline-capable projection of the GPS points into an SVG bounding box.
+- **OpenStreetMap**: an optional Leaflet map, for when external tiles are reachable.
 
-## Empfehlung
+## Recommendation
 
-Wenn die Tile-Karte grau bleibt oder blockiert wird, bei **Vector Route** bleiben. Die Datenpunkte selbst kommen weiterhin tenant-scoped aus Core über `/api/v1/data/metrics`.
+If the tile map stays grey or is blocked, stay on **Vector route**. The data points
+themselves still come tenant-scoped from Core via `/api/v1/data/metrics`.

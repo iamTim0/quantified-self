@@ -1,36 +1,37 @@
-# Home Assistant Importer
+# Home Assistant importer
 
-## Ziel
+## Purpose
 
-Der Home-Assistant-Importer liest ausgewählte Sensorzustände über die Home Assistant REST API und macht Raumklima, Licht, Geräusche oder Anwesenheit als Zeitreihen analysierbar.
+The Home Assistant importer reads selected sensor states through the Home Assistant REST API
+and makes indoor climate, light, noise or presence analysable as time series.
 
-## Einrichtung in Home Assistant
+## Setup in Home Assistant
 
-1. In Home Assistant im Browser anmelden.
-2. Profil öffnen (`http://<home-assistant-host>:8123/profile`).
-3. Unter **Long-Lived Access Tokens** ein Token für Quantified Self erzeugen.
-4. Im Dashboard den Connector **Home Assistant** öffnen.
-5. Base URL, Token und optional erlaubte `entity_id`-Muster speichern, z. B. `sensor.schlafzimmer_temperature`.
+1. Sign in to Home Assistant in a browser.
+2. Open your profile (`http://<home-assistant-host>:8123/profile`).
+3. Under **Long-Lived Access Tokens**, create a token for Quantified Self.
+4. Open the **Home Assistant** connector in the dashboard.
+5. Save the base URL, the token and, optionally, the `entity_id` patterns to allow — for example `sensor.bedroom_temperature`.
 
-Home Assistant REST Requests verwenden den Header `Authorization: Bearer <TOKEN>`. Long-lived Tokens werden im Profil erzeugt und sind für Integrationen gedacht.
+Home Assistant REST requests use the header `Authorization: Bearer <TOKEN>`. Long-lived
+tokens are created in the profile and are meant for integrations.
 
-## Metriken
+## Metrics
 
-| Beispiel-Entity | Normalisierte Metrik | Nutzen |
+| Example entity | Normalized metric | What it is good for |
 | --- | --- | --- |
-| `sensor.living_room_temperature` | `home_assistant_living_room_temperature` | Schlaf-/Erholungsqualität mit Raumtemperatur vergleichen. |
-| `sensor.bedroom_humidity` | `home_assistant_bedroom_humidity` | Trockene Luft oder hohe Luftfeuchte sichtbar machen. |
-| `sensor.hallway_illuminance` | `home_assistant_hallway_illuminance` | Lichtmenge mit Tagesrhythmus korrelieren. |
-| `binary_sensor.window_open` | `home_assistant_window_open` | Zustände werden als `1`/`0` gespeichert. |
+| `sensor.living_room_temperature` | `home_assistant_living_room_temperature` | Compare sleep and recovery quality against room temperature. |
+| `sensor.bedroom_humidity` | `home_assistant_bedroom_humidity` | Make dry air or high humidity visible. |
+| `sensor.hallway_illuminance` | `home_assistant_hallway_illuminance` | Correlate the amount of light with the daily rhythm. |
+| `binary_sensor.window_open` | `home_assistant_window_open` | States are stored as `1`/`0`. |
 
-Der Metrikname entsteht aus der `entity_id`: alles nach dem Punkt, kleingeschrieben,
-mit dem Präfix `home_assistant_`. Welche Entitäten es gibt, entscheidet die
-Einrichtung des Nutzers, nicht der Hersteller - deshalb ist `home_assistant_` in der
-Registry als *dynamischer Namensraum* eingetragen. Namen darunter sind erlaubt, ohne
-katalogisiert zu sein, und tragen ihre Einheit in `metadata.unit` (aus
-`unit_of_measurement`) statt in der Registry.
+The metric name comes from the `entity_id`: everything after the dot, lowercased, with the
+prefix `home_assistant_`. Which entities exist is decided by the user's own installation, not
+by a vendor — which is why `home_assistant_` is registered as a *dynamic namespace*. Names
+below it are legal without being catalogued, and they carry their unit in `metadata.unit`
+(taken from `unit_of_measurement`) rather than in the registry.
 
-## Daten abrufen
+## Retrieving the data
 
 ```http
 GET /api/v1/data/metrics?metric_type=home_assistant_living_room_temperature&start_time=<iso>&end_time=<iso>
@@ -38,13 +39,15 @@ Authorization: Bearer <jwt>
 X-Tenant-ID: <tenant-id>
 ```
 
-## Sicherheit
+## Security
 
-Das Home Assistant Token wird ausschließlich in Core verschlüsselt gespeichert. Es darf nicht in NATS Events, Logs oder `.env` Dateien gelangen.
+The Home Assistant token is stored encrypted in Core and nowhere else. It must never reach a
+NATS event, a log line or an `.env` file.
 
-## Referenzen
+## References
 
 - [Home Assistant REST API](https://developers.home-assistant.io/docs/api/rest/)
 - [Home Assistant Authentication API](https://developers.home-assistant.io/docs/auth_api)
 
-Die vollständige Definition jeder Metrik - Einheit, Aggregation und die alten Namen, die noch darauf zeigen - steht in [Metriken](../metrics.md).
+The full definition of every metric — its unit, its aggregation and the former names that
+still point at it — is in [Metrics](../metrics.md).
