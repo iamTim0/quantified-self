@@ -8,6 +8,7 @@ published -- silently, because no build fails when a build does not happen.
 import re
 from pathlib import Path
 
+import pytest
 from tools.build_images import IMAGES, find_unlisted_dockerfiles, importers, matrix
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -101,6 +102,50 @@ def test_ci_reads_the_importer_matrix_instead_of_listing_it():
     text = CI_WORKFLOW.read_text(encoding="utf-8")
     assert "build_images.py --importers" in text
     assert "fromJSON(needs.importer-list.outputs.importers)" in text
+
+
+@pytest.mark.parametrize(
+    "image",
+    [i for i in IMAGES if (REPO_ROOT / i.dockerfile).parent.joinpath("pyproject.toml").is_file()],
+    ids=lambda i: i.name,
+)
+def test_every_declared_path_dependency_is_copied_into_the_image(image):
+    """A path dependency the Dockerfile does not copy is a build that cannot resolve it.
+
+    Core declared `qs-shared-schemas` for some time while its Dockerfile copied only
+    `packages/proto`, and the image was unbuildable the whole time. Two things kept that
+    quiet: nothing in CI builds these images -- the release workflow is the first thing
+    that ever does -- and a cached `uv sync` layer from before the dependency existed kept
+    answering, so `docker compose up --build` succeeded locally. When the cache finally
+    went, it failed with `Distribution not found at: file:///app/packages/shared-schemas`,
+    which reads like a broken checkout.
+
+    Cheap to check statically, so it does not need a Docker daemon: the dependency is
+    declared in the service's own `pyproject.toml` and the COPY is in its Dockerfile.
+    """
+    service = (REPO_ROOT / image.dockerfile).parent
+    manifest = (service / "pyproject.toml").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / image.dockerfile).read_text(encoding="utf-8")
+
+    # `qs-proto = { path = "../../packages/proto", editable = true }`
+    declared = {
+        "packages/" + match.group(1)
+        for match in re.finditer(r'path\s*=\s*"(?:\.\./)+packages/([^"]+)"', manifest)
+    }
+
+    # The dependency's own `pyproject.toml`, specifically. That is the file whose absence
+    # produced `Distribution not found`, and asserting on any COPY that merely mentions
+    # the path is satisfied by copying only the source tree — which was enough to let this
+    # very check pass while the build stayed broken.
+    missing = sorted(
+        path for path in declared if f"COPY {path}/pyproject.toml" not in dockerfile
+    )
+
+    assert not missing, (
+        f"{image.dockerfile} does not copy the pyproject.toml of path dependencies its "
+        f"own pyproject.toml declares, so `uv sync` inside the image cannot resolve "
+        f"them: {missing}"
+    )
 
 
 def test_cache_modes_are_valid_and_bounded():
