@@ -32,6 +32,14 @@ PUBLISHED_DEFAULTS: frozenset[str] = frozenset(
         "dev-secret-key-quantified-self-2026",
         "dev-secret-shared-encryption-key-qs-2026",
         "dev-encryption-key-quantified-self-2026",
+        # The development stack sets this explicitly on Core and on every importer.
+        # It has to be one shared literal rather than something derived: Core derives
+        # its fallback from the configured JWT_SECRET, while the importers derive
+        # theirs from a hardcoded copy of the *default* JWT_SECRET, so the two agreed
+        # only until somebody set a JWT_SECRET of their own -- after which every
+        # credential fetch was rejected and the importers sat idle with nothing said.
+        # Declared here so `insecure_internal_secret` still fires on it.
+        "dev-internal-service-secret-quantified-self-2026",
     }
 )
 
