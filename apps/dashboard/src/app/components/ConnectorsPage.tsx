@@ -10,7 +10,6 @@ import {
   Settings, 
   ArrowUpRight, 
   Activity, 
-  CheckCircle, 
   Plus, 
   Radio, 
   Flame,
@@ -94,7 +93,6 @@ export default function ConnectorsPage({
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ConnectorTab>("current");
-  const [syncingSource, setSyncingSource] = useState<string | null>(null);
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
   // Which connector the import dialog is open for, if any.
   const [importDialogFor, setImportDialogFor] = useState<
@@ -140,27 +138,6 @@ export default function ConnectorsPage({
     }, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [apiBase, tenantId]);
-
-  const handleTriggerSync = async (sourceType: string) => {
-    setSyncingSource(sourceType);
-    try {
-      const res = await apiFetch(`${apiBase}/api/v1/data/sources/sync`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Tenant-ID": tenantId,
-        },
-        body: JSON.stringify({ source_type: sourceType }),
-      });
-      if (res.ok) {
-        fetchConnectors();
-      }
-    } catch (err) {
-      console.error("Error triggering sync:", err);
-    } finally {
-      setTimeout(() => setSyncingSource(null), 1000);
-    }
-  };
 
   // Disconnect one connector instance. Addressed by id, not type: with two
   // calendars configured, deleting "calendar" would remove an arbitrary one.
@@ -251,145 +228,6 @@ export default function ConnectorsPage({
 
       {activeTab === "current" ? (
         <>
-      {/*
-        One card per configured connector instance. Provider selection lives in the
-        separate tab beside this list, so the current view stays focused on status
-        and actions for sources already in the workspace.
-      */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {connectors.map((connector) => {
-          const cat = CONNECTOR_CATALOG.find((c) => c.id === connector.source_type);
-          const Icon = cat?.icon ?? Key;
-          const direction = getConnectorDirection(connector.source_type);
-          // A file connector polls nothing either: its data arrives when somebody
-          // uploads an export, which is the same "nothing to trigger here" as a
-          // phone pushing on its own schedule.
-          const fileOnly = connector.import_mode === "file";
-          const isPassive = direction === "passive" || fileOnly;
-          const typeName = cat ? catalogName(t, cat) : connector.source_type;
-          const docsPath = cat?.docsPath ?? "/docs/importers/";
-
-          return (
-            <div
-              key={connector.id}
-              className={`glass-card p-6 bg-white border rounded-3xl flex flex-col justify-between transition-all hover:-translate-y-1 ${
-                "border-emerald-200/80 shadow-md"
-              }`}
-            >
-              <div>
-                <div className="flex justify-between items-start mb-4">
-                  <div className={"p-3 rounded-2xl bg-emerald-50 text-[#0d5c3a]"}>
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
-                    <CheckCircle className="w-3 h-3 text-emerald-600" /> {isPassive ? t("connectors.passive") : t("connectors.active")}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 mb-1">
-                  {/* The instance name leads: it is what distinguishes two calendars. */}
-                  <h3 className="text-lg font-extrabold text-slate-900 truncate">
-                    {connector.display_name || typeName}
-                  </h3>
-                  <a
-                    href={docsPath}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-lg bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 transition-colors"
-                    title={t("connectors.docsFor", { name: typeName })}
-                  >
-                    <BookOpen className="w-3 h-3" />
-                    <span>{t("connectors.docs")}</span>
-                  </a>
-                </div>
-                <p className="text-[11px] font-semibold text-slate-400 mb-1">{typeName}</p>
-                <span className={isPassive
-                  ? "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-violet-50 text-violet-800 border border-violet-200"
-                  : "inline-flex text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full mb-2 bg-sky-50 text-sky-800 border border-sky-200"}>
-                  {isPassive ? t("connectors.passiveHint") : t("connectors.activeHint")}
-                </span>
-                {cat && (
-                  <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                    {t(cat.descriptionKey)}
-                  </p>
-                )}
-
-                {/* Queue Status Live Badge */}
-                <div className="mb-4 pt-3 border-t border-slate-100">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-[10px] font-bold uppercase text-slate-400">
-                      {t("connectors.queueStatus")}
-                    </span>
-                    <span className={`font-bold uppercase text-[10px] px-2 py-0.5 rounded-full ${
-                      connector.sync_status === "queued"
-                        ? "bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
-                        : connector.sync_status === "error"
-                        ? "bg-rose-100 text-rose-800 border border-rose-300"
-                        : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                    }`}>
-                      {connector.sync_status === "queued"
-                        ? t("connectors.eventQueued")
-                        : connector.sync_status === "error"
-                        ? t("connectors.authError")
-                        : t("connectors.standby")}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/*
-                The cards sit four to a row on `lg`, so the icon-only buttons squeeze the
-                Import label until it clips. `min-w-0` lets the flex-1 button actually
-                shrink, and `flex-wrap` gives it its own line rather than overflowing.
-              */}
-              <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
-                {/*
-                  Offered for push connectors too. The dialog is where an import's
-                  progress and history live, and a pushed import had neither —
-                  `!isPassive` hid the only place it could have been shown.
-                */}
-                <button
-                  onClick={() =>
-                    setImportDialogFor({
-                      id: connector.id,
-                      name: connector.display_name || typeName,
-                      passive: isPassive,
-                      sourceType: connector.source_type,
-                      fileImport: Boolean(connector.supports_file_import),
-                    })
-                  }
-                  className="flex-1 min-w-0 flex items-center justify-center gap-2 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>
-                    {fileOnly
-                      ? t("connectors.upload")
-                      : isPassive
-                      ? t("connectors.history")
-                      : t("connectors.import")}
-                  </span>
-                </button>
-                <button
-                  onClick={() => onOpenConfigureModal(connector, connector.source_type)}
-                  className="p-2.5 text-xs font-semibold rounded-2xl bg-slate-100 border border-slate-200 hover:bg-slate-200 text-slate-700 transition-colors"
-                  title={t("connectors.editCredentials")}
-                >
-                  <Settings className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteConnector(connector)}
-                  disabled={deletingSource === connector.id}
-                  className="p-2.5 text-xs font-semibold rounded-2xl bg-rose-50 border border-rose-200 hover:bg-rose-100 text-rose-600 transition-colors disabled:opacity-50"
-                  title={t("connectors.disconnect")}
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       {/* Main Connected Sources & Queue Status Table */}
       <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
         <div className="flex justify-between items-center">
@@ -514,11 +352,11 @@ export default function ConnectorsPage({
                     <td className="py-3.5 px-3">
                       <div className="flex flex-wrap items-center justify-end gap-2">
                       {/*
-                        Offered for push connectors too, matching the cards: the
-                        dialog is where progress and history live, and a pushed
-                        import has both. The guard here also made the `passive`
-                        flag below dead — it could only ever be computed inside a
-                        branch that had already excluded passive connectors.
+                        Offered for push connectors too: the dialog is where progress
+                        and history live, and a pushed import has both. The guard here
+                        also made the `passive` flag below dead — it could only ever be
+                        computed inside a branch that had already excluded passive
+                        connectors.
                       */}
                       <button
                         onClick={() =>
