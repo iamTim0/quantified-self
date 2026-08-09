@@ -1,14 +1,15 @@
 # Quantified Self Platform — production stack, from published images.
 #
-# This file replaced `docker-compose.coolify.yml`. That one built all thirteen
-# images from source on the deployment host, which meant a deploy needed the
+# A previous version used a Coolify Compose file that built all thirteen images
+# from source on the deployment host, which meant a deploy needed the
 # repository, a toolchain and several minutes of CPU, and that what ran in
 # production had been built exactly once, by nobody, with no record of from which
 # commit. Images are now built and published by `.github/workflows/release.yml`
 # and this file only pulls them, so a deploy is a download and a restart.
 #
-# Nothing here is Coolify-specific any more; Coolify can still deploy it as a
-# Docker Compose application, and so can a bare VPS with nothing but Docker.
+# This is the standalone topology. Coolify deployments use the maintained
+# `docker-compose.coolify.yml`, which leaves networking and public routing to
+# Coolify's proxy.
 #
 #     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml pull
 #     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml up -d

@@ -13,7 +13,9 @@ from tools.build_images import IMAGES, find_unlisted_dockerfiles, importers, mat
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
+COOLIFY_COMPOSE = REPO_ROOT / "docker-compose.coolify.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
 
 
 def test_every_dockerfile_is_either_published_or_explicitly_not():
@@ -68,6 +70,30 @@ def test_production_compose_and_manifest_name_the_same_images():
     text = PROD_COMPOSE.read_text(encoding="utf-8")
     in_compose = set(re.findall(r"\$\{QS_IMAGE_PREFIX:-[^}]+\}/([a-z0-9-]+):", text))
     assert in_compose == {image.name for image in IMAGES}
+
+
+def test_coolify_compose_and_manifest_name_the_same_images():
+    """The Coolify topology must publish exactly the images it intends to run."""
+    text = COOLIFY_COMPOSE.read_text(encoding="utf-8")
+    in_compose = set(re.findall(r"\$\{QS_IMAGE_PREFIX:-[^}]+\}/([a-z0-9-]+):", text))
+    assert in_compose == {image.name for image in IMAGES}
+
+
+def test_coolify_compose_leaves_networking_to_coolify():
+    """Coolify's proxy must see one managed network, not a second embedded topology."""
+    text = COOLIFY_COMPOSE.read_text(encoding="utf-8")
+    assert not re.search(r"^\s+networks:\s*$", text, re.MULTILINE)
+    assert not re.search(r"^\s+ports:\s*$", text, re.MULTILINE)
+    assert not re.search(r"^\s+traefik:\s*$", text, re.MULTILINE)
+    assert not re.search(r"^\s+cloudflared:\s*$", text, re.MULTILINE)
+    assert "traefik.http.routers.qs-coolify-api.entrypoints=http" in text
+
+
+def test_release_bundle_contains_the_coolify_topology():
+    """A release must ship the maintained Coolify file alongside standalone Compose."""
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert 'cp docker-compose.prod.yml "$bundle/"' in workflow
+    assert 'cp docker-compose.coolify.yml "$bundle/"' in workflow
 
 
 def test_matrix_shape_matches_what_the_workflow_reads():

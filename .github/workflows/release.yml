@@ -489,6 +489,10 @@ jobs:
           mkdir -p "$bundle/infra/db" "$bundle/tools"
 
           cp docker-compose.prod.yml "$bundle/"
+          # Coolify uses its own proxy and managed network. Keep its Compose file
+          # in the same release bundle so a release never ships only the
+          # standalone topology.
+          cp docker-compose.coolify.yml "$bundle/"
           # A distributed artefact should say what it is licensed under, and MIT
           # asks for the notice to be included in copies.
           cp LICENSE "$bundle/"
@@ -547,6 +551,10 @@ jobs:
           # Quantified Self ${VERSION}
 
           Full guide: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${TAG}/docs/deployment.md
+
+          The bundle contains both deployment topologies. Use docker-compose.prod.yml for a standalone
+          host. Use docker-compose.coolify.yml as the Compose file for a Coolify Docker Compose resource;
+          it leaves networking and public routing to Coolify.
 
               # 1. Fill in PUBLIC_HOST, the three secrets and POSTGRES_PASSWORD.
               #    The database password is only choosable now: PostgreSQL sets

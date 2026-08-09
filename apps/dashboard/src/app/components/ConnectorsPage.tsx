@@ -72,6 +72,7 @@ function catalogName(t: Translate, cat: CatalogConnector): string {
 
 /** How often the table refreshes queue status. Stated in the badge above it. */
 const POLL_INTERVAL_MS = 10_000;
+type ConnectorTab = "current" | "available";
 
 const CONNECTOR_CATALOG: CatalogConnector[] = [
   { id: "yazio", name: "Yazio", descriptionKey: "connectors.desc.yazio", icon: Flame, available: true, docsPath: "/docs/importers/yazio/" },
@@ -92,6 +93,7 @@ export default function ConnectorsPage({
   const { t, formatDateTime } = useI18n();
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<ConnectorTab>("current");
   const [syncingSource, setSyncingSource] = useState<string | null>(null);
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
   // Which connector the import dialog is open for, if any.
@@ -205,7 +207,7 @@ export default function ConnectorsPage({
             <span>{t("header.refresh")}</span>
           </button>
           <button
-            onClick={() => onOpenConfigureModal()}
+            onClick={() => setActiveTab("available")}
             className="flex items-center gap-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white px-4 py-2 rounded-2xl shadow-md shadow-[#0d5c3a]/20 transition-all"
           >
             <Plus className="w-4 h-4" />
@@ -214,11 +216,45 @@ export default function ConnectorsPage({
         </div>
       </div>
 
+      <div
+        role="tablist"
+        aria-label={t("connectors.tabs")}
+        className="flex w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "current"}
+          onClick={() => setActiveTab("current")}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+            activeTab === "current"
+              ? "bg-[#0d5c3a] text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          }`}
+        >
+          {t("connectors.tabCurrent")}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={activeTab === "available"}
+          onClick={() => setActiveTab("available")}
+          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+            activeTab === "available"
+              ? "bg-[#0d5c3a] text-white shadow-sm"
+              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+          }`}
+        >
+          {t("connectors.tabAvailable")}
+        </button>
+      </div>
+
+      {activeTab === "current" ? (
+        <>
       {/*
-        One card per configured connector *instance*, then one per catalog entry to
-        add another. Previously the gallery iterated the catalog and looked each
-        type up with `.find()`, which could only ever show one — so a second
-        calendar was invisible even once the backend could store it.
+        One card per configured connector instance. Provider selection lives in the
+        separate tab beside this list, so the current view stays focused on status
+        and actions for sources already in the workspace.
       */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {connectors.map((connector) => {
@@ -349,61 +385,6 @@ export default function ConnectorsPage({
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
-            </div>
-          );
-        })}
-
-        {/*
-          One "add" card per catalog entry, always offered -- adding a second
-          calendar is the point, so a configured type must not disappear from here.
-        */}
-        {CONNECTOR_CATALOG.map((cat) => {
-          const Icon = cat.icon;
-          const count = connectors.filter((c) => c.source_type === cat.id).length;
-          return (
-            <div
-              key={`add-${cat.id}`}
-              className="glass-card p-6 bg-white border border-dashed border-slate-300 rounded-3xl flex flex-col justify-between transition-all hover:-translate-y-1"
-            >
-              <div>
-                <div className="flex justify-between items-start mb-4">
-                  <div className="p-3 rounded-2xl bg-slate-100 text-slate-500">
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  {count > 0 && (
-                    <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-full">
-                      {t(
-                        plural(
-                          count,
-                          "connectors.instanceCount_one",
-                          "connectors.instanceCount_other",
-                        ),
-                        { count },
-                      )}
-                    </span>
-                  )}
-                </div>
-                <h3 className="text-lg font-extrabold text-slate-900 mb-1">
-                  {catalogName(t, cat)}
-                </h3>
-                <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                  {t(cat.descriptionKey)}
-                </p>
-              </div>
-              <button
-                onClick={() => onOpenConfigureModal(undefined, cat.id)}
-                disabled={!cat.available}
-                className="w-full py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-40 shadow-md shadow-[#0d5c3a]/20 flex items-center justify-center gap-1.5"
-              >
-                <span>
-                  {!cat.available
-                    ? t("connectors.soon")
-                    : count > 0
-                    ? t("connectors.addAnother")
-                    : t("connectors.connectNow")}
-                </span>
-                {cat.available && <ArrowUpRight className="w-3.5 h-3.5" />}
-              </button>
             </div>
           );
         })}
@@ -595,7 +576,7 @@ export default function ConnectorsPage({
           <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl">
             <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
             <button
-              onClick={() => onOpenConfigureModal()}
+              onClick={() => setActiveTab("available")}
               className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
             >
               {t("connectors.addFirst")}
@@ -603,6 +584,67 @@ export default function ConnectorsPage({
           </div>
         )}
       </div>
+        </>
+      ) : (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">{t("connectors.tabAvailable")}</h2>
+            <p className="mt-1 text-xs text-slate-500">{t("connectors.availableHint")}</p>
+          </div>
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+            {CONNECTOR_CATALOG.map((cat) => {
+              const Icon = cat.icon;
+              const count = connectors.filter((c) => c.source_type === cat.id).length;
+              return (
+                <div
+                  key={`add-${cat.id}`}
+                  className="glass-card flex flex-col justify-between rounded-3xl border border-dashed border-slate-300 bg-white p-6 transition-all hover:-translate-y-1"
+                >
+                  <div>
+                    <div className="mb-4 flex items-start justify-between">
+                      <div className="rounded-2xl bg-slate-100 p-3 text-slate-500">
+                        <Icon className="h-6 w-6" />
+                      </div>
+                      {count > 0 && (
+                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                          {t(
+                            plural(
+                              count,
+                              "connectors.instanceCount_one",
+                              "connectors.instanceCount_other",
+                            ),
+                            { count },
+                          )}
+                        </span>
+                      )}
+                    </div>
+                    <h3 className="mb-1 text-lg font-extrabold text-slate-900">
+                      {catalogName(t, cat)}
+                    </h3>
+                    <p className="mb-4 text-xs leading-relaxed text-slate-500">
+                      {t(cat.descriptionKey)}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => onOpenConfigureModal(undefined, cat.id)}
+                    disabled={!cat.available}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#0d5c3a] py-2.5 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 transition-all hover:bg-[#08432a] disabled:opacity-40"
+                  >
+                    <span>
+                      {!cat.available
+                        ? t("connectors.soon")
+                        : count > 0
+                        ? t("connectors.addAnother")
+                        : t("connectors.connectNow")}
+                    </span>
+                    {cat.available && <ArrowUpRight className="h-3.5 w-3.5" />}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       {importDialogFor && (
         <ImportDialog

@@ -14,7 +14,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { apiFetch } from "../lib/api";
+import { apiFetch, apiUpload } from "../lib/api";
 import { useI18n, type Translate } from "../lib/i18n/provider";
 
 /**
@@ -140,7 +140,7 @@ export default function ImportDialog({
   onClose,
   onQueued,
 }: ImportDialogProps) {
-  const { t, formatDateTime } = useI18n();
+  const { t, formatDateTime, formatNumber } = useI18n();
   const [mode, setMode] = useState<"smart" | "force">("smart");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -151,6 +151,7 @@ export default function ImportDialog({
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   // Suppresses the "suggested range" hint once the user edits the pickers.
@@ -274,16 +275,17 @@ export default function ImportDialog({
   const handleUpload = async () => {
     if (!file || !providerType) return;
     setUploading(true);
+    setUploadProgress(0);
     setError("");
     setResult("");
     try {
       const slug = providerType.replace(/_/g, "-");
-      const res = await apiFetch(
+      const res = await apiUpload(
         `${apiBase}/api/v1/import/${slug}/upload?source_id=${encodeURIComponent(sourceType)}`,
+        file,
         {
-          method: "POST",
           headers: { "Content-Type": "application/zip" },
-          body: file,
+          onProgress: setUploadProgress,
         },
       );
       const data = await res.json().catch(() => null);
@@ -291,12 +293,14 @@ export default function ImportDialog({
 
       setResult(t("import.uploadAccepted"));
       setFile(null);
+      setUploadProgress(null);
       onQueued?.();
       await loadRuns();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -396,7 +400,10 @@ export default function ImportDialog({
                   type="file"
                   accept=".zip,application/zip"
                   aria-label={t("import.uploadChoose")}
-                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  onChange={(e) => {
+                    setFile(e.target.files?.[0] ?? null);
+                    setUploadProgress(null);
+                  }}
                   className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900"
                 />
                 <button
@@ -412,6 +419,29 @@ export default function ImportDialog({
                   {uploading ? t("import.uploading") : t("import.uploadStart")}
                 </button>
               </div>
+              {uploading && uploadProgress !== null && (
+                <div className="mt-3" aria-label={t("import.uploadProgress")}>
+                  <div className="mb-1 flex items-center justify-between text-[11px] text-sky-900">
+                    <span>{t("import.uploadProgress")}</span>
+                    <span>{formatNumber(uploadProgress)}%</span>
+                  </div>
+                  <div
+                    className="h-2 w-full overflow-hidden rounded-full bg-sky-100"
+                    role="progressbar"
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-valuenow={uploadProgress}
+                    aria-valuetext={t("import.uploadProgressPercent", {
+                      percent: formatNumber(uploadProgress),
+                    })}
+                  >
+                    <div
+                      className="h-full rounded-full bg-sky-600 transition-[width] duration-200"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
               <p className="mt-2 text-[11px] text-sky-800">{t("import.uploadReimportNote")}</p>
             </div>
           )}

@@ -33,6 +33,10 @@ deployment bundle to a GitHub Release. The host needs Docker and nothing else �
 checkout, no toolchain. See [Release & Deployment](docs/deployment.md) for the full
 procedure, and for the `ENCRYPTION_KEY` ordering trap.
 
+For Coolify, choose the Docker Compose build pack at repository root and set the
+Compose file to `docker-compose.coolify.yml`; it uses Coolify's managed network
+and proxy instead of the standalone Traefik stack.
+
 ```bash
 curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
 cd quantified-self-1.0.0
@@ -208,6 +212,7 @@ quantified-self/
 ├── .agents/scripts/       # Lifecycle hooks and spec tooling, shared by all agents
 ├── tools/build_images.py  # The published image list; the release workflow reads it
 ├── docker-compose.prod.yml # Production stack from published images. No build:
+├── docker-compose.coolify.yml # Coolify stack using its managed network and proxy
 ├── Taskfile.yml
 ├── README.md
 └── AGENTS.md
@@ -387,9 +392,10 @@ API importers are stateless workers fetching data and pushing it into NATS JetSt
 4. **Transformer**: Implement `transformer.py` to map external JSON to standard platform `DataPoint` records.
 5. **NATS Subject**: Configure publishing to `qs.ingest.<name>`.
 6. **Docker**: Add the service to `infra/docker-compose.yml` (dev, builds from
-   source), to `docker-compose.prod.yml` (production, pulls the published image)
-   and to the image manifest in `tools/build_images.py` — CI fails if a Dockerfile
-   is in neither list there, because an unpublished image cannot be deployed.
+   source), to `docker-compose.prod.yml` (standalone production), to
+   `docker-compose.coolify.yml` (Coolify production), and to the image manifest in
+   `tools/build_images.py` — CI fails if a Dockerfile is in neither list there,
+   because an unpublished image cannot be deployed.
 7. **Tests**: Add unit and integration tests.
 
 ## Fizzbee (Formal Verification)

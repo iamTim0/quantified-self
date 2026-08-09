@@ -20,6 +20,10 @@ the provider or the phone sends it. Neither kind keeps a timer: Core's scheduler
 an active connector is due and publishes a task the importer executes — see
 [Architecture](../architecture.md#scheduled-imports).
 
+In the dashboard's **Connectors** area, configured importers and their live status are shown in
+the **Current importers** tab. Provider selection for a new importer is kept in the adjacent
+**Add importer** tab, so adding another instance does not mix with the current status list.
+
 ## Retrieving the data
 
 Imported data does not live in the importers, it lives in Core. Queries go through the

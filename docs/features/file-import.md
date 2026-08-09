@@ -27,10 +27,11 @@ series.
 ## Uploading
 
 Open **Upload** on the connector (it is the same dialog as **Import**), choose the file, and send
-it. The response arrives before the archive has been read: a whole Apple Health history is
-minutes of work, which is longer than a browser should hold a connection open. What you watch
-instead is the progress panel in the same dialog — it counts the data points as they are actually
-stored, and the connector's history keeps the outcome.
+it. The dialog shows a transfer progress bar while the archive is travelling to the importer.
+The response arrives before the archive has been read: a whole Apple Health history is minutes of
+work, which is longer than a browser should hold a connection open. What you watch afterwards is
+the progress panel in the same dialog — it counts the data points as they are actually stored, and
+the connector's history keeps the outcome.
 
 The file itself is written to the importer's disk while it is being read and deleted afterwards,
 whether the import succeeded or failed. Nothing is kept.
@@ -90,8 +91,9 @@ check that it is the ZIP the Health app produced, not a folder re-zipped afterwa
 importer looks for `physiological_cycles`, `sleeps` and `workouts`. Send the archive as it
 arrived, without renaming.
 
-**The progress panel shows nothing.** An upload only starts a run once the file has arrived in
-full. On a slow connection a large archive takes a while before anything appears.
+**The processing progress panel shows nothing.** An upload only starts a run once the file has
+arrived in full. The transfer bar covers the upload itself; on a slow connection the processing
+panel therefore appears only after a large archive has finished uploading.
 
 **Numbers look duplicated.** They are not: check the connector. Two connectors of the same type
 are two series on purpose, so an export uploaded into a second Apple Health connector sits beside

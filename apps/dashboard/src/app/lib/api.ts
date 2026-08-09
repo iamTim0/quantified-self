@@ -95,6 +95,68 @@ export async function apiFetch(url: string, init: RequestInit = {}): Promise<Res
   return fetch(url, build());
 }
 
+interface UploadRequestOptions {
+  headers?: Record<string, string>;
+  onProgress?: (percentage: number) => void;
+}
+
+/**
+ * Upload a file while reporting bytes sent.
+ *
+ * `fetch` deliberately has no upload-progress event in browsers. XHR is used
+ * only for this binary upload path; it keeps the same cookies, CSRF proof and
+ * one-shot access-token refresh as `apiFetch`.
+ */
+export async function apiUpload(
+  url: string,
+  file: Blob,
+  options: UploadRequestOptions = {},
+): Promise<Response> {
+  const request = (): Promise<Response> =>
+    new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", url, true);
+      xhr.withCredentials = true;
+
+      for (const [name, value] of Object.entries({
+        ...(options.headers ?? {}),
+        ...csrfHeaders(),
+      })) {
+        xhr.setRequestHeader(name, value);
+      }
+
+      xhr.upload.addEventListener("progress", (event) => {
+        if (!event.lengthComputable || event.total <= 0) return;
+        options.onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      });
+
+      xhr.addEventListener("load", () => {
+        const contentType = xhr.getResponseHeader("Content-Type");
+        resolve(
+          new Response(xhr.responseText, {
+            status: xhr.status,
+            statusText: xhr.statusText,
+            headers: contentType ? { "Content-Type": contentType } : undefined,
+          }),
+        );
+      });
+      xhr.addEventListener("error", () => reject(new TypeError("Network request failed")));
+      xhr.addEventListener("abort", () => reject(new DOMException("Upload aborted", "AbortError")));
+      xhr.send(file);
+    });
+
+  let response = await request();
+  if (response.status !== 401) return response;
+
+  const refreshed = await refreshOnce(originOf(url));
+  if (!refreshed) return response;
+
+  // A retry starts a new request body, so make the reset visible to the user.
+  options.onProgress?.(0);
+  response = await request();
+  return response;
+}
+
 /** `apiFetch` for JSON endpoints, returning null instead of throwing on failure. */
 export async function apiJson<T>(url: string, init: RequestInit = {}): Promise<T | null> {
   const res = await apiFetch(url, init);

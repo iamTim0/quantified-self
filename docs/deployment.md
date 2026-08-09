@@ -6,8 +6,8 @@ release with container images, and how that release runs on a server. For runnin
 
 ## Why images at all
 
-Before, `docker-compose.coolify.yml` described the production stack and built all thirteen images
-**on the target server**. That had three consequences that hurt in practice:
+An earlier Coolify Compose file described the production stack and built all thirteen images **on the
+target server**. That had three consequences that hurt in practice:
 
 - A deployment needed the repository, a toolchain and several minutes of CPU on a machine that is
   only supposed to run things.
@@ -77,8 +77,8 @@ gh attestation verify --owner iamTim0 \
 
 Along with that, a GitHub release is created with the tag `v<version>`, the changelog and an attached
 `quantified-self-<version>-deploy.tar.gz`. That bundle contains exactly what a server needs —
-`docker-compose.prod.yml`, `infra/db/init.sql`, a prepared `.env` with the version pinned, and a short
-README. No source code, no Git, no toolchain.
+`docker-compose.prod.yml`, `docker-compose.coolify.yml`, `infra/db/init.sql`, a prepared `.env` with the
+version pinned, and a short README. No source code, no Git, no toolchain.
 
 The release notes also list the digest of every image. Where it has to be reproducible, pin the digest
 rather than the tag.
@@ -224,7 +224,7 @@ Only **Traefik** belongs in public (`QS_HTTP_PORT`), and through it the Gateway,
 documentation; the two importers that external devices send to also stay reachable. Two things are
 deliberately different from the old production compose file: Core no longer publishes host ports, and the
 Traefik dashboard listens on loopback. The reasoning and the way in are under
-[Network boundaries](operations.md#network-boundaries).
+[Network boundaries](operations.md#network-boundaries-standalone-compose).
 
 ### Where the dashboard looks for its API
 
@@ -284,12 +284,79 @@ thinks of its own configuration — that is the part that distinguishes "it answ
 correctly". The dashboard shows the same findings to owners as a banner, see
 [What the dashboard says about itself](operations.md#what-the-dashboard-says-about-itself).
 
-## Still with Coolify
+## Coolify networking
 
-The stack is no longer Coolify-specific, but it still runs there: as a Docker Compose application with
-`docker-compose.prod.yml` as the compose file. The variables from `.env` then belong in the application's
-environment variables, and Coolify pulls the images instead of building them. `QS_VERSION` is then the only
-value a deployment has to change for an update.
+The current `docker-compose.prod.yml` is the **standalone Compose topology**. It contains its own Traefik
+container, binds host port 80, and declares a custom `qs-network`. Do not deploy that file unchanged as a
+standard Coolify Docker Compose application. Coolify supplies the reverse proxy and a network of its own;
+adding a second proxy and a second application network makes routing ambiguous.
+
+Coolify's documented network-safe topology is:
+
+```text
+Internet
+   │
+Coolify Proxy ── Coolify-managed application network
+   ├── /                  → dashboard:3000
+   ├── /api and /health   → api-gateway:8000
+   ├── /docs              → docs:8003  (strip /docs)
+   └── /ingest            → streak-importer:8006  (if enabled)
+
+api-gateway ──→ core:8001 ──→ postgres:5432
+analysis     ──→ core:50051
+importers    ──→ nats:4222 and core:8001
+```
+
+### Required Coolify setup
+
+Use the committed `docker-compose.coolify.yml` as the Coolify Compose file. It is the network-safe
+counterpart to `docker-compose.prod.yml` and must be updated in the same
+change whenever a service, image, internal port, or public route changes.
+
+1. Choose the **Docker Compose** build pack, use repository root `/` as the base directory, and set the
+   Compose file location to `docker-compose.coolify.yml`.
+2. Set `QS_VERSION`, `PUBLIC_HOST`, `ALLOWED_ORIGINS`, `POSTGRES_PASSWORD`, `JWT_SECRET`,
+   `INTERNAL_SERVICE_SECRET`, and `ENCRYPTION_KEY` in Coolify. Use `ALLOWED_ORIGINS=https://<host>` for
+   the normal single-origin deployment.
+3. Do not add the `traefik` or `cloudflared` services, a custom network, or host `ports:` mappings to the
+   Coolify file. Coolify's managed network and proxy must remain the only network and public entrypoint.
+4. Keep the service names unchanged. Internal URLs such as `http://core:8001`, `core:50051`,
+   `postgres:5432`, `nats:4222`, and `http://analysis:8010` then continue to resolve through Coolify's
+   internal Docker DNS.
+5. Use the HTTPS proxy routes defined by the file. The Gateway already provides
+   `/api/v1/ingest/apple-health` and `/api/v1/ingest/streak`; use `/ingest` for the short Streak route
+   only when that route is deliberately configured.
+6. Keep the proxy entrypoint aligned with the Coolify instance. The committed file uses `http`, as required
+   by the standard Coolify Traefik setup; do not copy the standalone stack's `web` entrypoint label into it.
+
+The dashboard, Gateway, and docs may share one public hostname because the proxy routes by path. Core,
+Analysis, PostgreSQL, NATS, and all polling importers remain private services with no public domain.
+
+### Network verification
+
+Before putting the hostname into service, verify both the public routes and the private DNS path:
+
+```bash
+# From the Coolify host, using the stack's Compose project.
+docker compose ps
+docker compose exec api-gateway python -c \
+  "import urllib.request; urllib.request.urlopen('http://core:8001/health', timeout=5)"
+docker compose exec analysis python -c \
+  "import socket; socket.getaddrinfo('core', 50051)"
+
+# From outside the server.
+curl -fsS https://your-host.example/health
+curl -fsS https://your-host.example/
+curl -fsS https://your-host.example/docs/
+```
+
+If an internal hostname resolves to `127.0.0.1`, a service name does not resolve, or a public request
+returns a Coolify 404/504, inspect the stack for a leftover custom network or an embedded Traefik service
+before changing application URLs. The service-to-service names above are the contract; `localhost` is the
+container itself, not another service.
+
+For a standalone host, continue using `docker-compose.prod.yml` behind its embedded Traefik or another
+external reverse proxy. The standalone file and the Coolify-managed network must not be mixed.
 
 ## When it goes wrong
 

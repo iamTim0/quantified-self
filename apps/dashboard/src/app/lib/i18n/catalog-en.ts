@@ -339,6 +339,10 @@ export const en = {
   "connectors.addAnother": "Add another",
   "connectors.instanceCount_one": "{count} configured",
   "connectors.instanceCount_other": "{count} configured",
+  "connectors.tabs": "Connector views",
+  "connectors.tabCurrent": "Current importers",
+  "connectors.tabAvailable": "Add importer",
+  "connectors.availableHint": "Choose a data source to configure for this workspace.",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "The keys could not be loaded.",
@@ -454,6 +458,8 @@ export const en = {
   "import.uploadChoose": "Choose an export file",
   "import.uploadStart": "Upload",
   "import.uploading": "Uploading…",
+  "import.uploadProgress": "Upload progress",
+  "import.uploadProgressPercent": "{percent}% uploaded",
   "import.uploadAccepted": "The file has arrived and is being read. Progress appears above.",
   "import.uploadFailed": "The file could not be uploaded.",
   "import.uploadReimportNote":

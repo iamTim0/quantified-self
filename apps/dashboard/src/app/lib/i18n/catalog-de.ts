@@ -344,6 +344,10 @@ export const de: Record<MessageKey, string> = {
   "connectors.addAnother": "Weiteren hinzufügen",
   "connectors.instanceCount_one": "{count} eingerichtet",
   "connectors.instanceCount_other": "{count} eingerichtet",
+  "connectors.tabs": "Connector-Ansichten",
+  "connectors.tabCurrent": "Aktuelle Importer",
+  "connectors.tabAvailable": "Importer hinzufügen",
+  "connectors.availableHint": "Wähle eine Datenquelle für diesen Workspace aus.",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "Schlüssel konnten nicht geladen werden.",
@@ -460,6 +464,8 @@ export const de: Record<MessageKey, string> = {
   "import.uploadChoose": "Export-Datei auswählen",
   "import.uploadStart": "Hochladen",
   "import.uploading": "Wird hochgeladen…",
+  "import.uploadProgress": "Upload-Fortschritt",
+  "import.uploadProgressPercent": "{percent} % hochgeladen",
   "import.uploadAccepted":
     "Die Datei ist angekommen und wird gelesen. Der Fortschritt erscheint oben.",
   "import.uploadFailed": "Die Datei konnte nicht hochgeladen werden.",
