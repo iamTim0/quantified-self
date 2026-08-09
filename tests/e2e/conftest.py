@@ -11,7 +11,10 @@ imported modules need (the transformers themselves are stdlib-only).
 """
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -30,3 +33,24 @@ for source_root in _SOURCE_ROOTS:
     entry = str(source_root)
     if entry not in sys.path:
         sys.path.insert(0, entry)
+
+
+class E2EMockNATSClient:
+    """Record task publications without requiring a broker in the API E2E suite."""
+
+    def __init__(self) -> None:
+        self.published: list[tuple[str, bytes]] = []
+
+    async def publish(self, subject: str, payload: bytes) -> None:
+        """Capture the subject and payload that Core would send to an importer."""
+        self.published.append((subject, payload))
+
+
+@pytest.fixture(autouse=True)
+def mock_nats_for_e2e() -> Iterator[None]:
+    """Give each API test an isolated broker boundary and clear it afterward."""
+    from core.main import app
+
+    app.state.nats_client = E2EMockNATSClient()
+    yield
+    app.state.nats_client = None

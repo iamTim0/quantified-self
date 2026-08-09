@@ -158,6 +158,12 @@ tasks:
     cmds:
       - uv run --directory packages/shared-schemas python generate_catalog.py
 
+  importers:contracts:
+    desc: "Validate importer contracts and regenerate the contract catalog"
+    cmds:
+      - uv run python tools/importer_contracts.py
+      - uv run python tools/generate_importer_contracts.py
+
   test:all:
     desc: "Run complete test suite (Tools, Packages, Specs, Core, Gateway, Analysis, E2E, Importers)"
     cmds:

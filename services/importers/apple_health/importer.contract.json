@@ -1,0 +1,80 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "apple_health",
+  "ingest_subject": "qs.ingest.apple_health",
+  "task_subject": null,
+  "entrypoint": "apple_health_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "Health Auto Export webhook JSON",
+      "format": "json",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "reference": "https://www.healthyapps.dev/"
+      }
+    },
+    {
+      "name": "Apple Health export archive",
+      "format": "zip_xml_gpx",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "reference": "https://support.apple.com/guide/iphone/share-your-health-data-iph5ede58c3d/ios"
+      }
+    }
+  ],
+  "metrics": [
+    "blood_oxygen",
+    "blood_pressure_diastolic",
+    "blood_pressure_systolic",
+    "body_fat",
+    "body_weight",
+    "distance",
+    "energy_active",
+    "energy_resting",
+    "exercise_duration",
+    "heart_rate",
+    "heart_rate_resting",
+    "heart_rate_walking_average",
+    "hrv_sdnn",
+    "location_point",
+    "nutrition_energy",
+    "respiratory_rate",
+    "sleep_duration",
+    "sleep_duration_awake",
+    "sleep_duration_deep",
+    "sleep_duration_in_bed",
+    "sleep_duration_light",
+    "sleep_duration_rem",
+    "stand_duration",
+    "steps",
+    "vo2_max",
+    "workout_distance",
+    "workout_duration",
+    "workout_energy",
+    "workout_heart_rate_average",
+    "workout_heart_rate_max"
+  ],
+  "dynamic_namespaces": ["apple_health_"],
+  "capabilities": {
+    "scheduled_sync": false,
+    "webhook": true,
+    "file_upload": true
+  }
+}

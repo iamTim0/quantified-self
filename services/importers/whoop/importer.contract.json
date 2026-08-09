@@ -1,0 +1,66 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "whoop",
+  "ingest_subject": "qs.ingest.whoop",
+  "task_subject": "qs.task.sync.whoop",
+  "entrypoint": "whoop_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "WHOOP API v2 JSON",
+      "format": "rest_json",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "schema": "openapi",
+        "reference": "https://developer.whoop.com/api/"
+      }
+    },
+    {
+      "name": "WHOOP emailed export archive",
+      "format": "zip_csv",
+      "source_of_truth": {
+        "kind": "repository_adapter",
+        "reference": "services/importers/whoop/src/whoop_importer/export_archive.py"
+      }
+    }
+  ],
+  "metrics": [
+    "blood_oxygen",
+    "energy_total",
+    "heart_rate_average",
+    "heart_rate_resting",
+    "hrv_rmssd",
+    "respiratory_rate",
+    "skin_temperature",
+    "sleep_efficiency",
+    "whoop_recovery_score",
+    "whoop_sleep_performance",
+    "whoop_strain",
+    "whoop_workout_strain",
+    "workout_distance",
+    "workout_energy",
+    "workout_heart_rate_average"
+  ],
+  "dynamic_namespaces": [],
+  "capabilities": {
+    "scheduled_sync": true,
+    "webhook": false,
+    "file_upload": true
+  }
+}

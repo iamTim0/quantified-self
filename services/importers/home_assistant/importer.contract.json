@@ -1,0 +1,41 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "home_assistant",
+  "ingest_subject": "qs.ingest.home_assistant",
+  "task_subject": "qs.task.sync.home_assistant",
+  "entrypoint": "home_assistant_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "Home Assistant REST state JSON",
+      "format": "rest_json",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "reference": "https://developers.home-assistant.io/docs/api/rest/"
+      }
+    }
+  ],
+  "metrics": [],
+  "dynamic_namespaces": ["home_assistant_"],
+  "capabilities": {
+    "scheduled_sync": true,
+    "webhook": false,
+    "file_upload": false
+  }
+}
