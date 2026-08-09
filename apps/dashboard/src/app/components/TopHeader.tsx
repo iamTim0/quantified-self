@@ -35,10 +35,10 @@ export default function TopHeader({
   };
 
   return (
-    <header className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 pb-6 mb-6 border-b border-slate-200/70">
-      <div className="flex-1 text-xs text-slate-500">{t("header.autoRefresh")}</div>
-
-      {/* Right Controls */}
+    <header className="flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-end gap-4 pb-6 mb-6 border-b border-slate-200/70">
+      {/* No "refreshes every 30 seconds" line: the interval it described is gone, and
+          the refresh button below is how the page reloads on purpose. The header was
+          `justify-between` only because that text was the left half of it. */}
       <div className="flex items-center justify-end gap-3">
         <a
           href="/docs/"

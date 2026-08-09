@@ -49,7 +49,6 @@ export const de: Record<MessageKey, string> = {
   "sidebar.logout": "Abmelden",
 
   // ── Kopfzeile ──────────────────────────────────────────────────────────────
-  "header.autoRefresh": "Aktualisiert sich automatisch alle 30 Sekunden",
   "header.docs": "Dokumentation",
   "header.refresh": "Aktualisieren",
   "header.refreshTitle": "Gesamte Seite neu laden",

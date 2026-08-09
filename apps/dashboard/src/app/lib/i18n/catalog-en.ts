@@ -49,7 +49,6 @@ export const en = {
   "sidebar.logout": "Sign out",
 
   // ── Top header ─────────────────────────────────────────────────────────────
-  "header.autoRefresh": "Refreshes automatically every 30 seconds",
   "header.docs": "Documentation",
   "header.refresh": "Refresh",
   "header.refreshTitle": "Reload the whole page",
