@@ -194,9 +194,14 @@ Three properties are deliberate:
   small disclosure.
 - **`password_published` is seen by the person affected, regardless of role.** Withholding "your password
   is public" from somebody because they are only a member would be absurd.
-- **Dismissing lasts for the session only.** A permanent "do not show again" on "your signing key is
-  public" is how it stays public. Every warning also names a command or a setting rather than giving
-  advice — "consider rotating your secrets" is the form nobody follows.
+- **Dismissing lasts a day, per code.** A permanent "do not show again" on "your signing key is
+  public" is how it stays public, and hiding it only until the next page load is how a banner gets
+  ignored instead of read. A day is the compromise: acknowledging a warning is worth something, and it
+  still comes back until the thing is fixed. Per code, so a *new* problem arrives immediately even
+  while an old one is hidden. Kept in `localStorage`, which is per browser rather than per account —
+  the same signing key is public for everybody who can see it, so there is nothing to synchronise.
+  Every warning also names a command or a setting rather than giving advice — "consider rotating your
+  secrets" is the form nobody follows.
 
 A secret's value is never printed, only the variable's name. Otherwise the warning about a weak key would
 be a second way to read it.

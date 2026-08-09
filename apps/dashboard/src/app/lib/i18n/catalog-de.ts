@@ -122,9 +122,9 @@ export const de: Record<MessageKey, string> = {
   "warnings.severity.warning": "Warnung",
   "warnings.severity.info": "Hinweis",
   "warnings.openDocs": "Dokumentation öffnen",
-  "warnings.dismiss": "Für diese Sitzung ausblenden",
+  "warnings.dismiss": "Für einen Tag ausblenden",
   "warnings.dismissTitle":
-    "Für diese Sitzung ausblenden — beim nächsten Laden wieder da",
+    "Für einen Tag ausblenden — morgen wieder da, bis es behoben ist",
   "warning.password_published.title":
     "Dieses Passwort ist öffentlich bekannt",
   "warning.password_published.detail":

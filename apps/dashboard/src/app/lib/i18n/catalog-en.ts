@@ -121,8 +121,8 @@ export const en = {
   "warnings.severity.warning": "Warning",
   "warnings.severity.info": "Note",
   "warnings.openDocs": "Open the documentation",
-  "warnings.dismiss": "Hide for this session",
-  "warnings.dismissTitle": "Hide for this session — back on the next load",
+  "warnings.dismiss": "Hide for a day",
+  "warnings.dismissTitle": "Hide for a day — back tomorrow until it is fixed",
   "warning.password_published.title": "This password is publicly known",
   "warning.password_published.detail":
     "The hash of this password appeared in a published source — it was the development account earlier versions of this project shipped. bcrypt delays an attack, it does not prevent one: whoever holds the hash can try passwords offline for as long as they like.",

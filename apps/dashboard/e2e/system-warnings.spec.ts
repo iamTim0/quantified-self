@@ -60,8 +60,14 @@ test.describe("system warnings", () => {
     request,
   }) => {
     /**
-     * Deliberately not a permanent dismissal. A "don't show again" on "your
-     * signing key is public" is how it stays public.
+     * Dismissing hides the warning for a day, per code, and survives a reload --
+     * hiding it only until the next page load is how a banner gets ignored rather
+     * than read. It is still not permanent: a "don't show again" on "your signing
+     * key is public" is how it stays public.
+     *
+     * The day is asserted by clearing what records it, not by waiting one out:
+     * `localStorage` is where the dismissal lives, so emptying it is the same state
+     * the reader is in tomorrow.
      */
     const account = newAccount();
     await signUp(request, account);
@@ -74,11 +80,21 @@ test.describe("system warnings", () => {
     await expect(critical).toBeVisible();
 
     await warnings
-      .getByRole("button", { name: "Hide for this session" })
+      .getByRole("button", { name: "Hide for a day" })
       .first()
       .click();
     await expect(critical).toBeHidden();
 
+    // Still hidden after a reload -- that is the whole point of the change.
+    await page.reload();
+    await expect(
+      page
+        .getByRole("region", { name: "System warnings" })
+        .getByText(/JWT_SECRET is a published default/),
+    ).toBeHidden();
+
+    // ...and back once the day has passed.
+    await page.evaluate(() => window.localStorage.removeItem("qs-warnings-dismissed"));
     await page.reload();
     await expect(
       page

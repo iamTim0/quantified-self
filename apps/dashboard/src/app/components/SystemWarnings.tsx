@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 import { AlertTriangle, ShieldAlert, Info, X } from "lucide-react";
 
 import { apiFetch } from "../lib/api";
@@ -15,10 +15,14 @@ import { en } from "../lib/i18n/catalog-en";
  * signing sessions with a key printed in its own source should say so on the
  * page, not in a file.
  *
- * Deliberately not dismissable-forever. `critical` entries come back on every
- * load until the thing is actually fixed, because a permanent "don't show again"
- * on "your password is public" is how it stays public. Dismissing hides it for
- * this session only.
+ * Deliberately not dismissable-forever. Dismissing hides a warning for a day, per
+ * code, and then it comes back until the thing is actually fixed — a permanent
+ * "don't show again" on "your password is public" is how it stays public. A day is
+ * the compromise: long enough that acknowledging it is worth something, short
+ * enough that it cannot be silenced.
+ *
+ * Per code, not per banner: the point is to stop being told about the one thing
+ * you have decided to live with, while a *new* problem still arrives immediately.
  *
  * The wording is translated here rather than on the server. Core sends a stable
  * `code` per warning, so the dashboard looks up `warning.<code>.*` and can speak
@@ -82,10 +86,106 @@ function field(
   return t(key as MessageKey, { generate: GENERATE_SECRET, ...(warning.params ?? {}) });
 }
 
+/** Where a dismissal is remembered, and for how long. */
+const DISMISSED_KEY = "qs-warnings-dismissed";
+const DISMISS_FOR_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Codes dismissed less than a day ago.
+ *
+ * Reads defensively: this is browser storage, so the value can be absent, stale
+ * from an older shape, or corrupt, and a warnings banner that throws would take the
+ * page it sits on with it. Anything unreadable means "nothing is dismissed", which
+ * errs towards showing a warning rather than hiding one.
+ */
+function readDismissed(): Map<string, number> {
+  if (typeof window === "undefined") return new Map();
+  try {
+    const raw = window.localStorage.getItem(DISMISSED_KEY);
+    if (!raw) return new Map();
+    const parsed: unknown = JSON.parse(raw);
+    if (parsed === null || typeof parsed !== "object") return new Map();
+    const cutoff = Date.now() - DISMISS_FOR_MS;
+    return new Map(
+      Object.entries(parsed as Record<string, unknown>)
+        .filter(([, at]) => typeof at === "number" && at > cutoff)
+        .map(([code, at]) => [code, at as number]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+function writeDismissed(entries: Map<string, number>): void {
+  try {
+    // Expired entries are dropped on write, so the key does not grow for codes
+    // that stopped existing.
+    window.localStorage.setItem(DISMISSED_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    // Private mode, a full quota, storage disabled. The dismissal then lasts for
+    // this view only, which is the harmless direction to fail in.
+  }
+}
+
+/**
+ * `localStorage` as an external store, read through `useSyncExternalStore`.
+ *
+ * The obvious version — read it in an effect and `setState` — is a cascading render
+ * and React's own lint rule says so. Reading it in a lazy `useState` initializer
+ * instead would run during render on the server, where there is no `localStorage`,
+ * and make the first client render disagree with the server's HTML. This is the API
+ * for exactly that shape: a value that lives outside React and has no server
+ * equivalent.
+ *
+ * The snapshot is cached at module level because `useSyncExternalStore` compares it
+ * by identity: parsing a fresh `Map` on every render would look like a new value
+ * every time and never settle.
+ */
+const NOTHING_DISMISSED: ReadonlyMap<string, number> = new Map();
+
+let cachedSnapshot: ReadonlyMap<string, number> | null = null;
+const storeListeners = new Set<() => void>();
+
+function invalidateDismissed(): void {
+  cachedSnapshot = null;
+  for (const listener of storeListeners) listener();
+}
+
+function subscribeDismissed(listener: () => void): () => void {
+  storeListeners.add(listener);
+  // Another tab dismissing the same warning should not be argued with.
+  window.addEventListener("storage", invalidateDismissed);
+  return () => {
+    storeListeners.delete(listener);
+    if (storeListeners.size === 0) window.removeEventListener("storage", invalidateDismissed);
+  };
+}
+
+function dismissedSnapshot(): ReadonlyMap<string, number> {
+  cachedSnapshot ??= readDismissed();
+  return cachedSnapshot;
+}
+
+/**
+ * Record a dismissal and tell every subscriber.
+ *
+ * At module scope rather than in the component, because it reads the clock: React's
+ * lint refuses an impure call in a function it cannot prove is an event handler, and
+ * it is right to — the store's mutation belongs with the store either way.
+ */
+function dismissCode(code: string): void {
+  writeDismissed(new Map(dismissedSnapshot()).set(code, Date.now()));
+  invalidateDismissed();
+}
+
 export default function SystemWarnings({ apiBase }: { apiBase: string }) {
   const t = useT();
   const [warnings, setWarnings] = useState<SystemWarning[]>([]);
-  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const dismissed = useSyncExternalStore(
+    subscribeDismissed,
+    dismissedSnapshot,
+    () => NOTHING_DISMISSED,
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -112,7 +212,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
     };
   }, [apiBase]);
 
-  const visible = warnings.filter((w) => !hidden.has(w.code));
+  const visible = warnings.filter((w) => !dismissed.has(w.code));
   if (visible.length === 0) return null;
 
   return (
@@ -159,7 +259,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
               </div>
               <button
                 type="button"
-                onClick={() => setHidden((prev) => new Set(prev).add(w.code))}
+                onClick={() => dismissCode(w.code)}
                 className="shrink-0 rounded-lg p-1 opacity-50 transition hover:opacity-100"
                 aria-label={t("warnings.dismiss")}
                 title={t("warnings.dismissTitle")}
