@@ -123,11 +123,20 @@ with a field name, a type and a count.
 ### WHOOP — the emailed export
 
 WHOOP app → Account → request your data export. The ZIP holds `physiological_cycles.csv`,
-`sleeps.csv` and `workouts.csv`.
+`sleeps.csv` and `workouts.csv` — **in the language of your WHOOP account**. A German account
+receives `physiologische_zyklen.csv`, `Schlaf.csv` and `Trainings.csv`, with German column headers
+to match, and both vocabularies are read. You do not have to change your account language to
+import your own data.
 
-Imported: day strain, energy, average heart rate, recovery score, resting heart rate, HRV, blood
-oxygen, skin temperature, sleep performance and efficiency, respiratory rate, and per workout its
-strain, energy, average heart rate and distance.
+Imported: day strain, energy, average and maximum heart rate, recovery score, resting heart rate,
+HRV, blood oxygen, skin temperature, sleep performance and efficiency, respiratory rate, the
+night's duration, time in bed and all four sleep stages, and per workout its strain, energy,
+duration, average and maximum heart rate and distance.
+
+Each row also carries the *cycle* it belongs to, next to its own start time, and a record is
+timestamped from its own — a workout from the workout's start, a night from sleep onset. Keyed on
+the shared cycle instead, every session in a day would produce one `idempotency_key` and only the
+first would be stored.
 
 The export states energy in kilocalories where the API states it in kilojoules. Both arrive under
 the same metric name in the registry's unit, so an export and a polled sync produce one series

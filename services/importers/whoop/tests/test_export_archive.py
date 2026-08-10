@@ -13,6 +13,7 @@ import io
 import zipfile
 
 import pytest
+from shared_schemas.metrics import CANONICAL_KEYS
 from whoop_importer.export_archive import (
     EXPORT_METRICS,
     ArchiveTooLarge,
@@ -54,12 +55,81 @@ def _points(archive: bytes) -> list[dict]:
     return points
 
 
-def test_an_export_produces_the_same_metric_names_as_the_api():
-    """Rule 15: one quantity, one name, whichever way it arrived."""
+def test_an_export_never_spells_a_quantity_differently_from_the_api():
+    """Rule 15: one quantity, one name, whichever way it arrived.
+
+    Covering, not equal. An export reaches further back than the API window and states
+    things the API's score objects do not — the four sleep stages, a session's duration —
+    so it is legitimately the larger set. What it must never do is give a quantity both
+    paths carry two different names, because that is what makes one quantity two series.
+    """
     api_names = {m.metric_type for mappings in METRICS.values() for m in mappings}
     export_names = {m.metric_type for mappings in EXPORT_METRICS.values() for m in mappings}
 
-    assert export_names == api_names
+    assert api_names <= export_names, api_names - export_names
+    # And nothing invented on the way: every name is the registry's.
+    assert export_names <= set(CANONICAL_KEYS), export_names - set(CANONICAL_KEYS)
+
+
+#: Verbatim from a German account's export: Whoop localises the file names and the column
+#: headers to the account's language, and an account's language must not decide whether
+#: somebody can import their own data.
+GERMAN_SLEEP_CSV = (
+    "Startzeit des Zyklus,Beginn des Schlafs,Schlafleistung %,"
+    "Atemfrequenz (Atemzüge/Min.),Schlafdauer (Min.),Dauer im Bett (Min.),"
+    "Dauer des Leichtschlafs (Min.),Dauer des Tiefschlafs (Min.),"
+    "Dauer des REM-Schlafs (Min.),Dauer des Aufwachens (Min.),Schlafeffizienz %\n"
+    "2026-08-09 23:45:11,2026-08-09 23:45:11,78,14.9,457,506,204,95,158,49,90\n"
+)
+
+GERMAN_WORKOUTS_CSV = (
+    "Startzeit des Zyklus,Startzeit des Trainings,Dauer (Min.),Name der Aktivität,"
+    "Aktivitätsbelastung,Verbrannte Energie (cal),Max HF (Schläge pro Minute),"
+    "Durchschnittliche HF (Schläge pro Minute)\n"
+    "2026-08-09 23:45:11,2026-08-10 18:37:37,4,Radfahren,4.3,30.0,138,118\n"
+    "2026-08-09 23:45:11,2026-08-10 20:10:00,32,Laufen,9.1,310.0,171,149\n"
+)
+
+
+def test_a_german_export_is_read():
+    """`Schlaf.csv` and `Trainings.csv` were refused outright: no recognisable CSV.
+
+    Whoop names the files and the columns in the account's language, so the whole
+    archive was unreadable for a German account — the provider's vocabulary, which is
+    this table's business to know.
+    """
+    values = {
+        p["metric_type"]: p["value"]
+        for p in _points(
+            _archive({"Schlaf.csv": GERMAN_SLEEP_CSV, "Trainings.csv": GERMAN_WORKOUTS_CSV})
+        )
+    }
+
+    assert values["whoop_sleep_performance"] == 78
+    assert values["respiratory_rate"] == 14.9
+    # The whole night, not only its score: nine columns, all of them registry metrics.
+    assert values["sleep_duration"] == 457
+    assert values["sleep_duration_in_bed"] == 506
+    assert values["sleep_duration_light"] == 204
+    assert values["sleep_duration_deep"] == 95
+    assert values["sleep_duration_rem"] == 158
+    assert values["sleep_duration_awake"] == 49
+    assert values["workout_duration"] == 32
+    assert values["workout_heart_rate_max"] == 171
+
+
+def test_two_workouts_in_one_day_stay_two_workouts():
+    """Verifies Fizzbee Invariant: NoDuplicateRecords.
+
+    Every row carries the cycle it belongs to as well as its own start. Keyed on the
+    cycle, both of a day's sessions hash identically and Core keeps the first — one
+    workout a day, silently, with nothing anywhere reporting a loss.
+    """
+    points = _points(_archive({"Trainings.csv": GERMAN_WORKOUTS_CSV}))
+    strains = [p for p in points if p["metric_type"] == "whoop_workout_strain"]
+
+    assert sorted(p["value"] for p in strains) == [4.3, 9.1]
+    assert len({p["idempotency_key"] for p in strains}) == 2
 
 
 def test_cycle_rows_become_data_points():
