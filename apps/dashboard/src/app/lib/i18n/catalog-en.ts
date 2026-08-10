@@ -281,8 +281,10 @@ export const en = {
   "connectors.soon": "Coming soon",
   "connectors.docsFor": "Open the documentation for {name}",
   "connectors.openDocs": "Open the documentation",
-  "connectors.authError": "Auth error (401)",
-  "connectors.authErrorShort": "HTTP 401 auth error",
+  // Names the state, not a cause. The row shows `last_sync_message` underneath, and
+  // that is the only thing here that knows why a run failed — a badge that claimed
+  // "HTTP 401 auth error" labelled an unreadable export archive as an expired token.
+  "connectors.syncFailed": "Last run failed",
   "connectors.editCredentials": "Edit the credentials",
   "connectors.disconnect": "Disconnect and delete this connector",
   "connectors.connectNow": "Connect now",
@@ -290,7 +292,6 @@ export const en = {
   "connectors.colSource": "Connection / source",
   "connectors.colTransfer": "Data transfer",
   "connectors.everyHours": "Every {hours} h ({days} days lookback)",
-  "connectors.renewToken": "Renew the token",
   "connectors.edit": "Edit",
   "connectors.emptyList": "No connectors configured yet.",
   "connectors.addFirst": "Add the first connector",

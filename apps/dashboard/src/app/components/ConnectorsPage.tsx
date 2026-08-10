@@ -465,7 +465,7 @@ export default function ConnectorsPage({
                                   {c.sync_status === "queued"
                                     ? t("connectors.processing")
                                     : c.sync_status === "error"
-                                      ? t("connectors.authErrorShort")
+                                      ? t("connectors.syncFailed")
                                       : t("connectors.readyActive")}
                                 </span>
                               </span>
@@ -539,11 +539,17 @@ export default function ConnectorsPage({
                                 }`}
                               >
                                 <Settings className="w-3 h-3" />
-                                <span>
-                                  {c.sync_status === "error"
-                                    ? t("connectors.renewToken")
-                                    : t("connectors.edit")}
-                                </span>
+                                {/*
+                                  Red because something is wrong, but the label stays
+                                  "Edit": the button opens the same dialog either way,
+                                  and "Renew the token" asserted a cause this page
+                                  cannot know. A failed run carries a status and a
+                                  message, not an error code (AGENTS.md rule 17), so
+                                  the message below the badge is what names the reason
+                                  — and a connector fed by an export archive has no
+                                  token to renew in the first place.
+                                */}
+                                <span>{t("connectors.edit")}</span>
                               </button>
                               <button
                                 onClick={() => handleDeleteConnector(c)}
