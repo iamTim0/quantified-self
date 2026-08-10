@@ -36,11 +36,22 @@
 # to chance. PYTHONPATH is searched before site-packages, so the mount wins.
 
 services:
+  # The migration step of the base file, reading the revisions from the checkout
+  # rather than from the image. Without this mount a revision written five minutes
+  # ago would need a rebuild before `up` could apply it, which is the same drift
+  # the step exists to prevent, only shorter.
+  core-migrate:
+    volumes:
+      - ../services/core/src:/app/services/core/src
+      - ../services/core/alembic:/app/services/core/alembic
+    environment:
+      - PYTHONPATH=/app/services/core/src
+
   core:
     volumes:
       - ../services/core/src:/app/services/core/src
-      # Migrations are run by hand (`task db:migrate`), but reading them from the
-      # checkout means a new revision does not need a rebuild to exist in here.
+      # Also mounted here for `task db:migrate` and for reading a revision without
+      # a rebuild; applying them on `up` is `core-migrate`'s job.
       - ../services/core/alembic:/app/services/core/alembic
     environment:
       - PYTHONPATH=/app/services/core/src

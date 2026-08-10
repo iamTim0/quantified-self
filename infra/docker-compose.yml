@@ -10,6 +10,14 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      # Here so that `core-migrate` can wait for a database that accepts
+      # connections. Without it the migration would race the initialisation of an
+      # empty volume, which is the one moment it is guaranteed to lose.
+      test: ["CMD-SHELL", "pg_isready -U qs_dev -d quantified_self"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
     networks:
       - qs-network
 
@@ -24,6 +32,33 @@ services:
     networks:
       - qs-network
 
+  # Migrations, once per `up`, before Core serves a request.
+  #
+  # `task dev:up` did not migrate at all -- only `dev:docker` did, through an
+  # `exec` in the Taskfile -- so a checkout whose migrations had moved ran against
+  # the schema the volume happened to hold. That is not a hypothetical: this stack
+  # sat one revision behind for weeks, `sync_runs.points_expected` did not exist,
+  # and every import run answered 500 from a column that was committed long before.
+  #
+  # The same build as Core rather than a shared image tag: Compose would try to
+  # *pull* an image it is not asked to build, and the build is a cache hit anyway.
+  core-migrate:
+    build:
+      context: ..
+      dockerfile: services/core/Dockerfile
+    # Not `always` (nothing sets it here) and meant to exit: `core` waits for that
+    # exit to succeed.
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # A migration needs the database and nothing else.
+      - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
+    networks:
+      - qs-network
+
   core:
     build:
       # Repo root: Core needs packages/proto, which is outside services/core.
@@ -34,8 +69,13 @@ services:
       # gRPC read API, consumed by the Analysis Service.
       - "50051:50051"
     depends_on:
-      - postgres
-      - nats
+      postgres:
+        condition: service_healthy
+      # Starts on a current schema or not at all.
+      core-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_started
     environment:
       - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
       - NATS_URL=nats://nats:4222

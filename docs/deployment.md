@@ -137,14 +137,13 @@ $EDITOR .env
 # 3. Check before anything starts. Names every missing variable.
 docker compose -f docker-compose.prod.yml config >/dev/null
 
-# 4. Pull the images and start.
+# 4. Pull the images and start. `up` migrates before Core serves: the
+#    `core-migrate` service runs `alembic upgrade head` and exits, and Core waits
+#    for it to succeed.
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
 
-# 5. Migrate.
-docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
-
-# 6. Create the first account — there is none, and self-registration is closed.
+# 5. Create the first account — there is none, and self-registration is closed.
 docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email you@example.com --workspace "My data"
 ```
@@ -153,12 +152,18 @@ From a checkout the same thing is shorter:
 
 ```bash
 task prod:config    # step 3
-task prod:up        # steps 4 and 5
+task prod:up        # step 4
 task prod:owner -- --email you@example.com --workspace "My data"
 ```
 
-Step 5 is deliberately a step of its own and not a container start: several replicas coming up at once
-would otherwise migrate against each other.
+Migrations run in a container of their own (`core-migrate`) rather than in Core's entrypoint, and that
+is what keeps replicas safe: however many Core containers start, exactly one process runs
+`alembic upgrade head` and the others wait for it to exit successfully. `task prod:migrate` still runs
+it by hand — the command is idempotent — but no deployment depends on anyone remembering to.
+
+This used to be a step in these instructions, and an instruction is not a mechanism: a Coolify deploy
+starts the stack and has nowhere to type one, so a release whose schema had moved ran against the old
+one until somebody noticed a 500.
 
 !!! danger "Without the three secrets nothing starts"
     `JWT_SECRET`, `INTERNAL_SERVICE_SECRET` and `ENCRYPTION_KEY` have development defaults that are
@@ -249,11 +254,12 @@ docker build --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
 $EDITOR .env    # QS_VERSION to the new version
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
 ```
 
-The importers are stateless and may be replaced at any time. The only ordering that matters is the
-migration: the new images first, then `alembic upgrade head` — never the other way round.
+The importers are stateless and may be replaced at any time. The ordering that matters — the new
+images first, then the migration, never the other way round — is now in the Compose file rather than in
+this paragraph: `core-migrate` runs the new image's `alembic upgrade head` and Core starts only once it
+has exited successfully.
 
 ### Rolling back
 

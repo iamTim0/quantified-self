@@ -36,12 +36,40 @@ services:
     volumes:
       - natsdata:/data
 
+  # Migrations, once per deploy, before Core serves a request.
+  #
+  # The one thing a Coolify deploy could not do was the documented post-deploy step
+  # (`run --rm core alembic upgrade head`): it starts the Compose stack and there is
+  # nowhere to type a command. So a release whose schema had moved ran against the
+  # old one, silently — `sync_runs.points_expected` was missing here for weeks after
+  # the migration that adds it was committed, and every import answered 500.
+  #
+  # A container of its own rather than migrating in Core's entrypoint: however many
+  # Core containers start, exactly one process migrates and the rest wait for it.
+  core-migrate:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:?set QS_VERSION}
+    # Not `always`: this container is meant to exit. A restart policy would run it
+    # again forever and `service_completed_successfully` would never fire.
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # A migration needs the database and nothing else. The secrets Core is given
+      # are for serving requests; alembic reads none of them.
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-quantified_self}
+
   core:
     image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:?set QS_VERSION}
     restart: always
     depends_on:
       postgres:
         condition: service_healthy
+      # Refuses to start on a schema that is behind the code, rather than serving
+      # 500s from the half of the API that touches the new columns.
+      core-migrate:
+        condition: service_completed_successfully
       nats:
         condition: service_started
     environment:

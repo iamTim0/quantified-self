@@ -129,6 +129,35 @@ services:
     networks:
       - qs-network
 
+  # Migrations, once per deploy, before Core serves a request.
+  #
+  # This used to be step 4 of the instructions -- `run --rm core alembic upgrade
+  # head` after `up -d` -- and an instruction is not a mechanism. A deploy that
+  # only starts the stack has nowhere to type it, so a release whose schema had
+  # moved ran against the old one: `sync_runs.points_expected` was missing for
+  # exactly that reason and every import answered 500, with the column sitting in
+  # a migration file that had been committed weeks earlier.
+  #
+  # A container of its own rather than migrating in Core's entrypoint, and that is
+  # what keeps replicas safe: however many Core containers start, exactly one
+  # process runs `alembic upgrade head` and the rest wait for it to succeed.
+  # Running it by hand stays valid -- `alembic upgrade head` is idempotent.
+  core-migrate:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
+    # Not `always`: this container is meant to exit. A restart policy would run it
+    # again forever and `service_completed_successfully` would never fire.
+    restart: "no"
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # A migration needs the database and nothing else. The secrets Core is given
+      # are for serving requests; alembic reads none of them.
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
+    networks:
+      - qs-network
+
   core:
     # The only service with a database connection (AGENTS.md rule 1).
     image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
@@ -136,6 +165,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      # Refuses to start on a schema that is behind the code, rather than serving
+      # 500s from the half of the API that touches the new columns.
+      core-migrate:
+        condition: service_completed_successfully
       nats:
         condition: service_started
     environment:
@@ -155,10 +188,9 @@ services:
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     healthcheck:
-      # `/health` is a pure liveness check and touches no table, so it answers
-      # before `alembic upgrade head` has ever run. That matters: the documented
-      # order is `up -d` and then migrate, and a healthcheck that needed the
-      # schema would deadlock a first install.
+      # `/health` is a pure liveness check and touches no table. It stays that way
+      # even now that `core-migrate` guarantees the schema is current: a healthcheck
+      # that needed a table would make the first install depend on itself.
       #
       # python, not curl or wget: the image is python:3.12-slim and has neither.
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]

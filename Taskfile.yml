@@ -30,14 +30,15 @@ tasks:
   # infra/docker-compose.dev.yml for what each service does with its mount, and
   # docs/operations.md for which address to open.
   #
-  # Migrations run after the containers are up because Core owns the schema and
-  # Postgres has to be accepting connections first.
+  # Migrations are part of `up`, not a line here: the `core-migrate` service applies
+  # them before Core starts, reading the revisions from the checkout. `dev:up` had no
+  # migration step at all, which is how a stack ended up serving 500s from a column
+  # whose migration had been committed weeks earlier.
 
   dev:docker:
     desc: "Start the whole stack in containers with the checkout mounted (hot reload). Open http://localhost:8080"
     cmds:
       - docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml up -d --build
-      - docker compose --env-file .env -f infra/docker-compose.yml -f infra/docker-compose.dev.yml exec -T core alembic upgrade head
 
   dev:docker:logs:
     desc: "Follow logs of the mounted container stack"
@@ -104,14 +105,16 @@ tasks:
     desc: "Start the production stack from published images (pull, start, migrate)"
     cmds:
       - task: prod:pull
+      # `up` brings the migration with it (the core-migrate service), so there is
+      # no second step that a deploy could skip.
       - docker compose --env-file .env -f docker-compose.prod.yml up -d
-      - task: prod:migrate
 
   prod:migrate:
-    desc: "Run Alembic migrations inside the released Core image"
+    desc: "Apply Alembic migrations by hand (prod:up already does it via core-migrate)"
     cmds:
-      # A separate step, never a container entrypoint: replicas starting at once
-      # would otherwise migrate against each other.
+      # Kept because it is occasionally what you want -- after restoring a dump, or
+      # to see what a pending migration prints. `up` no longer depends on it: the
+      # `core-migrate` service runs the same command and Core waits for it.
       - docker compose --env-file .env -f docker-compose.prod.yml run --rm core alembic upgrade head
 
   prod:down:
@@ -186,9 +189,9 @@ tasks:
       - uv run --with pytest pytest tools/tests -q
 
   test:packages:
-    desc: "Run shared package tests (metric registry, ingest schemas, catalog drift)"
+    desc: "Run shared package tests (metric registry, ingest schemas, upload spool, catalog drift)"
     cmds:
-      - uv run --directory packages/shared-schemas --with pytest pytest tests
+      - uv run --directory packages/shared-schemas --with pytest --with pytest-asyncio pytest tests
 
   test:core:
     desc: "Run Core Data Service tests (requires Postgres on :5433)"

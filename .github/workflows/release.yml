@@ -565,21 +565,20 @@ jobs:
               docker compose -f docker-compose.prod.yml config >/dev/null
 
               # 3. Pull and start. The images are ${VERSION}, pinned in .env.
+              #    Migrating is part of this: the core-migrate service runs
+              #    'alembic upgrade head' and exits, and Core starts only once it
+              #    has succeeded. One migrating process however many replicas.
               docker compose -f docker-compose.prod.yml pull
               docker compose -f docker-compose.prod.yml up -d
 
-              # 4. Migrate. A separate step on purpose: concurrent replicas
-              #    starting at once would otherwise migrate against each other.
-              docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
-
-              # 5. There is no default account, and sign-up is closed.
+              # 4. There is no default account, and sign-up is closed.
               docker compose -f docker-compose.prod.yml run --rm core \\
                 python -m core.create_owner --email you@example.com --workspace "My Data"
 
-              # 6. Check it from the outside.
+              # 5. Check it from the outside.
               bash tools/smoke_deployment.sh https://your-host.example
 
-          To upgrade, change QS_VERSION in .env, then repeat steps 3 and 4.
+          To upgrade, change QS_VERSION in .env, then repeat step 3.
           To roll back, set the previous version and repeat step 3 — but read the
           guide first if the release in between contained a migration.
           EOF

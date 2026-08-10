@@ -47,14 +47,14 @@ $EDITOR .env
 
 docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variable
 docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
+docker compose -f docker-compose.prod.yml up -d   # migrates, then serves
 docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email you@example.com --workspace "My Data"
 ```
 
 From a checkout, `task prod:config`, `task prod:up` and `task prod:owner` do the
-same. Upgrading is `QS_VERSION` in `.env`, then `pull`, `up -d` and the migration.
+same. Upgrading is `QS_VERSION` in `.env`, then `pull` and `up -d`: the
+`core-migrate` service applies pending migrations before Core starts.
 
 Then check it from the outside — reachable, closed, and what it reports about its
 own configuration:
