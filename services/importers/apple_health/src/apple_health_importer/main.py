@@ -381,6 +381,12 @@ async def _import_archive(
                     await js.publish("qs.ingest.apple_health", json.dumps(event).encode("utf-8"))
                 published += 1
     except (ArchiveTooLarge, ArchiveUnreadable) as exc:
+        # Logged as well as recorded on the run: a rejection that exists only in the
+        # database looks, in the log, like an upload that completed and then stopped
+        # mattering. The message names the file's shape, never its contents.
+        logger.warning(
+            "[req_id=%s] Archive refused after %d point(s): %s", req_id, published, exc
+        )
         await close_sync_run(
             tenant_id, source_id, sync_run_id, req_id=req_id, status="error",
             message=str(exc), points_received=published,

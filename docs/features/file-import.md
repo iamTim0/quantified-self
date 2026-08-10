@@ -148,8 +148,16 @@ the temporary file the upload itself created.
 
 ## Troubleshooting
 
+**"That file is not a ZIP archive."** Either it genuinely is not one, or — more often for a file
+this size — it is an Apple Health export that never finished arriving on the machine it was
+uploaded from. A ZIP keeps its index at the *end*, so an archive whose last bytes are missing is
+unreadable as a whole even though most of its content is intact and its size looks plausible. A
+cloud-storage folder that stopped syncing mid-file produces exactly this. Copy the export off the
+phone again, and check that the file on disk has the size the phone reported before uploading it.
+
 **"No export.xml was found in the archive."** The file uploaded was not an Apple Health export —
-check that it is the ZIP the Health app produced, not a folder re-zipped afterwards.
+check that it is the ZIP the Health app produced, not a folder re-zipped afterwards. The member is
+found whatever its case, so iOS naming it `Export.xml` is not the cause.
 
 **"No recognisable Whoop CSV was found."** The WHOOP export sometimes changes its file names; the
 importer looks for `physiological_cycles`, `sleeps` and `workouts`. Send the archive as it

@@ -186,11 +186,19 @@ def _point(
 
 
 def _member(archive: zipfile.ZipFile, suffix: str) -> zipfile.ZipInfo | None:
+    """Find a member by file name, ignoring the directory above it and its case.
+
+    iOS writes `apple_health_export/Export.xml` with a capital E. Comparing exactly
+    rejected a real 195 MB export for that one letter, and said "No export.xml was
+    found in the archive" about an archive whose first member was the export — the
+    route files two functions down are already matched case-blind for the same reason.
+    """
+    wanted = suffix.lower()
     for info in archive.infolist():
         if info.is_dir():
             continue
         name = info.filename.rsplit("/", 1)[-1]
-        if name == suffix:
+        if name.lower() == wanted:
             return info
     return None
 
@@ -300,7 +308,16 @@ def _record_points(
             report.unmapped("export.Record.sleepAnalysis", elem.attrib.get("value", ""))
             return
         report.mapped("export.Record.sleepAnalysis", minutes, metric_type)
-        metadata = {**metadata_base, "units": "min", "sleep_stage": stage}
+        # The archive states a sleep stage as two moments, never as a number, so this
+        # duration is ours: rule 19 wants that on the record rather than implied.
+        metadata = {
+            **metadata_base,
+            "units": "min",
+            "sleep_stage": stage,
+            "provider_value": minutes,
+            "derived_from": ["startDate", "endDate"],
+            "derived_by": "difference",
+        }
         yield _point(tenant_id, source_id, metric_type, ts, minutes, metadata)
         return
 

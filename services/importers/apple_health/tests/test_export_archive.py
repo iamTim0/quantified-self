@@ -194,6 +194,18 @@ def test_an_archive_without_an_export_is_refused_with_something_to_do_about_it()
     assert "export.xml" in str(excinfo.value)
 
 
+def test_the_export_is_found_under_the_name_ios_actually_writes():
+    """iOS names it `Export.xml`. A capital E is not a different file."""
+    capitalised, _ = _points({
+        "apple_health_export/Export.xml": EXPORT_XML,
+        "apple_health_export/workout-routes/route_2026-08-05_5.00pm.gpx": ROUTE_GPX,
+    })
+    lowercase, _ = _points()
+
+    assert capitalised == lowercase
+    assert capitalised
+
+
 def test_not_a_zip_is_refused():
     with pytest.raises(ArchiveUnreadable):
         list(read_export(io.BytesIO(b"this is not a zip"), tenant_id=TENANT, source_id=SOURCE))
