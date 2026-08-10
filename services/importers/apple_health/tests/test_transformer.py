@@ -323,6 +323,295 @@ def test_workout_energy_and_distance_use_the_current_field_names():
     assert values["workout_duration"] == 40
 
 
+def test_a_workouts_heart_rate_object_becomes_both_metrics():
+    """The v2 workout carries `heartRate: {Min, Avg, Max}` and no `avgHeartRate`.
+
+    Only the v1 scalars were read, so every session's heart rate — average and
+    maximum both — arrived and was dropped.
+    """
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "heartRate": {"Min": 96, "Avg": 141.5, "Max": 176, "units": "bpm"},
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    by_metric = {p["metric_type"]: p for p in points}
+
+    assert by_metric["workout_heart_rate_average"]["value"] == 141.5
+    assert by_metric["workout_heart_rate_max"]["value"] == 176
+    # No registry metric for a workout minimum, so it is carried rather than lost.
+    assert by_metric["workout_heart_rate_average"]["metadata"]["Min"] == 96
+
+
+def test_the_v1_heart_rate_scalars_still_win_when_a_payload_sends_both():
+    """One quantity, one point: two would share an idempotency key."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "avgHeartRate": {"qty": 140, "units": "bpm"},
+                        "heartRate": {"Avg": 141.5, "Max": 176, "units": "bpm"},
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    averages = [p for p in points if p["metric_type"] == "workout_heart_rate_average"]
+
+    assert len(averages) == 1
+    assert averages[0]["value"] == 140
+    # The object's other member is still read; only the duplicate is suppressed.
+    assert any(p["metric_type"] == "workout_heart_rate_max" for p in points)
+
+
+def test_workout_energy_prefers_the_session_total_like_the_archive_does():
+    """`export_archive` reads `totalEnergyBurned` first; this path must agree.
+
+    Otherwise one workout imported both ways writes active energy under
+    `workout_energy` from one path and total energy from the other, under one name.
+    """
+    values = _metrics(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "totalEnergy": {"qty": 512, "units": "kcal"},
+                        "activeEnergyBurned": {"qty": 410, "units": "kcal"},
+                        "activeEnergy": [{"date": "2026-08-05 07:01:00 +0000", "qty": 12}],
+                    }
+                ]
+            }
+        }
+    )
+    assert values["workout_energy"] == 512
+
+
+def _workout(fields: dict) -> list[dict]:
+    return transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        **fields,
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+
+
+def test_an_energy_series_becomes_the_sessions_energy():
+    """An array is a quantity stated per interval, not a quantity to throw away.
+
+    Active plus basal is the session total, which is the figure `workout_energy` holds.
+    """
+    points = _workout(
+        {
+            "activeEnergy": [
+                {"date": "2026-08-05 07:01:00 +0000", "qty": 100, "units": "kcal"},
+                {"date": "2026-08-05 07:02:00 +0000", "qty": 150, "units": "kcal"},
+            ],
+            "basalEnergy": [{"date": "2026-08-05 07:01:00 +0000", "qty": 30, "units": "kcal"}],
+        }
+    )
+    energy = next(p for p in points if p["metric_type"] == "workout_energy")
+
+    assert energy["value"] == 280
+    # The number is ours, not the phone's, and says so.
+    assert sorted(energy["metadata"]["derived_from"]) == ["activeEnergy", "basalEnergy"]
+    assert energy["metadata"]["derived_by"] == "sum"
+    assert energy["metadata"]["sample_count"] == 3
+
+
+def test_a_stated_figure_always_beats_a_derived_one():
+    """Deriving is the fallback. What the provider stated outright is not second-guessed."""
+    points = _workout(
+        {
+            "totalEnergy": {"qty": 512, "units": "kcal"},
+            "activeEnergy": [{"date": "2026-08-05 07:01:00 +0000", "qty": 100, "units": "kcal"}],
+        }
+    )
+    energies = [p for p in points if p["metric_type"] == "workout_energy"]
+
+    assert len(energies) == 1
+    assert energies[0]["value"] == 512
+    assert "derived_from" not in energies[0]["metadata"]
+
+
+def test_a_heart_rate_series_yields_the_sessions_average_and_maximum():
+    """One array, two figures: neither had a scalar on this payload."""
+    points = _workout(
+        {
+            "heartRateData": [
+                {"date": "2026-08-05 07:01:00 +0000", "Avg": 140, "Max": 150, "units": "bpm"},
+                {"date": "2026-08-05 07:02:00 +0000", "Avg": 150, "Max": 176, "units": "bpm"},
+            ]
+        }
+    )
+    by_metric = {p["metric_type"]: p for p in points}
+
+    assert by_metric["workout_heart_rate_average"]["value"] == 145
+    assert by_metric["workout_heart_rate_max"]["value"] == 176
+    assert by_metric["workout_heart_rate_max"]["metadata"]["derived_by"] == "max"
+
+
+def test_a_distance_series_becomes_the_sessions_distance():
+    """Read in the phone's declared unit, converted like any other distance."""
+    points = _workout(
+        {
+            "walkingAndRunningDistance": [
+                {"date": "2026-08-05 07:01:00 +0000", "qty": 0.5, "units": "mi"},
+                {"date": "2026-08-05 07:02:00 +0000", "qty": 0.5, "units": "mi"},
+            ]
+        }
+    )
+    distance = next(p for p in points if p["metric_type"] == "workout_distance")
+
+    # One mile in total, stored in the registry's kilometres.
+    assert round(distance["value"], 3) == 1.609
+    assert distance["metadata"]["provider_value"] == 1.0
+
+
+def test_a_workouts_context_fields_travel_with_its_points():
+    """Neither a boolean nor a place name is a measurement, and neither is lost.
+
+    They are reported as stored, too: a field listed under "unsupported" while it is
+    in fact being kept sends the next reader looking for a bug that is not there.
+    """
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "workouts": [
+                    {
+                        "id": "w1",
+                        "name": "Run",
+                        "start": "2026-08-05 07:00:00 +0000",
+                        "duration": 2400,
+                        "isIndoor": False,
+                        "location": "Outdoor",
+                        "metadata": {"HKWeatherHumidity": "6800 %"},
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+        report=report,
+    )
+    metadata = points[0]["metadata"]
+
+    assert metadata["is_indoor"] is False
+    assert metadata["location"] == "Outdoor"
+    assert metadata["provider_metadata"] == {"HKWeatherHumidity": "6800 %"}
+
+    built = report.build()
+    unmapped = {sighting.path for sighting in built.unmapped}
+    assert not {"workouts.isIndoor", "workouts.location", "workouts.metadata"} & unmapped
+    assert {"workouts.isIndoor", "workouts.location", "workouts.metadata"} <= {
+        sighting.path for sighting in built.mapped
+    }
+
+
+def test_total_sleep_is_the_current_spelling_of_the_nights_total():
+    """A v2 sleep entry has no `qty` and no `asleep`, so nothing produced a duration.
+
+    Every stage was stored and the night's own total was not — the one number a
+    "how much did I sleep" question is actually about.
+    """
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "sleep_analysis",
+                        "units": "hr",
+                        "data": [
+                            {
+                                "date": "2026-08-05 07:00:00 +0000",
+                                "sleepStart": "2026-08-04 23:10:00 +0000",
+                                "sleepEnd": "2026-08-05 06:40:00 +0000",
+                                "inBedStart": "2026-08-04 23:00:00 +0000",
+                                "inBedEnd": "2026-08-05 06:45:00 +0000",
+                                "totalSleep": 7.0,
+                                "deep": 1.5,
+                                "core": 4.0,
+                                "rem": 1.2,
+                                "awake": 0.3,
+                                "inBed": 7.75,
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    by_metric = {p["metric_type"]: p for p in points}
+
+    # Hours, converted to the registry's minutes.
+    assert by_metric["sleep_duration"]["value"] == 420.0
+    assert by_metric["sleep_duration_in_bed"]["value"] == 465.0
+    # The night's boundaries, normalised to UTC, on the readings they belong to.
+    assert by_metric["sleep_duration"]["metadata"]["sleep_start"] == "2026-08-04T23:10:00+00:00"
+    assert by_metric["sleep_duration_deep"]["metadata"]["in_bed_end"] == "2026-08-05T06:45:00+00:00"
+
+
+def test_a_nights_total_is_never_emitted_twice():
+    """`asleep` and `totalSleep` are the same quantity under two spellings."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "sleep_analysis",
+                        "units": "hr",
+                        "data": [
+                            {
+                                "date": "2026-08-05 07:00:00 +0000",
+                                "asleep": 7.0,
+                                "totalSleep": 7.0,
+                            }
+                        ],
+                    }
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    totals = [p for p in points if p["metric_type"] == "sleep_duration"]
+
+    assert len(totals) == 1
+
+
 def test_a_workout_route_becomes_location_points():
     """GPS was never read at all, so a recorded run had no trace."""
     points = transform_health_auto_export_json(

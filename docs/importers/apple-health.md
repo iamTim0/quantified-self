@@ -92,6 +92,50 @@ either.
 
 Queries always use the exact `metric_type` value.
 
+### What a workout and a night carry besides their metrics
+
+Health Auto Export has changed the shape of these payloads more than once, and a renamed field
+is a quantity that arrives and is dropped in silence. Two spellings of the same quantity are
+therefore read wherever both exist, and only the first present becomes a data point — two would
+share an `idempotency_key` and the second would be discarded by Core anyway.
+
+| Arrives as | Becomes |
+| --- | --- |
+| `heartRate: {Min, Avg, Max}`, or the older `avgHeartRate` / `maxHeartRate` | `workout_heart_rate_average`, `workout_heart_rate_max`; the minimum is kept in metadata, the registry having no metric for it |
+| `totalEnergy`, or the older `activeEnergyBurned` | `workout_energy` — the session total is preferred, which is what the archive path reads from `totalEnergyBurned` too, so a workout imported both ways cannot mean two things under one name |
+| `totalSleep`, or the older `asleep`, or the entry's own `qty` | `sleep_duration` |
+| `sleepStart`, `sleepEnd`, `inBedStart`, `inBedEnd` | metadata on that night's readings, normalised to UTC — which night a reading belongs to, a single timestamp cannot say |
+| `isIndoor`, `location`, `metadata` | metadata on the session's readings |
+
+### Time series inside a workout
+
+Some quantities arrive per interval rather than as one figure for the session. An array is not a
+reason to lose them: collapsed, a series states the same thing the scalar field does.
+
+| Arrives as | Collapsed by | Becomes |
+| --- | --- | --- |
+| `activeEnergy` **+** `basalEnergy` | sum of both — they are the two halves of the total | `workout_energy` |
+| `walkingAndRunningDistance`, `cyclingDistance` | sum | `workout_distance` |
+| `heartRateData` | mean of the samples' averages, and the greatest of their maxima | `workout_heart_rate_average`, `workout_heart_rate_max` |
+
+A figure stated outright always wins: these are read only when the session sent no scalar for that
+quantity. A point derived this way says so in its metadata — `derived_from` names the fields,
+`derived_by` the operation, `sample_count` how many samples it stands on — so a derived number is
+never mistaken for one the phone reported.
+
+What such a series must **not** become is one data point per sample under the daily metric.
+`steps` and `distance` aggregate by sum over a day, and the day's own total already arrives from
+the phone; adding a workout's per-minute samples on top would make that day read roughly a third
+too high everywhere it is shown. Per-sample resolution needs a metric of its own before it can be
+stored — which is why `stepCount` is still only reported and not kept.
+
+Still unstored, for want of a registry metric rather than on purpose: `stepCount`, a workout's speed
+(`avgSpeed`, `maxSpeed`, `speed`), `stepCadence`, `elevationUp`, `flightsClimbed`, `intensity`, and
+the ambient `temperature` and `humidity` it records. Each is named in the
+[Data Quality Center](../features/data-quality.md) rather than dropped quietly, so a decision to
+store one starts from a name and a count. Adding any of them means adding the metric to the registry
+first — one metric, one name, one unit; see [Metrics](../metrics.md).
+
 ## Retrieving the data
 
 The measurements are queried through the tenant-protected Core/Gateway API:

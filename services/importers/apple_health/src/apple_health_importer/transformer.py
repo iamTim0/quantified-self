@@ -21,7 +21,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import FieldReportCollector, idempotency_key
+from shared_schemas import FieldReportCollector, idempotency_key, provenance
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -100,6 +100,7 @@ METRIC_NAME_MAP: dict[str, str] = {
     "vo2_max": "vo2_max",
     "apple_exercise_time": "exercise_duration",
     "apple_stand_time": "stand_duration",
+    "flights_climbed": "flights_climbed",
     "walking_heart_rate_average": "heart_rate_walking_average",
     "dietary_energy_consumed": "nutrition_energy",
 }
@@ -107,6 +108,11 @@ METRIC_NAME_MAP: dict[str, str] = {
 #: Apple's sleep stage key -> canonical registry key. Apple calls light sleep "Core",
 #: and its "asleep" is total sleep time -- the same quantity as the entry's own `qty`,
 #: which is why it maps to `sleep_duration` rather than a stage of its own.
+#: ``totalSleep`` is the current spelling of the same total, and it is why a night could
+#: arrive with every stage stored and no sleep duration at all: the v2 sleep entry has no
+#: ``qty`` and no ``asleep``, so nothing produced `sleep_duration`. Both are listed and
+#: only the first present is emitted, because two points for one metric at one timestamp
+#: share an idempotency key and the second is a duplicate Core discards.
 SLEEP_STAGE_MAP: dict[str, str] = {
     "deep": "sleep_duration_deep",
     "rem": "sleep_duration_rem",
@@ -114,6 +120,7 @@ SLEEP_STAGE_MAP: dict[str, str] = {
     "awake": "sleep_duration_awake",
     "inBed": "sleep_duration_in_bed",
     "asleep": "sleep_duration",
+    "totalSleep": "sleep_duration",
 }
 
 #: Workout payload field -> (canonical registry key, unit to assume when the field
@@ -128,7 +135,14 @@ SLEEP_STAGE_MAP: dict[str, str] = {
 #: ``totalDistance`` became ``distance``. So on every current payload the energy read
 #: an array (yielding nothing) and the distance was looked for under a key that no
 #: longer exists — two whole quantities, dropped without a word.
+#: ``totalEnergy`` comes first deliberately. The archive path reads a workout's
+#: ``totalEnergyBurned`` attribute before its ``ActiveEnergyBurned`` statistic
+#: (`export_archive._workout_points`), so both paths must prefer the session total —
+#: otherwise the same workout imported one way and then the other writes active energy
+#: under `workout_energy` in one run and total energy in the next, under one name, and
+#: whichever arrived first is the one Core keeps.
 WORKOUT_FIELD_MAP: tuple[tuple[str, str, MetricUnit | None], ...] = (
+    ("totalEnergy", "workout_energy", None),
     ("activeEnergyBurned", "workout_energy", None),
     ("activeEnergy", "workout_energy", None),
     ("distance", "workout_distance", None),
@@ -136,7 +150,88 @@ WORKOUT_FIELD_MAP: tuple[tuple[str, str, MetricUnit | None], ...] = (
     ("duration", "workout_duration", MetricUnit.SECOND),
     ("avgHeartRate", "workout_heart_rate_average", None),
     ("maxHeartRate", "workout_heart_rate_max", None),
+    # `speed` is the session average under an older name, so it comes after `avgSpeed`
+    # and only fills the metric when that one is absent.
+    ("avgSpeed", "workout_speed_average", None),
+    ("speed", "workout_speed_average", None),
+    ("maxSpeed", "workout_speed_max", None),
+    ("stepCadence", "workout_cadence", None),
+    ("elevationUp", "workout_elevation_gain", None),
+    ("flightsClimbed", "flights_climbed", None),
+    ("intensity", "workout_intensity", None),
 )
+
+#: Workout fields that carry several quantities in one object, keyed
+#: ``<field>.<member>`` in the same flat provider-vocabulary shape
+#: ``ENTRY_FIELD_METRICS`` uses.
+#:
+#: Health Auto Export moved a workout's heart rate into ``heartRate:
+#: {Min, Avg, Max, units}`` and kept the v1 scalars ``avgHeartRate``/``maxHeartRate``
+#: only on older payloads. The map above looks for those scalars alone, so on a current
+#: payload a workout's heart rate arrived, was recognised as an object holding no
+#: ``qty``, and was dropped — both the average and the maximum, on every session.
+WORKOUT_OBJECT_METRICS: dict[str, str] = {
+    "heartRate.Avg": "workout_heart_rate_average",
+    "heartRate.Max": "workout_heart_rate_max",
+}
+
+#: The same map grouped by field, built once rather than re-partitioned per workout.
+WORKOUT_OBJECT_FIELDS: dict[str, dict[str, str]] = {}
+for _path, _canonical in WORKOUT_OBJECT_METRICS.items():
+    _field_key, _, _member = _path.partition(".")
+    WORKOUT_OBJECT_FIELDS.setdefault(_field_key, {})[_member] = _canonical
+
+#: Intra-workout time series -> the session quantity it accumulates, and how it
+#: collapses into that one figure.
+#:
+#: An array is not a reason to drop a quantity. Summed, a series of per-interval energy
+#: *is* the session's energy — the same number the scalar fields state directly — so it
+#: is read and written whenever no scalar said it first.
+#:
+#: What it must not become is one point per sample under the daily metric. `steps` and
+#: `distance` aggregate by ``SUM`` over a day and the metrics section already sends that
+#: day's total, so forty per-minute samples from a workout would be added on top of a
+#: figure that already counts them and the day would read a third too high. Storing them
+#: that way is worse than not storing them, because a wrong number is indistinguishable
+#: from a right one. Per-sample detail therefore needs a metric of its own — see
+#: `docs/importers/apple-health.md` — and until it has one, the figure is kept and the
+#: series is reported as seen.
+WORKOUT_SERIES_MAP: tuple[tuple[str, str, str], ...] = (
+    # Active and basal are the two halves of a session's total, so both are added.
+    ("activeEnergy", "workout_energy", "sum"),
+    ("basalEnergy", "workout_energy", "sum"),
+    ("walkingAndRunningDistance", "workout_distance", "sum"),
+    ("cyclingDistance", "workout_distance", "sum"),
+    ("heartRateData", "workout_heart_rate_average", "average"),
+    ("heartRateData", "workout_heart_rate_max", "max"),
+    # Its own metric rather than `steps`, which the day's own total already fills.
+    ("stepCount", "workout_steps", "sum"),
+)
+
+#: Workout fields kept beside the readings rather than becoming metrics of their own:
+#: they describe the session instead of measuring anything, and the registry has no
+#: metric for a boolean or a place name. Reported as mapped, because they are taken.
+#: ``temperature`` and ``humidity`` are the conditions the workout happened in, and they
+#: are deliberately *not* mapped onto `weather_temperature`/`weather_humidity`: those are
+#: the weather importer's series for a place, and mixing a phone's workout sample into
+#: them would make one name mean two measurements taken by two instruments.
+WORKOUT_CONTEXT_FIELDS: dict[str, str] = {
+    "isIndoor": "is_indoor",
+    "location": "location",
+    "metadata": "provider_metadata",
+    "temperature": "ambient_temperature",
+    "humidity": "ambient_humidity",
+}
+
+#: The four moments a sleep entry states about the night, kept as metadata. Not
+#: measurements — but they are what says *which night* a reading belongs to, which one
+#: timestamp on its own does not.
+SLEEP_INTERVAL_FIELDS: dict[str, str] = {
+    "sleepStart": "sleep_start",
+    "sleepEnd": "sleep_end",
+    "inBedStart": "in_bed_start",
+    "inBedEnd": "in_bed_end",
+}
 
 #: Metric entries that do not carry a plain ``qty``. Each maps an entry key to the
 #: canonical metric it becomes.
@@ -214,8 +309,17 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "h": MetricUnit.HOUR,
     "hours": MetricUnit.HOUR,
     "m": MetricUnit.METER,
+    "ft": MetricUnit.FOOT,
     "km": MetricUnit.KILOMETER,
     "mi": MetricUnit.MILE,
+    # Health Auto Export spells speed with `hr`, not `h`, and follows the phone's locale.
+    "km/hr": MetricUnit.KILOMETER_PER_HOUR,
+    "km/h": MetricUnit.KILOMETER_PER_HOUR,
+    "mi/hr": MetricUnit.MILE_PER_HOUR,
+    "mph": MetricUnit.MILE_PER_HOUR,
+    "spm": MetricUnit.STEPS_PER_MINUTE,
+    "steps/min": MetricUnit.STEPS_PER_MINUTE,
+    "met": MetricUnit.MET,
     "degc": MetricUnit.CELSIUS,
     "°c": MetricUnit.CELSIUS,
     "ml/kg·min": MetricUnit.ML_PER_KG_PER_MIN,
@@ -283,6 +387,63 @@ def normalise_value(
         return value
 
 
+def _member_value(container: dict[str, Any], name: str) -> Any:
+    """A member of a provider object, whatever its capitalisation.
+
+    Health Auto Export writes a workout's heart rate as `Avg`/`Max` and a metric entry's
+    as `avg`, for the same quantity — so matching one spelling exactly reads one shape
+    and silently drops the other.
+    """
+    if name in container:
+        return container[name]
+    lowered = name.lower()
+    for key, value in container.items():
+        if key.lower() == lowered:
+            return value
+    return None
+
+
+def _series_figure(samples: list[Any], how: str) -> tuple[float | None, str, int]:
+    """Collapse a provider time series into the one figure a session states about it.
+
+    Returns the figure, the unit the samples declared, and how many were read — the last
+    two so the point can say what it was derived from instead of looking like a reading
+    the provider sent.
+
+    ``average`` is the unweighted mean of the samples' own averages. Duration-weighting
+    would be more correct, but a sample carries no duration; this is a fallback for a
+    payload that sent no average at all, and an approximation of the right number beats
+    the absence of any number.
+    """
+    values: list[float] = []
+    units = ""
+    for sample in samples:
+        if isinstance(sample, dict) and not units:
+            units = str(sample.get("units") or "")
+
+        if not isinstance(sample, dict):
+            value = _extract_numeric_value(sample)
+        elif how == "max":
+            value = _extract_numeric_value(_member_value(sample, "Max"))
+        elif how == "average":
+            value = _extract_numeric_value(_member_value(sample, "Avg"))
+        else:
+            value = None
+
+        if value is None:
+            value = _extract_numeric_value(sample)
+        if value is not None:
+            values.append(value)
+
+    if not values:
+        return None, units, 0
+    if how == "sum":
+        return sum(values), units, len(values)
+    if how == "max":
+        return max(values), units, len(values)
+    return sum(values) / len(values), units, len(values)
+
+
 def _extract_numeric_value(val: Any) -> float | None:
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
@@ -329,6 +490,9 @@ def transform_health_auto_export_json(
         units = str(metric_obj.get("units") or "")
         metric_type = canonical_name(raw_name)
         entry_fields = ENTRY_FIELDS_BY_METRIC.get(raw_name)
+        # Decided once for the whole metric rather than per entry: a push can carry tens
+        # of thousands of them, and only sleep has stages or a night's boundaries.
+        is_sleep = raw_name in ("sleep_analysis", "sleep")
 
         data_entries = metric_obj.get("data") or []
         for entry in data_entries:
@@ -358,6 +522,19 @@ def transform_health_auto_export_json(
             # under `qty`: heart rate as Min/Avg/Max, blood pressure as
             # systolic/diastolic. Both were skipped entirely before.
             handled_keys: set[str] = {"date", "startDate", "endDate", "timestamp", "source"}
+
+            # Normalised the same way a reading's own timestamp is, so a night's
+            # boundaries and its points are in one timezone rather than two.
+            intervals: dict[str, Any] = {}
+            if is_sleep:
+                for interval_field, metadata_key in SLEEP_INTERVAL_FIELDS.items():
+                    moment = entry.get(interval_field)
+                    if not isinstance(moment, str) or not moment:
+                        continue
+                    handled_keys.add(interval_field)
+                    intervals[metadata_key] = parse_timestamp(moment) or moment
+                base_metadata.update(intervals)
+
             if entry_fields:
                 context = {
                     field: entry[field]
@@ -422,15 +599,20 @@ def transform_health_auto_export_json(
                 report.unmapped(f"metrics.{raw_name}.{key}", value)
 
             # Extra handling for sleep stages sub-fields if present
-            if raw_name in ("sleep_analysis", "sleep"):
+            if is_sleep:
+                # `asleep` and `totalSleep` carry the same total the entry's own qty did.
+                # Emitting two of them would produce two points with one idempotency
+                # key, of which Core stores the first and logs the second as a duplicate.
+                emitted_stages: set[str] = {metric_type} if val is not None else set()
                 for stage, stage_metric_type in SLEEP_STAGE_MAP.items():
-                    # `asleep` carries the same total the entry's own qty did. Emitting
-                    # both would produce two points with one idempotency key, of which
-                    # Core stores the first and logs the second as a duplicate.
-                    if stage_metric_type == metric_type and val is not None:
+                    if stage_metric_type in emitted_stages:
                         continue
                     stage_val = _extract_numeric_value(entry.get(stage))
                     if stage_val is not None:
+                        emitted_stages.add(stage_metric_type)
+                        report.mapped(
+                            f"metrics.{raw_name}.{stage}", stage_val, stage_metric_type
+                        )
                         dp_stage = {
                             "tenant_id": tenant_id,
                             "source_id": source_id,
@@ -443,6 +625,7 @@ def transform_health_auto_export_json(
                                 "stage": stage,
                                 "units": units,
                                 "provider_value": stage_val,
+                                **intervals,
                             },
                             "idempotency_key": generate_idempotency_key(
                                 tenant_id, source_id, stage_metric_type, ts
@@ -478,6 +661,11 @@ def transform_health_auto_export_json(
             "id", "name", "workoutName", "start", "startDate", "end", "endDate",
         }
         emitted_metrics: set[str] = set()
+
+        # Read before the metric loops so every point the session produces carries them.
+        for context_field, metadata_key in WORKOUT_CONTEXT_FIELDS.items():
+            if context_field in workout:
+                workout_metadata[metadata_key] = workout[context_field]
 
         for field_key, w_metric_type, fallback_unit in WORKOUT_FIELD_MAP:
             raw_field = workout.get(field_key)
@@ -516,6 +704,133 @@ def transform_health_auto_export_json(
                 }
             )
             report.mapped(f"workouts.{field_key}", raw_field, w_metric_type)
+
+        # Objects holding more than one quantity: `heartRate` is `{Min, Avg, Max}`.
+        # After the loop above, so a payload still sending the v1 scalars keeps them and
+        # does not emit the same metric twice at one timestamp.
+        for field_key, members in WORKOUT_OBJECT_FIELDS.items():
+            container = workout.get(field_key)
+            if not isinstance(container, dict):
+                continue
+            handled_workout_keys.add(field_key)
+            field_units = str(container.get("units") or "")
+            claimed = {member.lower() for member in members}
+            # A minimum has no registry metric, and inventing one would be a metric
+            # nobody else writes; it is carried instead, as `ENTRY_CONTEXT_FIELDS` does.
+            context = {
+                key: value
+                for key, value in container.items()
+                if key.lower() not in claimed and _extract_numeric_value(value) is not None
+            }
+
+            for member, w_metric_type in members.items():
+                val = _extract_numeric_value(_member_value(container, member))
+                if val is None or w_metric_type in emitted_metrics:
+                    continue
+                emitted_metrics.add(w_metric_type)
+                data_points.append(
+                    {
+                        "tenant_id": tenant_id,
+                        "source_id": source_id,
+                        "metric_type": w_metric_type,
+                        "timestamp": ts,
+                        "value": normalise_value(val, field_units, w_metric_type),
+                        "metadata": {
+                            **workout_metadata,
+                            "units": field_units,
+                            "provider_value": val,
+                            **context,
+                        },
+                        "idempotency_key": generate_idempotency_key(
+                            tenant_id, source_id, w_metric_type, ts
+                        ),
+                        "source_type": "apple_health",
+                    }
+                )
+                report.mapped(f"workouts.{field_key}.{member}", val, w_metric_type)
+
+        # Time series, interpreted rather than dropped. Read after the scalar fields, so
+        # a figure the provider stated outright always wins over one derived here.
+        collected: dict[str, dict[str, Any]] = {}
+        for field_key, w_metric_type, how in WORKOUT_SERIES_MAP:
+            samples = workout.get(field_key)
+            if not isinstance(samples, list) or not samples:
+                continue
+            handled_workout_keys.add(field_key)
+            if w_metric_type in emitted_metrics:
+                continue
+            figure, field_units, count = _series_figure(samples, how)
+            if figure is None:
+                continue
+            into = collected.setdefault(
+                w_metric_type,
+                {"how": how, "figures": [], "units": field_units, "fields": [], "samples": 0},
+            )
+            into["figures"].append(figure)
+            into["fields"].append(field_key)
+            into["samples"] += count
+            if not into["units"]:
+                into["units"] = field_units
+
+        for w_metric_type, gathered in collected.items():
+            figures: list[float] = gathered["figures"]
+            how = gathered["how"]
+            # Several series can state one quantity: active plus basal energy is the
+            # session total, which is the figure `workout_energy` holds.
+            if how == "sum":
+                figure = sum(figures)
+            elif how == "max":
+                figure = max(figures)
+            else:
+                figure = sum(figures) / len(figures)
+
+            emitted_metrics.add(w_metric_type)
+            field_units = str(gathered["units"])
+            data_points.append(
+                {
+                    "tenant_id": tenant_id,
+                    "source_id": source_id,
+                    "metric_type": w_metric_type,
+                    "timestamp": ts,
+                    "value": normalise_value(figure, field_units, w_metric_type),
+                    "metadata": {
+                        **workout_metadata,
+                        "units": field_units,
+                        "provider_value": figure,
+                        # Provenance, because this number is ours and not the phone's:
+                        # which series it came from, how it was collapsed, and out of
+                        # how many samples.
+                        "derived_from": list(gathered["fields"]),
+                        "derived_by": how,
+                        "sample_count": gathered["samples"],
+                    },
+                    "idempotency_key": generate_idempotency_key(
+                        tenant_id, source_id, w_metric_type, ts
+                    ),
+                    "source_type": "apple_health",
+                }
+            )
+            for field_key in gathered["fields"]:
+                report.mapped(f"workouts.{field_key}", [], w_metric_type)
+
+        # The context fields are reported against a metric this session produced,
+        # because that is what carries them — the report's vocabulary is "this path
+        # became that metric", and metadata on a point is how a field that is not a
+        # measurement still arrives. A workout that produced no metric carried them
+        # nowhere, so there they stay listed as arriving and unstored, which is true.
+        anchor = next(
+            (metric for _, metric, _ in WORKOUT_FIELD_MAP if metric in emitted_metrics),
+            next(
+                (m for m in WORKOUT_OBJECT_METRICS.values() if m in emitted_metrics),
+                None,
+            ),
+        )
+        if anchor is not None:
+            for context_field in WORKOUT_CONTEXT_FIELDS:
+                if context_field not in workout:
+                    continue
+                handled_workout_keys.add(context_field)
+                report.mapped(f"workouts.{context_field}", workout[context_field], anchor)
 
         # GPS route. Each fix is its own `location_point`, keyed on its own
         # timestamp, so a route is a trace rather than one point per workout.
@@ -573,6 +888,10 @@ def route_points(
             "latitude": latitude,
             "longitude": longitude,
             "workout_name": workout_name,
+            # A fix's `value` is a marker; what it actually measured is the pair of
+            # coordinates above. The provenance pair still travels, so that every point
+            # in the platform can answer the same question the same way (rule 19).
+            **provenance("location_point", 1.0),
         }
         if workout_id:
             metadata["workout_id"] = workout_id
