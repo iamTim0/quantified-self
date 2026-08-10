@@ -2,7 +2,7 @@
 Shared Python schemas for Quantified Self platform.
 """
 
-from .data_point import DataPointQuery, DataPointRead
+from .data_point import DataPointQuery, DataPointRead, provenance
 from .events import IngestEvent, IngestEventBatch, idempotency_key
 from .field_report import (
     MAX_TRACKED_PATHS,
@@ -78,5 +78,6 @@ __all__ = [
     "idempotency_key",
     "is_known_metric_type",
     "metrics_for_source",
+    "provenance",
     "value_kind",
 ]
