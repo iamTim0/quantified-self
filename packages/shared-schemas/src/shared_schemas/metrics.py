@@ -63,8 +63,9 @@ class MetricUnit(StrEnum):
     """Units a value can carry.
 
     Members that no catalog entry uses as its canonical unit (``KILOJOULE``,
-    ``SECOND``, ``HOUR``, ``METER``, ``MILE``, ``POUND``) exist because a *provider*
-    reports in them and an importer has to name what it is converting from. Health Auto
+    ``SECOND``, ``HOUR``, ``MILE``, ``POUND``, ``FOOT``, ``MILE_PER_HOUR``) exist
+    because a *provider* reports in them and an importer has to name what it is
+    converting from. Health Auto
     Export, for one, follows the phone's locale, so the same Apple Health metric arrives
     in miles or kilometres depending on whose phone it came from.
     """
@@ -83,6 +84,7 @@ class MetricUnit(StrEnum):
     MINUTE = "min"
     HOUR = "h"
     METER = "m"
+    FOOT = "ft"
     KILOMETER = "km"
     MILE = "mi"
     CELSIUS = "°C"
@@ -90,8 +92,14 @@ class MetricUnit(StrEnum):
     MMHG = "mmHg"
     MILLIMETER = "mm"
     KILOMETER_PER_HOUR = "km/h"
+    MILE_PER_HOUR = "mph"
     DEGREE = "°"
     ML_PER_KG_PER_MIN = "mL/kg/min"
+    #: Steps per minute. Distinct from ``BPM`` on purpose: both are "per minute" and
+    #: neither is the other, and a cadence stored as a pulse is a cadence nobody finds.
+    STEPS_PER_MINUTE = "spm"
+    #: Metabolic equivalent of task — how hard an activity is, as a multiple of rest.
+    MET = "MET"
     INDEX = "index"
     #: The unit is only known at runtime and travels in the event metadata. Legal
     #: exclusively for metrics resolved through a :class:`MetricNamespace`.
@@ -250,6 +258,13 @@ _CONVERSIONS: dict[tuple[MetricUnit, MetricUnit], float] = {
     (MetricUnit.KILOMETER, MetricUnit.MILE): 1.0 / 1.609344,
     (MetricUnit.POUND, MetricUnit.KILOGRAM): 0.45359237,
     (MetricUnit.KILOGRAM, MetricUnit.POUND): 1.0 / 0.45359237,
+    # Speed and elevation follow the phone's locale exactly as distance does, and
+    # without these a workout recorded on a US phone stores miles per hour and feet
+    # under a metric declared in km/h and metres — a wrong number that looks right.
+    (MetricUnit.MILE_PER_HOUR, MetricUnit.KILOMETER_PER_HOUR): 1.609344,
+    (MetricUnit.KILOMETER_PER_HOUR, MetricUnit.MILE_PER_HOUR): 1.0 / 1.609344,
+    (MetricUnit.FOOT, MetricUnit.METER): 0.3048,
+    (MetricUnit.METER, MetricUnit.FOOT): 1.0 / 0.3048,
 }
 
 
@@ -369,6 +384,19 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         aliases=("apple_stand_time",),
         plausible_min=0,
         plausible_max=1_440,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="flights_climbed",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.ACTIVITY,
+        label_de="Etagen",
+        label_en="Flights climbed",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=1_000,
         precision=0,
         cadence=Cadence.DAILY,
     ),
@@ -957,6 +985,81 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=40,
         plausible_max=240,
         precision=0,
+    ),
+    # Quantities a workout states about itself that the daily metrics do not hold. Each
+    # is a session aggregate, keyed apart from its daily counterpart on purpose: a
+    # workout's steps under `steps` would be added to a day that already counts them.
+    MetricDefinition(
+        key="workout_steps",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.WORKOUT,
+        label_de="Schritte (Training)",
+        label_en="Steps (workout)",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=200_000,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_speed_average",
+        unit=MetricUnit.KILOMETER_PER_HOUR,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Geschwindigkeit (Durchschnitt)",
+        label_en="Speed (average)",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=120,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_speed_max",
+        unit=MetricUnit.KILOMETER_PER_HOUR,
+        aggregation=Aggregation.MAX,
+        category=MetricCategory.WORKOUT,
+        label_de="Geschwindigkeit (Maximum)",
+        label_en="Speed (max)",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=200,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_cadence",
+        unit=MetricUnit.STEPS_PER_MINUTE,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Schrittfrequenz",
+        label_en="Cadence",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=300,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_elevation_gain",
+        unit=MetricUnit.METER,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.WORKOUT,
+        label_de="Höhenmeter (Aufstieg)",
+        label_en="Elevation gain",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=15_000,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_intensity",
+        unit=MetricUnit.MET,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Intensität",
+        label_en="Intensity",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=30,
+        precision=1,
     ),
     MetricDefinition(
         key="whoop_workout_strain",

@@ -109,6 +109,7 @@ dashboard picks whichever matches the reader's language.
 | `energy_total` | Total energy burned | `kcal` | `sum` | whoop | `cycle_kilojoule` |
 | `exercise_duration` | Exercise time | `min` | `sum` | apple_health | `apple_exercise_time` |
 | `stand_duration` | Stand time | `min` | `sum` | apple_health | `apple_stand_time` |
+| `flights_climbed` | Flights climbed | `count` | `sum` | apple_health | — |
 | `whoop_strain` | Whoop strain (day) | `index` | `max` | whoop | `strain` |
 | `oura_activity_score` | Oura activity score | `index` | `average` | oura | `activity_score` |
 
@@ -175,6 +176,12 @@ dashboard picks whichever matches the reader's language.
 | `workout_energy` | Workout energy | `kcal` | `sum` | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
 | `workout_heart_rate_average` | Workout heart rate (average) | `bpm` | `average` | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
 | `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health | `workout_max_heart_rate` |
+| `workout_steps` | Steps (workout) | `count` | `sum` | apple_health | — |
+| `workout_speed_average` | Speed (average) | `km/h` | `average` | apple_health | — |
+| `workout_speed_max` | Speed (max) | `km/h` | `max` | apple_health | — |
+| `workout_cadence` | Cadence | `spm` | `average` | apple_health | — |
+| `workout_elevation_gain` | Elevation gain | `m` | `sum` | apple_health | — |
+| `workout_intensity` | Intensity | `MET` | `average` | apple_health | — |
 | `whoop_workout_strain` | Whoop strain (workout) | `index` | `max` | whoop | `workout_strain` |
 
 ### Strength training
