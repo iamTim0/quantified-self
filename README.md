@@ -276,7 +276,7 @@ task docs:serve                  # :8003
 
 ```bash
 task test:all      # packages, specs, Core, Gateway, Analysis, e2e, importers
-task lint:all      # Ruff, ESLint, tsc
+task lint:all      # Ruff, oxlint, tsc
 task docs:build    # MkDocs --strict: every internal link and anchor
 task check:private # no personal data in a tracked file
 ```

@@ -346,8 +346,11 @@ jobs:
         run: bun run notices --check
       - name: Type check
         run: bun run tsc --noEmit
+      # Advisory, as the ESLint step it replaces was: the tree carries findings
+      # that predate the switch, so a blocking step would fail every build until
+      # they are cleared rather than when someone adds a new one.
       - name: Lint
-        run: bun run eslint src
+        run: bun run lint
         continue-on-error: true
       - name: Build
         run: bun run build

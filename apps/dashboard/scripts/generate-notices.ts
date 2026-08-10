@@ -18,7 +18,7 @@
  *     bun run notices --check  # fails if it would change; for CI
  *
  * Scope is the production dependency closure, walked from `dependencies`. Dev
- * tools — eslint, typescript, Playwright — are not in the image and are not listed,
+ * tools — oxlint, typescript, Playwright — are not in the image and are not listed,
  * because a notice file that claims to describe the artefact should describe the
  * artefact.
  */

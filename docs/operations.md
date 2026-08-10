@@ -71,7 +71,7 @@ task test:core         # Core only (needs Postgres)
 task test:analysis     # the statistics and the service boundary
 task test:packages     # the metric registry and catalog drift
 task test:importers    # every importer with a pyproject.toml
-task lint:all          # Ruff, ESLint, tsc
+task lint:all          # Ruff, oxlint, tsc
 task docs:build        # MkDocs --strict
 ```
 
