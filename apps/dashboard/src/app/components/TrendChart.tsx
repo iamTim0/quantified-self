@@ -22,7 +22,6 @@ import {
   Flame,
   Moon,
   Calendar,
-  Filter,
 } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";

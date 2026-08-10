@@ -140,7 +140,7 @@ and the importer, and appears in every log as `[req_id=…]`.
 | `sync_runs` | Import and audit log, the basis for adaptive windows |
 | `api_keys` | Tenant-bound inbound keys, stored only as a hash |
 | `refresh_tokens`, `revoked_access_tokens` | Sessions and revocation |
-| `tenant_shares` | Grants between workspaces |
+| `tenant_shares` | Cross-workspace grants. Nothing reads or writes it: sharing was withdrawn because the grant was only ever recorded, never honoured on a read. The table is kept so the account wipe can still clear rows an earlier version left behind |
 | `explorer_views` | Saved queries |
 
 Migrations run through Alembic in `services/core/alembic/` and nowhere else, and must contain a

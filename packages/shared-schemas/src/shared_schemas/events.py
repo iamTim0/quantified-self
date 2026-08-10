@@ -107,9 +107,3 @@ class IngestEvent(BaseModel):
                 "idempotency key and emit the canonical name"
             )
         return canonical
-
-
-class IngestEventBatch(BaseModel):
-    """A batch of ingestion events to be processed together."""
-    
-    events: list[IngestEvent] = Field(default_factory=list, description="List of ingest events")

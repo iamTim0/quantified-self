@@ -17,7 +17,7 @@ from contextlib import asynccontextmanager
 
 import httpx
 import websockets
-from fastapi import FastAPI, HTTPException, Query, Request, Response, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask

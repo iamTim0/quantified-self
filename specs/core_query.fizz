@@ -1,5 +1,11 @@
 # Fizzbee Formal Specification: Core Data Service Query Layer
 # Models REST & gRPC read queries, tenant filtering, and cross-tenant consent checking.
+#
+# `QuerySelfData` is implemented. `QueryOtherData` is not, and deliberately so: an earlier
+# version shipped the grant half of sharing (create, list, revoke) while no read path ever
+# consulted `tenant_shares`, so a recipient held a grant that granted nothing. That half was
+# removed rather than left in place. This action stays as the specification the feature must
+# satisfy when it returns — StrictTenantIsolationOnRead is what an implementation has to prove.
 
 TENANTS = ["tenant_a", "tenant_b", "tenant_c"]
 METRICS = ["sleep_score", "readiness_score", "steps"]

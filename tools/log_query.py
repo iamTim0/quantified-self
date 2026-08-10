@@ -14,7 +14,6 @@ import argparse
 import glob
 import os
 import sys
-from pathlib import Path
 
 
 def filter_log_line(

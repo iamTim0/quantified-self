@@ -20,13 +20,9 @@ export const en = {
   "common.saving": "Saving…",
   "common.close": "Close",
   "common.delete": "Delete",
-  "common.loading": "Loading…",
   "common.pleaseWait": "Please wait…",
-  "common.retry": "Try again",
   "common.pending": "Pending",
-  "common.none": "None",
   "common.unknown": "Unknown",
-  "common.error": "Error",
   "common.days_one": "{count} day",
   "common.days_other": "{count} days",
 
@@ -42,7 +38,6 @@ export const en = {
   "sidebar.quality": "Data quality",
   "sidebar.analysis": "Analysis",
   "sidebar.connectors": "Connectors",
-  "sidebar.share": "Share & export",
   "sidebar.docs": "Documentation",
   "sidebar.docsTitle": "Open the platform documentation",
   "sidebar.settings": "Settings",
@@ -52,7 +47,6 @@ export const en = {
   "header.docs": "Documentation",
   "header.refresh": "Refresh",
   "header.refreshTitle": "Reload the whole page",
-  "header.share": "Export & share",
   "header.addConnector": "Add connector",
 
   // ── Legal footer and legal pages ───────────────────────────────────────────
@@ -98,17 +92,6 @@ export const en = {
   "auth.callbackTitle": "Sign-in failed",
   "auth.callbackDone": "Signed in. Redirecting…",
   "auth.callbackIncomplete": "The provider's response was incomplete.",
-
-  // ── Sharing ─────────────────────────────────────────────────────────────
-  "share.title": "Share data",
-  "share.intro": "Give coaches, doctors or partners secure read access to your health data.",
-  "share.emailPlaceholder": "recipient@example.com",
-  "share.submit": "Send invitation",
-  "share.submitting": "Sharing…",
-  "share.failed": "Sharing failed.",
-  "share.success": "Data shared with {email}.",
-  "share.activeTitle": "Active shares",
-  "share.revoke": "Revoke share",
 
   // ── System warnings ─────────────────────────────────────────────────────
   "warnings.region": "System warnings",
@@ -234,7 +217,6 @@ export const en = {
   "map.hideTilesTitle": "Back to the plain view",
   "map.privacyLead":
     "No location data is sent to a map provider. Loading the tiles makes the part of the map you are looking at visible to that provider.",
-  "map.deferred": "is only loaded once you ask for it.",
   "map.empty": "No GPS points in the selected period.",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
@@ -243,16 +225,6 @@ export const en = {
   "map.headline": "GPS locations & route",
 
   // ── Metric cards ────────────────────────────────────────────────────────
-  "cards.calories": "Ø calories",
-  "cards.protein": "Ø protein",
-  "cards.carbs": "Ø carbohydrates",
-  "cards.fat": "Ø fat",
-  "cards.locations": "Locations / GPS",
-  "cards.sleepScore": "Ø sleep score",
-  "cards.readiness": "Ø readiness",
-  "cards.steps": "Ø steps",
-  "cards.unitPoints": "points",
-  "cards.unitSteps": "steps",
   "cards.range": "Range: {min} – {max} {unit}",
 
   // ── Connectors ──────────────────────────────────────────────────────────
@@ -279,13 +251,11 @@ export const en = {
   "connectors.passiveHint": "Passive · receives data",
   "connectors.activeHint": "Active · polls the service",
   "connectors.soon": "Coming soon",
-  "connectors.docsFor": "Open the documentation for {name}",
   "connectors.openDocs": "Open the documentation",
   // Names the state, not a cause. The row shows `last_sync_message` underneath, and
   // that is the only thing here that knows why a run failed — a badge that claimed
   // "HTTP 401 auth error" labelled an unreadable export archive as an expired token.
   "connectors.syncFailed": "Last run failed",
-  "connectors.editCredentials": "Edit the credentials",
   "connectors.disconnect": "Disconnect and delete this connector",
   "connectors.connectNow": "Connect now",
   "connectors.loadingDetails": "Loading connectors and queue details…",
@@ -306,9 +276,6 @@ export const en = {
   "connectors.queued": "Queued",
   "connectors.newConnector": "New connector",
   "connectors.docs": "Docs",
-  "connectors.queueStatus": "Queue status",
-  "connectors.eventQueued": "🟡 Event queued",
-  "connectors.standby": "🟢 Standby",
   "connectors.processing": "Event queued (processing)",
   "connectors.readyActive": "Ready / active",
   "connectors.webhookDriven": "Webhook · event-driven",
@@ -804,7 +771,6 @@ export const en = {
     "A relationship is not a cause. Both values may depend on a third factor nobody recorded.",
   "analysis.sparklineLabel": "Rolling 7-day mean",
   "analysis.footerSources": "Sources: {list} · analysis version",
-  "analysis.computedAt": "Computed: {when}",
 
   // ── Analysis tiles ──────────────────────────────────────────────────────
   "analysis.usableMetrics": "Metrics that can be analysed",

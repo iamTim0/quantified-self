@@ -85,6 +85,7 @@
 - [ ] **📁 Universal CSV and DB importer with a visual editor**:
   - Generic CSV & SQL/SQLite export importer featuring a drag-and-drop web upload interface.
   - **Visual Column Mapper & Data Editor**: Interactive UI allowing users to map arbitrary CSV columns to Quantified Self metrics, preview data tables, correct missing values or formatting errors visually, and execute batch imports.
+  - Column headers arrive in whatever language the exporting app was set to, so the mapper reads and writes the connector mapping rules of Phase 8 rather than asking for the same translation on every upload.
 - [x] **📈 Deterministic Insight Foundation**:
   - Tenant-scoped daily Pearson correlation analysis with a Dashboard Data Quality Center.
 - [ ] **🤖 Generative AI & Vector Insight Features**:
@@ -109,14 +110,85 @@
 - [ ] **Analysis Dashboard Expansion**: organize correlations, trends, anomalies, data quality, period comparisons, routines and baselines with interactive, statistically cautious visualizations.
 - [ ] **Vector-First Geodata UI**: make vectors the default, lazy-load optional map providers, evaluate free alternatives, and always provide a vector fallback.
 
-## 🔵 Phase 8: Documentation & Legal Pages (Planned)
+## 🔵 Phase 8: Metric Mapping & Deferred Ingestion (Planned)
+
+A name this platform does not recognise currently costs the reading. Core acks and drops the
+event (`core/events/consumer.py`), and only the *shape* survives, in `ingest_field_reports`,
+which stores no values by design. That is the right answer for a field nobody has looked at
+yet and the wrong one for a field whose only problem is its spelling: an export names its steps
+column in whatever language the app was set to, and a provider that renames `avgHeartRate` to
+`heartRate` costs every workout's heart rate until somebody notices. This phase keeps the value
+while the question is open, and lets the user answer it.
+
+- [ ] **🧊 Quarantine instead of drop**:
+  - Store an unresolvable point in its own tenant-scoped table rather than discarding it —
+    raw `metric_type`, timestamp, value, metadata (including `provider_value` and `units`),
+    the importer's `idempotency_key`, connector, sync run, first and last seen.
+  - Never in `data_points`. An unresolved name must not be readable by any analysis, chart or
+    export, which is what keeps rule 15 true while the value is held.
+  - Cascades from tenant and connector and is covered by account deletion, like
+    `ingest_field_reports`.
+- [ ] **🔗 Per-connector mapping rules**:
+  - Resolve an unmapped name in the Data Quality Center, which already lists it under
+    **Not yet supported**, with four outcomes: **map**, **adopt**, **discard**, **keep**.
+  - **Map** — the name is a catalogued metric under another spelling. The rule names the target
+    metric *and the unit the source states*, because a translated export is as likely to change
+    the unit as the name, and `convert()` runs on replay.
+  - **Adopt** — a genuinely new quantity, landing in the `custom_` dynamic namespace with a
+    declared unit, aggregation and cadence.
+  - **Discard** — drop it and keep dropping it; the rule is what stops the same name arriving
+    into the queue forever.
+  - **Keep** — no decision yet. The rows wait, which is the point.
+  - Rules are applied by Core before rejection and are held by Core. Importers stay stateless
+    (rule 8) and learn nothing they would have to store.
+- [ ] **🔁 Retroactive replay**:
+  - Applying a rule replays every quarantined row it matches as an ordinary tenant-scoped run,
+    visible in the connector's history with the usual `ON CONFLICT DO NOTHING`.
+  - Promotion **re-derives** `idempotency_key` from the canonical name via the shared
+    `idempotency_key()` helper — the same value an importer produces once its transformer or the
+    registry catches up. Rewriting the name without the key is precisely what the consumer
+    rejects today, because it is how a series ends up with two rows per reading.
+  - A rule applies to new arrivals from then on: a translation problem is answered once, not
+    once per sync.
+- [ ] **🚧 The limits — a mapping is not a licence to invent**:
+  - A rule may never redefine a name the registry already catalogues. A tenant-local rewrite of
+    `steps` would put a wrong number in the same column as the right ones, and a wrong number is
+    worse than a missing one (rule 19) because nothing distinguishes it from a right one.
+  - Adoption goes under `custom_`, never as a bare name. A tenant does not extend the registry;
+    the registry is extended in a commit.
+  - Quarantine is bounded — caps on distinct unknown names and rows per connector, with refusals
+    recorded rather than silent, and a retention default where *keep indefinitely* is an explicit
+    per-name choice. A provider that nests record identifiers into keys otherwise fills the table
+    with one name per record, the same failure `MAX_TRACKED_PATHS` already guards the field report
+    against.
+  - Quarantine holds values, which the field report deliberately does not, so it stays a queue and
+    never becomes the raw-payload archive rule 19 forbids: one row per unresolved point, no whole
+    payloads. The categories the Apple Health archive path skips on purpose — ECG, cycle tracking,
+    medications, State of Mind, clinical records — are excluded *before* quarantine and stay named
+    in the field report only. An unrecognised field is not a way around a decision made deliberately.
+- [ ] **📊 Feedback into the registry**:
+  - The same rule appearing across connectors or tenants is evidence the registry is missing an
+    alias, not that every user should re-enter it. An aggregate view of rules — names and counts,
+    no values, no identifiers — is what turns "one user fixed their CSV" into a registry alias or
+    a transformer fix, and it is how the field report's shapes and this phase's resolutions become
+    the same signal.
+  - Nothing leaves the machine on its own, for the reason the field report's **Copy report** already
+    gives: an outward-facing action is a decision the user makes each time.
+- [ ] **✅ Specification, tests and documentation**:
+  - Fizzbee spec for the quarantine → resolve → replay transition: a quarantined row is promoted
+    exactly once or discarded, never both, and never lands under a tenant other than the one it
+    arrived for.
+  - Documentation in [data quality](docs/features/data-quality.md) for the resolution workflow, and
+    in [metrics](docs/metrics.md) for how a tenant rule relates to a registry alias.
+
+## 🔵 Phase 9: Documentation & Legal Pages (Planned)
 
 - [ ] **Hosted MkDocs Material Documentation**: build and host a standalone `squidfunk/mkdocs-material` site with navigation, search, mobile layout, CI build and link validation.
 - [ ] Document architecture, data flows, analyses, importers, data gaps, Smart/Force import, APIs, operations, security, limitations and troubleshooting.
 - [ ] Add contextual links from dashboard, import configuration, gap detection, duplicate detection, settings, login, registration and footer.
 - [ ] **German Privacy Policy & Imprint**: add plain, responsive text pages without cards or decorative UI; use realistic implementation-based templates, explicit placeholders, and a legal-review warning.
 
-## 🔵 Phase 9: Verification & Governance (Required)
+## 🔵 Phase 10: Verification & Governance (Required)
 
 - [ ] Use Sub-Agents for independent importer, integration, test and documentation reviews when available; critically validate their results.
 - [ ] Verify Core-only database ownership, gRPC Analysis access, NATS importer flow, tenant filters, idempotency, `X-Request-ID`, secret handling and no shared mutable state.

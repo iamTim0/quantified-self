@@ -7,13 +7,11 @@ import {
   Lock,
   Building,
   ShieldCheck,
-  Key,
   LogOut,
   Check,
   Copy,
   AlertCircle,
   CheckCircle2,
-  Database,
   Trash2,
   AlertTriangle,
   RefreshCw,
@@ -51,7 +49,6 @@ export default function ProfileTab({
   const [passwordSuccess, setPasswordSuccess] = useState("");
 
   const [copiedTenantId, setCopiedTenantId] = useState(false);
-  const [copiedToken, setCopiedToken] = useState(false);
 
   // 1-Click Deletion States
   const [wipeLoading, setWipeLoading] = useState(false);

@@ -8,7 +8,6 @@ Verifies interactive user flows & UI buttons:
 5. Profile & Settings Account Wipe confirmation
 """
 
-import pytest
 
 
 def test_ui_overview_tab_and_refresh_trigger():

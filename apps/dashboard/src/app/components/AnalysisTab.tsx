@@ -164,7 +164,7 @@ export default function AnalysisTab({
   tenantId?: string;
   refreshTrigger?: number;
 }) {
-  const { t, formatDate, formatDateTime } = useI18n();
+  const { t, formatDate } = useI18n();
   const [data, setData] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");

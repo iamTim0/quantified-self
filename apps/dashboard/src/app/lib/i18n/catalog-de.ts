@@ -20,13 +20,9 @@ export const de: Record<MessageKey, string> = {
   "common.saving": "Speichert…",
   "common.close": "Schließen",
   "common.delete": "Löschen",
-  "common.loading": "Lädt…",
   "common.pleaseWait": "Bitte warten…",
-  "common.retry": "Erneut versuchen",
   "common.pending": "Ausstehend",
-  "common.none": "Keine",
   "common.unknown": "Unbekannt",
-  "common.error": "Fehler",
   "common.days_one": "{count} Tag",
   "common.days_other": "{count} Tage",
 
@@ -42,7 +38,6 @@ export const de: Record<MessageKey, string> = {
   "sidebar.quality": "Datenqualität",
   "sidebar.analysis": "Analysen",
   "sidebar.connectors": "Connectors",
-  "sidebar.share": "Teilen & Export",
   "sidebar.docs": "Dokumentation",
   "sidebar.docsTitle": "Zentrale Plattform-Dokumentation öffnen",
   "sidebar.settings": "Einstellungen",
@@ -52,7 +47,6 @@ export const de: Record<MessageKey, string> = {
   "header.docs": "Dokumentation",
   "header.refresh": "Aktualisieren",
   "header.refreshTitle": "Gesamte Seite neu laden",
-  "header.share": "Export & Teilen",
   "header.addConnector": "Connector hinzufügen",
 
   // ── Rechtliches ────────────────────────────────────────────────────────────
@@ -98,18 +92,6 @@ export const de: Record<MessageKey, string> = {
   "auth.callbackTitle": "Anmeldung fehlgeschlagen",
   "auth.callbackDone": "Angemeldet. Weiterleitung…",
   "auth.callbackIncomplete": "Die Rückmeldung des Anbieters war unvollständig.",
-
-  // ── Sharing ─────────────────────────────────────────────────────────────
-  "share.title": "Daten teilen",
-  "share.intro":
-    "Gewähre Trainern, Ärzten oder Partnern sicheren Lesezugriff auf deine Gesundheitsdaten.",
-  "share.emailPlaceholder": "empfaenger@example.com",
-  "share.submit": "Einladung senden",
-  "share.submitting": "Wird freigegeben…",
-  "share.failed": "Freigabe fehlgeschlagen.",
-  "share.success": "Daten mit {email} geteilt.",
-  "share.activeTitle": "Aktive Freigaben",
-  "share.revoke": "Freigabe widerrufen",
 
   // ── System warnings ─────────────────────────────────────────────────────
   "warnings.region": "Systemwarnungen",
@@ -239,7 +221,6 @@ export const de: Record<MessageKey, string> = {
   "map.hideTilesTitle": "Zurück zur Vektor-Darstellung",
   "map.privacyLead":
     "Es werden keine Standortdaten an Kartenanbieter übertragen. Beim Laden der Kacheln wird der betrachtete Kartenausschnitt für den Anbieter sichtbar.",
-  "map.deferred": "wird erst geladen, wenn du es ausdrücklich möchtest.",
   "map.empty": "Keine GPS-Punkte im gewählten Zeitraum.",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
@@ -248,16 +229,6 @@ export const de: Record<MessageKey, string> = {
   "map.headline": "GPS-Standorte & Strecke",
 
   // ── Metric cards ────────────────────────────────────────────────────────
-  "cards.calories": "Ø Kalorien",
-  "cards.protein": "Ø Protein",
-  "cards.carbs": "Ø Kohlenhydrate",
-  "cards.fat": "Ø Fett",
-  "cards.locations": "Standorte / GPS",
-  "cards.sleepScore": "Ø Schlaf-Score",
-  "cards.readiness": "Ø Readiness",
-  "cards.steps": "Ø Schritte",
-  "cards.unitPoints": "Punkte",
-  "cards.unitSteps": "Schritte",
   "cards.range": "Spanne: {min} – {max} {unit}",
 
   // ── Connectors ──────────────────────────────────────────────────────────
@@ -285,10 +256,8 @@ export const de: Record<MessageKey, string> = {
   "connectors.passiveHint": "Passiv · empfängt Daten",
   "connectors.activeHint": "Aktiv · fragt den Dienst ab",
   "connectors.soon": "Demnächst",
-  "connectors.docsFor": "Dokumentation zu {name} öffnen",
   "connectors.openDocs": "Dokumentation öffnen",
   "connectors.syncFailed": "Letzter Lauf fehlgeschlagen",
-  "connectors.editCredentials": "Zugangsdaten bearbeiten",
   "connectors.disconnect": "Connector trennen und löschen",
   "connectors.connectNow": "Jetzt verknüpfen",
   "connectors.loadingDetails": "Connector- und Queue-Details laden…",
@@ -309,9 +278,6 @@ export const de: Record<MessageKey, string> = {
   "connectors.queued": "In Warteschlange",
   "connectors.newConnector": "Neuer Connector",
   "connectors.docs": "Doku",
-  "connectors.queueStatus": "Queue-Status",
-  "connectors.eventQueued": "🟡 Event in Warteschlange",
-  "connectors.standby": "🟢 Bereit",
   "connectors.processing": "Event in Warteschlange (wird verarbeitet)",
   "connectors.readyActive": "Bereit / aktiv",
   "connectors.webhookDriven": "Webhook · ereignisbasiert",
@@ -816,7 +782,6 @@ export const de: Record<MessageKey, string> = {
     "Ein Zusammenhang ist keine Ursache. Beide Werte können von einem dritten, nicht erfassten Faktor abhängen.",
   "analysis.sparklineLabel": "Gleitender 7-Tage-Mittelwert",
   "analysis.footerSources": "Quellen: {list} · Analyseversion",
-  "analysis.computedAt": "Berechnet: {when}",
 
   // ── Analysis tiles ──────────────────────────────────────────────────────
   "analysis.usableMetrics": "Auswertbare Metriken",

@@ -14,7 +14,6 @@ and canonical event payload structure for every single importer:
 Verifies Rule 2 (Tenant Isolation) & Rule 4 (Deterministic Idempotency Key).
 """
 
-import json
 import uuid
 from datetime import datetime, timezone
 import pytest

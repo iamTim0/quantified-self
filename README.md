@@ -319,7 +319,8 @@ The database utilizes PostgreSQL extended with **TimescaleDB** for hypertable-ba
 - `users`: Individual user accounts with roles and hashed credentials. `sessions_valid_from` is the cutoff that makes "revoke every session" cover access tokens already in circulation, not just refresh tokens.
 - `data_sources`: Registered integrations (e.g., user's Yazio connector).
 - `data_points`: TimescaleDB hypertable containing actual metrics.
-- `tenant_shares`: Explicit consent grants for cross-tenant data sharing.
+- `tenant_shares`: Reserved for cross-tenant consent grants. No code reads or writes it — see
+  *Multi-Tenancy* below.
 
 `infra/db/init.sql` creates the schema for a fresh container and seeds **nothing**.
 It used to end by inserting an owner account with a bcrypt hash committed to this
@@ -374,13 +375,18 @@ Importer and feature documentation is maintained as Markdown under `docs/` and b
 
 The tenant-scoped Data Quality Center exposes daily gap detection, cross-source conflict detection and deterministic Pearson correlations. The Dashboard explains what each quality signal means, shows recommendations for missing data or source conflicts, and places correlations in the `/analysis` area with simple strength labels. The visual import API accepts at most 5,000 mapped rows per request, verifies ownership of every source and applies the same exact-once constraint as broker ingestion. The Dashboard route `/quality` presents the quality indicators without exposing data from other workspaces.
 
-## Multi-Tenancy & Data Sharing
+## Multi-Tenancy
 
 ### Tenant Isolation
 The platform employs **application-level filtering**. Every database query in the Core service MUST explicitly filter by `tenant_id`. The API Gateway extracts the `tenant_id` from the JWT and passes it downstream (`X-Tenant-ID`).
 
-### Data Sharing
-Cross-tenant sharing uses an explicit consent model via the `tenant_shares` table.
+A workspace can therefore only read its own data — there is no cross-tenant read path.
+Sharing was removed again for exactly that reason: the API recorded a grant in `tenant_shares`
+and the Dashboard listed it, but no query ever consulted the table, so a recipient held a
+grant that granted nothing. The consent model it is meant to become is specified in
+[`specs/core_query.fizz`](specs/core_query.fizz) (`QueryOtherData`) and tracked in
+[ROADMAP.md](ROADMAP.md); the table is kept, unused, so the account wipe can still clear rows
+an earlier version wrote.
 
 ## Adding a New Importer
 

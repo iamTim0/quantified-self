@@ -9,7 +9,6 @@ import ExplorerTab from "./components/ExplorerTab";
 import ConnectorsPage, { ConnectorItem } from "./components/ConnectorsPage";
 import ConnectorModal from "./components/ConnectorModal";
 import AuthScreen, { UserAuthData } from "./components/AuthScreen";
-import ShareModal from "./components/ShareModal";
 import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
@@ -113,7 +112,6 @@ export default function DashboardPage() {
     undefined,
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
@@ -392,7 +390,6 @@ export default function DashboardPage() {
           <Sidebar
             activeTab={activeTab}
             onTabChange={handleTabChange}
-            onShare={() => setIsShareModalOpen(true)}
             onLogout={handleLogout}
           />
 
@@ -401,9 +398,7 @@ export default function DashboardPage() {
             <TopHeader
               userName={userName}
               userEmail={userEmail}
-              userRole={userRole}
               onOpenConfigureModal={() => handleOpenConfigureModal()}
-              onShare={() => setIsShareModalOpen(true)}
               onNavigateToProfile={() => handleTabChange("profile")}
               onRefresh={triggerRefresh}
             />
@@ -489,12 +484,6 @@ export default function DashboardPage() {
               isEditing={Boolean(selectedModalConnector?.id)}
               tenantId={tenantId}
               onSaved={triggerRefresh}
-            />
-
-            <ShareModal
-              isOpen={isShareModalOpen}
-              onClose={() => setIsShareModalOpen(false)}
-              apiBase={API_BASE}
             />
 
             <LegalFooter />

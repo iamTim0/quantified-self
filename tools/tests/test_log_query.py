@@ -1,5 +1,4 @@
 """Unit tests for tools.log_query."""
-import pytest
 from tools.log_query import filter_log_line, query_logs
 import tempfile
 import os

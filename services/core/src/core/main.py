@@ -206,11 +206,6 @@ class UserLoginRequest(BaseModel):
     password: str = Field(..., description="User password")
 
 
-class CreateShareRequest(BaseModel):
-    grantee_email: str = Field(..., description="Email of the user to share data with")
-    scope: str = Field("read_all", description="Scope of shared data e.g. read_all or read_metric:sleep_score")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if getattr(app.state, "testing", False):
@@ -1581,89 +1576,6 @@ async def unlink_identity(
     await session.delete(identity)
     await session.commit()
     return {"status": "unlinked", "provider_slug": provider_slug}
-
-
-# ─── Tenant Sharing Endpoints ───────────────────────────────
-
-@app.post("/api/v1/data/shares")
-async def create_share(
-    req: CreateShareRequest,
-    session: AsyncSession = Depends(get_session),
-):
-    tenant_id = get_current_tenant_id()
-
-    stmt = select(User).where(User.email == req.grantee_email)
-    res = await session.execute(stmt)
-    grantee_user = res.scalar_one_or_none()
-
-    if not grantee_user:
-        raise HTTPException(status_code=404, detail="Target user not found")
-
-    if grantee_user.tenant_id == tenant_id:
-        raise HTTPException(status_code=400, detail="Cannot share with yourself or users in your own tenant")
-
-    share_id = str(uuid.uuid4())
-    new_share = TenantShare(
-        id=share_id,
-        grantor_tenant_id=tenant_id,
-        grantee_tenant_id=grantee_user.tenant_id,
-        scope=req.scope,
-    )
-    session.add(new_share)
-    try:
-        await session.commit()
-    except IntegrityError:
-        await session.rollback()
-        raise HTTPException(status_code=400, detail="Share already exists") from None
-
-    return {"message": "Share created", "share_id": share_id, "grantee_tenant_id": grantee_user.tenant_id}
-
-
-@app.get("/api/v1/data/shares")
-async def list_shares(session: AsyncSession = Depends(get_session)):
-    tenant_id = get_current_tenant_id()
-
-    stmt = select(TenantShare).where(TenantShare.grantor_tenant_id == tenant_id)
-    res = await session.execute(stmt)
-    granted_by_me = res.scalars().all()
-
-    stmt_rec = select(TenantShare).where(TenantShare.grantee_tenant_id == tenant_id)
-    res_rec = await session.execute(stmt_rec)
-    granted_to_me = res_rec.scalars().all()
-
-    return {
-        "granted_by_me": [
-            {"id": s.id, "grantee_tenant_id": s.grantee_tenant_id, "scope": s.scope, "created_at": s.created_at.isoformat()}
-            for s in granted_by_me
-        ],
-        "granted_to_me": [
-            {"id": s.id, "grantor_tenant_id": s.grantor_tenant_id, "scope": s.scope, "created_at": s.created_at.isoformat()}
-            for s in granted_to_me
-        ],
-    }
-
-
-@app.delete("/api/v1/data/shares/{share_id}")
-async def revoke_share(
-    share_id: str,
-    session: AsyncSession = Depends(get_session),
-):
-    tenant_id = get_current_tenant_id()
-
-    stmt = select(TenantShare).where(
-        TenantShare.id == share_id,
-        TenantShare.grantor_tenant_id == tenant_id,
-    )
-    res = await session.execute(stmt)
-    share = res.scalar_one_or_none()
-
-    if not share:
-        raise HTTPException(status_code=404, detail="Share not found or access denied")
-
-    await session.delete(share)
-    await session.commit()
-
-    return {"status": "success", "message": "Share revoked"}
 
 
 # ─── Core Metric Endpoints ───────────────────────────────────
@@ -4014,6 +3926,9 @@ async def delete_tenant_account(
     """1-Click full account wipe (data points, data sources, tenant shares)."""
     dp_res = await session.execute(delete(DataPoint).where(DataPoint.tenant_id == tenant_id))
     ds_res = await session.execute(delete(DataSource).where(DataSource.tenant_id == tenant_id))
+    # Cross-tenant sharing was withdrawn before it could read anything, so nothing
+    # writes `tenant_shares` any more. The delete stays: an installation that ran an
+    # earlier version has rows in there, and Art. 17 covers those too.
     ts_res = await session.execute(
         delete(TenantShare).where(
             or_(

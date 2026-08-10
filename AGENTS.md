@@ -83,7 +83,6 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 
 - **Ingestion**: Importer -> NATS (`qs.ingest.<type>`) -> Core (Consumer) -> PostgreSQL DB.
 - **Query**: External Client -> Gateway (JWT auth, header injection) -> Core (via gRPC from Analysis, or REST from Gateway) -> Client Response.
-- **Sharing**: Access control via the `tenant_shares` table. Explicit grant/revoke required.
 - **Connector Config**: Dashboard UI -> Gateway -> Core Service (`POST /api/v1/data/sources/configure` -> Fernet AES-256 Encrypted DB) -> Importer dynamic fetch.
 - **Tracing**: Request -> Gateway (injects `X-Request-ID`) -> Core (`X-Request-ID` in headers & logs `[req_id=...]`) -> Importers/NATS (`X-Request-ID`).
 
@@ -127,7 +126,7 @@ Every string in the dashboard exists twice, and the type system is what keeps it
    English is the source: it defines `MessageKey`, so this file decides what exists.
 2. Add the same key to **`catalog-de.ts`**. Not optional — omitting it is a type error, which
    is the point.
-3. Use it as `t("area.thing")`. Values interpolate as `{name}`: `t("share.success", { email })`.
+3. Use it as `t("area.thing")`. Values interpolate as `{name}`: `t("auth.signInWith", { provider })`.
    Where a count changes the wording, add `*_one` / `*_other` and pick with
    `plural(n, "…_one", "…_other")`.
 4. A string held in state stores the **key**, not the rendered sentence — a rendered sentence

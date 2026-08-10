@@ -7,7 +7,6 @@ import {
   Plug,
   User,
   LogOut,
-  Share2,
   Activity,
   ArrowUpRight,
   ScanSearch,
@@ -22,11 +21,10 @@ export type TabType = "overview" | "explorer" | "quality" | "analysis" | "connec
 interface SidebarProps {
   activeTab: TabType;
   onTabChange: (tab: TabType) => void;
-  onShare: () => void;
   onLogout: () => void;
 }
 
-export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: SidebarProps) {
+export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
   const t = useT();
   const menuItems = [
     { id: "overview" as TabType, label: t("sidebar.overview"), icon: LayoutDashboard },
@@ -81,14 +79,6 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
                 </button>
               );
             })}
-
-            <button
-              onClick={onShare}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"
-            >
-              <Share2 className="w-4 h-4 text-slate-400" />
-              <span>{t("sidebar.share")}</span>
-            </button>
           </nav>
         </div>
 

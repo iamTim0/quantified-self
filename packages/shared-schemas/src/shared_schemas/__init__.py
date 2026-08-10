@@ -2,8 +2,8 @@
 Shared Python schemas for Quantified Self platform.
 """
 
-from .data_point import DataPointQuery, DataPointRead, provenance
-from .events import IngestEvent, IngestEventBatch, idempotency_key
+from .data_point import provenance
+from .events import IngestEvent, idempotency_key
 from .field_report import (
     MAX_TRACKED_PATHS,
     FieldReport,
@@ -29,7 +29,6 @@ from .metrics import (
     is_known_metric_type,
     metrics_for_source,
 )
-from .tenant import ShareScope, TenantContext, TenantShareGrant
 from .upload_spool import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_TTL_SECONDS,
@@ -50,22 +49,16 @@ __all__ = [
     "METRIC_ALIASES",
     "METRIC_CATALOG",
     "Aggregation",
-    "DataPointQuery",
-    "DataPointRead",
     "FieldReport",
     "FieldReportCollector",
     "FieldSighting",
     "IngestEvent",
-    "IngestEventBatch",
     "MetricCategory",
     "MetricDefinition",
     "MetricNamespace",
     "MetricUnit",
     "OffsetMismatch",
-    "ShareScope",
     "SpoolTooLarge",
-    "TenantContext",
-    "TenantShareGrant",
     "UnknownMetricTypeError",
     "UnknownUpload",
     "UnsupportedConversionError",

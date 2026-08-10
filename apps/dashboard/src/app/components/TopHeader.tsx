@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { BookOpen, Plus, RefreshCw, Share2 } from "lucide-react";
+import { BookOpen, Plus, RefreshCw } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 import LanguageSwitcher from "./LanguageSwitcher";
@@ -9,9 +9,7 @@ import LanguageSwitcher from "./LanguageSwitcher";
 interface TopHeaderProps {
   userName: string;
   userEmail: string;
-  userRole: string;
   onOpenConfigureModal: () => void;
-  onShare: () => void;
   onNavigateToProfile: () => void;
   onRefresh: () => void;
 }
@@ -19,9 +17,7 @@ interface TopHeaderProps {
 export default function TopHeader({
   userName,
   userEmail,
-  userRole,
   onOpenConfigureModal,
-  onShare,
   onNavigateToProfile,
   onRefresh,
 }: TopHeaderProps) {
@@ -58,15 +54,6 @@ export default function TopHeader({
           <RefreshCw className="w-3.5 h-3.5" />
           <span>{t("header.refresh")}</span>
         </button>
-        {/* Quick Share Action */}
-        <button
-          onClick={onShare}
-          className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
-        >
-          <Share2 className="w-3.5 h-3.5 text-slate-500" />
-          <span>{t("header.share")}</span>
-        </button>
-
         {/* Add Connector Button (Primary Dark Emerald) */}
         <button
           onClick={onOpenConfigureModal}
