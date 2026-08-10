@@ -156,8 +156,6 @@ const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[]
   { id: "quality", labelKey: "analysis.tabQuality", icon: ShieldQuestion },
 ];
 
-
-
 export default function AnalysisTab({
   apiBase,
   refreshTrigger,
@@ -254,9 +252,7 @@ export default function AnalysisTab({
             {t("sidebar.analysis")}
           </p>
           <h1 className="text-3xl font-extrabold text-slate-900">{t("analysis.title")}</h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            {t("analysis.subtitleTail")}
-          </p>
+          <p className="mt-2 max-w-2xl text-sm text-slate-500">{t("analysis.subtitleTail")}</p>
         </div>
         {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
       </header>
@@ -326,9 +322,7 @@ export default function AnalysisTab({
             key={id}
             onClick={() => setSection(id)}
             className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
-              section === id
-                ? "bg-[#0d5c3a] text-white"
-                : "text-slate-600 hover:bg-slate-100"
+              section === id ? "bg-[#0d5c3a] text-white" : "text-slate-600 hover:bg-slate-100"
             }`}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -364,10 +358,7 @@ export default function AnalysisTab({
             />
             <StatTile
               label={t("analysis.unusualDays")}
-              value={Object.values(data.anomalies).reduce(
-                (n, a) => n + a.anomalies.length,
-                0,
-              )}
+              value={Object.values(data.anomalies).reduce((n, a) => n + a.anomalies.length, 0)}
               hint={t("analysis.outsideNormal")}
             />
           </div>
@@ -383,9 +374,7 @@ export default function AnalysisTab({
             {t("analysis.disclaimer")}
           </p>
 
-          {correlations.length > 0 && (
-            <TopFindings correlations={correlations.slice(0, 3)} />
-          )}
+          {correlations.length > 0 && <TopFindings correlations={correlations.slice(0, 3)} />}
 
           <Provenance provenance={data.provenance} />
         </div>
@@ -394,9 +383,7 @@ export default function AnalysisTab({
       {data && section === "correlations" && (
         <div className="space-y-5">
           {correlations.length === 0 ? (
-            <EmptyNote>
-              {t("analysis.noneMatchFilters")}
-            </EmptyNote>
+            <EmptyNote>{t("analysis.noneMatchFilters")}</EmptyNote>
           ) : (
             <>
               <Heatmap metrics={heatmap.metrics} lookup={heatmap.lookup} />
@@ -433,13 +420,17 @@ export default function AnalysisTab({
                       >
                         <span className="font-medium text-slate-700">
                           {l.metric_a} → {l.metric_b}{" "}
-                          <span className="text-slate-400">{t("analysis.lagDays", { count: l.lag_days })}</span>
+                          <span className="text-slate-400">
+                            {t("analysis.lagDays", { count: l.lag_days })}
+                          </span>
                         </span>
                         <span className="flex items-center gap-2">
                           <StrengthBar value={l.coefficient} />
                           <span className="w-28 text-right text-slate-500">
-                            {l.coefficient > 0 ? t("analysis.sameDirection") : t("analysis.oppositeDirection")} ·{" "}
-                            {l.strength_pct.toFixed(0)} % · n={l.sample_size}
+                            {l.coefficient > 0
+                              ? t("analysis.sameDirection")
+                              : t("analysis.oppositeDirection")}{" "}
+                            · {l.strength_pct.toFixed(0)} % · n={l.sample_size}
                           </span>
                         </span>
                       </div>
@@ -458,10 +449,7 @@ export default function AnalysisTab({
             <EmptyNote>{t("analysis.tooFewForTrend")}</EmptyNote>
           ) : (
             Object.entries(data.trends).map(([metric, trend]) => (
-              <article
-                key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4"
-              >
+              <article key={metric} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h3 className="text-sm font-bold text-slate-900">{metric}</h3>
                   <span
@@ -497,10 +485,7 @@ export default function AnalysisTab({
             <EmptyNote>{t("analysis.tooFewForNormalRange")}</EmptyNote>
           ) : (
             Object.entries(data.anomalies).map(([metric, a]) => (
-              <article
-                key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4"
-              >
+              <article key={metric} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <h3 className="text-sm font-bold text-slate-900">{metric}</h3>
                 <p className="mt-1 text-xs text-slate-600">{a.interpretation}</p>
                 {a.anomalies.length > 0 && (
@@ -519,8 +504,7 @@ export default function AnalysisTab({
                   </ul>
                 )}
                 <p className="mt-2 text-[11px] text-slate-400">
-                  {t("analysis.anomalyBasis", { days: a.sample_size })}{" "}
-                  gesundheitlich bedenklich.
+                  {t("analysis.anomalyBasis", { days: a.sample_size })} gesundheitlich bedenklich.
                 </p>
               </article>
             ))
@@ -534,16 +518,11 @@ export default function AnalysisTab({
             <EmptyNote>{t("analysis.tooFewForWeekly")}</EmptyNote>
           ) : (
             Object.entries(data.routines).map(([metric, r]) => (
-              <article
-                key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4"
-              >
+              <article key={metric} className="rounded-2xl border border-slate-200 bg-white p-4">
                 <h3 className="mb-2 text-sm font-bold text-slate-900">{metric}</h3>
                 <WeekdayChart data={r.per_weekday} />
                 {r.weekend_effect && (
-                  <p className="mt-2 text-xs text-slate-600">
-                    {r.weekend_effect.interpretation}
-                  </p>
+                  <p className="mt-2 text-xs text-slate-600">{r.weekend_effect.interpretation}</p>
                 )}
               </article>
             ))
@@ -554,15 +533,17 @@ export default function AnalysisTab({
       {data && section === "quality" && (
         <div className="space-y-3">
           <p className="text-xs text-slate-500">
-            Analysen laufen nur auf Metriken mit ausreichender Datenbasis. Alles andere
-            wird bewusst ausgeblendet statt schwach dargestellt.
+            Analysen laufen nur auf Metriken mit ausreichender Datenbasis. Alles andere wird bewusst
+            ausgeblendet statt schwach dargestellt.
           </p>
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-left">
                 <tr>
                   <th className="px-3 py-2 font-semibold text-slate-600">Metrik</th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">{t("analysis.colDays")}</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">
+                    {t("analysis.colDays")}
+                  </th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Abdeckung</th>
                   <th className="px-3 py-2 font-semibold text-slate-600">Status</th>
                 </tr>
@@ -599,15 +580,7 @@ export default function AnalysisTab({
 
 // ─── pieces ──────────────────────────────────────────────────
 
-function StatTile({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: number;
-  hint: string;
-}) {
+function StatTile({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
     <article className="rounded-3xl border border-slate-200 bg-white p-5">
       <p className="text-sm font-semibold text-slate-500">{label}</p>
@@ -658,26 +631,22 @@ function HeatmapLegend() {
   return (
     <div className="flex items-center gap-2 text-[11px] text-slate-500">
       <span>−100 %</span>
-      <span className="flex overflow-hidden rounded" role="img" aria-label={t("analysis.scaleLabel")}>
+      <span
+        className="flex overflow-hidden rounded"
+        role="img"
+        aria-label={t("analysis.scaleLabel")}
+      >
         {stops.map((s, i) => (
           <span key={i} className="h-3 w-6" style={{ background: s.color }} />
         ))}
       </span>
       <span>+100 %</span>
-      <span className="ml-1">
-        {t("analysis.scaleEnds")}
-      </span>
+      <span className="ml-1">{t("analysis.scaleEnds")}</span>
     </div>
   );
 }
 
-function Heatmap({
-  metrics,
-  lookup,
-}: {
-  metrics: string[];
-  lookup: Map<string, Correlation>;
-}) {
+function Heatmap({ metrics, lookup }: { metrics: string[]; lookup: Map<string, Correlation> }) {
   const t = useT();
   if (metrics.length < 2) return null;
   const cell = 46;
@@ -691,8 +660,7 @@ function Heatmap({
         <HeatmapLegend />
       </div>
       <p className="mb-3 text-xs text-slate-500">
-        {t("analysis.matrixHint")}{" "}
-        zu wenige gemeinsame Tage.
+        {t("analysis.matrixHint")} zu wenige gemeinsame Tage.
       </p>
       <div className="overflow-x-auto">
         <svg
@@ -814,14 +782,14 @@ function TopFindings({ correlations }: { correlations: Correlation[] }) {
               <span className="flex items-center gap-2 text-xs">
                 <StrengthBar value={c.coefficient} />
                 <span className="font-bold text-slate-700">
-                  {c.direction === "positive" ? t("analysis.sameDirection") : t("analysis.oppositeDirection")}{" "}
+                  {c.direction === "positive"
+                    ? t("analysis.sameDirection")
+                    : t("analysis.oppositeDirection")}{" "}
                   {c.strength_pct.toFixed(0)} %
                 </span>
               </span>
             </div>
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">
-              {c.interpretation}
-            </p>
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-600">{c.interpretation}</p>
           </div>
         ))}
       </div>
@@ -856,7 +824,9 @@ function CorrelationCard({
         <span className="flex items-center gap-2 text-xs">
           <StrengthBar value={c.coefficient} />
           <span className="font-bold text-slate-700">
-            {c.direction === "positive" ? t("analysis.sameDirection") : t("analysis.oppositeDirection")}{" "}
+            {c.direction === "positive"
+              ? t("analysis.sameDirection")
+              : t("analysis.oppositeDirection")}{" "}
             {c.strength_pct.toFixed(0)} %
           </span>
           {!c.significant && (
@@ -882,7 +852,8 @@ function CorrelationCard({
             <ul className="mt-0.5 space-y-0.5 text-slate-600">
               <li>Gemeinsame Tage: {c.sample_size}</li>
               <li>
-                Zeitraum: {formatDate(provenance.window_start)} – {formatDate(provenance.window_end)}
+                Zeitraum: {formatDate(provenance.window_start)} –{" "}
+                {formatDate(provenance.window_end)}
               </li>
               <li>{t("analysis.sources", { list: provenance.sources.join(", ") || "—" })}</li>
               <li>
@@ -909,9 +880,7 @@ function CorrelationCard({
           <div>
             <h4 className="font-bold text-slate-700">{t("analysis.limitsTitle")}</h4>
             <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-slate-600">
-              <li>
-                {t("analysis.limitsBody")}
-              </li>
+              <li>{t("analysis.limitsBody")}</li>
               {c.caveats.map((caveat) => (
                 <li key={caveat}>{caveat}</li>
               ))}
@@ -980,9 +949,7 @@ function WeekdayChart({
               />
             )}
           </span>
-          <span className="w-16 text-right text-slate-600">
-            {d.mean !== null ? d.mean : "—"}
-          </span>
+          <span className="w-16 text-right text-slate-600">{d.mean !== null ? d.mean : "—"}</span>
         </div>
       ))}
     </div>
@@ -995,8 +962,7 @@ function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
     <p className="text-[11px] text-slate-400">
       Zeitraum {formatDate(provenance.window_start)} – {formatDate(provenance.window_end)} ·
       {t("analysis.footerSources", { list: provenance.sources.join(", ") || "—" })}{" "}
-      {provenance.analysis_version} · berechnet{" "}
-      {formatDateTime(provenance.computed_at)}
+      {provenance.analysis_version} · berechnet {formatDateTime(provenance.computed_at)}
     </p>
   );
 }

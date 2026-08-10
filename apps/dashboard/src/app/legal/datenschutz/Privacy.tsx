@@ -56,9 +56,9 @@ export default function Privacy({ locale }: { locale: Locale }) {
 const de: Record<SectionId, ReactNode> = {
   intro: (
     <p>
-      Diese Erklärung beschreibt, welche personenbezogenen Daten in dieser
-      Quantified-Self-Plattform verarbeitet werden, zu welchem Zweck und auf welcher
-      Rechtsgrundlage. Sie beschreibt den tatsächlichen Stand der Anwendung.
+      Diese Erklärung beschreibt, welche personenbezogenen Daten in dieser Quantified-Self-Plattform
+      verarbeitet werden, zu welchem Zweck und auf welcher Rechtsgrundlage. Sie beschreibt den
+      tatsächlichen Stand der Anwendung.
     </p>
   ),
 
@@ -75,8 +75,8 @@ const de: Record<SectionId, ReactNode> = {
       <p>
         Datenschutzbeauftragte Person:{" "}
         <Placeholder>
-          Name und Kontakt, sofern eine Benennungspflicht nach Art. 37 DSGVO besteht —
-          sonst diesen Absatz entfernen
+          Name und Kontakt, sofern eine Benennungspflicht nach Art. 37 DSGVO besteht — sonst diesen
+          Absatz entfernen
         </Placeholder>
       </p>
     </>
@@ -88,15 +88,14 @@ const de: Record<SectionId, ReactNode> = {
       <p>
         Diese Anwendung verarbeitet <strong>Gesundheitsdaten</strong> (z. B. Schlaf,
         Herzfrequenzvariabilität, Erholung, Training, Ernährung) sowie{" "}
-        <strong>Standortdaten</strong>. Gesundheitsdaten sind besondere Kategorien
-        personenbezogener Daten im Sinne von Art. 9 Abs. 1 DSGVO.
+        <strong>Standortdaten</strong>. Gesundheitsdaten sind besondere Kategorien personenbezogener
+        Daten im Sinne von Art. 9 Abs. 1 DSGVO.
       </p>
       <p>
-        Ihre Verarbeitung erfolgt ausschließlich auf Grundlage Ihrer ausdrücklichen
-        Einwilligung nach Art. 9 Abs. 2 lit. a DSGVO. Sie erteilen diese Einwilligung,
-        indem Sie einen Connector einrichten oder Daten selbst hochladen. Sie können sie
-        jederzeit mit Wirkung für die Zukunft widerrufen, indem Sie den Connector
-        entfernen oder Ihr Konto löschen.
+        Ihre Verarbeitung erfolgt ausschließlich auf Grundlage Ihrer ausdrücklichen Einwilligung
+        nach Art. 9 Abs. 2 lit. a DSGVO. Sie erteilen diese Einwilligung, indem Sie einen Connector
+        einrichten oder Daten selbst hochladen. Sie können sie jederzeit mit Wirkung für die Zukunft
+        widerrufen, indem Sie den Connector entfernen oder Ihr Konto löschen.
       </p>
     </>
   ),
@@ -114,13 +113,11 @@ const de: Record<SectionId, ReactNode> = {
       </ul>
       <p>
         Jedes Konto gehört zu genau einem Arbeitsbereich (&bdquo;Tenant&ldquo;). Sämtliche
-        Datenbankabfragen sind auf diesen Arbeitsbereich eingeschränkt; ein Zugriff auf
-        Daten anderer Arbeitsbereiche ist technisch ausgeschlossen, sofern nicht über die
-        Freigabefunktion ausdrücklich eine Freigabe erteilt wurde.
+        Datenbankabfragen sind auf diesen Arbeitsbereich eingeschränkt; ein Zugriff auf Daten
+        anderer Arbeitsbereiche ist technisch ausgeschlossen, sofern nicht über die Freigabefunktion
+        ausdrücklich eine Freigabe erteilt wurde.
       </p>
-      <p>
-        Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Erfüllung des Nutzungsvertrags).
-      </p>
+      <p>Rechtsgrundlage: Art. 6 Abs. 1 lit. b DSGVO (Erfüllung des Nutzungsvertrags).</p>
     </>
   ),
 
@@ -128,9 +125,9 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>4. Anmeldung, Sitzungen und Cookies</h2>
       <p>
-        Für die Anmeldung setzt diese Anwendung technisch notwendige Cookies. Es werden
-        keine Cookies zu Werbe-, Tracking- oder Analysezwecken verwendet und keine Daten
-        an Dritte weitergegeben. Gesetzt werden:
+        Für die Anmeldung setzt diese Anwendung technisch notwendige Cookies. Es werden keine
+        Cookies zu Werbe-, Tracking- oder Analysezwecken verwendet und keine Daten an Dritte
+        weitergegeben. Gesetzt werden:
       </p>
       <table>
         <thead>
@@ -163,8 +160,8 @@ const de: Record<SectionId, ReactNode> = {
               <code>qs_csrf</code>
             </td>
             <td>
-              Zufallswert zum Schutz vor Cross-Site-Request-Forgery. Kein Zugangstoken:
-              er erlaubt für sich genommen keinen Zugriff auf Daten.
+              Zufallswert zum Schutz vor Cross-Site-Request-Forgery. Kein Zugangstoken: er erlaubt
+              für sich genommen keinen Zugriff auf Daten.
             </td>
             <td>Secure, SameSite=Lax, für die Oberfläche lesbar</td>
             <td>30 Tage</td>
@@ -174,8 +171,8 @@ const de: Record<SectionId, ReactNode> = {
               <code>qs-locale</code>
             </td>
             <td>
-              Die gewählte Anzeigesprache (<code>de</code> oder <code>en</code>). Enthält
-              keine personenbezogenen Daten.
+              Die gewählte Anzeigesprache (<code>de</code> oder <code>en</code>). Enthält keine
+              personenbezogenen Daten.
             </td>
             <td>SameSite=Lax, für die Oberfläche lesbar</td>
             <td>1 Jahr</td>
@@ -183,25 +180,25 @@ const de: Record<SectionId, ReactNode> = {
         </tbody>
       </table>
       <p>
-        <code>HttpOnly</code> bedeutet, dass die beiden Zugangs-Cookies für JavaScript im
-        Browser nicht lesbar sind. Sie können damit auch bei einer Sicherheitslücke in der
-        Oberfläche nicht ausgelesen und an Dritte übertragen werden.
+        <code>HttpOnly</code> bedeutet, dass die beiden Zugangs-Cookies für JavaScript im Browser
+        nicht lesbar sind. Sie können damit auch bei einer Sicherheitslücke in der Oberfläche nicht
+        ausgelesen und an Dritte übertragen werden.
       </p>
       <p>
-        Diese Cookies sind für den Betrieb des von Ihnen ausdrücklich angeforderten
-        Dienstes unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG) und bedürfen daher keiner
-        gesonderten Einwilligung. Beim Abmelden werden alle genannten Cookies gelöscht und
-        die zugehörige Sitzung zusätzlich serverseitig ungültig gemacht.
+        Diese Cookies sind für den Betrieb des von Ihnen ausdrücklich angeforderten Dienstes
+        unbedingt erforderlich (§ 25 Abs. 2 Nr. 2 TDDDG) und bedürfen daher keiner gesonderten
+        Einwilligung. Beim Abmelden werden alle genannten Cookies gelöscht und die zugehörige
+        Sitzung zusätzlich serverseitig ungültig gemacht.
       </p>
       <p>
-        Zusätzlich wird beim Anmelden über einen externen Anbieter kurzzeitig der Name des
-        gewählten Anbieters im <code>sessionStorage</code> des Browsers abgelegt, damit die
-        Rückleitung dem richtigen Anbieter zugeordnet werden kann. Dieser Eintrag enthält
-        keine personenbezogenen Daten und wird nach Abschluss der Anmeldung entfernt.
+        Zusätzlich wird beim Anmelden über einen externen Anbieter kurzzeitig der Name des gewählten
+        Anbieters im <code>sessionStorage</code> des Browsers abgelegt, damit die Rückleitung dem
+        richtigen Anbieter zugeordnet werden kann. Dieser Eintrag enthält keine personenbezogenen
+        Daten und wird nach Abschluss der Anmeldung entfernt.
       </p>
       <p>
-        Ein Erneuerungstoken ist nur einmal verwendbar. Wird ein bereits verbrauchtes
-        Token erneut vorgelegt, werden vorsorglich sämtliche Sitzungen des Kontos beendet.
+        Ein Erneuerungstoken ist nur einmal verwendbar. Wird ein bereits verbrauchtes Token erneut
+        vorgelegt, werden vorsorglich sämtliche Sitzungen des Kontos beendet.
       </p>
     </>
   ),
@@ -210,8 +207,8 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>5. Daten aus verbundenen Diensten</h2>
       <p>
-        Sie entscheiden selbst, welche Connectoren Sie einrichten. Ohne Einrichtung werden
-        keine Daten von Dritten abgerufen. Je nach Auswahl werden verarbeitet:
+        Sie entscheiden selbst, welche Connectoren Sie einrichten. Ohne Einrichtung werden keine
+        Daten von Dritten abgerufen. Je nach Auswahl werden verarbeitet:
       </p>
       <table>
         <thead>
@@ -260,14 +257,13 @@ const de: Record<SectionId, ReactNode> = {
         </tbody>
       </table>
       <p>
-        Rechtsgrundlage: Art. 6 Abs. 1 lit. a und Art. 9 Abs. 2 lit. a DSGVO
-        (Einwilligung), erteilt durch die Einrichtung des jeweiligen Connectors.
+        Rechtsgrundlage: Art. 6 Abs. 1 lit. a und Art. 9 Abs. 2 lit. a DSGVO (Einwilligung), erteilt
+        durch die Einrichtung des jeweiligen Connectors.
       </p>
       <p>
-        Beim Abruf werden Ihre Daten von den jeweiligen Anbietern an die Plattform
-        übermittelt. Für deren eigene Verarbeitung gelten die Datenschutzhinweise des
-        jeweiligen Anbieters. Prüfen Sie insbesondere, ob dabei eine Übermittlung in
-        Drittländer stattfindet.
+        Beim Abruf werden Ihre Daten von den jeweiligen Anbietern an die Plattform übermittelt. Für
+        deren eigene Verarbeitung gelten die Datenschutzhinweise des jeweiligen Anbieters. Prüfen
+        Sie insbesondere, ob dabei eine Übermittlung in Drittländer stattfindet.
       </p>
     </>
   ),
@@ -276,20 +272,19 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>6. Zugangsdaten zu verbundenen Diensten</h2>
       <p>
-        Zugangstoken und API-Schlüssel, die Sie für Connectoren hinterlegen, werden
-        symmetrisch verschlüsselt gespeichert (Fernet, AES-256). In der Oberfläche und in
-        allen API-Antworten erscheinen sie ausschließlich maskiert. Sie werden nicht
-        protokolliert und nicht im Klartext über den Nachrichtenbus übertragen.
+        Zugangstoken und API-Schlüssel, die Sie für Connectoren hinterlegen, werden symmetrisch
+        verschlüsselt gespeichert (Fernet, AES-256). In der Oberfläche und in allen API-Antworten
+        erscheinen sie ausschließlich maskiert. Sie werden nicht protokolliert und nicht im Klartext
+        über den Nachrichtenbus übertragen.
       </p>
       <p>
         Von der Plattform erzeugte API-Schlüssel für eingehende Daten werden{" "}
-        <strong>ausschließlich als Hashwert</strong> gespeichert. Der vollständige
-        Schlüssel wird genau einmal bei der Erstellung angezeigt und ist danach technisch
-        nicht mehr abrufbar.
+        <strong>ausschließlich als Hashwert</strong> gespeichert. Der vollständige Schlüssel wird
+        genau einmal bei der Erstellung angezeigt und ist danach technisch nicht mehr abrufbar.
       </p>
       <p>
-        Die URL eines privaten Kalender-Feeds ist selbst ein Zugangsgeheimnis. Sie wird
-        daher wie ein Zugangsdatum behandelt und niemals vollständig protokolliert.
+        Die URL eines privaten Kalender-Feeds ist selbst ein Zugangsgeheimnis. Sie wird daher wie
+        ein Zugangsdatum behandelt und niemals vollständig protokolliert.
       </p>
     </>
   ),
@@ -298,21 +293,20 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>7. Mess-, Analyse- und Qualitätsdaten</h2>
       <p>
-        Importierte Messwerte werden mit Zeitstempel, Metrikart, Quelle, Wert und
-        Metadaten gespeichert. Daraus werden auf Ihren Wunsch statistische Auswertungen
-        berechnet, insbesondere Korrelationen zwischen Metriken, Trends sowie Angaben zu
-        Datenlücken und Quellenkonflikten.
+        Importierte Messwerte werden mit Zeitstempel, Metrikart, Quelle, Wert und Metadaten
+        gespeichert. Daraus werden auf Ihren Wunsch statistische Auswertungen berechnet,
+        insbesondere Korrelationen zwischen Metriken, Trends sowie Angaben zu Datenlücken und
+        Quellenkonflikten.
       </p>
       <p>
-        Diese Auswertungen sind rein statistisch. Sie beschreiben Zusammenhänge, nicht
-        Ursachen, und stellen <strong>keine medizinische Diagnose, Beratung oder
-        Behandlungsempfehlung</strong> dar. Es findet keine automatisierte
-        Entscheidungsfindung im Sinne von Art. 22 DSGVO statt.
+        Diese Auswertungen sind rein statistisch. Sie beschreiben Zusammenhänge, nicht Ursachen, und
+        stellen <strong>keine medizinische Diagnose, Beratung oder Behandlungsempfehlung</strong>{" "}
+        dar. Es findet keine automatisierte Entscheidungsfindung im Sinne von Art. 22 DSGVO statt.
       </p>
       <p>
-        Zusätzlich wird protokolliert, wann welcher Import mit welchem Zeitfenster
-        ausgeführt wurde und wie viele Datenpunkte dabei neu waren. Dieses Importprotokoll
-        dient der Nachvollziehbarkeit und der Vermeidung von Datenlücken.
+        Zusätzlich wird protokolliert, wann welcher Import mit welchem Zeitfenster ausgeführt wurde
+        und wie viele Datenpunkte dabei neu waren. Dieses Importprotokoll dient der
+        Nachvollziehbarkeit und der Vermeidung von Datenlücken.
       </p>
     </>
   ),
@@ -321,19 +315,18 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>8. Protokolldaten und Betrieb</h2>
       <p>
-        Zur Fehlersuche und Betriebssicherheit werden technische Protokolle erzeugt. Sie
-        enthalten Zeitpunkt, angefragten Endpunkt, HTTP-Statuscode, Dauer, die Kennung des
-        Arbeitsbereichs sowie eine zufällige Anfragekennung (<code>X-Request-ID</code>),
-        über die eine Anfrage dienstübergreifend nachvollzogen werden kann.
+        Zur Fehlersuche und Betriebssicherheit werden technische Protokolle erzeugt. Sie enthalten
+        Zeitpunkt, angefragten Endpunkt, HTTP-Statuscode, Dauer, die Kennung des Arbeitsbereichs
+        sowie eine zufällige Anfragekennung (<code>X-Request-ID</code>), über die eine Anfrage
+        dienstübergreifend nachvollzogen werden kann.
       </p>
       <p>
-        Zugangsdaten, Token und API-Schlüssel werden nicht protokolliert. Der Webserver
-        bzw. die Hosting-Infrastruktur kann darüber hinaus Zugriffsprotokolle inklusive
-        IP-Adresse führen.
+        Zugangsdaten, Token und API-Schlüssel werden nicht protokolliert. Der Webserver bzw. die
+        Hosting-Infrastruktur kann darüber hinaus Zugriffsprotokolle inklusive IP-Adresse führen.
       </p>
       <p>
-        Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem
-        sicheren und funktionsfähigen Betrieb).
+        Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem sicheren und
+        funktionsfähigen Betrieb).
       </p>
       <p>
         Aufbewahrungsdauer der Protokolle:{" "}
@@ -350,19 +343,16 @@ const de: Record<SectionId, ReactNode> = {
         <Placeholder>Name und Anschrift des Hosting-Anbieters, Serverstandort</Placeholder>
       </p>
       <p>
-        Mit dem Anbieter besteht ein Vertrag zur Auftragsverarbeitung nach Art. 28 DSGVO.
-        Sofern eine Verarbeitung außerhalb der EU/des EWR stattfindet, ist hier die
-        Grundlage der Übermittlung anzugeben:{" "}
-        <Placeholder>
-          z. B. Standardvertragsklauseln oder Angemessenheitsbeschluss
-        </Placeholder>
-        .
+        Mit dem Anbieter besteht ein Vertrag zur Auftragsverarbeitung nach Art. 28 DSGVO. Sofern
+        eine Verarbeitung außerhalb der EU/des EWR stattfindet, ist hier die Grundlage der
+        Übermittlung anzugeben:{" "}
+        <Placeholder>z. B. Standardvertragsklauseln oder Angemessenheitsbeschluss</Placeholder>.
       </p>
       <p>
         Weitere eingesetzte Auftragsverarbeiter:{" "}
         <Placeholder>
-          auflisten, z. B. Monitoring, Backup oder E-Mail-Versand — oder Abschnitt
-          entfernen, wenn keine bestehen
+          auflisten, z. B. Monitoring, Backup oder E-Mail-Versand — oder Abschnitt entfernen, wenn
+          keine bestehen
         </Placeholder>
       </p>
     </>
@@ -372,24 +362,21 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>10. Externe Anmeldedienste</h2>
       <p>
-        Die Anmeldung über externe Anbieter (OpenID Connect, etwa ein Google-Konto) ist
-        vorhanden, aber <strong>standardmäßig nicht eingerichtet</strong>: solange keine
-        Anbieter hinterlegt sind, erfolgt die Anmeldung ausschließlich mit E-Mail-Adresse
-        und Passwort.
+        Die Anmeldung über externe Anbieter (OpenID Connect, etwa ein Google-Konto) ist vorhanden,
+        aber <strong>standardmäßig nicht eingerichtet</strong>: solange keine Anbieter hinterlegt
+        sind, erfolgt die Anmeldung ausschließlich mit E-Mail-Adresse und Passwort.
       </p>
       <p>
-        Wird ein Anbieter eingerichtet, werden von ihm die Kennung des Kontos beim Anbieter
-        (<code>sub</code>), die E-Mail-Adresse und, sofern übermittelt, der Anzeigename
-        verarbeitet — zu dem Zweck, das Konto wiederzuerkennen. Rechtsgrundlage ist
-        Art. 6 Abs. 1 lit. b DSGVO. Die Zuordnung erfolgt über die Anbieterkennung, nicht
-        über die E-Mail-Adresse.
+        Wird ein Anbieter eingerichtet, werden von ihm die Kennung des Kontos beim Anbieter (
+        <code>sub</code>), die E-Mail-Adresse und, sofern übermittelt, der Anzeigename verarbeitet —
+        zu dem Zweck, das Konto wiederzuerkennen. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO.
+        Die Zuordnung erfolgt über die Anbieterkennung, nicht über die E-Mail-Adresse.
       </p>
       <p>
-        Vor der Aktivierung ist dieser Abschnitt um die konkret eingerichteten Anbieter zu
-        ergänzen:{" "}
+        Vor der Aktivierung ist dieser Abschnitt um die konkret eingerichteten Anbieter zu ergänzen:{" "}
         <Placeholder>
-          Anbieter, übermittelte Daten und etwaige Drittlandübermittlung auflisten — oder
-          diesen Hinweis entfernen, wenn keine Anbieter eingerichtet sind
+          Anbieter, übermittelte Daten und etwaige Drittlandübermittlung auflisten — oder diesen
+          Hinweis entfernen, wenn keine Anbieter eingerichtet sind
         </Placeholder>
       </p>
     </>
@@ -398,17 +385,13 @@ const de: Record<SectionId, ReactNode> = {
   disclosure: (
     <>
       <h2>11. Weitergabe an Dritte</h2>
-      <p>
-        Eine Weitergabe Ihrer Daten findet nicht statt, mit folgenden Ausnahmen:
-      </p>
+      <p>Eine Weitergabe Ihrer Daten findet nicht statt, mit folgenden Ausnahmen:</p>
       <ul>
-        <li>
-          an von Ihnen selbst eingerichtete Connectoren, soweit für den Abruf erforderlich;
-        </li>
+        <li>an von Ihnen selbst eingerichtete Connectoren, soweit für den Abruf erforderlich;</li>
         <li>an Auftragsverarbeiter nach Abschnitt 9;</li>
         <li>
-          an andere Arbeitsbereiche, wenn Sie über die Freigabefunktion ausdrücklich eine
-          Freigabe erteilen — diese können Sie jederzeit widerrufen;
+          an andere Arbeitsbereiche, wenn Sie über die Freigabefunktion ausdrücklich eine Freigabe
+          erteilen — diese können Sie jederzeit widerrufen;
         </li>
         <li>soweit eine gesetzliche Verpflichtung besteht.</li>
       </ul>
@@ -420,17 +403,14 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>12. Speicherdauer</h2>
       <ul>
-        <li>
-          Konto- und Messdaten: bis zur Löschung durch Sie oder bis zur Löschung des Kontos.
-        </li>
+        <li>Konto- und Messdaten: bis zur Löschung durch Sie oder bis zur Löschung des Kontos.</li>
         <li>Erneuerungstoken: 30 Tage, bei Abmeldung sofort ungültig.</li>
         <li>
-          Sperrliste abgemeldeter Zugriffstoken: bis zum ohnehin eintretenden Ablauf des
-          Tokens; danach automatische Bereinigung.
+          Sperrliste abgemeldeter Zugriffstoken: bis zum ohnehin eintretenden Ablauf des Tokens;
+          danach automatische Bereinigung.
         </li>
         <li>
-          Technische Protokolle:{" "}
-          <Placeholder>Aufbewahrungsdauer wie in Abschnitt 8</Placeholder>.
+          Technische Protokolle: <Placeholder>Aufbewahrungsdauer wie in Abschnitt 8</Placeholder>.
         </li>
       </ul>
     </>
@@ -447,9 +427,7 @@ const de: Record<SectionId, ReactNode> = {
         <li>Einschränkung der Verarbeitung (Art. 18)</li>
         <li>Datenübertragbarkeit (Art. 20)</li>
         <li>Widerspruch gegen Verarbeitungen auf Grundlage berechtigter Interessen (Art. 21)</li>
-        <li>
-          Widerruf erteilter Einwilligungen mit Wirkung für die Zukunft (Art. 7 Abs. 3)
-        </li>
+        <li>Widerruf erteilter Einwilligungen mit Wirkung für die Zukunft (Art. 7 Abs. 3)</li>
       </ul>
       <p>Innerhalb der Anwendung können Sie unmittelbar:</p>
       <ul>
@@ -459,9 +437,9 @@ const de: Record<SectionId, ReactNode> = {
         <li>Ihr Konto vollständig löschen.</li>
       </ul>
       <p>
-        Sie haben außerdem das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu
-        beschweren, insbesondere in dem Mitgliedstaat Ihres Aufenthaltsorts oder des
-        mutmaßlichen Verstoßes. Zuständige Behörde für den Verantwortlichen:{" "}
+        Sie haben außerdem das Recht, sich bei einer Datenschutz-Aufsichtsbehörde zu beschweren,
+        insbesondere in dem Mitgliedstaat Ihres Aufenthaltsorts oder des mutmaßlichen Verstoßes.
+        Zuständige Behörde für den Verantwortlichen:{" "}
         <Placeholder>zuständige Aufsichtsbehörde mit Anschrift</Placeholder>
       </p>
     </>
@@ -475,9 +453,8 @@ const de: Record<SectionId, ReactNode> = {
         <li>Passwörter als bcrypt-Hash, API-Schlüssel als SHA-256-Hash gespeichert.</li>
         <li>Connector-Zugangsdaten mit Fernet (AES-256) verschlüsselt.</li>
         <li>
-          Jede Anfrage wird serverseitig authentifiziert; die Zuordnung zum Arbeitsbereich
-          wird ausschließlich aus dem geprüften Token abgeleitet und nicht aus frei
-          setzbaren Kopfzeilen.
+          Jede Anfrage wird serverseitig authentifiziert; die Zuordnung zum Arbeitsbereich wird
+          ausschließlich aus dem geprüften Token abgeleitet und nicht aus frei setzbaren Kopfzeilen.
         </li>
         <li>Interne Schnittstellen sind von außen nicht erreichbar.</li>
       </ul>
@@ -488,8 +465,8 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>15. Änderungen dieser Erklärung</h2>
       <p>
-        Diese Erklärung wird angepasst, wenn sich die Verarbeitung ändert. Maßgeblich ist
-        die jeweils hier veröffentlichte Fassung.
+        Diese Erklärung wird angepasst, wenn sich die Verarbeitung ändert. Maßgeblich ist die
+        jeweils hier veröffentlichte Fassung.
       </p>
       <p>
         Stand: <Placeholder>Datum der letzten Aktualisierung</Placeholder>
@@ -501,10 +478,10 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>Hinweis zur Vorlage</h2>
       <p>
-        Dieser Text beschreibt die tatsächlich implementierte Verarbeitung, ist aber eine
-        Vorlage und ersetzt keine Rechtsberatung. Alle gelb markierten Platzhalter sind vor
-        einer Veröffentlichung zu ersetzen; der Text ist anschließend durch eine
-        qualifizierte Stelle zu prüfen.
+        Dieser Text beschreibt die tatsächlich implementierte Verarbeitung, ist aber eine Vorlage
+        und ersetzt keine Rechtsberatung. Alle gelb markierten Platzhalter sind vor einer
+        Veröffentlichung zu ersetzen; der Text ist anschließend durch eine qualifizierte Stelle zu
+        prüfen.
       </p>
     </>
   ),
@@ -513,9 +490,8 @@ const de: Record<SectionId, ReactNode> = {
 const en: Record<SectionId, ReactNode> = {
   intro: (
     <p>
-      This policy describes which personal data this Quantified Self platform processes,
-      for what purpose, and on what legal basis. It describes what the application
-      actually does.
+      This policy describes which personal data this Quantified Self platform processes, for what
+      purpose, and on what legal basis. It describes what the application actually does.
     </p>
   ),
 
@@ -532,8 +508,8 @@ const en: Record<SectionId, ReactNode> = {
       <p>
         Data protection officer:{" "}
         <Placeholder>
-          Name and contact details, where Art. 37 GDPR requires one to be appointed —
-          otherwise remove this paragraph
+          Name and contact details, where Art. 37 GDPR requires one to be appointed — otherwise
+          remove this paragraph
         </Placeholder>
       </p>
     </>
@@ -543,16 +519,15 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>2. Special categories of personal data</h2>
       <p>
-        This application processes <strong>health data</strong> (sleep, heart-rate
-        variability, recovery, training, nutrition, for example) and{" "}
-        <strong>location data</strong>. Health data is a special category of personal data
-        within the meaning of Art. 9 (1) GDPR.
+        This application processes <strong>health data</strong> (sleep, heart-rate variability,
+        recovery, training, nutrition, for example) and <strong>location data</strong>. Health data
+        is a special category of personal data within the meaning of Art. 9 (1) GDPR.
       </p>
       <p>
-        It is processed solely on the basis of your explicit consent under
-        Art. 9 (2) (a) GDPR. You give that consent by setting up a connector or by
-        uploading data yourself. You can withdraw it at any time with effect for the
-        future, by removing the connector or deleting your account.
+        It is processed solely on the basis of your explicit consent under Art. 9 (2) (a) GDPR. You
+        give that consent by setting up a connector or by uploading data yourself. You can withdraw
+        it at any time with effect for the future, by removing the connector or deleting your
+        account.
       </p>
     </>
   ),
@@ -569,10 +544,9 @@ const en: Record<SectionId, ReactNode> = {
         <li>The time the account was created</li>
       </ul>
       <p>
-        Every account belongs to exactly one workspace (a &ldquo;tenant&rdquo;). Every
-        database query is restricted to that workspace; access to another
-        workspace&rsquo;s data is technically impossible unless a grant was explicitly
-        issued through the sharing feature.
+        Every account belongs to exactly one workspace (a &ldquo;tenant&rdquo;). Every database
+        query is restricted to that workspace; access to another workspace&rsquo;s data is
+        technically impossible unless a grant was explicitly issued through the sharing feature.
       </p>
       <p>Legal basis: Art. 6 (1) (b) GDPR (performance of the contract of use).</p>
     </>
@@ -582,9 +556,9 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>4. Sign-in, sessions and cookies</h2>
       <p>
-        This application sets technically necessary cookies for signing in. No cookies are
-        used for advertising, tracking or analytics, and no data is passed to third
-        parties. The cookies set are:
+        This application sets technically necessary cookies for signing in. No cookies are used for
+        advertising, tracking or analytics, and no data is passed to third parties. The cookies set
+        are:
       </p>
       <table>
         <thead>
@@ -617,8 +591,8 @@ const en: Record<SectionId, ReactNode> = {
               <code>qs_csrf</code>
             </td>
             <td>
-              A random value protecting against cross-site request forgery. Not an access
-              token: on its own it grants no access to any data.
+              A random value protecting against cross-site request forgery. Not an access token: on
+              its own it grants no access to any data.
             </td>
             <td>Secure, SameSite=Lax, readable by the interface</td>
             <td>30 days</td>
@@ -628,8 +602,8 @@ const en: Record<SectionId, ReactNode> = {
               <code>qs-locale</code>
             </td>
             <td>
-              The chosen interface language (<code>de</code> or <code>en</code>). Contains
-              no personal data.
+              The chosen interface language (<code>de</code> or <code>en</code>). Contains no
+              personal data.
             </td>
             <td>SameSite=Lax, readable by the interface</td>
             <td>1 year</td>
@@ -637,25 +611,24 @@ const en: Record<SectionId, ReactNode> = {
         </tbody>
       </table>
       <p>
-        <code>HttpOnly</code> means the two access cookies cannot be read by JavaScript in
-        the browser. They therefore cannot be read out and passed to a third party even if
-        the interface has a security flaw.
+        <code>HttpOnly</code> means the two access cookies cannot be read by JavaScript in the
+        browser. They therefore cannot be read out and passed to a third party even if the interface
+        has a security flaw.
       </p>
       <p>
-        These cookies are strictly necessary to provide the service you explicitly
-        requested (§ 25 (2) no. 2 TDDDG) and so require no separate consent. Signing out
-        deletes every cookie named above and additionally invalidates the session
-        server-side.
+        These cookies are strictly necessary to provide the service you explicitly requested (§ 25
+        (2) no. 2 TDDDG) and so require no separate consent. Signing out deletes every cookie named
+        above and additionally invalidates the session server-side.
       </p>
       <p>
-        When signing in through an external provider, the name of the chosen provider is
-        also held briefly in the browser&rsquo;s <code>sessionStorage</code>, so that the
-        redirect back can be matched to the right provider. That entry contains no personal
-        data and is removed once the sign-in completes.
+        When signing in through an external provider, the name of the chosen provider is also held
+        briefly in the browser&rsquo;s <code>sessionStorage</code>, so that the redirect back can be
+        matched to the right provider. That entry contains no personal data and is removed once the
+        sign-in completes.
       </p>
       <p>
-        A refresh token can be used only once. If a token that has already been spent is
-        presented again, every session of the account is ended as a precaution.
+        A refresh token can be used only once. If a token that has already been spent is presented
+        again, every session of the account is ended as a precaution.
       </p>
     </>
   ),
@@ -664,8 +637,8 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>5. Data from connected services</h2>
       <p>
-        You decide which connectors you set up. Without one, no data is retrieved from any
-        third party. Depending on your choices, the following is processed:
+        You decide which connectors you set up. Without one, no data is retrieved from any third
+        party. Depending on your choices, the following is processed:
       </p>
       <table>
         <thead>
@@ -714,13 +687,13 @@ const en: Record<SectionId, ReactNode> = {
         </tbody>
       </table>
       <p>
-        Legal basis: Art. 6 (1) (a) and Art. 9 (2) (a) GDPR (consent), given by setting up
-        the connector in question.
+        Legal basis: Art. 6 (1) (a) and Art. 9 (2) (a) GDPR (consent), given by setting up the
+        connector in question.
       </p>
       <p>
-        On retrieval, your data is transmitted to the platform by the respective providers.
-        Their own processing is governed by their own privacy notices. Check in particular
-        whether that involves a transfer to a third country.
+        On retrieval, your data is transmitted to the platform by the respective providers. Their
+        own processing is governed by their own privacy notices. Check in particular whether that
+        involves a transfer to a third country.
       </p>
     </>
   ),
@@ -729,15 +702,14 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>6. Credentials for connected services</h2>
       <p>
-        Access tokens and API keys you store for connectors are kept under symmetric
-        encryption (Fernet, AES-256). They appear only masked in the interface and in every
-        API response. They are not logged, and they are not transmitted in the clear over
-        the message bus.
+        Access tokens and API keys you store for connectors are kept under symmetric encryption
+        (Fernet, AES-256). They appear only masked in the interface and in every API response. They
+        are not logged, and they are not transmitted in the clear over the message bus.
       </p>
       <p>
-        API keys the platform issues for inbound data are stored{" "}
-        <strong>only as a hash</strong>. The full key is shown exactly once, when it is
-        created, and afterwards cannot technically be retrieved.
+        API keys the platform issues for inbound data are stored <strong>only as a hash</strong>.
+        The full key is shown exactly once, when it is created, and afterwards cannot technically be
+        retrieved.
       </p>
       <p>
         The URL of a private calendar feed is itself a secret. It is therefore treated as a
@@ -750,21 +722,18 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>7. Measurement, analysis and quality data</h2>
       <p>
-        Imported measurements are stored with a timestamp, the kind of metric, the source,
-        the value and metadata. At your request, statistical analyses are computed from them
-        — in particular correlations between metrics, trends, and figures on data gaps and
-        source conflicts.
+        Imported measurements are stored with a timestamp, the kind of metric, the source, the value
+        and metadata. At your request, statistical analyses are computed from them — in particular
+        correlations between metrics, trends, and figures on data gaps and source conflicts.
       </p>
       <p>
         These analyses are purely statistical. They describe relationships, not causes, and
-        constitute{" "}
-        <strong>no medical diagnosis, advice or treatment recommendation</strong>. There is
-        no automated decision-making within the meaning of Art. 22 GDPR.
+        constitute <strong>no medical diagnosis, advice or treatment recommendation</strong>. There
+        is no automated decision-making within the meaning of Art. 22 GDPR.
       </p>
       <p>
-        It is additionally recorded which import ran when, over which window, and how many
-        data points were new. That import log serves traceability and the avoidance of gaps
-        in the data.
+        It is additionally recorded which import ran when, over which window, and how many data
+        points were new. That import log serves traceability and the avoidance of gaps in the data.
       </p>
     </>
   ),
@@ -773,18 +742,17 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>8. Log data and operation</h2>
       <p>
-        Technical logs are produced for debugging and operational security. They contain the
-        time, the endpoint requested, the HTTP status code, the duration, the workspace
-        identifier, and a random request identifier (<code>X-Request-ID</code>) through which
-        a request can be followed across services.
+        Technical logs are produced for debugging and operational security. They contain the time,
+        the endpoint requested, the HTTP status code, the duration, the workspace identifier, and a
+        random request identifier (<code>X-Request-ID</code>) through which a request can be
+        followed across services.
       </p>
       <p>
-        Credentials, tokens and API keys are not logged. The web server or hosting
-        infrastructure may additionally keep access logs including the IP address.
+        Credentials, tokens and API keys are not logged. The web server or hosting infrastructure
+        may additionally keep access logs including the IP address.
       </p>
       <p>
-        Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in secure and functioning
-        operation).
+        Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in secure and functioning operation).
       </p>
       <p>
         Retention period for the logs:{" "}
@@ -808,8 +776,8 @@ const en: Record<SectionId, ReactNode> = {
       <p>
         Further processors used:{" "}
         <Placeholder>
-          list them, e.g. monitoring, backup or email delivery — or remove the section if
-          there are none
+          list them, e.g. monitoring, backup or email delivery — or remove the section if there are
+          none
         </Placeholder>
       </p>
     </>
@@ -819,22 +787,21 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>10. External sign-in services</h2>
       <p>
-        Signing in through an external provider (OpenID Connect, a Google account for
-        instance) is available but <strong>not configured by default</strong>: as long as no
-        provider is set up, signing in works with an email address and a password only.
+        Signing in through an external provider (OpenID Connect, a Google account for instance) is
+        available but <strong>not configured by default</strong>: as long as no provider is set up,
+        signing in works with an email address and a password only.
       </p>
       <p>
-        Where a provider is set up, the account identifier at that provider
-        (<code>sub</code>), the email address and, if supplied, the display name are
-        processed — for the purpose of recognizing the account again. The legal basis is
-        Art. 6 (1) (b) GDPR. The account is matched on the provider identifier, not on the
-        email address.
+        Where a provider is set up, the account identifier at that provider (<code>sub</code>), the
+        email address and, if supplied, the display name are processed — for the purpose of
+        recognizing the account again. The legal basis is Art. 6 (1) (b) GDPR. The account is
+        matched on the provider identifier, not on the email address.
       </p>
       <p>
         Before activation, complete this section with the providers actually configured:{" "}
         <Placeholder>
-          list the providers, the data they transmit and any third-country transfer — or
-          remove this note if no provider is configured
+          list the providers, the data they transmit and any third-country transfer — or remove this
+          note if no provider is configured
         </Placeholder>
       </p>
     </>
@@ -848,8 +815,8 @@ const en: Record<SectionId, ReactNode> = {
         <li>to connectors you set up yourself, insofar as retrieval requires it;</li>
         <li>to the processors named in section 9;</li>
         <li>
-          to other workspaces, where you explicitly issue a grant through the sharing
-          feature — which you can withdraw at any time;
+          to other workspaces, where you explicitly issue a grant through the sharing feature —
+          which you can withdraw at any time;
         </li>
         <li>insofar as a legal obligation exists.</li>
       </ul>
@@ -861,13 +828,11 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>12. Storage periods</h2>
       <ul>
-        <li>
-          Account and measurement data: until you delete it, or until the account is deleted.
-        </li>
+        <li>Account and measurement data: until you delete it, or until the account is deleted.</li>
         <li>Refresh tokens: 30 days, invalidated immediately on sign-out.</li>
         <li>
-          The denylist of signed-out access tokens: until the token would have expired
-          anyway; cleaned up automatically after that.
+          The denylist of signed-out access tokens: until the token would have expired anyway;
+          cleaned up automatically after that.
         </li>
         <li>
           Technical logs: <Placeholder>the retention period from section 8</Placeholder>.
@@ -897,9 +862,9 @@ const en: Record<SectionId, ReactNode> = {
         <li>delete your account entirely.</li>
       </ul>
       <p>
-        You also have the right to lodge a complaint with a data protection supervisory
-        authority, in particular in the member state of your residence or of the alleged
-        infringement. The authority competent for the controller:{" "}
+        You also have the right to lodge a complaint with a data protection supervisory authority,
+        in particular in the member state of your residence or of the alleged infringement. The
+        authority competent for the controller:{" "}
         <Placeholder>the competent supervisory authority, with its address</Placeholder>
       </p>
     </>
@@ -913,8 +878,8 @@ const en: Record<SectionId, ReactNode> = {
         <li>Passwords stored as a bcrypt hash, API keys as a SHA-256 hash.</li>
         <li>Connector credentials encrypted with Fernet (AES-256).</li>
         <li>
-          Every request is authenticated server-side; the workspace it belongs to is derived
-          solely from the validated token, never from a freely settable header.
+          Every request is authenticated server-side; the workspace it belongs to is derived solely
+          from the validated token, never from a freely settable header.
         </li>
         <li>Internal interfaces are not reachable from outside.</li>
       </ul>
@@ -925,8 +890,8 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>15. Changes to this policy</h2>
       <p>
-        This policy is amended when the processing changes. The version published here at
-        any given time is the one that applies.
+        This policy is amended when the processing changes. The version published here at any given
+        time is the one that applies.
       </p>
       <p>
         Last updated: <Placeholder>Date of the last update</Placeholder>
@@ -938,10 +903,9 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>A note on this template</h2>
       <p>
-        This text describes the processing as it is actually implemented, but it is a
-        template and is no substitute for legal advice. Every highlighted placeholder is to
-        be replaced before publication, and the text is then to be reviewed by a qualified
-        party.
+        This text describes the processing as it is actually implemented, but it is a template and
+        is no substitute for legal advice. Every highlighted placeholder is to be replaced before
+        publication, and the text is then to be reviewed by a qualified party.
       </p>
     </>
   ),

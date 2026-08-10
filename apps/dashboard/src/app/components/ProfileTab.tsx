@@ -1,22 +1,22 @@
 "use client";
 
 import React, { useState } from "react";
-import { 
-  User, 
-  Mail, 
-  Lock, 
-  Building, 
-  ShieldCheck, 
-  Key, 
-  LogOut, 
-  Check, 
-  Copy, 
-  AlertCircle, 
-  CheckCircle2, 
+import {
+  User,
+  Mail,
+  Lock,
+  Building,
+  ShieldCheck,
+  Key,
+  LogOut,
+  Check,
+  Copy,
+  AlertCircle,
+  CheckCircle2,
   Database,
   Trash2,
   AlertTriangle,
-  RefreshCw
+  RefreshCw,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import OidcProviderAdmin from "./OidcProviderAdmin";
@@ -156,16 +156,15 @@ export default function ProfileTab({
     }
   };
 
-
   return (
     <div className="space-y-8">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Konto- & Profileinstellungen</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("profile.subtitle")}
-          </p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            Konto- & Profileinstellungen
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">{t("profile.subtitle")}</p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -227,16 +226,16 @@ export default function ProfileTab({
             <div className="flex items-center justify-between border-b border-rose-100 pb-3">
               <div className="flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-rose-600" />
-                <h3 className="text-base font-extrabold text-slate-900">{t("profile.gdprTitle")}</h3>
+                <h3 className="text-base font-extrabold text-slate-900">
+                  {t("profile.gdprTitle")}
+                </h3>
               </div>
               <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
                 {t("profile.gdprBadge")}
               </span>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">
-              {t("profile.gdprBody")}
-            </p>
+            <p className="text-xs text-slate-600 leading-relaxed">{t("profile.gdprBody")}</p>
 
             {wipeSuccess && (
               <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
@@ -325,7 +324,10 @@ export default function ProfileTab({
               </div>
 
               {passwordError && (
-                <div role="alert" className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+                <div
+                  role="alert"
+                  className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold"
+                >
                   {passwordError}
                 </div>
               )}
@@ -369,7 +371,11 @@ export default function ProfileTab({
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
                     className="flex items-center gap-1 text-[11px] text-[#0d5c3a] hover:underline font-mono transition-colors"
                   >
-                    {copiedTenantId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedTenantId ? (
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    ) : (
+                      <Copy className="w-3.5 h-3.5" />
+                    )}
                     <span>{copiedTenantId ? "Kopiert!" : "Kopieren"}</span>
                   </button>
                 </div>
@@ -416,11 +422,11 @@ export default function ProfileTab({
               <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200">
                 <AlertTriangle className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">{t("profile.wipeConfirmTitle")}</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">
+                {t("profile.wipeConfirmTitle")}
+              </h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              {t("profile.wipeConfirmBody")}
-            </p>
+            <p className="text-xs text-slate-600 leading-relaxed">{t("profile.wipeConfirmBody")}</p>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowWipeModal(false)}
@@ -448,7 +454,9 @@ export default function ProfileTab({
               <div className="p-2.5 rounded-2xl bg-rose-50 border border-rose-200">
                 <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">{t("profile.deleteAccountTitle")}</h3>
+              <h3 className="text-lg font-extrabold text-slate-900">
+                {t("profile.deleteAccountTitle")}
+              </h3>
             </div>
             <p className="text-xs text-slate-600 leading-relaxed">
               {t("profile.deleteAccountBody")}
@@ -487,16 +495,10 @@ export default function ProfileTab({
           kannst.
         </p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
-          <a
-            href="/legal/datenschutz"
-            className="text-[#0d5c3a] underline hover:text-[#08432a]"
-          >
+          <a href="/legal/datenschutz" className="text-[#0d5c3a] underline hover:text-[#08432a]">
             {t("footer.privacy")}
           </a>
-          <a
-            href="/legal/impressum"
-            className="text-[#0d5c3a] underline hover:text-[#08432a]"
-          >
+          <a href="/legal/impressum" className="text-[#0d5c3a] underline hover:text-[#08432a]">
             Impressum
           </a>
           <a

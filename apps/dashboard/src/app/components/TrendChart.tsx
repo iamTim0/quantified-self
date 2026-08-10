@@ -14,7 +14,16 @@ import {
   Filler,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
-import { RefreshCw, BarChart2, TrendingUp, AreaChart, Flame, Moon, Calendar, Filter } from "lucide-react";
+import {
+  RefreshCw,
+  BarChart2,
+  TrendingUp,
+  AreaChart,
+  Flame,
+  Moon,
+  Calendar,
+  Filter,
+} from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 
@@ -27,7 +36,7 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 );
 
 ChartJS.defaults.font.family = "var(--font-outfit), 'Outfit', system-ui, sans-serif";
@@ -58,7 +67,9 @@ export default function TrendChart({
   const [datasetCategory, setDatasetCategory] = useState<"nutrition" | "bio">("nutrition");
 
   // Date Filter State
-  const [datePreset, setDatePreset] = useState<"7d" | "14d" | "30d" | "90d" | "all" | "custom">("30d");
+  const [datePreset, setDatePreset] = useState<"7d" | "14d" | "30d" | "90d" | "all" | "custom">(
+    "30d",
+  );
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
 
@@ -104,12 +115,28 @@ export default function TrendChart({
       carb: carbValues.slice(startIndex),
       fat: fatValues.slice(startIndex),
     };
-  }, [labels, sleepValues, readinessValues, calorieValues, proteinValues, carbValues, fatValues, datePreset, customStart, customEnd]);
+  }, [
+    labels,
+    sleepValues,
+    readinessValues,
+    calorieValues,
+    proteinValues,
+    carbValues,
+    fatValues,
+    datePreset,
+    customStart,
+    customEnd,
+  ]);
 
-  const hasBioData = filtered.labels.length > 0 && (filtered.sleep.some((v) => v > 0) || filtered.readiness.some((v) => v > 0));
-  const hasNutritionData = filtered.labels.length > 0 && (filtered.cal.some((v) => v > 0) || filtered.prot.some((v) => v > 0));
+  const hasBioData =
+    filtered.labels.length > 0 &&
+    (filtered.sleep.some((v) => v > 0) || filtered.readiness.some((v) => v > 0));
+  const hasNutritionData =
+    filtered.labels.length > 0 &&
+    (filtered.cal.some((v) => v > 0) || filtered.prot.some((v) => v > 0));
 
-  const activeCategory = datasetCategory === "nutrition" && !hasNutritionData && hasBioData ? "bio" : datasetCategory;
+  const activeCategory =
+    datasetCategory === "nutrition" && !hasNutritionData && hasBioData ? "bio" : datasetCategory;
 
   const nutritionChartData = {
     labels: filtered.labels,
@@ -130,7 +157,8 @@ export default function TrendChart({
         label: t("chart.protein"),
         data: filtered.prot,
         borderColor: "#10b981",
-        backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.12)" : "rgba(16, 185, 129, 0.8)",
+        backgroundColor:
+          chartType === "area" ? "rgba(16, 185, 129, 0.12)" : "rgba(16, 185, 129, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -142,7 +170,8 @@ export default function TrendChart({
         label: t("chart.carbs"),
         data: filtered.carb,
         borderColor: "#f59e0b",
-        backgroundColor: chartType === "area" ? "rgba(245, 158, 11, 0.12)" : "rgba(245, 158, 11, 0.8)",
+        backgroundColor:
+          chartType === "area" ? "rgba(245, 158, 11, 0.12)" : "rgba(245, 158, 11, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -154,7 +183,8 @@ export default function TrendChart({
         label: t("chart.fat"),
         data: filtered.fat,
         borderColor: "#06b6d4",
-        backgroundColor: chartType === "area" ? "rgba(6, 182, 212, 0.12)" : "rgba(6, 182, 212, 0.8)",
+        backgroundColor:
+          chartType === "area" ? "rgba(6, 182, 212, 0.12)" : "rgba(6, 182, 212, 0.8)",
         borderWidth: 2,
         tension: 0.3,
         fill: chartType === "area",
@@ -183,7 +213,8 @@ export default function TrendChart({
         label: t("chart.readinessScore"),
         data: filtered.readiness,
         borderColor: "#10b981",
-        backgroundColor: chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.8)",
+        backgroundColor:
+          chartType === "area" ? "rgba(16, 185, 129, 0.15)" : "rgba(16, 185, 129, 0.8)",
         borderWidth: 2,
         tension: 0.4,
         fill: chartType === "area",
@@ -241,16 +272,32 @@ export default function TrendChart({
               type: "linear" as const,
               display: true,
               position: "left" as const,
-              title: { display: true, text: "Kalorien (kcal)", color: "#0d5c3a", font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 } },
-              ticks: { color: "#0d5c3a", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+              title: {
+                display: true,
+                text: "Kalorien (kcal)",
+                color: "#0d5c3a",
+                font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 },
+              },
+              ticks: {
+                color: "#0d5c3a",
+                font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 },
+              },
               grid: { color: "#f1f5f9" },
             },
             yGrams: {
               type: "linear" as const,
               display: true,
               position: "right" as const,
-              title: { display: true, text: "Makros (g)", color: "#10b981", font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 } },
-              ticks: { color: "#10b981", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+              title: {
+                display: true,
+                text: "Makros (g)",
+                color: "#10b981",
+                font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 },
+              },
+              ticks: {
+                color: "#10b981",
+                font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 },
+              },
               grid: { drawOnChartArea: false },
             },
           }
@@ -261,7 +308,10 @@ export default function TrendChart({
               position: "left" as const,
               min: 0,
               max: 100,
-              ticks: { color: "#64748b", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+              ticks: {
+                color: "#64748b",
+                font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 },
+              },
               grid: { color: "#f1f5f9" },
             },
           }),
@@ -357,7 +407,9 @@ export default function TrendChart({
             <button
               onClick={() => setChartType("area")}
               className={`p-2 rounded-xl transition-all ${
-                chartType === "area" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+                chartType === "area"
+                  ? "bg-[#0d5c3a] text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
               title={t("chart.typeArea")}
             >
@@ -366,7 +418,9 @@ export default function TrendChart({
             <button
               onClick={() => setChartType("line")}
               className={`p-2 rounded-xl transition-all ${
-                chartType === "line" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+                chartType === "line"
+                  ? "bg-[#0d5c3a] text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
               title={t("chart.typeLine")}
             >
@@ -375,7 +429,9 @@ export default function TrendChart({
             <button
               onClick={() => setChartType("bar")}
               className={`p-2 rounded-xl transition-all ${
-                chartType === "bar" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-500 hover:text-slate-900"
+                chartType === "bar"
+                  ? "bg-[#0d5c3a] text-white shadow-sm"
+                  : "text-slate-500 hover:text-slate-900"
               }`}
               title={t("chart.typeBar")}
             >

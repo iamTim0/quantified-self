@@ -57,7 +57,8 @@ export default function Header({
             </span>
           </div>
           <p className="text-xs text-slate-500">
-            {t("header.welcome", { name: userName })} <span className="text-slate-400">({userEmail})</span>
+            {t("header.welcome", { name: userName })}{" "}
+            <span className="text-slate-400">({userEmail})</span>
           </p>
         </div>
       </div>

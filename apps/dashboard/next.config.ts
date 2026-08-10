@@ -17,7 +17,10 @@ const parseAllowedOrigins = (): string[] => {
     for (const rawItem of envVal.split(",")) {
       let item = rawItem.trim();
       if (!item) continue;
-      item = item.replace(/^https?:\/\//i, "").split("/")[0].split(":")[0];
+      item = item
+        .replace(/^https?:\/\//i, "")
+        .split("/")[0]
+        .split(":")[0];
       if (item) {
         origins.add(item);
       }
@@ -29,7 +32,12 @@ const parseAllowedOrigins = (): string[] => {
 
 const allowedOriginsList = parseAllowedOrigins();
 const connectSrcDomains = allowedOriginsList
-  .flatMap((domain) => [`https://${domain}`, `http://${domain}`, `wss://${domain}`, `ws://${domain}`])
+  .flatMap((domain) => [
+    `https://${domain}`,
+    `http://${domain}`,
+    `wss://${domain}`,
+    `ws://${domain}`,
+  ])
   .join(" ");
 
 /**
@@ -44,8 +52,7 @@ const connectSrcDomains = allowedOriginsList
  * script origin is permitted. Set MAP_TILE_HOSTS to restrict or extend the list.
  */
 const tileImageHosts = (
-  process.env.MAP_TILE_HOSTS ??
-  "https://tile.openstreetmap.org https://*.basemaps.cartocdn.com"
+  process.env.MAP_TILE_HOSTS ?? "https://tile.openstreetmap.org https://*.basemaps.cartocdn.com"
 ).trim();
 
 const nextConfig: NextConfig = {

@@ -121,9 +121,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     setLoading(true);
 
     const endpoint = isLogin ? "/api/v1/auth/login" : "/api/v1/auth/signup";
-    const body = isLogin
-      ? { email, password }
-      : { email, password, name };
+    const body = isLogin ? { email, password } : { email, password, name };
 
     try {
       // credentials: "include" is what lets the browser keep the Set-Cookie the
@@ -189,9 +187,12 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <h2 className="text-xl font-extrabold text-slate-900 mb-6">
             {isLogin ? t("auth.welcomeBack") : t("auth.createAccount")}
           </h2>
-          
+
           {error && (
-            <div role="alert" className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium space-y-1">
+            <div
+              role="alert"
+              className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium space-y-1"
+            >
               <div className="flex items-center gap-1.5 font-bold">
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                 <span>{error}</span>
@@ -214,32 +215,42 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isLogin && (
               <div>
-                <label htmlFor="auth-name" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.name")}</label>
+                <label
+                  htmlFor="auth-name"
+                  className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                >
+                  {t("auth.name")}
+                </label>
                 <div className="relative">
                   <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                  <input 
+                  <input
                     id="auth-name"
-                    type="text" 
+                    type="text"
                     value={name}
-                    onChange={e => setName(e.target.value)}
-                    required 
+                    onChange={(e) => setName(e.target.value)}
+                    required
                     className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                     placeholder="Jane Doe"
                   />
                 </div>
               </div>
             )}
-            
+
             <div>
-              <label htmlFor="auth-email" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.email")}</label>
+              <label
+                htmlFor="auth-email"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+              >
+                {t("auth.email")}
+              </label>
               <div className="relative">
                 <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                <input 
+                <input
                   id="auth-email"
-                  type="email" 
+                  type="email"
                   value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  required 
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
                   className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                   placeholder="you@example.com"
                 />
@@ -247,28 +258,35 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             </div>
 
             <div>
-              <label htmlFor="auth-password" className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">{t("auth.password")}</label>
+              <label
+                htmlFor="auth-password"
+                className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+              >
+                {t("auth.password")}
+              </label>
               <div className="relative">
                 <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
-                <input 
+                <input
                   id="auth-password"
-                  type="password" 
+                  type="password"
                   value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required 
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
                   className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
                   placeholder="••••••••"
                 />
               </div>
             </div>
 
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               disabled={loading}
               className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 transition-all flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
               {loading ? t("common.pleaseWait") : isLogin ? t("auth.signIn") : t("auth.signUp")}
-              {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
+              {!loading && (
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              )}
             </button>
           </form>
 
@@ -278,17 +296,18 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 <span className="text-slate-500">
                   {isLogin ? t("auth.noAccount") : t("auth.haveAccount")}
                 </span>
-                <button 
-                  onClick={() => { setIsLogin(!isLogin); setError(""); }}
+                <button
+                  onClick={() => {
+                    setIsLogin(!isLogin);
+                    setError("");
+                  }}
                   className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
                 >
                   {isLogin ? t("auth.toSignUp") : t("auth.toSignIn")}
                 </button>
               </div>
             ) : (
-              <div className="text-slate-400 text-xs italic">
-                {t("auth.registrationClosed")}
-              </div>
+              <div className="text-slate-400 text-xs italic">{t("auth.registrationClosed")}</div>
             )}
             {providers.length > 0 && (
               <div className="space-y-2">

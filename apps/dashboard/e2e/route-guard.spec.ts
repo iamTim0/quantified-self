@@ -22,9 +22,7 @@ import {
  */
 
 test.describe("route guard", () => {
-  test("a signed-out deep link is redirected before the page renders", async ({
-    page,
-  }) => {
+  test("a signed-out deep link is redirected before the page renders", async ({ page }) => {
     await page.goto("/profile");
 
     // Redirected to the sign-in screen, with the destination preserved. The
@@ -34,10 +32,7 @@ test.describe("route guard", () => {
     await expectSignedOut(page);
   });
 
-  test("signing in from there continues to the requested page", async ({
-    page,
-    request,
-  }) => {
+  test("signing in from there continues to the requested page", async ({ page, request }) => {
     const account = newAccount();
     await signUp(request, account);
 
@@ -69,9 +64,7 @@ test.describe("route guard", () => {
     await page.goto("/auth/callback");
     await expect(page).toHaveURL(/\/auth\/callback$/);
     // Reached the page rather than merely failing to navigate away from it.
-    await expect(
-      page.getByText("The provider's response was incomplete."),
-    ).toBeVisible();
+    await expect(page.getByText("The provider's response was incomplete.")).toBeVisible();
   });
 
   test("a protocol-relative `next` cannot redirect off this origin", async ({

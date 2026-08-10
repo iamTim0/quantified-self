@@ -94,7 +94,7 @@ export default function DataQualityTab({ apiBase }: Props) {
     const end = new Date();
     const start = new Date(end);
     start.setDate(end.getDate() - (windowDays - 1));
-    
+
     try {
       const [gapRes, conflictRes, connectorRes, unsupportedRes] = await Promise.all([
         apiFetch(
@@ -112,12 +112,9 @@ export default function DataQualityTab({ apiBase }: Props) {
         setGaps(data.gaps ?? []);
         setCadenceGaps(data.cadence_gaps ?? []);
       }
-      if (conflictRes.ok)
-        setConflicts(((await conflictRes.json()).conflicts ?? []).length);
-      if (connectorRes.ok)
-        setConnectors((await connectorRes.json()).connectors ?? []);
-      if (unsupportedRes.ok)
-        setUnsupported((await unsupportedRes.json()).fields ?? []);
+      if (conflictRes.ok) setConflicts(((await conflictRes.json()).conflicts ?? []).length);
+      if (connectorRes.ok) setConnectors((await connectorRes.json()).connectors ?? []);
+      if (unsupportedRes.ok) setUnsupported((await unsupportedRes.json()).fields ?? []);
     } finally {
       setLoading(false);
     }
@@ -183,8 +180,7 @@ export default function DataQualityTab({ apiBase }: Props) {
       value: conflicts,
       icon: AlertTriangle,
       detail: t("quality.conflictsDetail"),
-      help:
-        conflicts === 0 ? t("quality.conflictsNone") : t("quality.conflictsHelp"),
+      help: conflicts === 0 ? t("quality.conflictsNone") : t("quality.conflictsHelp"),
     },
   ];
 
@@ -196,9 +192,7 @@ export default function DataQualityTab({ apiBase }: Props) {
             {t("quality.eyebrow")}
           </p>
           <h1 className="text-3xl font-extrabold text-slate-900">{t("quality.title")}</h1>
-          <p className="mt-2 text-sm text-slate-500">
-            {t("quality.subtitle")}
-          </p>
+          <p className="mt-2 text-sm text-slate-500">{t("quality.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
           <label className="text-xs font-semibold text-slate-500">
@@ -241,9 +235,7 @@ export default function DataQualityTab({ apiBase }: Props) {
           <Lightbulb className="h-5 w-5 shrink-0 text-amber-700" />
           <div>
             <h2 className="font-bold text-slate-900">{t("quality.explainTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {t("quality.explainBody")}
-            </p>
+            <p className="mt-1 text-sm text-slate-600">{t("quality.explainBody")}</p>
             <a
               href="/docs/features/data-quality/"
               target="_blank"
@@ -339,14 +331,10 @@ export default function DataQualityTab({ apiBase }: Props) {
       <div className="grid gap-5 lg:grid-cols-2">
         <article className="rounded-3xl border border-slate-200 bg-white p-6">
           <h2 className="mb-1 font-bold text-slate-900">{t("quality.largestGaps")}</h2>
-          <p className="mb-4 text-xs text-slate-500">
-            {t("quality.largestGapsHint")}
-          </p>
+          <p className="mb-4 text-xs text-slate-500">{t("quality.largestGapsHint")}</p>
 
           {gaps.length === 0 ? (
-            <p className="text-sm text-slate-400">
-              {t("quality.noGaps", { days: windowDays })}
-            </p>
+            <p className="text-sm text-slate-400">{t("quality.noGaps", { days: windowDays })}</p>
           ) : (
             gaps.slice(0, 6).map((gap) => {
               const ranges = toRanges(gap.missing_dates);
@@ -355,14 +343,9 @@ export default function DataQualityTab({ apiBase }: Props) {
                   <div className="flex justify-between text-sm">
                     <span className="font-medium text-slate-700">{gap.metric_type}</span>
                     <span className="font-bold text-amber-600">
-                      {t(
-                        plural(
-                          gap.missing_dates.length,
-                          "common.days_one",
-                          "common.days_other",
-                        ),
-                        { count: gap.missing_dates.length },
-                      )}
+                      {t(plural(gap.missing_dates.length, "common.days_one", "common.days_other"), {
+                        count: gap.missing_dates.length,
+                      })}
                     </span>
                   </div>
                   <ul className="mt-1.5 space-y-1">
@@ -415,9 +398,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">
-                {t("quality.backfillHint")}
-              </p>
+              <p className="mt-2 text-[11px] text-slate-400">{t("quality.backfillHint")}</p>
             </div>
           )}
         </article>
@@ -430,9 +411,7 @@ export default function DataQualityTab({ apiBase }: Props) {
               ? t("quality.conflictsNoneLong")
               : t("quality.conflictsSome", { count: conflicts })}
           </p>
-          <p className="mt-3 text-xs text-slate-500">
-            {t("quality.conflictsAdvice")}
-          </p>
+          <p className="mt-3 text-xs text-slate-500">{t("quality.conflictsAdvice")}</p>
         </article>
       </div>
 

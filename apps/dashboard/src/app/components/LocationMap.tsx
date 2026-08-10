@@ -41,11 +41,15 @@ interface LocationMapProps {
 
 type TileProvider = "osm" | "carto";
 
-const TILE_PROVIDERS: Record<TileProvider, { label: string; url: string; attribution: string; subdomains: string }> = {
+const TILE_PROVIDERS: Record<
+  TileProvider,
+  { label: string; url: string; attribution: string; subdomains: string }
+> = {
   osm: {
     label: "OpenStreetMap",
     url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    attribution:
+      '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     subdomains: "abc",
   },
   carto: {
@@ -86,9 +90,7 @@ export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): 
     );
   });
 
-  const threshold = [...significance]
-    .filter(Number.isFinite)
-    .sort((a, b) => b - a)[limit - 2] ?? 0;
+  const threshold = [...significance].filter(Number.isFinite).sort((a, b) => b - a)[limit - 2] ?? 0;
 
   const kept = points.filter((_, i) => significance[i] >= threshold);
   // Ties at the threshold can overshoot the limit; trim evenly rather than truncating
@@ -129,7 +131,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
       });
       const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
         cache: "no-store",
-              });
+      });
       if (!res.ok) return;
 
       const data = await res.json();
@@ -219,7 +221,9 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
         if (hasPoints) {
           const latLons: [number, number][] = renderPoints.map((p) => [p.latitude, p.longitude]);
           if (latLons.length > 1) {
-            const line = L.polyline(latLons, { color: "#0d5c3a", weight: 4, opacity: 0.85 }).addTo(map);
+            const line = L.polyline(latLons, { color: "#0d5c3a", weight: 4, opacity: 0.85 }).addTo(
+              map,
+            );
             map.fitBounds(line.getBounds(), { padding: [40, 40] });
           }
           renderPoints.forEach((pt) => {
@@ -277,7 +281,9 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
 
     return {
       projected,
-      path: projected.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(" "),
+      path: projected
+        .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`)
+        .join(" "),
     };
   }, [renderPoints]);
 
@@ -299,9 +305,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
             <MapPin className="h-5 w-5 text-[#0d5c3a]" />
             <span>{t("map.headline")}</span>
           </h3>
-          <p className="mt-0.5 text-xs text-slate-500">
-            {t("map.privacyLead")}
-          </p>
+          <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -334,9 +338,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
                 ? "border-[#0d5c3a] bg-[#0d5c3a] text-white"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
-            title={
-              showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")
-            }
+            title={showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")}
           >
             <Globe2 className="h-3.5 w-3.5" />
             {showTiles ? t("map.hideTiles") : t("map.showTiles")}
@@ -361,9 +363,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
       {!showTiles && (
         <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d5c3a]" />
-          <span>
-            {t("map.privacyDetail")}
-          </span>
+          <span>{t("map.privacyDetail")}</span>
         </p>
       )}
 
@@ -381,14 +381,25 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
       ) : (
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
           {svg ? (
-            <svg viewBox="0 0 800 400" className="h-[380px] w-full" role="img" aria-label="GPS-Route">
+            <svg
+              viewBox="0 0 800 400"
+              className="h-[380px] w-full"
+              role="img"
+              aria-label="GPS-Route"
+            >
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
                   <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
                 </pattern>
               </defs>
               <rect width="800" height="400" fill="url(#grid)" />
-              <path d={svg.path} fill="none" stroke="#0d5c3a" strokeWidth="3" strokeLinejoin="round" />
+              <path
+                d={svg.path}
+                fill="none"
+                stroke="#0d5c3a"
+                strokeWidth="3"
+                strokeLinejoin="round"
+              />
               {svg.projected.map((p, i) => (
                 <circle
                   key={`${p.timestamp}-${i}`}
@@ -400,8 +411,8 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
                   strokeWidth="1.5"
                 >
                   <title>
-                    {p.timestamp ? formatDateTime(p.timestamp) : ""} —{" "}
-                    {p.latitude.toFixed(5)}°, {p.longitude.toFixed(5)}°
+                    {p.timestamp ? formatDateTime(p.timestamp) : ""} — {p.latitude.toFixed(5)}°,{" "}
+                    {p.longitude.toFixed(5)}°
                   </title>
                 </circle>
               ))}

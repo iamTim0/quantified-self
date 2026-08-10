@@ -54,8 +54,6 @@ interface ApiKeyManagerProps {
   providerLabel: string;
 }
 
-
-
 export default function ApiKeyManager({
   apiBase,
   sourceType,
@@ -74,10 +72,7 @@ export default function ApiKeyManager({
   const [revealedKey, setRevealedKey] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const headers = useCallback(
-    () => ({ "Content-Type": "application/json" }),
-    [],
-  );
+  const headers = useCallback(() => ({ "Content-Type": "application/json" }), []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,9 +83,7 @@ export default function ApiKeyManager({
         // Filtered to this instance when there is one, so a second Apple Health
         // connector does not display the first connector's keys as its own.
         setKeys(
-          all.filter((k) =>
-            sourceId ? k.source_id === sourceId : k.source_type === sourceType,
-          ),
+          all.filter((k) => (sourceId ? k.source_id === sourceId : k.source_type === sourceType)),
         );
       }
     } catch {
@@ -157,12 +150,7 @@ export default function ApiKeyManager({
   };
 
   const handleRevoke = async (id: string, prefix: string) => {
-    if (
-      !confirm(
-        t("apikeys.confirmRevoke", { prefix }),
-      )
-    )
-      return;
+    if (!confirm(t("apikeys.confirmRevoke", { prefix }))) return;
     setBusy(id);
     setError("");
     try {
@@ -214,9 +202,7 @@ export default function ApiKeyManager({
           <div className="inline-block select-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-extrabold text-slate-900 shadow-sm">
             Authorization: Bearer &lt;dein-key&gt;
           </div>
-          <p className="text-[11px] text-slate-500">
-            {t("apikeys.headerHint")}
-          </p>
+          <p className="text-[11px] text-slate-500">{t("apikeys.headerHint")}</p>
         </div>
         <a
           href="/docs/features/api-keys/"
@@ -247,9 +233,7 @@ export default function ApiKeyManager({
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
-          <p className="text-[11px] text-amber-900">
-            {t("apikeys.storeNow")}
-          </p>
+          <p className="text-[11px] text-amber-900">{t("apikeys.storeNow")}</p>
           <button
             type="button"
             onClick={() => setRevealedKey(null)}

@@ -21,7 +21,10 @@ function sourceLink(t: Translate): { href: string; label: string } {
   const commit = process.env.NEXT_PUBLIC_SOURCE_COMMIT;
 
   if (version) {
-    return { href: `${REPOSITORY}/tree/v${version}`, label: t("footer.sourceVersion", { version }) };
+    return {
+      href: `${REPOSITORY}/tree/v${version}`,
+      label: t("footer.sourceVersion", { version }),
+    };
   }
   if (commit) {
     return {
@@ -43,9 +46,7 @@ export default function LegalFooter({ className = "" }: { className?: string }) 
   const source = sourceLink(t);
 
   return (
-    <footer
-      className={`mt-8 border-t border-slate-200 pt-4 text-xs text-slate-500 ${className}`}
-    >
+    <footer className={`mt-8 border-t border-slate-200 pt-4 text-xs text-slate-500 ${className}`}>
       <nav aria-label={t("footer.nav")}>
         <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <li>

@@ -86,9 +86,9 @@ const de: Record<SectionId, ReactNode> = {
         Telefon: <Placeholder>Telefonnummer</Placeholder>
       </p>
       <p>
-        Eine Telefonnummer ist nicht zwingend erforderlich, es muss aber ein zweiter,
-        unmittelbarer Kommunikationsweg neben der E-Mail-Adresse bestehen (z. B.
-        Kontaktformular mit zugesicherter Reaktionszeit).
+        Eine Telefonnummer ist nicht zwingend erforderlich, es muss aber ein zweiter, unmittelbarer
+        Kommunikationsweg neben der E-Mail-Adresse bestehen (z. B. Kontaktformular mit zugesicherter
+        Reaktionszeit).
       </p>
     </>
   ),
@@ -102,8 +102,8 @@ const de: Record<SectionId, ReactNode> = {
         Registernummer: <Placeholder>z. B. HRB 12345</Placeholder>
       </p>
       <p>
-        Entfällt bei Privatpersonen und nicht eingetragenen Einzelunternehmen. Diesen
-        Abschnitt dann bitte vollständig löschen statt leer zu lassen.
+        Entfällt bei Privatpersonen und nicht eingetragenen Einzelunternehmen. Diesen Abschnitt dann
+        bitte vollständig löschen statt leer zu lassen.
       </p>
     </>
   ),
@@ -116,8 +116,8 @@ const de: Record<SectionId, ReactNode> = {
         <Placeholder>DE000000000</Placeholder>
       </p>
       <p>
-        Bei Anwendung der Kleinunternehmerregelung (§ 19 UStG) besteht in der Regel keine
-        USt-IdNr.; dieser Abschnitt entfällt dann.
+        Bei Anwendung der Kleinunternehmerregelung (§ 19 UStG) besteht in der Regel keine USt-IdNr.;
+        dieser Abschnitt entfällt dann.
       </p>
     </>
   ),
@@ -127,8 +127,8 @@ const de: Record<SectionId, ReactNode> = {
       <h2>Aufsichtsbehörde</h2>
       <p>
         <Placeholder>
-          Nur erforderlich bei zulassungspflichtigen Tätigkeiten — zuständige
-          Aufsichtsbehörde mit Anschrift
+          Nur erforderlich bei zulassungspflichtigen Tätigkeiten — zuständige Aufsichtsbehörde mit
+          Anschrift
         </Placeholder>
       </p>
     </>
@@ -139,8 +139,8 @@ const de: Record<SectionId, ReactNode> = {
       <h2>Berufsrechtliche Angaben</h2>
       <p>
         <Placeholder>
-          Nur bei reglementierten Berufen — gesetzliche Berufsbezeichnung, Staat der
-          Verleihung, zuständige Kammer und maßgebliche berufsrechtliche Regelungen
+          Nur bei reglementierten Berufen — gesetzliche Berufsbezeichnung, Staat der Verleihung,
+          zuständige Kammer und maßgebliche berufsrechtliche Regelungen
         </Placeholder>
       </p>
     </>
@@ -161,8 +161,7 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>Streitbeilegung</h2>
       <p>
-        Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung
-        bereit:{" "}
+        Die Europäische Kommission stellt eine Plattform zur Online-Streitbeilegung bereit:{" "}
         <a href="https://ec.europa.eu/consumers/odr/" rel="noreferrer noopener" target="_blank">
           https://ec.europa.eu/consumers/odr/
         </a>
@@ -171,8 +170,8 @@ const de: Record<SectionId, ReactNode> = {
       <p>
         <Placeholder>
           Angabe ergänzen, ob eine Teilnahme an einem Streitbeilegungsverfahren vor einer
-          Verbraucherschlichtungsstelle erfolgt — die Angabe ist verpflichtend, auch wenn
-          keine Teilnahme erfolgt
+          Verbraucherschlichtungsstelle erfolgt — die Angabe ist verpflichtend, auch wenn keine
+          Teilnahme erfolgt
         </Placeholder>
       </p>
     </>
@@ -182,16 +181,15 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>Haftung für Inhalte und Links</h2>
       <p>
-        Als Diensteanbieter sind wir für eigene Inhalte auf diesen Seiten nach den
-        allgemeinen Gesetzen verantwortlich. Wir sind jedoch nicht verpflichtet,
-        übermittelte oder gespeicherte fremde Informationen zu überwachen oder nach
-        Umständen zu forschen, die auf eine rechtswidrige Tätigkeit hinweisen.
+        Als Diensteanbieter sind wir für eigene Inhalte auf diesen Seiten nach den allgemeinen
+        Gesetzen verantwortlich. Wir sind jedoch nicht verpflichtet, übermittelte oder gespeicherte
+        fremde Informationen zu überwachen oder nach Umständen zu forschen, die auf eine
+        rechtswidrige Tätigkeit hinweisen.
       </p>
       <p>
-        Diese Anwendung ruft auf ausdrückliche Veranlassung der Nutzerinnen und Nutzer
-        Daten von externen Diensten ab (siehe Datenschutzerklärung). Für die Inhalte
-        dieser externen Dienste ist ausschließlich deren jeweiliger Anbieter
-        verantwortlich.
+        Diese Anwendung ruft auf ausdrückliche Veranlassung der Nutzerinnen und Nutzer Daten von
+        externen Diensten ab (siehe Datenschutzerklärung). Für die Inhalte dieser externen Dienste
+        ist ausschließlich deren jeweiliger Anbieter verantwortlich.
       </p>
     </>
   ),
@@ -200,10 +198,10 @@ const de: Record<SectionId, ReactNode> = {
     <>
       <h2>Hinweis zur Vorlage</h2>
       <p>
-        Dieses Impressum ist eine Vorlage. Welche Angaben im Einzelfall erforderlich sind,
-        hängt von Rechtsform, Tätigkeit und Zielmarkt ab. Bitte vor Veröffentlichung durch
-        eine qualifizierte Stelle prüfen lassen und alle gelb markierten Platzhalter
-        ersetzen oder die betreffenden Abschnitte entfernen.
+        Dieses Impressum ist eine Vorlage. Welche Angaben im Einzelfall erforderlich sind, hängt von
+        Rechtsform, Tätigkeit und Zielmarkt ab. Bitte vor Veröffentlichung durch eine qualifizierte
+        Stelle prüfen lassen und alle gelb markierten Platzhalter ersetzen oder die betreffenden
+        Abschnitte entfernen.
       </p>
     </>
   ),
@@ -238,8 +236,8 @@ const en: Record<SectionId, ReactNode> = {
       <h2>Represented by</h2>
       <p>
         <Placeholder>
-          Name of the authorized representative(s); for legal entities, every managing
-          director or board member
+          Name of the authorized representative(s); for legal entities, every managing director or
+          board member
         </Placeholder>
       </p>
     </>
@@ -254,9 +252,9 @@ const en: Record<SectionId, ReactNode> = {
         Telephone: <Placeholder>Telephone number</Placeholder>
       </p>
       <p>
-        A telephone number is not strictly required, but there has to be a second, direct
-        channel of communication besides the email address (a contact form with a promised
-        response time, for instance).
+        A telephone number is not strictly required, but there has to be a second, direct channel of
+        communication besides the email address (a contact form with a promised response time, for
+        instance).
       </p>
     </>
   ),
@@ -270,8 +268,8 @@ const en: Record<SectionId, ReactNode> = {
         Register number: <Placeholder>e.g. HRB 12345</Placeholder>
       </p>
       <p>
-        Does not apply to private individuals or unregistered sole traders. Delete this
-        section entirely in that case, rather than leaving it empty.
+        Does not apply to private individuals or unregistered sole traders. Delete this section
+        entirely in that case, rather than leaving it empty.
       </p>
     </>
   ),
@@ -284,8 +282,8 @@ const en: Record<SectionId, ReactNode> = {
         <Placeholder>DE000000000</Placeholder>
       </p>
       <p>
-        Under the small-business rule (§ 19 UStG) there is usually no VAT ID; this section
-        then does not apply.
+        Under the small-business rule (§ 19 UStG) there is usually no VAT ID; this section then does
+        not apply.
       </p>
     </>
   ),
@@ -295,8 +293,8 @@ const en: Record<SectionId, ReactNode> = {
       <h2>Supervisory authority</h2>
       <p>
         <Placeholder>
-          Only required for activities that need a licence — the competent supervisory
-          authority, with its address
+          Only required for activities that need a licence — the competent supervisory authority,
+          with its address
         </Placeholder>
       </p>
     </>
@@ -348,15 +346,14 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>Liability for content and links</h2>
       <p>
-        As a service provider we are responsible for our own content on these pages under
-        the general laws. We are not, however, obliged to monitor third-party information
-        that is transmitted or stored, or to investigate circumstances that point to
-        unlawful activity.
+        As a service provider we are responsible for our own content on these pages under the
+        general laws. We are not, however, obliged to monitor third-party information that is
+        transmitted or stored, or to investigate circumstances that point to unlawful activity.
       </p>
       <p>
-        At the explicit instruction of its users, this application retrieves data from
-        external services (see the privacy policy). The provider of each of those external
-        services is solely responsible for its content.
+        At the explicit instruction of its users, this application retrieves data from external
+        services (see the privacy policy). The provider of each of those external services is solely
+        responsible for its content.
       </p>
     </>
   ),
@@ -365,10 +362,9 @@ const en: Record<SectionId, ReactNode> = {
     <>
       <h2>A note on this template</h2>
       <p>
-        This legal notice is a template. Which details are required in a given case depends
-        on the legal form, the activity and the target market. Have it reviewed by a
-        qualified party before publication, and replace every highlighted placeholder or
-        remove the section it is in.
+        This legal notice is a template. Which details are required in a given case depends on the
+        legal form, the activity and the target market. Have it reviewed by a qualified party before
+        publication, and replace every highlighted placeholder or remove the section it is in.
       </p>
     </>
   ),

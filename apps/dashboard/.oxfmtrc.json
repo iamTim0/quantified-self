@@ -5,6 +5,8 @@
     "out/**",
     "build/**",
     "next-env.d.ts",
-    "src/app/lib/metrics/catalog.ts"
+    "src/app/lib/metrics/catalog.ts",
+    "AGENTS.md",
+    "CLAUDE.md"
   ]
 }

@@ -37,17 +37,12 @@ function CallbackInner() {
     const state = params.get("state");
     const provider =
       params.get("provider") ||
-      (typeof window !== "undefined"
-        ? sessionStorage.getItem("qs_oidc_provider")
-        : null);
+      (typeof window !== "undefined" ? sessionStorage.getItem("qs_oidc_provider") : null);
     const providerError = params.get("error");
 
     if (providerError) {
       // The user declined, or the provider refused. Not our error to explain away.
-      setError(
-        params.get("error_description") ||
-          "Die Anmeldung wurde vom Anbieter abgebrochen.",
-      );
+      setError(params.get("error_description") || "Die Anmeldung wurde vom Anbieter abgebrochen.");
       return;
     }
     if (!code || !state || !provider) {
@@ -95,9 +90,7 @@ function CallbackInner() {
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center">
         {error ? (
           <>
-            <h1 className="mb-2 text-lg font-bold text-slate-900">
-              {t("auth.callbackTitle")}
-            </h1>
+            <h1 className="mb-2 text-lg font-bold text-slate-900">{t("auth.callbackTitle")}</h1>
             <p className="mb-5 text-sm leading-relaxed text-slate-600">{error}</p>
             <Link
               href="/"

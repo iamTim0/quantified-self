@@ -4,7 +4,18 @@ import React from "react";
 
 import { useI18n } from "../lib/i18n/provider";
 import { METRIC_CATALOG } from "../lib/metrics/catalog";
-import { Flame, Dumbbell, Wheat, Droplets, Moon, Footprints, Activity, Heart, ArrowUpRight, MapPin } from "lucide-react";
+import {
+  Flame,
+  Dumbbell,
+  Wheat,
+  Droplets,
+  Moon,
+  Footprints,
+  Activity,
+  Heart,
+  ArrowUpRight,
+  MapPin,
+} from "lucide-react";
 
 export interface MetricSummaryDetail {
   average: number;
@@ -74,7 +85,9 @@ export default function MetricCards({ metrics }: MetricCardsProps) {
   }
 
   return (
-    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(activeCards.length, 4)} gap-6 mb-8`}>
+    <div
+      className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-${Math.min(activeCards.length, 4)} gap-6 mb-8`}
+    >
       {activeCards.map(({ definition, detail }, index) => {
         const isFirst = index === 0;
         // Decimals come from the metric, not from a blanket Math.round: rounding a

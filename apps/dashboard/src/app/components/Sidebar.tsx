@@ -1,7 +1,19 @@
 "use client";
 
 import React from "react";
-import { LayoutDashboard, LineChart, Plug, User, LogOut, Share2, Activity, ArrowUpRight, ScanSearch, BrainCircuit, BookOpen } from "lucide-react";
+import {
+  LayoutDashboard,
+  LineChart,
+  Plug,
+  User,
+  LogOut,
+  Share2,
+  Activity,
+  ArrowUpRight,
+  ScanSearch,
+  BrainCircuit,
+  BookOpen,
+} from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 
@@ -65,9 +77,7 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
                     <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-slate-400"}`} />
                     <span>{item.label}</span>
                   </div>
-                  {isActive && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />
-                  )}
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />}
                 </button>
               );
             })}
@@ -114,7 +124,9 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
               }`}
             >
               <div className="flex items-center gap-3">
-                <User className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-slate-400"}`} />
+                <User
+                  className={`w-4 h-4 ${activeTab === "profile" ? "text-white" : "text-slate-400"}`}
+                />
                 <span>{t("sidebar.settings")}</span>
               </div>
             </button>
@@ -129,7 +141,6 @@ export default function Sidebar({ activeTab, onTabChange, onShare, onLogout }: S
           </nav>
         </div>
       </div>
-
     </aside>
   );
 }

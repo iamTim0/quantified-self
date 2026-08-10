@@ -19,12 +19,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 
 import { type MessageKey } from "./catalog-en";
 import { translate, type Translate, type Vars } from "./translate";
-import {
-  INTL_LOCALE,
-  LOCALE_COOKIE,
-  LOCALE_COOKIE_MAX_AGE,
-  type Locale,
-} from "./locale";
+import { INTL_LOCALE, LOCALE_COOKIE, LOCALE_COOKIE_MAX_AGE, type Locale } from "./locale";
 
 export { translate, plural } from "./translate";
 export type { MessageKey, Translate, Vars };

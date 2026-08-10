@@ -144,7 +144,14 @@ for (const [label, file] of [
     process.exit(1);
   }
   sections.push(
-    ["-".repeat(78), `${label} — OFL-1.1`, "-".repeat(78), "", normalise(await licence.text()).trim(), ""].join("\n"),
+    [
+      "-".repeat(78),
+      `${label} — OFL-1.1`,
+      "-".repeat(78),
+      "",
+      normalise(await licence.text()).trim(),
+      "",
+    ].join("\n"),
   );
 }
 

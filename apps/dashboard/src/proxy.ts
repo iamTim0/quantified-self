@@ -44,9 +44,7 @@ const PUBLIC_PREFIXES = ["/auth", "/legal"];
 
 function isPublic(pathname: string): boolean {
   if (pathname === "/") return true;
-  return PUBLIC_PREFIXES.some(
-    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
-  );
+  return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
 export function proxy(request: NextRequest): NextResponse {
@@ -55,8 +53,7 @@ export function proxy(request: NextRequest): NextResponse {
   if (isPublic(pathname)) return NextResponse.next();
 
   const hasSession =
-    request.cookies.has(SESSION_MARKER_COOKIE) ||
-    request.cookies.has(ACCESS_COOKIE);
+    request.cookies.has(SESSION_MARKER_COOKIE) || request.cookies.has(ACCESS_COOKIE);
   if (hasSession) return NextResponse.next();
 
   // Remember where they were going so signing in does not dump them on the

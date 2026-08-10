@@ -72,10 +72,10 @@ export default function OverviewTab({
       {/* Hero Title & Actions Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t("overview.title")}</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("overview.subtitle")}
-          </p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            {t("overview.title")}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">{t("overview.subtitle")}</p>
         </div>
 
         <div className="flex items-center gap-2">

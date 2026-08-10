@@ -1,13 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import {
-  API_BASE,
-  expectSignedIn,
-  expectSignedOut,
-  newAccount,
-  signIn,
-  signUp,
-} from "./helpers";
+import { API_BASE, expectSignedIn, expectSignedOut, newAccount, signIn, signUp } from "./helpers";
 
 /**
  * The sequence the whole logout bug lived in: sign in, reload, sign out, reload.
@@ -133,10 +126,7 @@ test.describe("session lifecycle in a browser", () => {
     expect(status).toBe(200);
   });
 
-  test("a state-changing request without the CSRF header is refused", async ({
-    page,
-    request,
-  }) => {
+  test("a state-changing request without the CSRF header is refused", async ({ page, request }) => {
     const account = newAccount();
     await signUp(request, account);
     await signIn(page, account);

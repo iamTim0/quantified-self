@@ -182,7 +182,11 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     </label>
   );
 
-  const toggle = (label: string, key: "enabled" | "allow_signup" | "require_verified_email", hint: string) => (
+  const toggle = (
+    label: string,
+    key: "enabled" | "allow_signup" | "require_verified_email",
+    hint: string,
+  ) => (
     <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
       <input
         type="checkbox"
@@ -202,9 +206,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-slate-900">{t("oidc.title")}</h2>
-          <p className="text-xs text-slate-500">
-            {t("oidc.subtitle")}
-          </p>
+          <p className="text-xs text-slate-500">{t("oidc.subtitle")}</p>
         </div>
         {!draft && (
           <button
@@ -307,11 +309,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
 
           <div className="grid gap-2 sm:grid-cols-3">
             {toggle(t("oidc.toggleEnabled"), "enabled", t("oidc.toggleEnabledHint"))}
-            {toggle(
-              t("oidc.toggleSignup"),
-              "allow_signup",
-              t("oidc.toggleSignupHint"),
-            )}
+            {toggle(t("oidc.toggleSignup"), "allow_signup", t("oidc.toggleSignupHint"))}
             {toggle(
               t("oidc.toggleVerified"),
               "require_verified_email",
@@ -319,9 +317,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
             )}
           </div>
 
-          <p className="text-xs text-slate-500">
-            {t("oidc.issuerHint")}
-          </p>
+          <p className="text-xs text-slate-500">{t("oidc.issuerHint")}</p>
 
           <div className="flex gap-2">
             <button

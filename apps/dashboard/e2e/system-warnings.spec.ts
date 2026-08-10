@@ -29,9 +29,7 @@ test.describe("system warnings", () => {
 
     // The signing key is the one that matters most: knowing it means being able
     // to mint a session for any account in any workspace.
-    await expect(
-      warnings.getByText(/JWT_SECRET is a published default/),
-    ).toBeVisible();
+    await expect(warnings.getByText(/JWT_SECRET is a published default/)).toBeVisible();
 
     // A warning without an action is a warning nobody acts on, so the action is
     // part of what must render.
@@ -48,9 +46,7 @@ test.describe("system warnings", () => {
     await signUp(request, account);
     await signIn(page, account);
 
-    const text = await page
-      .getByRole("region", { name: "System warnings" })
-      .innerText();
+    const text = await page.getByRole("region", { name: "System warnings" }).innerText();
     expect(text).toContain("JWT_SECRET");
     expect(text).not.toContain("dev-secret-key-quantified-self-2026");
   });
@@ -74,15 +70,10 @@ test.describe("system warnings", () => {
     await signIn(page, account);
 
     const warnings = page.getByRole("region", { name: "System warnings" });
-    const critical = warnings
-      .getByText(/JWT_SECRET is a published default/)
-      .first();
+    const critical = warnings.getByText(/JWT_SECRET is a published default/).first();
     await expect(critical).toBeVisible();
 
-    await warnings
-      .getByRole("button", { name: "Hide for a day" })
-      .first()
-      .click();
+    await warnings.getByRole("button", { name: "Hide for a day" }).first().click();
     await expect(critical).toBeHidden();
 
     // Still hidden after a reload -- that is the whole point of the change.
@@ -111,9 +102,7 @@ test.describe("system warnings", () => {
 
     for (const path of ["/connectors", "/quality", "/profile"]) {
       await page.goto(path);
-      await expect(
-        page.getByRole("region", { name: "System warnings" }),
-      ).toBeVisible();
+      await expect(page.getByRole("region", { name: "System warnings" })).toBeVisible();
     }
   });
 });
