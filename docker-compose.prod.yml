@@ -70,7 +70,10 @@ services:
   nats:
     image: nats:2.10-alpine
     restart: always
-    command: --jetstream --store_dir /data
+    # Monitoring on, port unpublished: reachable from inside the network for
+    # `/varz` and `/jsz`, which is where a wedged consumer's pending count shows,
+    # and reachable from outside not at all.
+    command: --jetstream --store_dir /data --http_port 8222
     volumes:
       - natsdata:/data
     networks:

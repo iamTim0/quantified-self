@@ -59,11 +59,27 @@ class _FakeJetStream:
         self.published.append((subject, payload))
 
 
+class _SlowJetStream(_FakeJetStream):
+    """Times out the first `failures` publishes, as a busy broker does."""
+
+    def __init__(self, failures: int) -> None:
+        super().__init__()
+        self.remaining = failures
+        self.attempts = 0
+
+    async def publish(self, subject: str, payload: bytes) -> None:
+        self.attempts += 1
+        if self.remaining:
+            self.remaining -= 1
+            raise TimeoutError("nats: timeout")
+        await super().publish(subject, payload)
+
+
 class _FakeNats:
     is_connected = True
 
-    def __init__(self) -> None:
-        self.js = _FakeJetStream()
+    def __init__(self, js: _FakeJetStream | None = None) -> None:
+        self.js = js or _FakeJetStream()
 
     def jetstream(self) -> _FakeJetStream:
         return self.js
@@ -134,6 +150,56 @@ async def test_the_archive_is_published_then_deleted(mock_close, mock_report):
     assert mock_close.await_args.kwargs["status"] == "idle"
     assert mock_close.await_args.kwargs["points_received"] == 2
     mock_report.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("apple_health_importer.main.send_field_report", new_callable=AsyncMock)
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+async def test_a_late_ack_does_not_cost_the_import(mock_close, mock_report):
+    """A busy broker answers late. An import of millions of points must survive that.
+
+    Retrying is safe because of the idempotency key: an event that did land and whose
+    ack was merely lost is discarded by Core rather than stored twice.
+    """
+    path = _spooled(_archive())
+    slow = _SlowJetStream(failures=2)
+
+    with (
+        patch("apple_health_importer.main.nc_client", _FakeNats(slow)),
+        patch("apple_health_importer.main.PUBLISH_RETRY_DELAY", 0),
+    ):
+        await _import_archive(
+            path, tenant_id=TENANT, source_id=SOURCE, sync_run_id="run-1", req_id="req-1"
+        )
+
+    assert len(slow.published) == 2
+    assert slow.attempts == 4  # two refusals, then both points
+    assert mock_close.await_args.kwargs["status"] == "idle"
+
+
+@pytest.mark.asyncio
+@patch("apple_health_importer.main.send_field_report", new_callable=AsyncMock)
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+async def test_a_broker_that_never_acks_ends_the_run_naming_the_broker(mock_close, mock_report):
+    """The archive read fine and the fault is not the user's, so the run says so.
+
+    It also says how far it got: those points are stored, and uploading the file again
+    deduplicates rather than doubling.
+    """
+    path = _spooled(_archive())
+    dead = _SlowJetStream(failures=99)
+
+    with (
+        patch("apple_health_importer.main.nc_client", _FakeNats(dead)),
+        patch("apple_health_importer.main.PUBLISH_RETRY_DELAY", 0),
+    ):
+        await _import_archive(
+            path, tenant_id=TENANT, source_id=SOURCE, sync_run_id="run-1", req_id="req-1"
+        )
+
+    assert mock_close.await_args.kwargs["status"] == "error"
+    assert "broker" in mock_close.await_args.kwargs["message"]
+    assert not Path(path).exists()
 
 
 @pytest.mark.asyncio

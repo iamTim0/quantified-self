@@ -66,6 +66,18 @@ _uploads = UploadSpool(
     max_bytes=MAX_ARCHIVE_BYTES,
 )
 
+#: Attempts for one event before an import gives up on it. A whole-history archive is
+#: millions of publishes and takes hours, and every one of them waits for a JetStream ack:
+#: a single ack that does not arrive in time used to end the import, with the archive then
+#: deleted and 195 MB to upload again for a broker that was merely busy. Measured once at
+#: 47,432 points in, against a broker whose consumer was wedged.
+PUBLISH_ATTEMPTS = 5
+
+#: Doubling from here, so the last wait is 1.6s and one event costs at most ~3s of
+#: retries. Long enough to outlast a busy broker, short enough that a genuinely broken one
+#: still fails the import rather than stalling it for hours.
+PUBLISH_RETRY_DELAY = 0.1
+
 #: How often the spool is checked for uploads nobody came back to finish.
 _SWEEP_INTERVAL_SECONDS = 300
 
@@ -348,6 +360,33 @@ def _drain(points: Iterator[dict], size: int) -> list[dict]:
     return batch
 
 
+async def _publish_with_retry(js, payload: bytes, req_id: str) -> None:
+    """Publish one event, retrying an ack that does not arrive.
+
+    A JetStream publish waits for the server to confirm the write, and a broker under
+    load answers late rather than not at all. Retrying is safe precisely because of the
+    `idempotency_key` (AGENTS.md rule 4): if the first attempt did land and only its ack
+    was lost, the duplicate is discarded by Core rather than stored twice.
+
+    Raises `TimeoutError` once the attempts are spent, which ends the import — a broker
+    that has not answered five times over three seconds is not busy, it is broken.
+    """
+    delay = PUBLISH_RETRY_DELAY
+    for attempt in range(1, PUBLISH_ATTEMPTS + 1):
+        try:
+            await js.publish("qs.ingest.apple_health", payload)
+            return
+        except TimeoutError:
+            if attempt == PUBLISH_ATTEMPTS:
+                raise
+            logger.warning(
+                "[req_id=%s] No ack from the broker (attempt %d/%d); retrying in %.1fs",
+                req_id, attempt, PUBLISH_ATTEMPTS, delay,
+            )
+            await asyncio.sleep(delay)
+            delay *= 2
+
+
 async def _import_archive(
     path: str,
     *,
@@ -378,8 +417,27 @@ async def _import_archive(
                 if sync_run_id:
                     event["sync_run_id"] = sync_run_id
                 if js is not None:
-                    await js.publish("qs.ingest.apple_health", json.dumps(event).encode("utf-8"))
+                    await _publish_with_retry(js, json.dumps(event).encode("utf-8"), req_id)
                 published += 1
+    except TimeoutError as exc:
+        # Distinguished from the generic failure below because the cause is elsewhere and
+        # the remedy is not the user's: the archive was read fine, the broker did not
+        # acknowledge. Says how far it got, because that much is stored and a re-import
+        # deduplicates on the idempotency key rather than doubling it.
+        logger.error(
+            "[req_id=%s] The broker stopped acknowledging after %d point(s): %s",
+            req_id, published, exc,
+        )
+        await close_sync_run(
+            tenant_id, source_id, sync_run_id, req_id=req_id, status="error",
+            message=(
+                f"The event broker stopped acknowledging after {published} data point(s). "
+                f"The points already sent are stored; uploading the file again resumes "
+                f"rather than duplicating."
+            ),
+            points_received=published,
+        )
+        return
     except (ArchiveTooLarge, ArchiveUnreadable) as exc:
         # Logged as well as recorded on the run: a rejection that exists only in the
         # database looks, in the log, like an upload that completed and then stopped

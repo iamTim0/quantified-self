@@ -25,9 +25,11 @@ import uuid
 from datetime import datetime, timezone
 
 import nats
+from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 
 from core.config import settings
 from core.db.models import DataPoint, DataSource, SyncRun
@@ -38,6 +40,10 @@ logger = logging.getLogger(__name__)
 
 
 async def process_message(msg):
+    # Bound before the try so the failure handlers can name the tenant whose event it
+    # was; a rejection that does not say whose data it dropped is hard to act on.
+    tenant_id: str | None = None
+    source_id: str | None = None
     try:
         data = json.loads(msg.data.decode())
 
@@ -98,12 +104,13 @@ async def process_message(msg):
             ts_val = ts_raw
 
         sync_run_id = data.get("sync_run_id")
+        source_id = data.get("source_id")
 
         async with async_session_maker() as session:
             stmt = insert(DataPoint).values(
                 id=str(uuid.uuid4()),
                 tenant_id=tenant_id,
-                source_id=data.get("source_id"),
+                source_id=source_id,
                 metric_type=metric_type,
                 timestamp=ts_val,
                 value=data.get("value"),
@@ -138,9 +145,63 @@ async def process_message(msg):
             await session.commit()
 
         await msg.ack()
+    except IntegrityError:
+        # The fifth "a retry cannot fix this", and the one that cannot be seen in the
+        # payload: a foreign key naming a tenant or a connector that does not exist.
+        # Acked for the same reason as the four above, and it matters more than they do
+        # because this arrives in bulk — a database wiped while a stream kept its events
+        # leaves every one of them permanently unstorable.
+        # `error`, not `exception`: the sentence is the whole diagnosis, and these arrive
+        # in the millions. A traceback per event turns draining a stale backlog into a
+        # second problem -- gigabytes of logs describing the same three lines of ORM.
+        logger.error(
+            "Rejected event for tenant=%s source=%s: it violates a database constraint, "
+            "which a redelivery cannot change. Acking to prevent redelivery.",
+            tenant_id,
+            source_id,
+        )
+        await msg.ack()
     except Exception:
         logger.exception("Error processing message")
-        # Not acking — message will be redelivered by JetStream (at-least-once)
+        await _retry_or_give_up(msg)
+
+
+#: Attempts before an event is given up on. A durable consumer's ack window is finite
+#: — 1000 by default — so messages that always fail occupy it and nothing behind them is
+#: ever delivered. That is not a slow queue but a stopped one, and it is invisible from
+#: the outside: measured here once at 1,043,404 pending behind 1.8 million events for a
+#: tenant a database wipe had removed, with nothing stored from *any* importer for as
+#: long as it stood, while each importer reported its own publishes as successful.
+#:
+#: Five rather than one, because unlike the rejections above this branch cannot tell a
+#: permanent failure from a database that happens to be restarting.
+MAX_DELIVERY_ATTEMPTS = 5
+
+
+async def _retry_or_give_up(msg) -> None:
+    """Leave a message for redelivery, unless it has had enough attempts.
+
+    JetStream's `max_deliver` defaults to unlimited, and "unlimited" for an event that
+    fails identically every time means the ack slot it holds is never released. The
+    consumer is configured with a limit as well; this is the half that works on a
+    consumer created before that config existed.
+    """
+    try:
+        delivered = msg.metadata.num_delivered
+    except Exception:  # noqa: BLE001 - metadata is absent on a non-JetStream message
+        return
+
+    if delivered < MAX_DELIVERY_ATTEMPTS:
+        return  # Not acked: JetStream redelivers (at-least-once).
+
+    logger.error(
+        "Giving up on an event after %d attempts and terminating it. The ack window is "
+        "worth more than this message: held by failures, it stops ingestion for every "
+        "tenant. The payload stays in the stream's log for as long as its retention "
+        "allows, so it can still be examined.",
+        delivered,
+    )
+    await msg.term()
 
 
 async def _mark_source_seen(session, tenant_id: str, data: dict) -> None:
@@ -203,6 +264,20 @@ CONNECT_TIMEOUT_SECONDS = 5
 RECONNECT_INITIAL_DELAY = 1.0
 RECONNECT_MAX_DELAY = 30.0
 
+#: How long JetStream waits for an ack before redelivering. Named rather than left to the
+#: library's default because it is half of what a stuck message costs: attempts times
+#: this is how long one ack slot is unavailable.
+ACK_WAIT_SECONDS = 30
+
+#: The ingestion stream is a buffer, not an archive: an event in it is either stored
+#: within seconds or re-derivable — importers re-poll, and an export file can be uploaded
+#: again. Unbounded retention turned that assumption into a gigabyte of events for a
+#: tenant a database wipe had deleted, which no consumer could ever drain and no limit
+#: would ever expire. A week is long enough to survive an outage of Core and short enough
+#: that a broker cannot outlive the database it feeds.
+STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+STREAM_MAX_BYTES = 4 * 1024 * 1024 * 1024
+
 
 async def start_consumer():
     """Connect to NATS and subscribe. Raises promptly if the broker is unreachable."""
@@ -218,13 +293,39 @@ async def start_consumer():
     )
     js = nc.jetstream()
 
-    # Ensure stream exists
+    stream = StreamConfig(
+        name="ingestion",
+        subjects=["qs.ingest.>"],
+        max_age=STREAM_MAX_AGE_SECONDS,
+        max_bytes=STREAM_MAX_BYTES,
+        discard=DiscardPolicy.OLD,
+    )
     try:
-        await js.add_stream(name="ingestion", subjects=["qs.ingest.>"])
-    except Exception as e:
-        logger.info(f"Stream may already exist: {e}")
+        await js.add_stream(stream)
+    except Exception:  # noqa: BLE001 - the stream already exists, which is the normal case
+        # Its limits are brought up to date rather than left as whatever the first Core
+        # to start ever created. An unbounded stream is the state this exists to correct,
+        # so finding one is expected, not exceptional.
+        try:
+            await js.update_stream(stream)
+        except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
+            logger.warning("Could not apply the ingestion stream's limits: %s", exc)
 
-    await js.subscribe("qs.ingest.>", "core_data_service_group", cb=process_message)
+    consumer = ConsumerConfig(
+        max_deliver=MAX_DELIVERY_ATTEMPTS,
+        ack_wait=ACK_WAIT_SECONDS,
+    )
+    try:
+        await js.subscribe(
+            "qs.ingest.>", "core_data_service_group", cb=process_message, config=consumer
+        )
+    except Exception as exc:  # noqa: BLE001 - an existing consumer may refuse the change
+        logger.warning(
+            "Could not apply the consumer's delivery limit (%s); subscribing without it. "
+            "`_retry_or_give_up` still terminates an event that cannot be stored.",
+            exc,
+        )
+        await js.subscribe("qs.ingest.>", "core_data_service_group", cb=process_message)
     logger.info("Started consuming from qs.ingest.>")
     return nc
 

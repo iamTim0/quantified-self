@@ -26,7 +26,11 @@ services:
     ports:
       - "4222:4222" # Client port
       - "127.0.0.1:8222:8222" # Monitoring port — bound to localhost only (SECURITY H5)
-    command: --jetstream --store_dir /data
+    # `--http_port` is what makes the published monitoring port above answer at all.
+    # Without it nothing listened there, so the one place that shows a consumer's pending
+    # count -- the number that says ingestion has stopped rather than slowed -- refused
+    # every connection while looking configured.
+    command: --jetstream --store_dir /data --http_port 8222
     volumes:
       - natsdata:/data
     networks:
