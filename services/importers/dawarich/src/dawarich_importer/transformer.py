@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import canonical_metric_type
 
 # Resolved through the registry rather than spelled out as literals: if one of these
@@ -101,7 +101,10 @@ def transform_dawarich_points(
             "metric_type": METRIC_POINT,
             "timestamp": ts_iso,
             "value": 1.0,
-            "metadata": metadata,
+            # Rule 19. The three points share one `metadata` dict, and each states its
+            # own number, so the pair is added per point rather than to the shared dict:
+            # a latitude's provenance is not a longitude's.
+            "metadata": {**metadata, **provenance(METRIC_POINT, 1.0)},
             "idempotency_key": generate_idempotency_key(
                 tenant_id, source_id, METRIC_POINT, ts_iso
             ),
@@ -115,7 +118,7 @@ def transform_dawarich_points(
             "metric_type": METRIC_LATITUDE,
             "timestamp": ts_iso,
             "value": lat,
-            "metadata": metadata,
+            "metadata": {**metadata, **provenance(METRIC_LATITUDE, lat)},
             "idempotency_key": generate_idempotency_key(
                 tenant_id, source_id, METRIC_LATITUDE, ts_iso
             ),
@@ -129,7 +132,7 @@ def transform_dawarich_points(
             "metric_type": METRIC_LONGITUDE,
             "timestamp": ts_iso,
             "value": lon,
-            "metadata": metadata,
+            "metadata": {**metadata, **provenance(METRIC_LONGITUDE, lon)},
             "idempotency_key": generate_idempotency_key(
                 tenant_id, source_id, METRIC_LONGITUDE, ts_iso
             ),

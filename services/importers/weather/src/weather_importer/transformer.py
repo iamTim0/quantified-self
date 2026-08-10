@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 
 logger = logging.getLogger(__name__)
@@ -88,7 +88,14 @@ def transform(
                     "metric_type": metric,
                     "timestamp": timestamp,
                     "value": value,
-                    "metadata": {"source_type": SOURCE_TYPE, "variable": variable},
+                    # Open-Meteo delivers these in the registry's units, so the pair
+                    # records an unconverted number — rule 19 wants it stated, not
+                    # inferred from the absence of a conversion.
+                    "metadata": {
+                        "source_type": SOURCE_TYPE,
+                        "variable": variable,
+                        **provenance(metric, value),
+                    },
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, metric, timestamp
                     ),
@@ -120,7 +127,7 @@ def transform(
                     "metric_type": metric,
                     "timestamp": timestamp,
                     "value": value,
-                    "metadata": {"source_type": SOURCE_TYPE},
+                    "metadata": {"source_type": SOURCE_TYPE, **provenance(metric, value)},
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, metric, timestamp
                     ),

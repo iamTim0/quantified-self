@@ -56,6 +56,16 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 
     Where a fallback list is genuinely needed, it MUST remember which candidate answered and try that one first. Rebuilding the list per request means paying for every wrong entry forever, and a cost that is paid identically on every request looks like slowness rather than like a bug.
 
+19. **A Value That Arrived Is Either Stored or Named**: A field a provider sent has exactly three permitted fates, and "ignored" is not among them. It becomes a data point; or it is carried in the `metadata` of one; or the `FieldReportCollector` names it, so the Data Quality Center can say *this arrives and we do not keep it*. What is forbidden is the fourth outcome — a field that is read, understood by nobody, and gone without a trace. Every one of those found so far was a provider rename: `heartRate` replacing `avgHeartRate` cost every workout's heart rate, `totalSleep` replacing `asleep` cost every night's total while all four stages stored fine.
+
+    **A shape you did not expect is not a reason to drop a quantity — work out which number it means.** An array of per-interval energy, summed, *is* the session's energy: the identical figure the scalar field states when the payload happens to carry one. A series of samples has an average and a maximum. So derive it, and record that you did: `derived_from` (which fields it came from), `derived_by` (the operation — `sum`, `average`, `max`, `product`, `count`) and `sample_count` (how many values it stands on) go in the metadata, because a derived number that looks like a measured one is a number nobody can later audit. This applies to a figure an importer computes as much as to one it aggregates: `strength_session_volume` is a sum of sets and Yazio's daily macros are either the provider's own summary or our accumulation over the day's items, and which of the two it was is not something to leave to guesswork. **What the provider stated outright always beats what we derived**, and a fallback never overwrites a statement.
+
+    **The one hard limit on that**: never write a derived or per-sample value into a metric whose aggregation then counts it twice. `steps` and `distance` are `Aggregation.SUM` and the day's own total already arrives from the provider, so adding a workout's forty per-minute samples on top makes that day read about a third high — in the dashboard, in the analyses, in every export. **A wrong number is worse than a missing one, because nothing distinguishes it from a right one**, whereas a missing one is visible in the report and can be asked about. Where per-sample resolution is genuinely wanted, it gets its own key in the registry first (rule 15).
+
+    **Raw provenance travels with every point**: `metadata.provider_value` is the number exactly as the provider stated it, before any unit conversion, and `metadata.units` is the unit it stated. That is what answers "why does this differ from the number in my Health app" without a re-import, and it is the reason a conversion bug is recoverable rather than destructive.
+
+    **Whole raw payloads are deliberately not stored.** Not for storage cost — because this platform deliberately does not store special-category data (ECG traces, cycle tracking, medications, State of Mind), and a stored raw payload would keep all of it anyway, invisibly, in a column nothing declares. Whether that data is held is the operator's decision and it changes what the privacy policy must say; it is not something an importer does as a side effect of being careful. Per-value provenance, yes, always. Per-payload archives, no.
+
 ---
 
 ## Code Conventions
@@ -158,6 +168,10 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ A code default that names a container (`http://dashboard:3000`, `core-service:50051`) or a port the service does not bind (rule 18).
 - ❌ A candidate/fallback list that re-pays for its failing entries on every request instead of remembering what answered.
 - ❌ A test that asserts on a fragment of prose which the next wording change would silently defeat — assert on the `code`, the status, or the structure.
+- ❌ A provider field that is neither stored, nor carried in metadata, nor named in the field report (rule 19) — least of all one skipped merely for arriving as an array or an object.
+- ❌ A derived value that does not say it was derived (`derived_from`, `derived_by`, `sample_count`), or one that overwrites a figure the provider stated outright.
+- ❌ Per-sample values written into a `SUM` metric whose daily total the provider already sends — that is double counting, and it is worse than the gap it fills.
+- ❌ A data point without `metadata.provider_value` and `metadata.units`, or an importer that stores whole raw payloads instead (rule 19).
 
 ## Documentation Requirements for New Features
 

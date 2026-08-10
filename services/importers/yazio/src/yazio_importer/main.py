@@ -204,12 +204,12 @@ async def resolve_recipe_name(client: YazioClient, recipe_id: str) -> str:
     try:
         r = await client.get_recipe(recipe_id)
         if isinstance(r, dict) and r:
-            name = r.get("name") or r.get("title") or f"Rezept #{recipe_id[:8]}"
+            name = r.get("name") or r.get("title") or f"Recipe #{recipe_id[:8]}"
             recipe_cache[recipe_id] = {"name": name}
             return name
     except Exception as e:
         logger.debug(f"Could not fetch name for recipe {recipe_id}: {e}")
-    fallback = f"Rezept #{recipe_id[:8]}"
+    fallback = f"Recipe #{recipe_id[:8]}"
     recipe_cache[recipe_id] = {"name": fallback}
     return fallback
 

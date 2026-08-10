@@ -44,3 +44,32 @@ X-Request-ID: <request-id>
 
 The response carries `data_points`; each element describes one normalized measurement with
 its `metric_type`, timestamp, value, source and metadata.
+
+## What every point carries about the number in it
+
+`value` is normalized: it is in the unit the [metric registry](../metrics.md) declares, which is
+often not the unit the provider sent. So every point also carries, in its `metadata`:
+
+| Field | Meaning |
+| --- | --- |
+| `provider_value` | the number exactly as the provider stated it, before any conversion |
+| `units` | the unit it was in |
+
+That pair is what answers "why does this differ from the number in the provider's own app"
+without importing anything again, and it is why a conversion that turns out to be wrong can be
+corrected from stored data instead of costing the readings.
+
+Where a number is not something a provider sent but something an importer worked out — a series
+of per-interval samples added up, a set volume as weight times reps, a daily total accumulated
+from the day's items because the provider stated none — three more fields say so:
+
+| Field | Meaning |
+| --- | --- |
+| `derived_from` | the provider fields it was built from |
+| `derived_by` | the operation: `sum`, `average`, `max`, `product`, `count`, `difference` |
+| `sample_count` | how many values it stands on |
+
+A figure the provider stated outright is never replaced by a derived one, and a derived figure
+never arrives looking like a measurement. No provider field is silently discarded: what is not
+stored as a metric is either kept in metadata or named in the
+[Data Quality Center](../features/data-quality.md).

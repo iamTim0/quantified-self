@@ -23,7 +23,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 
 logger = logging.getLogger(__name__)
@@ -131,7 +131,10 @@ def transform(
                 "metadata": {
                     "source_type": SOURCE_TYPE,
                     "entity_id": entity_id,
-                    "unit": attributes.get("unit_of_measurement"),
+                    # `units`, not `unit`: rule 19 names one key for this across every
+                    # importer, and a Home Assistant entity states its own unit — which
+                    # for a namespaced metric is the only record of what the number is.
+                    **provenance(metric, value, attributes.get("unit_of_measurement")),
                     "friendly_name": attributes.get("friendly_name"),
                 },
                 "idempotency_key": generate_idempotency_key(

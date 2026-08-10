@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import canonical_metric_type
 
 logger = logging.getLogger(__name__)
@@ -124,7 +124,10 @@ def transform_streak_export_json(
                     "metric_type": METRIC_SET_WEIGHT,
                     "timestamp": set_ts,
                     "value": weight_val,
-                    "metadata": base_metadata,
+                    "metadata": {
+                        **base_metadata,
+                        **provenance(METRIC_SET_WEIGHT, weight_val),
+                    },
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, f"{METRIC_SET_WEIGHT}_{set_id}", set_ts
                     ),
@@ -142,7 +145,7 @@ def transform_streak_export_json(
                     "metric_type": METRIC_SET_REPS,
                     "timestamp": set_ts,
                     "value": reps_val,
-                    "metadata": base_metadata,
+                    "metadata": {**base_metadata, **provenance(METRIC_SET_REPS, reps_val)},
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, f"{METRIC_SET_REPS}_{set_id}", set_ts
                     ),
@@ -161,7 +164,15 @@ def transform_streak_export_json(
                         "metric_type": METRIC_SET_VOLUME,
                         "timestamp": set_ts,
                         "value": set_vol,
-                        "metadata": base_metadata,
+                        # Streak never sent this number: it is weight times reps, and
+                        # rule 19 wants a computed figure to say so rather than pass for
+                        # a reading.
+                        "metadata": {
+                            **base_metadata,
+                            **provenance(METRIC_SET_VOLUME, set_vol),
+                            "derived_from": ["weight", "reps"],
+                            "derived_by": "product",
+                        },
                         "idempotency_key": generate_idempotency_key(
                             tenant_id, source_id, f"{METRIC_SET_VOLUME}_{set_id}", set_ts
                         ),
@@ -177,7 +188,10 @@ def transform_streak_export_json(
                     "metric_type": METRIC_SET_HEART_RATE_MAX,
                     "timestamp": set_ts,
                     "value": float(max_pulse),
-                    "metadata": base_metadata,
+                    "metadata": {
+                        **base_metadata,
+                        **provenance(METRIC_SET_HEART_RATE_MAX, float(max_pulse)),
+                    },
                     "idempotency_key": generate_idempotency_key(
                         tenant_id, source_id, f"{METRIC_SET_HEART_RATE_MAX}_{set_id}", set_ts
                     ),
@@ -200,7 +214,13 @@ def transform_streak_export_json(
                 "metric_type": METRIC_SESSION_VOLUME,
                 "timestamp": workout_ts,
                 "value": total_workout_volume,
-                "metadata": workout_summary_meta,
+                "metadata": {
+                    **workout_summary_meta,
+                    **provenance(METRIC_SESSION_VOLUME, total_workout_volume),
+                    "derived_from": ["sets[].weight", "sets[].reps"],
+                    "derived_by": "sum",
+                    "sample_count": total_workout_sets,
+                },
                 "idempotency_key": generate_idempotency_key(
                     tenant_id, source_id, METRIC_SESSION_VOLUME, workout_ts
                 ),
@@ -212,7 +232,12 @@ def transform_streak_export_json(
                 "metric_type": METRIC_SESSION_SETS,
                 "timestamp": workout_ts,
                 "value": float(total_workout_sets),
-                "metadata": workout_summary_meta,
+                "metadata": {
+                    **workout_summary_meta,
+                    **provenance(METRIC_SESSION_SETS, float(total_workout_sets)),
+                    "derived_from": ["sets[]"],
+                    "derived_by": "count",
+                },
                 "idempotency_key": generate_idempotency_key(
                     tenant_id, source_id, METRIC_SESSION_SETS, workout_ts
                 ),

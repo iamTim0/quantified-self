@@ -18,7 +18,7 @@ worse than merely inconsistent:
 
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import canonical_metric_type
 
 from yazio_importer.config import settings
@@ -81,6 +81,11 @@ def transform_consumed_items(
     total_prot = 0.0
     total_carb = 0.0
     total_fat = 0.0
+    #: How many logged items the accumulations above stand on. It is what tells a daily
+    #: total derived here from one the provider stated, and it is what `sample_count`
+    #: reports (rule 19). Also the test for "did anything contribute at all": a day whose
+    #: items sum to zero is a day with a zero in it, not a day with nothing in it.
+    contributing_items = 0
 
     # 1. Transform Products (Logged items with product_id, amount, daytime)
     for idx, item in enumerate(products):
@@ -96,7 +101,7 @@ def transform_consumed_items(
             or item.get("product_name")
             or (item.get("food") or {}).get("name")
             or (p_info.get("name") if p_info else None)
-            or (f"Produkt #{pid[:8]}" if pid else "Unbekanntes Lebensmittel")
+            or (f"Product #{pid[:8]}" if pid else "Unknown food")
         )
 
         item_cal = item.get("calories") or item.get("energy") or item.get("kcal")
@@ -125,6 +130,7 @@ def transform_consumed_items(
             total_prot += float(item_prot or 0.0)
             total_carb += float(item_carb or 0.0)
             total_fat += float(item_fat or 0.0)
+            contributing_items += 1
 
         item_source_id = f"{source_id}_product_{item_id}"
         idempotency_key = generate_idempotency_key(
@@ -146,7 +152,12 @@ def transform_consumed_items(
                 "item_type": item.get("type", "product"),
                 "meal_category": str(meal_cat),
                 "amount": amount,
-                "unit": item.get("serving") or "g",
+                # `serving_unit`, not `unit`: this is the unit of the *portion* the user
+                # logged, which is a different thing from `units` — the unit the stored
+                # value is in (rule 19). Two keys one letter apart meaning two things is
+                # how the wrong one gets read.
+                "serving_unit": item.get("serving") or "g",
+                **provenance(metric_type, val_flt),
                 "calories_kcal": float(item_cal) if item_cal is not None else None,
                 "protein_g": float(item_prot) if item_prot is not None else None,
                 "carbs_g": float(item_carb) if item_carb is not None else None,
@@ -170,7 +181,10 @@ def transform_consumed_items(
             r_item.get("name")
             or r_item.get("title")
             or cached_rname
-            or (f"Rezept #{rid[:8]}" if rid else "Unbekanntes Rezept")
+            # English, like everything a service produces (rule 16/17): the dashboard
+            # shows this name as it arrives, and a German fallback reached an English
+            # reader with no way to translate it.
+            or (f"Recipe #{rid[:8]}" if rid else "Unknown recipe")
         )
 
         metric_type = METRIC_NUTRITION_RECIPE_PORTIONS
@@ -195,6 +209,7 @@ def transform_consumed_items(
                 "item_type": "recipe_portion",
                 "meal_category": str(meal_cat),
                 "portion_count": portion_count,
+                **provenance(metric_type, float(portion_count)),
                 "logged_time": r_item.get("date"),
             },
             "idempotency_key": idempotency_key,
@@ -218,6 +233,7 @@ def transform_consumed_items(
         total_prot += float(prot_val)
         total_fat += float(fat_val)
         total_carb += float(carb_val)
+        contributing_items += 1
 
         metric_type = METRIC_NUTRITION_ITEM_ENERGY
         item_source_id = f"{source_id}_simple_{s_id}"
@@ -241,6 +257,7 @@ def transform_consumed_items(
                 "protein_g": float(prot_val),
                 "carbs_g": float(carb_val),
                 "fat_g": float(fat_val),
+                **provenance(metric_type, float(cal_val)),
                 "is_ai_generated": s_item.get("is_ai_generated", False),
                 "logged_time": s_item.get("date"),
             },
@@ -252,7 +269,7 @@ def transform_consumed_items(
     # 4. Standard items list (legacy / fallback)
     for idx, item in enumerate(items):
         item_cal = item.get("calories") or item.get("energy") or item.get("kcal")
-        food_name = item.get("name") or item.get("title") or "Unbekanntes Lebensmittel"
+        food_name = item.get("name") or item.get("title") or "Unknown food"
         item_id = item.get("id") or f"idx_{idx}"
         meal_cat = item.get("category") or item.get("meal") or "general"
         amount = item.get("amount", 100)
@@ -267,6 +284,7 @@ def transform_consumed_items(
             total_prot += p_val
             total_carb += c_val
             total_fat += f_val
+            contributing_items += 1
 
             metric_type = METRIC_NUTRITION_ITEM_ENERGY
             item_source_id = f"{source_id}_{item_id}"
@@ -288,7 +306,8 @@ def transform_consumed_items(
                     "food_name": str(food_name),
                     "meal_category": str(meal_cat),
                     "amount": amount,
-                    "unit": item.get("unit", "g"),
+                    "serving_unit": item.get("unit", "g"),
+                    **provenance(metric_type, val_flt),
                     "protein_g": p_val,
                     "carbs_g": c_val,
                     "fat_g": f_val,
@@ -299,23 +318,32 @@ def transform_consumed_items(
             data_points.append(dp)
 
     # 5. Daily macro summary totals
-    raw_cal_val = summary.get("calories") or (total_cal if total_cal > 0 else None)
-    raw_prot_val = summary.get("protein_g") or summary.get("protein") or (total_prot if total_prot > 0 else None)
-    raw_carb_val = summary.get("carbs_g") or summary.get("carbohydrates") or summary.get("carbs") or (total_carb if total_carb > 0 else None)
-    raw_fat_val = summary.get("fat_g") or summary.get("fat") or (total_fat if total_fat > 0 else None)
-    raw_fiber_val = summary.get("fiber_g") or summary.get("fiber")
+    #
+    # Each figure is either stated by Yazio's own day summary or added up here from the
+    # day's items. Rule 19 keeps those apart: a total we computed says so, and says out
+    # of how many items. Presence rather than `or`, because a real zero — a fasting day,
+    # a macro nothing logged — is falsy: `or` replaced it with our accumulation and then
+    # dropped the metric entirely when that was zero too, so the day stored nothing
+    # where it should have stored a nought.
+    def _daily(keys: tuple[str, ...], accumulated: float) -> tuple[float | None, bool]:
+        for key in keys:
+            stated = summary.get(key)
+            if stated is not None:
+                return float(stated), False
+        return (accumulated, True) if contributing_items else (None, True)
 
     daily_metrics = {
-        METRIC_NUTRITION_ENERGY: float(raw_cal_val) if raw_cal_val is not None else None,
-        METRIC_NUTRITION_PROTEIN: float(raw_prot_val) if raw_prot_val is not None else None,
-        METRIC_NUTRITION_CARBOHYDRATES: float(raw_carb_val)
-        if raw_carb_val is not None
-        else None,
-        METRIC_NUTRITION_FAT: float(raw_fat_val) if raw_fat_val is not None else None,
-        METRIC_NUTRITION_FIBER: float(raw_fiber_val) if raw_fiber_val is not None else None,
+        METRIC_NUTRITION_ENERGY: _daily(("calories",), total_cal),
+        METRIC_NUTRITION_PROTEIN: _daily(("protein_g", "protein"), total_prot),
+        METRIC_NUTRITION_CARBOHYDRATES: _daily(
+            ("carbs_g", "carbohydrates", "carbs"), total_carb
+        ),
+        METRIC_NUTRITION_FAT: _daily(("fat_g", "fat"), total_fat),
+        # Nothing accumulates fibre per item, so it exists only if the summary states it.
+        METRIC_NUTRITION_FIBER: _daily(("fiber_g", "fiber"), 0.0),
     }
 
-    for metric_type, val in daily_metrics.items():
+    for metric_type, (val, derived) in daily_metrics.items():
         if val is None:
             continue
 
@@ -323,16 +351,23 @@ def transform_consumed_items(
             tenant_id, source_id, metric_type, timestamp
         )
 
+        metadata: dict[str, Any] = {
+            "source_type": "yazio",
+            "day": day,
+            **provenance(metric_type, float(val)),
+        }
+        if derived:
+            metadata["derived_from"] = ["items[]"]
+            metadata["derived_by"] = "sum"
+            metadata["sample_count"] = contributing_items
+
         dp = {
             "tenant_id": tenant_id,
             "source_id": source_id,
             "metric_type": metric_type,
             "timestamp": timestamp,
             "value": float(val),
-            "metadata": {
-                "source_type": "yazio",
-                "day": day,
-            },
+            "metadata": metadata,
             "idempotency_key": idempotency_key,
             "source_type": "yazio",
         }
@@ -361,6 +396,7 @@ def transform_consumed_items(
                             "source_type": "yazio",
                             "day": day,
                             "meal_category": meal_cat,
+                            **provenance(metric_type, float(cal_val)),
                         },
                         "idempotency_key": idempotency_key,
                         "source_type": "yazio",

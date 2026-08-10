@@ -202,7 +202,8 @@ def test_unit_and_friendly_name_are_preserved():
     ]
     meta = transform(rows, TENANT, SOURCE)[0]["metadata"]
 
-    assert meta["unit"] == "°C"
+    assert meta["units"] == "°C"
+    assert meta["provider_value"] == 21.5
     assert meta["friendly_name"] == "Wohnzimmer"
     assert meta["entity_id"] == "sensor.living_room_temp"
 

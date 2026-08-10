@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import idempotency_key
+from shared_schemas import idempotency_key, provenance
 from shared_schemas.metrics import canonical_metric_type
 
 from calendar_importer.ics import CalendarEvent
@@ -60,7 +60,14 @@ def _event(
         "metric_type": metric_type,
         "timestamp": iso,
         "value": float(value),
-        "metadata": {"source_type": SOURCE_TYPE, **metadata},
+        # Rule 19: every point says what arrived and in what unit. Calendar values are
+        # counted here rather than reported by a provider, so the number is its own
+        # provenance and the unit is the registry's.
+        "metadata": {
+            "source_type": SOURCE_TYPE,
+            **provenance(metric_type, float(value)),
+            **metadata,
+        },
         "idempotency_key": generate_idempotency_key(
             tenant_id, key_source_id or source_id, metric_type, iso
         ),
