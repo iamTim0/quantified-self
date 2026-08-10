@@ -283,6 +283,15 @@ jobs:
       - name: Tool tests
         run: uv run --with pytest pytest tools/tests -q
 
+      # packages/shared-schemas had the same gap: every service depends on this
+      # package, `task test:packages` runs its suite locally, and nothing ran it
+      # here -- so the metric registry and the upload spool were covered only on
+      # whichever machine happened to type the task name.
+      - name: Shared package tests
+        run: >-
+          uv run --directory packages/shared-schemas
+          --with pytest --with pytest-asyncio pytest tests -q
+
       - name: Validate importer contracts
         run: python tools/importer_contracts.py
 

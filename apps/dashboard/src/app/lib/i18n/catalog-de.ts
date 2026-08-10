@@ -97,8 +97,7 @@ export const de: Record<MessageKey, string> = {
   // ── Sign-in callback ────────────────────────────────────────────────────
   "auth.callbackTitle": "Anmeldung fehlgeschlagen",
   "auth.callbackDone": "Angemeldet. Weiterleitung…",
-  "auth.callbackIncomplete":
-    "Die Rückmeldung des Anbieters war unvollständig.",
+  "auth.callbackIncomplete": "Die Rückmeldung des Anbieters war unvollständig.",
 
   // ── Sharing ─────────────────────────────────────────────────────────────
   "share.title": "Daten teilen",
@@ -119,22 +118,17 @@ export const de: Record<MessageKey, string> = {
   "warnings.severity.info": "Hinweis",
   "warnings.openDocs": "Dokumentation öffnen",
   "warnings.dismiss": "Für einen Tag ausblenden",
-  "warnings.dismissTitle":
-    "Für einen Tag ausblenden — morgen wieder da, bis es behoben ist",
-  "warning.password_published.title":
-    "Dieses Passwort ist öffentlich bekannt",
+  "warnings.dismissTitle": "Für einen Tag ausblenden — morgen wieder da, bis es behoben ist",
+  "warning.password_published.title": "Dieses Passwort ist öffentlich bekannt",
   "warning.password_published.detail":
     "Der Hash dieses Passworts stand in einer veröffentlichten Quelle — es war der Entwicklungs-Zugang, den frühere Versionen dieses Projekts mitgeliefert haben. bcrypt verzögert einen Angriff, es verhindert ihn nicht. Wer den Hash hat, kann das Passwort offline durchprobieren, so lange er möchte.",
   "warning.password_published.action":
     "Passwort jetzt ändern — und falls es anderswo verwendet wird, dort ebenfalls.",
-  "warning.insecure_jwt_secret.title":
-    "JWT_SECRET ist ein veröffentlichter Standardwert",
+  "warning.insecure_jwt_secret.title": "JWT_SECRET ist ein veröffentlichter Standardwert",
   "warning.insecure_jwt_secret.detail":
     "Sitzungen werden mit einem Schlüssel signiert, der im Quellcode dieses Projekts steht. Wer ihn kennt, kann sich ein Token für jedes Konto und jeden Arbeitsbereich ausstellen.",
-  "warning.insecure_jwt_secret.action":
-    "Einen eigenen Wert setzen: {generate}",
-  "warning.insecure_encryption_key.title":
-    "ENCRYPTION_KEY ist ein veröffentlichter Standardwert",
+  "warning.insecure_jwt_secret.action": "Einen eigenen Wert setzen: {generate}",
+  "warning.insecure_encryption_key.title": "ENCRYPTION_KEY ist ein veröffentlichter Standardwert",
   "warning.insecure_encryption_key.detail":
     "Die hinterlegten Connector-Zugangsdaten sind für jeden entschlüsselbar, der diesen Schlüssel kennt — und er steht im Quellcode.",
   "warning.insecure_encryption_key.action":
@@ -143,8 +137,7 @@ export const de: Record<MessageKey, string> = {
     "INTERNAL_SERVICE_SECRET ist ein veröffentlichter Standardwert",
   "warning.insecure_internal_secret.detail":
     "Damit kann sich jeder als interner Dienst ausweisen und entschlüsselte Connector-Zugangsdaten abrufen.",
-  "warning.insecure_internal_secret.action":
-    "Einen eigenen Wert setzen: {generate}",
+  "warning.insecure_internal_secret.action": "Einen eigenen Wert setzen: {generate}",
   "warning.registration_open.title": "Selbstregistrierung ist offen",
   "warning.registration_open.detail":
     "Jede Person, die diese Adresse kennt, kann sich ein Konto und einen eigenen Arbeitsbereich anlegen.",
@@ -163,8 +156,7 @@ export const de: Record<MessageKey, string> = {
 
   // ── Overview ────────────────────────────────────────────────────────────
   "overview.title": "Übersicht",
-  "overview.subtitle":
-    "Aggregierte Auswertung deiner verbundenen Sensoren und Tracker.",
+  "overview.subtitle": "Aggregierte Auswertung deiner verbundenen Sensoren und Tracker.",
   "overview.empty": "Noch keine Datenpunkte gespeichert.",
   "overview.emptyAction": "Quelle verbinden und Daten importieren",
   "overview.loadingChart": "Diagramm lädt…",
@@ -185,8 +177,7 @@ export const de: Record<MessageKey, string> = {
   "quality.conflictsNone": "Keine auffälligen konkurrierenden Quellen.",
   "quality.conflictsHelp": "Einheiten und bevorzugte Primärquelle prüfen.",
   "quality.recommendationComplete": "Datenbasis wirkt vollständig.",
-  "quality.recommendationMinor":
-    "Leichte Lücken: Analyse nutzbar, aber Trends prüfen.",
+  "quality.recommendationMinor": "Leichte Lücken: Analyse nutzbar, aber Trends prüfen.",
   "quality.recommendationSerious":
     "Connector, Token oder Sync-Frequenz prüfen, bevor Empfehlungen abgeleitet werden.",
   "quality.explainTitle": "Was bedeuten diese Werte?",
@@ -216,8 +207,7 @@ export const de: Record<MessageKey, string> = {
   "quality.backfillHint":
     "Der Importdialog schlägt den benötigten Zeitraum vor und überspringt bereits vorhandene Bereiche.",
   "quality.conflictsNoneLong": "Keine widersprüchlichen Messwerte gefunden.",
-  "quality.conflictsSome":
-    "{count} Messwerte weichen zwischen Quellen deutlich voneinander ab.",
+  "quality.conflictsSome": "{count} Messwerte weichen zwischen Quellen deutlich voneinander ab.",
   "quality.conflictsAdvice":
     "Bei Konflikten sollte die zuverlässigste Quelle pro Metrik priorisiert und die Einheit im Importer-Transformer geprüft werden.",
 
@@ -238,10 +228,8 @@ export const de: Record<MessageKey, string> = {
   "chart.typeLine": "Liniendiagramm",
   "chart.typeBar": "Balkendiagramm",
   "chart.refresh": "Diagramm aktualisieren",
-  "chart.emptyPeriod":
-    "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
-  "chart.emptyFilter":
-    "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
+  "chart.emptyPeriod": "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
+  "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
   "map.tilesFailed":
     "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
   "map.today": "Heute",
@@ -280,18 +268,14 @@ export const de: Record<MessageKey, string> = {
     "Kalorien, Makronährstoffe (Protein, Kohlenhydrate, Fett) und Mahlzeitentagebuch.",
   "connectors.desc.dawarich":
     "GPS-Standortdaten und Bewegungsstrecken, gespeichert mit PostGIS-Spatial-Index.",
-  "connectors.desc.whoop":
-    "Herzfrequenzvariabilität, Schlafphasen und Strain Score.",
+  "connectors.desc.whoop": "Herzfrequenzvariabilität, Schlafphasen und Strain Score.",
   "connectors.desc.apple_health":
     "Schritte, Aktivitätsenergie, Ruheherzfrequenz und Schlafphasen über Health Auto Export.",
   "connectors.desc.streak":
     "Krafttraining aus Streak 2.0: Übungen, Sätze, Wiederholungen und Gewicht.",
-  "connectors.desc.home_assistant":
-    "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.",
-  "connectors.desc.weather":
-    "Temperatur, Luftdruck, Niederschlag und UV-Index.",
-  "connectors.desc.calendar":
-    "ICS-Feeds, Termine, Meetingdauer und Busy Hours pro Tag.",
+  "connectors.desc.home_assistant": "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.",
+  "connectors.desc.weather": "Temperatur, Luftdruck, Niederschlag und UV-Index.",
+  "connectors.desc.calendar": "ICS-Feeds, Termine, Meetingdauer und Busy Hours pro Tag.",
   "connectors.nameWeather": "Wetter",
   "connectors.nameCalendar": "Kalender",
   "connectors.confirmDelete":
@@ -322,7 +306,6 @@ export const de: Record<MessageKey, string> = {
 
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Importieren",
-  "connectors.history": "Verlauf",
   "connectors.upload": "Hochladen",
   "connectors.fileDriven": "Wird per Export-Datei befüllt",
   "connectors.queued": "In Warteschlange",
@@ -410,23 +393,20 @@ export const de: Record<MessageKey, string> = {
   "apikeys.copy": "In die Zwischenablage kopieren",
   "apikeys.storeNow":
     "Jetzt in der App hinterlegen. Nach dem Schließen ist er nicht wieder abrufbar — nur widerrufen und neu erzeugen.",
-  "apikeys.none":
-    "Noch kein Schlüssel für {provider}. Erzeuge einen, um Daten zu empfangen.",
+  "apikeys.none": "Noch kein Schlüssel für {provider}. Erzeuge einen, um Daten zu empfangen.",
   "apikeys.created": "Erstellt {date}",
   "apikeys.expires": "läuft ab {date}",
   "apikeys.lastUsed": "zuletzt genutzt {date}",
   "apikeys.neverUsed": "noch nie genutzt",
   "apikeys.statusActive": "aktiv",
   "apikeys.statusRevoked": "widerrufen",
-  "apikeys.rotateTitle":
-    "Nachfolger erzeugen; dieser Key bleibt bis zum Widerruf gültig",
+  "apikeys.rotateTitle": "Nachfolger erzeugen; dieser Key bleibt bis zum Widerruf gültig",
   "apikeys.revokeTitle": "Sofort ungültig machen",
   "apikeys.namePlaceholder": "z. B. iPhone",
   "apikeys.noExpiry": "Kein Ablauf",
   "apikeys.rotationHint":
     "Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die",
-  "oidc.forbidden":
-    "Nur Inhaber und Administratoren können Anbieter verwalten.",
+  "oidc.forbidden": "Nur Inhaber und Administratoren können Anbieter verwalten.",
   "oidc.loadFailed": "Anbieter konnten nicht geladen werden.",
   "oidc.saveFailed": "Speichern fehlgeschlagen.",
   "oidc.deleteFailed": "Löschen fehlgeschlagen.",
@@ -517,46 +497,66 @@ export const de: Record<MessageKey, string> = {
   "import.uploadAccepted":
     "Die Datei ist angekommen und wird gelesen. Der Fortschritt erscheint oben.",
   "import.uploadFailed": "Die Datei konnte nicht hochgeladen werden.",
+  "import.uploadInParts":
+    "Die Datei wird in Teilen gesendet, damit auch ein großer Export durchkommt. Du kannst diesen Dialog schließen — der Upload läuft weiter.",
+  "import.minimize": "Minimieren",
+  "import.minimizeHint": "Dialog schließen. Der Upload läuft weiter und bleibt sichtbar.",
   "import.uploadReimportNote":
     "Dieselbe Datei kann erneut hochgeladen werden, ohne Duplikate zu erzeugen: ein bereits gespeicherter Messwert bleibt ein Messwert.",
   "import.planFailed": "Importplan konnte nicht geladen werden.",
   "import.startFailed": "Import konnte nicht gestartet werden.",
-  "import.nothingToDo":
-    "Nichts zu tun — der Zeitraum ist bereits vollständig vorhanden.",
+  "import.nothingToDo": "Nichts zu tun — der Zeitraum ist bereits vollständig vorhanden.",
   "import.queued": "Import wurde eingereiht.",
-  "import.subtitle":
-    "Zeitraum prüfen und anpassen, bevor der Import startet.",
+  "import.subtitle": "Zeitraum prüfen und anpassen, bevor der Import startet.",
   "import.close": "Dialog schließen",
-  "import.smartHint":
-    "Bereits vollständig vorhandene Zeiträume werden übersprungen. Nur der",
+  "import.smartHint": "Bereits vollständig vorhandene Zeiträume werden übersprungen. Nur der",
   "import.forceLabel": "Alles erzwingen",
   "import.forceHint":
     "aber der Lauf dauert länger und belastet das API-Kontingent des Anbieters. Der Lauf wird im Importprotokoll als force gekennzeichnet.",
   "import.noAnalysis": "Noch keine Analyse verfügbar.",
-  "import.tooIrregular":
-    "Die vorhandenen Daten sind zu unregelmäßig für eine sichere",
+  "import.tooIrregular": "Die vorhandenen Daten sind zu unregelmäßig für eine sichere",
   "import.willSkip": "Wird übersprungen",
   "import.willImport": "Wird importiert",
   "import.nothingToImportShort": "Nichts zu importieren.",
   "import.start": "Import starten",
   "import.nothingToImport": "Nichts zu importieren",
 
+  // ── Upload-Banner (ein Upload, der seinen Dialog überlebt hat) ──────────────
+  "upload.title": "Upload läuft — {name}",
+  "upload.doneTitle": "Upload abgeschlossen — {name}",
+  "upload.errorTitle": "Upload fehlgeschlagen — {name}",
+  "upload.cancelledTitle": "Upload abgebrochen — {name}",
+  "upload.sentOf": "{done} von {total} MB · {percent} %",
+  "upload.progressPercent": "{percent} % hochgeladen",
+  "upload.assembling": "Alle Teile sind angekommen. Der Importer liest das Archiv…",
+  "upload.doneBody": "Das Archiv wird gelesen. Der Connector zeigt, wie der Import läuft.",
+  "upload.errorBody": "Der Upload ist abgebrochen, bevor die Datei vollständig war.",
+  "upload.cancelledBody": "Die bereits angekommenen Teile wurden gelöscht.",
+  "upload.cancel": "Upload abbrechen",
+  "upload.resume": "Fortsetzen",
+  "upload.dismiss": "Ausblenden",
+
   // ── Import duration ─────────────────────────────────────────────────────
   "import.hours": "{count} Std.",
 
   // ── Data explorer ───────────────────────────────────────────────────────
+  "explorer.title": "Rohdaten-Explorer",
+  "explorer.subtitle":
+    "Direkter Zugriff auf alle Rohdatenpunkte dieses Workspace. Gespeicherte Ansichten liegen in PostgreSQL.",
   "explorer.refresh": "Daten aktualisieren",
   "explorer.savedViews": "Gespeicherte Ansichten",
   "explorer.saveCurrent": "Aktuelle Ansicht speichern",
+  "explorer.viewNamePlaceholder": "Name der Ansicht…",
   "explorer.deleteView": "Ansicht löschen",
   "explorer.noViews":
     "Noch keine gespeicherten Ansichten. Filter einstellen und auf „Aktuelle Ansicht speichern“ klicken.",
   "explorer.source": "Quelle:",
   "explorer.allSources": "Alle Quellen",
   "explorer.period": "Zeitraum:",
+  "explorer.aggregation": "Aggregat:",
   "explorer.dailySum": "Tages-Summe",
   "explorer.dailyAverage": "Tages-Durchschnitt",
-  "explorer.selectedMetrics": "Ausgewählte Metriken ({count}):",
+  "explorer.dailyMax": "Tages-Maximum",
   "explorer.selectAll": "Alle auswählen",
   "explorer.searchPlaceholder":
     "Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata…)",
@@ -564,15 +564,63 @@ export const de: Record<MessageKey, string> = {
   "explorer.colValue": "Wert",
   "explorer.empty": "Keine Datenpunkte für die aktuelle Abfrage gefunden.",
 
+  // ── Data explorer: views ────────────────────────────────────────────────
+  "explorer.tabChart": "Diagramm",
+  "explorer.tabRaw": "Rohdatenpunkte",
+  "explorer.tabOverview": "Metriken",
+
+  // ── Data explorer: metric picker ────────────────────────────────────────
+  "explorer.metrics": "Metriken:",
+  "explorer.metricsNone": "Keine Metrik ausgewählt",
+  "explorer.metricsSelected_one": "{count} Metrik",
+  "explorer.metricsSelected_other": "{count} Metriken",
+  "explorer.metricFilterPlaceholder": "Metriken filtern…",
+  "explorer.clearSelection": "Auswahl leeren",
+  "explorer.metricsEmpty": "Noch keine Metriken gespeichert.",
+  "explorer.metricsNoMatch": "Keine Metrik passt zu diesem Filter.",
+
+  // ── Data explorer: raw point log ────────────────────────────────────────
+  "explorer.rawCount_one": "{count} Treffer",
+  "explorer.rawCount_other": "{count} Treffer",
+  "explorer.rawTruncated": "Angezeigt werden die neuesten {shown} von {total} Treffern.",
+  "explorer.liveQuery": "Live-TimescaleDB-Abfrage",
+  "explorer.sampleNote":
+    "Diagramm und Tabelle lesen die neuesten {count} Datenpunkte. Öffne eine einzelne Metrik im Tab {tab}, um stattdessen deren eigene Historie zu laden.",
+  "explorer.scopeActive": "Einzeln geladen: {metric}",
+  "explorer.scopeClear": "Zurück zu allen Metriken",
+  "explorer.colTimestamp": "Zeitstempel",
+  "explorer.colMetric": "Metrik",
+  "explorer.colMetadata": "Metadaten (JSON)",
+  "explorer.colDetails": "Details",
+  "explorer.inspect": "JSON inspizieren",
+  "explorer.inspectorTitle": "Rohdatenpunkt",
+  "explorer.inspectorMetadata": "Metadaten (JSONB)",
+
+  // ── Data explorer: metric overview ──────────────────────────────────────
+  "explorer.overviewHint":
+    "Jeder Metriktyp dieses Workspace, gezählt über die gesamte Historie und nicht über die geladene Stichprobe. Öffne einen, um seine Rohdatenpunkte zu lesen.",
+  "explorer.overviewEmpty":
+    "Noch keine Metriken gespeichert, also gibt es nichts zusammenzufassen.",
+  "explorer.overviewFailed": "Die Metrikübersicht konnte nicht geladen werden.",
+  "explorer.colUnit": "Einheit",
+  "explorer.colPoints": "Datenpunkte",
+  "explorer.colTypical": "Aussagekräftiger Wert",
+  "explorer.colRange": "Min / Max",
+  "explorer.colLatest": "Neuester",
+  "explorer.showRaw": "Rohdatenpunkte",
+  "explorer.unregistered": "Nicht im Register",
+  "explorer.aggAverage": "Durchschnitt",
+  "explorer.aggSum": "Summe",
+  "explorer.aggMax": "Maximum",
+  "explorer.aggLast": "Letzter Wert",
+
   // ── Remaining OIDC and profile fields ───────────────────────────────────
   "oidc.emptyState":
     "Noch kein Anbieter konfiguriert. Die Anmeldung per E-Mail und Passwort funktioniert unabhängig davon.",
   "oidc.toggleSignup": "Registrierung erlauben",
-  "oidc.toggleSignupHint":
-    "Legt bei unbekannter Identität ein neues Konto an.",
+  "oidc.toggleSignupHint": "Legt bei unbekannter Identität ein neues Konto an.",
   "oidc.toggleVerified": "Verifizierte E-Mail verlangen",
-  "oidc.toggleVerifiedHint":
-    "Empfohlen. Ohne Verifizierung ist die Adresse keine Identität.",
+  "oidc.toggleVerifiedHint": "Empfohlen. Ohne Verifizierung ist die Adresse keine Identität.",
   "oidc.issuerHint":
     "Der Issuer wird beim Speichern geprüft: das Discovery-Dokument muss erreichbar sein und denselben Issuer nennen.",
   "profile.currentPassword": "Aktuelles Passwort",
@@ -594,15 +642,12 @@ export const de: Record<MessageKey, string> = {
     "Aktiv: Liest Temperatur, Luftfeuchte, Licht und weitere freigegebene Sensorzustände.",
   "modal.desc.weather":
     "Aktiv: Importiert lokale Wetterzeitreihen über eine Open-Meteo-kompatible API.",
-  "modal.desc.calendar":
-    "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
+  "modal.desc.calendar": "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
   "modal.needEmailPassword": "Bitte gib sowohl E-Mail als auch Passwort ein.",
   "modal.needYazioToken": "Bitte gib einen Yazio Bearer Access Token ein.",
   "modal.needDawarichKey": "Bitte gib den Dawarich API Key ein.",
-  "modal.needCalendarUrl":
-    "Bitte gib die URL deines Kalender-Feeds (.ics) ein.",
-  "modal.calendarUrlScheme":
-    "Die Kalender-URL muss mit http:// oder https:// beginnen.",
+  "modal.needCalendarUrl": "Bitte gib die URL deines Kalender-Feeds (.ics) ein.",
+  "modal.calendarUrlScheme": "Die Kalender-URL muss mit http:// oder https:// beginnen.",
   "modal.needBaseUrl": "Bitte gib die HTTPS-Basis-URL der Provider-API ein.",
   "modal.baseUrlLabel": "Basis-URL",
   "modal.calendarUrlLabel": "Kalender-Feed-URL",
@@ -690,8 +735,7 @@ export const de: Record<MessageKey, string> = {
   "modal.yazioLoginOptional": "Yazio Login (optional)",
   "modal.modeConnect": "Jetzt verknüpfen",
   "modal.modeFile": "Einmaliger Import",
-  "modal.modeConnectHint":
-    "Der Connector holt deine Daten selbst, im unten eingestellten Takt.",
+  "modal.modeConnectHint": "Der Connector holt deine Daten selbst, im unten eingestellten Takt.",
   "modal.modeFileHint":
     "Keine Kontoverknüpfung: Du lädst den Export hoch, den dieser Anbieter dir gibt, und er wird in diesen Connector eingelesen. Verknüpfen kannst du ihn später trotzdem — dieselben Daten bleiben eine Reihe.",
   "modal.fileFlowLead": "Wird per Datei befüllt:",
@@ -733,10 +777,8 @@ export const de: Record<MessageKey, string> = {
   "analysis.howToRead": "Wie diese Analysen zu lesen sind",
   "analysis.noData":
     "Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und importiere Daten für mindestens zwei Wochen.",
-  "analysis.excludedForQuality":
-    "{count} wegen zu dünner Datenlage ausgeblendet",
-  "analysis.allMetricsQualify":
-    "alle Metriken erfüllen die Mindestanforderungen",
+  "analysis.excludedForQuality": "{count} wegen zu dünner Datenlage ausgeblendet",
+  "analysis.allMetricsQualify": "alle Metriken erfüllen die Mindestanforderungen",
   "analysis.significantRelationships": "Signifikante Zusammenhänge",
   "analysis.ofPairsChecked": "von {count} geprüften Paaren",
   "analysis.unusualDays": "Auffällige Tage",
@@ -744,8 +786,7 @@ export const de: Record<MessageKey, string> = {
   "analysis.noneMatchFilters":
     "Keine Zusammenhänge, die die gewählten Filter erfüllen. Das ist ein gültiges Ergebnis — nicht jede Metrik hängt mit einer anderen zusammen.",
   "analysis.laggedTitle": "Zeitversetzte Zusammenhänge",
-  "analysis.laggedTail":
-    "später. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.",
+  "analysis.laggedTail": "später. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.",
   "analysis.lagDays": "+{count} Tage",
   "analysis.sameDirection": "gleichläufig",
   "analysis.oppositeDirection": "gegenläufig",
@@ -755,8 +796,7 @@ export const de: Record<MessageKey, string> = {
     "Zu wenige Tage, um einen persönlichen Normalbereich zu bestimmen.",
   "analysis.anomalyBasis":
     "Grundlage: Median und mittlere absolute Abweichung über {days} Tage. Auffälligkeit bedeutet ungewöhnlich für dich, nicht",
-  "analysis.tooFewForWeekly":
-    "Mindestens zwei Wochen Daten nötig, um Wochenmuster zu erkennen.",
+  "analysis.tooFewForWeekly": "Mindestens zwei Wochen Daten nötig, um Wochenmuster zu erkennen.",
   "analysis.colDays": "Tage",
   "analysis.sufficient": "ausreichend",
   "analysis.tooThin": "zu dünn",

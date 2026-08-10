@@ -30,9 +30,21 @@ from .metrics import (
     metrics_for_source,
 )
 from .tenant import ShareScope, TenantContext, TenantShareGrant
+from .upload_spool import (
+    DEFAULT_CHUNK_BYTES,
+    DEFAULT_TTL_SECONDS,
+    OffsetMismatch,
+    SpoolTooLarge,
+    UnknownUpload,
+    UploadSession,
+    UploadSpool,
+    UploadSpoolError,
+)
 
 __all__ = [
     "CANONICAL_KEYS",
+    "DEFAULT_CHUNK_BYTES",
+    "DEFAULT_TTL_SECONDS",
     "DYNAMIC_NAMESPACES",
     "MAX_TRACKED_PATHS",
     "METRIC_ALIASES",
@@ -49,11 +61,17 @@ __all__ = [
     "MetricDefinition",
     "MetricNamespace",
     "MetricUnit",
+    "OffsetMismatch",
     "ShareScope",
+    "SpoolTooLarge",
     "TenantContext",
     "TenantShareGrant",
     "UnknownMetricTypeError",
+    "UnknownUpload",
     "UnsupportedConversionError",
+    "UploadSession",
+    "UploadSpool",
+    "UploadSpoolError",
     "canonical_metric_type",
     "convert",
     "describe",

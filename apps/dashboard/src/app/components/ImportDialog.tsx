@@ -7,15 +7,18 @@ import {
   CheckCircle2,
   History,
   Loader2,
+  Minus,
   RefreshCw,
+  RotateCcw,
   ShieldCheck,
   SkipForward,
   Upload,
   X,
   Zap,
 } from "lucide-react";
-import { apiFetch, apiUpload } from "../lib/api";
+import { apiFetch } from "../lib/api";
 import { useI18n, type Translate } from "../lib/i18n/provider";
+import { uploadPercent, useUploads } from "../lib/uploads/provider";
 
 /**
  * Import dialog with an explicit time range, a smart/force choice and a preview of
@@ -143,6 +146,7 @@ export default function ImportDialog({
   onQueued,
 }: ImportDialogProps) {
   const { t, formatDateTime, formatNumber } = useI18n();
+  const { jobFor, start: startUpload, cancel: cancelUpload, retry: retryUpload } = useUploads();
   const [mode, setMode] = useState<"smart" | "force">("smart");
   const [start, setStart] = useState("");
   const [end, setEnd] = useState("");
@@ -152,17 +156,18 @@ export default function ImportDialog({
   const [planning, setPlanning] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
+
+  // The upload itself is not this dialog's state: it runs above every screen so that
+  // closing the dialog does not kill a transfer that takes minutes. What is left here
+  // is which connector's upload to render.
+  const upload = jobFor(sourceType);
+  const uploading = upload?.phase === "uploading" || upload?.phase === "assembling";
   // Suppresses the "suggested range" hint once the user edits the pickers.
   const [rangeTouched, setRangeTouched] = useState(false);
 
-  const authHeaders = useCallback(
-    () => ({ "Content-Type": "application/json" }),
-    [],
-  );
+  const authHeaders = useCallback(() => ({ "Content-Type": "application/json" }), []);
 
   /**
    * Ask Core what this import would do. With no range chosen yet, Core derives one
@@ -179,10 +184,11 @@ export default function ImportDialog({
           body.start = fromLocalInput(start);
           body.end = fromLocalInput(end);
         }
-        const res = await apiFetch(
-          `${apiBase}/api/v1/data/sources/${sourceType}/import-plan`,
-          { method: "POST", headers: authHeaders(), body: JSON.stringify(body) },
-        );
+        const res = await apiFetch(`${apiBase}/api/v1/data/sources/${sourceType}/import-plan`, {
+          method: "POST",
+          headers: authHeaders(),
+          body: JSON.stringify(body),
+        });
         if (!res.ok) {
           const detail = await res.json().catch(() => null);
           throw new Error(detail?.detail || t("import.planFailed"));
@@ -205,10 +211,9 @@ export default function ImportDialog({
 
   const loadRuns = useCallback(async () => {
     try {
-      const res = await apiFetch(
-        `${apiBase}/api/v1/data/sources/${sourceType}/sync-runs?limit=5`,
-        { headers: authHeaders() },
-      );
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources/${sourceType}/sync-runs?limit=5`, {
+        headers: authHeaders(),
+      });
       if (res.ok) {
         const data = await res.json();
         setRuns(data.runs || []);
@@ -266,45 +271,53 @@ export default function ImportDialog({
   }, [isOpen, Boolean(running), sourceType]);
 
   /**
-   * Send the export archive to the importer that can read it.
+   * Hand the archive to the upload that runs above this dialog.
    *
-   * The file goes as the request body rather than as a multipart form: there is one
-   * part, the importer streams it straight to disk, and multipart would mean
-   * buffering and re-parsing a file that can run to a gigabyte. The response is the
-   * run to watch — reading the archive happens afterwards, which is why the progress
-   * panel above takes over from here.
+   * It goes out in parts rather than as one request body, because the hops in between
+   * refuse a body the size an export reaches — a 200 MB Apple Health export was
+   * rejected by Cloudflare's edge at 100 MB, after about 2 % had been sent. The parts
+   * are reassembled by the importer; see `lib/uploads/provider.tsx`.
+   *
+   * Nothing is awaited here: the transfer belongs to the provider from this point, so
+   * the dialog can be minimised or closed and the banner keeps showing it.
    */
-  const handleUpload = async () => {
+  const handleUpload = () => {
     if (!file || !providerType) return;
-    setUploading(true);
-    setUploadProgress(0);
     setError("");
     setResult("");
-    try {
-      const slug = providerType.replace(/_/g, "-");
-      const res = await apiUpload(
-        `${apiBase}/api/v1/import/${slug}/upload?source_id=${encodeURIComponent(sourceType)}`,
-        file,
-        {
-          headers: { "Content-Type": "application/zip" },
-          onProgress: setUploadProgress,
-        },
-      );
-      const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || t("import.uploadFailed"));
+    startUpload({
+      apiBase,
+      sourceId: sourceType,
+      sourceName,
+      providerType,
+      file,
+    });
+    setFile(null);
+  };
 
-      setResult(t("import.uploadAccepted"));
-      setFile(null);
-      setUploadProgress(null);
+  // An accepted archive is the moment the connector has something new to say: the
+  // importer opened a run, and that is what the progress panel follows. Only the
+  // fetches live in the effect — that the upload finished is already in the job, so
+  // copying it into local state here would be a second source of the same truth.
+  useEffect(() => {
+    if (upload?.phase !== "done") return;
+    let cancelled = false;
+
+    // Deferred past the synchronous effect body for the same reason the initial load
+    // above is: `loadRuns` sets state, and doing that during the effect triggers a
+    // cascading render.
+    void (async () => {
+      await Promise.resolve();
+      if (cancelled) return;
       onQueued?.();
       await loadRuns();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUploading(false);
-      setUploadProgress(null);
-    }
-  };
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [upload?.phase, upload?.id]);
 
   const handleImport = async () => {
     setSubmitting(true);
@@ -327,11 +340,7 @@ export default function ImportDialog({
         throw new Error(data?.message || t("import.startFailed"));
       }
 
-      setResult(
-        data?.status === "skipped"
-          ? t("import.nothingToDo")
-          : t("import.queued"),
-      );
+      setResult(data?.status === "skipped" ? t("import.nothingToDo") : t("import.queued"));
       onQueued?.();
       loadRuns();
     } catch (err) {
@@ -356,18 +365,34 @@ export default function ImportDialog({
               <h2 className="text-base font-bold text-slate-900">
                 {t("import.title", { name: sourceName })}
               </h2>
-              <p className="text-[11px] text-slate-500">
-                {t("import.subtitle")}
-              </p>
+              <p className="text-[11px] text-slate-500">{t("import.subtitle")}</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            aria-label={t("import.close")}
-            className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-          >
-            <X className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-1">
+            {/*
+              Offered only while something is uploading, because that is the only time
+              the distinction exists: closing this dialog has never stopped an import,
+              and now it does not stop an upload either. The button says so, so that a
+              user with a 200 MB archive does not sit and watch it.
+            */}
+            {uploading && (
+              <button
+                onClick={onClose}
+                aria-label={t("import.minimize")}
+                title={t("import.minimizeHint")}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <Minus className="h-5 w-5" />
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              aria-label={t("import.close")}
+              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-5 px-6 py-5">
@@ -405,11 +430,9 @@ export default function ImportDialog({
                   type="file"
                   accept=".zip,application/zip"
                   aria-label={t("import.uploadChoose")}
-                  onChange={(e) => {
-                    setFile(e.target.files?.[0] ?? null);
-                    setUploadProgress(null);
-                  }}
-                  className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900"
+                  disabled={uploading}
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                  className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900 disabled:opacity-50"
                 />
                 <button
                   onClick={handleUpload}
@@ -424,139 +447,181 @@ export default function ImportDialog({
                   {uploading ? t("import.uploading") : t("import.uploadStart")}
                 </button>
               </div>
-              {uploading && uploadProgress !== null && (
+
+              {/*
+                The upload, however this dialog was opened. It is rendered from the
+                provider rather than from local state, so reopening the dialog on a
+                transfer that is already running shows where it has got to instead of
+                an empty file picker.
+              */}
+              {upload?.phase === "done" && (
+                <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+                  {t("import.uploadAccepted")}
+                </p>
+              )}
+
+              {upload && upload.phase !== "done" && (
                 <div className="mt-3" aria-label={t("import.uploadProgress")}>
-                  <div className="mb-1 flex items-center justify-between text-[11px] text-sky-900">
-                    <span>{t("import.uploadProgress")}</span>
-                    <span>{formatNumber(uploadProgress)}%</span>
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-sky-900">
+                    <span className="truncate" title={upload.fileName}>
+                      {upload.fileName}
+                    </span>
+                    {(upload.phase === "uploading" || upload.phase === "assembling") && (
+                      <span className="shrink-0 tabular-nums">
+                        {formatNumber(uploadPercent(upload))}%
+                      </span>
+                    )}
                   </div>
                   <div
                     className="h-2 w-full overflow-hidden rounded-full bg-sky-100"
                     role="progressbar"
                     aria-valuemin={0}
                     aria-valuemax={100}
-                    aria-valuenow={uploadProgress}
+                    aria-valuenow={uploadPercent(upload)}
                     aria-valuetext={t("import.uploadProgressPercent", {
-                      percent: formatNumber(uploadProgress),
+                      percent: formatNumber(uploadPercent(upload)),
                     })}
                   >
                     <div
                       className="h-full rounded-full bg-sky-600 transition-[width] duration-200"
-                      style={{ width: `${uploadProgress}%` }}
+                      style={{ width: `${uploadPercent(upload)}%` }}
                     />
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-sky-900">
+                      {upload.phase === "assembling" && t("upload.assembling")}
+                      {upload.phase === "uploading" && t("import.uploadInParts")}
+                      {upload.phase === "cancelled" && t("upload.cancelledBody")}
+                      {upload.phase === "error" && (upload.detail ?? t("import.uploadFailed"))}
+                    </span>
+                    {uploading && (
+                      <button
+                        onClick={() => cancelUpload(upload.id)}
+                        className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-red-700 hover:bg-red-50"
+                      >
+                        {t("upload.cancel")}
+                      </button>
+                    )}
+                    {upload.phase === "error" && upload.resumable && (
+                      <button
+                        onClick={() => retryUpload(upload.id)}
+                        className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800"
+                      >
+                        <RotateCcw className="h-3 w-3" /> {t("upload.resume")}
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
+
               <p className="mt-2 text-[11px] text-sky-800">{t("import.uploadReimportNote")}</p>
             </div>
           )}
 
           {!passive && (
-          <>
-          {/* Range */}
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                {t("import.from")}
-              </span>
-              <input
-                type="datetime-local"
-                value={start}
-                onChange={(e) => {
-                  setStart(e.target.value);
-                  setRangeTouched(true);
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
-                {t("import.to")}
-              </span>
-              <input
-                type="datetime-local"
-                value={end}
-                onChange={(e) => {
-                  setEnd(e.target.value);
-                  setRangeTouched(true);
-                }}
-                className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
-              />
-            </label>
-          </div>
+            <>
+              {/* Range */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {t("import.from")}
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={start}
+                    onChange={(e) => {
+                      setStart(e.target.value);
+                      setRangeTouched(true);
+                    }}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                    {t("import.to")}
+                  </span>
+                  <input
+                    type="datetime-local"
+                    value={end}
+                    onChange={(e) => {
+                      setEnd(e.target.value);
+                      setRangeTouched(true);
+                    }}
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
+                  />
+                </label>
+              </div>
 
-          {plan?.window_reason && !rangeTouched && (
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              <span className="font-semibold text-slate-600">{t("import.suggestion")}</span>{" "}
-              {plan.window_reason}
-            </p>
-          )}
+              {plan?.window_reason && !rangeTouched && (
+                <p className="text-[11px] leading-relaxed text-slate-500">
+                  <span className="font-semibold text-slate-600">{t("import.suggestion")}</span>{" "}
+                  {plan.window_reason}
+                </p>
+              )}
 
-          {/* Mode */}
-          <fieldset className="space-y-2">
-            <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
-              {t("import.modeLegend")}
-            </legend>
-            <label
-              className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
-                mode === "smart"
-                  ? "border-[#0d5c3a] bg-emerald-50/60"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              <input
-                type="radio"
-                name="import-mode"
-                checked={mode === "smart"}
-                onChange={() => setMode("smart")}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                  <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> {t("import.smartLabel")}
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
-                  {t("import.smartHint")}
-                </span>
-              </span>
-            </label>
+              {/* Mode */}
+              <fieldset className="space-y-2">
+                <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+                  {t("import.modeLegend")}
+                </legend>
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
+                    mode === "smart"
+                      ? "border-[#0d5c3a] bg-emerald-50/60"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="import-mode"
+                    checked={mode === "smart"}
+                    onChange={() => setMode("smart")}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+                      <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> {t("import.smartLabel")}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
+                      {t("import.smartHint")}
+                    </span>
+                  </span>
+                </label>
 
-            <label
-              className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
-                mode === "force"
-                  ? "border-amber-500 bg-amber-50/60"
-                  : "border-slate-200 bg-white"
-              }`}
-            >
-              <input
-                type="radio"
-                name="import-mode"
-                checked={mode === "force"}
-                onChange={() => setMode("force")}
-                className="mt-0.5"
-              />
-              <span>
-                <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                  <Zap className="h-4 w-4 text-amber-600" /> {t("import.forceLabel")}
-                </span>
-                <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
-                  {t("import.forceBody")}
-                </span>
-              </span>
-            </label>
-          </fieldset>
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
+                    mode === "force"
+                      ? "border-amber-500 bg-amber-50/60"
+                      : "border-slate-200 bg-white"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="import-mode"
+                    checked={mode === "force"}
+                    onChange={() => setMode("force")}
+                    className="mt-0.5"
+                  />
+                  <span>
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+                      <Zap className="h-4 w-4 text-amber-600" /> {t("import.forceLabel")}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
+                      {t("import.forceBody")}
+                    </span>
+                  </span>
+                </label>
+              </fieldset>
 
-          {mode === "force" && (
-            <div className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <p className="text-[11px] leading-relaxed text-amber-900">
-                {t("import.forceWarning")} {t("import.forceHint")}
-              </p>
-            </div>
-          )}
-
-
-          </>
+              {mode === "force" && (
+                <div className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p className="text-[11px] leading-relaxed text-amber-900">
+                    {t("import.forceWarning")} {t("import.forceHint")}
+                  </p>
+                </div>
+              )}
+            </>
           )}
 
           {/*
@@ -573,9 +638,7 @@ export default function ImportDialog({
                 <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("import.running")}
                 </h3>
-                {typicalHint && (
-                  <span className="text-[11px] text-emerald-700">{typicalHint}</span>
-                )}
+                {typicalHint && <span className="text-[11px] text-emerald-700">{typicalHint}</span>}
               </div>
 
               {(running.points_expected ?? running.points_received) > 0 ? (
@@ -587,7 +650,7 @@ export default function ImportDialog({
                         width: `${Math.min(
                           100,
                           Math.round(
-                              ((running.points_accepted + running.points_duplicate) /
+                            ((running.points_accepted + running.points_duplicate) /
                               (running.points_expected ?? running.points_received)) *
                               100,
                           ),
@@ -612,76 +675,76 @@ export default function ImportDialog({
 
           {/* Plan preview — only meaningful where an import can be planned. */}
           {!passive && (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                {t("import.previewLegend")}
-              </h3>
-              {planning && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-            </div>
-
-            {!plan && !planning && (
-              <p className="text-xs text-slate-500">{t("import.noAnalysis")}</p>
-            )}
-
-            {plan && (
-              <div className="space-y-2.5">
-                <p className="text-xs leading-relaxed text-slate-700">{plan.reason}</p>
-
-                {plan.confidence === "low" && (
-                  <p className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
-                    {t("import.tooIrregular")}
-                  </p>
-                )}
-
-                {plan.skipped_ranges.length > 0 && (
-                  <div>
-                    <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
-                      <SkipForward className="h-3.5 w-3.5" /> {t("import.willSkip")}
-                    </p>
-                    <ul className="space-y-1">
-                      {plan.skipped_ranges.map((r) => (
-                        <li
-                          key={`${r.start}-${r.end}`}
-                          className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-slate-600"
-                        >
-                          <span className="font-mono">{formatRange(formatDateTime, r)}</span>
-                          <span className="text-slate-400">{durationLabel(t, r)}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {effective ? (
-                  <div>
-                    <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-[#0d5c3a]">
-                      <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
-                    </p>
-                    <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
-                      <span className="font-mono">{formatRange(formatDateTime, effective)}</span>
-                      <span>{durationLabel(t, effective)}</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> {t("import.nothingToImportShort")}
-                  </p>
-                )}
-
-                {plan.docs_url && (
-                  <a
-                    href={plan.docs_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-block text-[11px] text-[#0d5c3a] underline"
-                  >
-                    {t("import.howItWorks")}
-                  </a>
-                )}
+            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  {t("import.previewLegend")}
+                </h3>
+                {planning && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
               </div>
-            )}
-          </div>
+
+              {!plan && !planning && (
+                <p className="text-xs text-slate-500">{t("import.noAnalysis")}</p>
+              )}
+
+              {plan && (
+                <div className="space-y-2.5">
+                  <p className="text-xs leading-relaxed text-slate-700">{plan.reason}</p>
+
+                  {plan.confidence === "low" && (
+                    <p className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
+                      {t("import.tooIrregular")}
+                    </p>
+                  )}
+
+                  {plan.skipped_ranges.length > 0 && (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                        <SkipForward className="h-3.5 w-3.5" /> {t("import.willSkip")}
+                      </p>
+                      <ul className="space-y-1">
+                        {plan.skipped_ranges.map((r) => (
+                          <li
+                            key={`${r.start}-${r.end}`}
+                            className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-slate-600"
+                          >
+                            <span className="font-mono">{formatRange(formatDateTime, r)}</span>
+                            <span className="text-slate-400">{durationLabel(t, r)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {effective ? (
+                    <div>
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-[#0d5c3a]">
+                        <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
+                      </p>
+                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
+                        <span className="font-mono">{formatRange(formatDateTime, effective)}</span>
+                        <span>{durationLabel(t, effective)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {t("import.nothingToImportShort")}
+                    </p>
+                  )}
+
+                  {plan.docs_url && (
+                    <a
+                      href={plan.docs_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-block text-[11px] text-[#0d5c3a] underline"
+                    >
+                      {t("import.howItWorks")}
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {/* History */}
@@ -707,11 +770,12 @@ export default function ImportDialog({
                       </span>
                     </div>
                     <p className="mt-0.5 text-slate-500">
-                      {t("import.runCounts", { accepted: run.points_accepted, duplicate: run.points_duplicate })}
+                      {t("import.runCounts", {
+                        accepted: run.points_accepted,
+                        duplicate: run.points_duplicate,
+                      })}
                     </p>
-                    {run.message && (
-                      <p className="mt-0.5 text-slate-400">{run.message}</p>
-                    )}
+                    {run.message && <p className="mt-0.5 text-slate-400">{run.message}</p>}
                   </li>
                 ))}
               </ul>
@@ -738,18 +802,18 @@ export default function ImportDialog({
             {passive ? t("common.close") : t("common.cancel")}
           </button>
           {!passive && (
-          <button
-            onClick={handleImport}
-            disabled={submitting || planning || (nothingToDo && mode === "smart")}
-            className="flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            {nothingToDo && mode === "smart" ? t("import.nothingToImport") : t("import.start")}
-          </button>
+            <button
+              onClick={handleImport}
+              disabled={submitting || planning || (nothingToDo && mode === "smart")}
+              className="flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              {nothingToDo && mode === "smart" ? t("import.nothingToImport") : t("import.start")}
+            </button>
           )}
         </div>
       </div>

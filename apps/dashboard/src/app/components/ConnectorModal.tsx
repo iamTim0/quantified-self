@@ -1,10 +1,30 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { CheckCircle2, Clock, Calendar, Key, Plug, X, ArrowLeft, Activity, Heart, Flame, MapPin, ShieldCheck, Dumbbell, Download, Upload, CloudSun, HousePlug, BookOpen } from "lucide-react";
+import {
+  CheckCircle2,
+  Clock,
+  Calendar,
+  Key,
+  Plug,
+  X,
+  ArrowLeft,
+  Activity,
+  Heart,
+  Flame,
+  MapPin,
+  ShieldCheck,
+  Dumbbell,
+  Download,
+  Upload,
+  CloudSun,
+  HousePlug,
+  BookOpen,
+} from "lucide-react";
 import ApiKeyManager from "./ApiKeyManager";
 import { apiFetch } from "../lib/api";
-import { useT, type MessageKey } from "../lib/i18n/provider";
+import { useI18n, type MessageKey } from "../lib/i18n/provider";
+import { describeMetric } from "../lib/metrics/catalog";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -36,6 +56,14 @@ export interface ProviderCatalogItem {
   icon: React.ElementType;
   iconColor: string;
   status: "available" | "coming_soon";
+  /**
+   * Canonical `metric_type` keys from the registry — never display text. The
+   * chips read these through `describeMetric()`, which carries the English and
+   * German label of every metric, so this list cannot say a provider emits
+   * something no transformer writes, and it cannot say it in one language only.
+   * Providers whose metric set depends on the user's own installation name
+   * examples under their dynamic namespace (see AGENTS.md rule 15).
+   */
   supportedMetrics: string[];
   direction: ConnectorDirection;
   /**
@@ -56,7 +84,13 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     icon: Flame,
     iconColor: "text-amber-400",
     status: "available",
-    supportedMetrics: ["Kalorien", "Protein", "Kohlenhydrate", "Fett", "Gegessene Produkte"],
+    supportedMetrics: [
+      "nutrition_energy",
+      "nutrition_protein",
+      "nutrition_carbohydrates",
+      "nutrition_fat",
+      "nutrition_item_energy",
+    ],
     direction: "active",
   },
   {
@@ -67,7 +101,7 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     icon: Activity,
     iconColor: "text-red-400",
     status: "available",
-    supportedMetrics: ["Recovery %", "HRV (ms)", "Ruhepuls", "Daily Strain"],
+    supportedMetrics: ["whoop_recovery_score", "hrv_rmssd", "heart_rate_resting", "whoop_strain"],
     direction: "active",
     fileImport: true,
   },
@@ -79,7 +113,13 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     icon: Heart,
     iconColor: "text-rose-400",
     status: "available",
-    supportedMetrics: ["Steps", "Heart rate", "Active energy", "Sleep stages", "Workouts"],
+    supportedMetrics: [
+      "steps",
+      "heart_rate",
+      "energy_active",
+      "sleep_duration",
+      "workout_duration",
+    ],
     direction: "passive",
     fileImport: true,
   },
@@ -91,7 +131,13 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     icon: Dumbbell,
     iconColor: "text-[#0d5c3a]",
     status: "available",
-    supportedMetrics: ["Exercise sets", "Weight (kg)", "Reps", "Max heart rate", "Set volume"],
+    supportedMetrics: [
+      "strength_session_sets",
+      "strength_set_weight",
+      "strength_set_reps",
+      "strength_set_heart_rate_max",
+      "strength_set_volume",
+    ],
     direction: "passive",
   },
   {
@@ -102,26 +148,62 @@ export const PROVIDER_CATALOG: ProviderCatalogItem[] = [
     icon: MapPin,
     iconColor: "text-emerald-500",
     status: "available",
-    supportedMetrics: ["Location points", "Latitude", "Longitude"],
+    supportedMetrics: ["location_point", "location_latitude", "location_longitude"],
     direction: "active",
   },
   {
-    id: "home_assistant", name: "Home Assistant", categoryKey: "modal.catSmartHome",
+    id: "home_assistant",
+    name: "Home Assistant",
+    categoryKey: "modal.catSmartHome",
     descriptionKey: "modal.desc.home_assistant",
-    icon: HousePlug, iconColor: "text-sky-500", status: "available",
-    supportedMetrics: ["Temperature", "Humidity", "Light", "Noise"], direction: "active",
+    icon: HousePlug,
+    iconColor: "text-sky-500",
+    status: "available",
+    // Every install exposes different entities, so these are examples under the
+    // `home_assistant_` namespace rather than catalogued keys. Their label is
+    // derived from the suffix and is therefore the same in both languages —
+    // which is the honest answer for a name the user's own setup decides.
+    supportedMetrics: [
+      "home_assistant_temperature",
+      "home_assistant_humidity",
+      "home_assistant_illuminance",
+      "home_assistant_noise",
+    ],
+    direction: "active",
   },
   {
-    id: "weather", name: "Weather", categoryKey: "modal.catEnvironment",
+    id: "weather",
+    name: "Weather",
+    categoryKey: "modal.catEnvironment",
     descriptionKey: "modal.desc.weather",
-    icon: CloudSun, iconColor: "text-amber-500", status: "available",
-    supportedMetrics: ["Temperatur", "Luftdruck", "Niederschlag", "UV-Index"], direction: "active",
+    icon: CloudSun,
+    iconColor: "text-amber-500",
+    status: "available",
+    supportedMetrics: [
+      "weather_temperature",
+      "weather_pressure",
+      "weather_precipitation",
+      "weather_uv_index",
+    ],
+    direction: "active",
   },
   {
-    id: "calendar", name: "Calendar", categoryKey: "modal.catRoutine",
+    id: "calendar",
+    name: "Calendar",
+    categoryKey: "modal.catRoutine",
     descriptionKey: "modal.desc.calendar",
-    icon: Calendar, iconColor: "text-violet-500", status: "available",
-    supportedMetrics: ["Termine", "Meetingdauer", "Busy Hours"], direction: "active",
+    icon: Calendar,
+    iconColor: "text-violet-500",
+    status: "available",
+    // `Busy Hours` before this: the unit in the name, which is exactly the
+    // duplicate the registry exists to prevent (`calendar_busy_hours` is not
+    // even an alias, on purpose).
+    supportedMetrics: [
+      "calendar_event_count",
+      "calendar_meeting_duration",
+      "calendar_busy_duration",
+    ],
+    direction: "active",
   },
 ];
 
@@ -150,7 +232,8 @@ export default function ConnectorModal({
   onClose,
   onSaved,
   tenantId,
-  apiBase = process.env.NEXT_PUBLIC_API_URL || (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000"),
+  apiBase = process.env.NEXT_PUBLIC_API_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "http://127.0.0.1:8000"),
   initialSourceType,
   initialSourceId,
   initialDisplayName,
@@ -159,7 +242,7 @@ export default function ConnectorModal({
   initialImportMode,
   isEditing = false,
 }: ConnectorModalProps) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
   const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
 
@@ -245,7 +328,14 @@ export default function ConnectorModal({
       setMessage(null);
       setError(null);
     }
-  }, [isOpen, initialSourceType, initialSourceId, initialDisplayName, initialPollInterval, initialLookbackDays]);
+  }, [
+    isOpen,
+    initialSourceType,
+    initialSourceId,
+    initialDisplayName,
+    initialPollInterval,
+    initialLookbackDays,
+  ]);
 
   if (!isOpen) return null;
 
@@ -363,8 +453,13 @@ export default function ConnectorModal({
         // does not end in .ics is perfectly normal.
         payloadConfig = { ics_url: url, base_url: url };
         finalToken = "";
-      } else if (selectedProvider.id === "weather" && isEditing && !weatherRequestUrl.trim()
-                 && !weatherLatitude.trim() && !weatherLongitude.trim()) {
+      } else if (
+        selectedProvider.id === "weather" &&
+        isEditing &&
+        !weatherRequestUrl.trim() &&
+        !weatherLatitude.trim() &&
+        !weatherLongitude.trim()
+      ) {
         // Editing only the interval or the name. The stored configuration is not
         // handed to this modal, so an empty form means "leave it alone" rather
         // than "clear it" — Core merges, so omitting `config` keeps what is there.
@@ -506,8 +601,8 @@ export default function ConnectorModal({
                 {step === "select_provider"
                   ? t("modal.pickSource")
                   : isEditing
-                  ? t("modal.editProvider", { provider: selectedProvider?.name ?? "" })
-                  : t("modal.connectProvider", { provider: selectedProvider?.name ?? "" })}
+                    ? t("modal.editProvider", { provider: selectedProvider?.name ?? "" })
+                    : t("modal.connectProvider", { provider: selectedProvider?.name ?? "" })}
               </h2>
               {selectedProvider && step === "configure_provider" && (
                 <a
@@ -534,9 +629,7 @@ export default function ConnectorModal({
         {/* Step 1: Provider Selection Gallery */}
         {step === "select_provider" ? (
           <div className="space-y-4">
-            <p className="text-xs text-slate-500">
-              {t("modal.pickHint")}
-            </p>
+            <p className="text-xs text-slate-500">{t("modal.pickHint")}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[60vh] overflow-y-auto pr-1">
               {PROVIDER_CATALOG.map((provider) => {
                 const Icon = provider.icon;
@@ -566,18 +659,37 @@ export default function ConnectorModal({
                         </span>
                       </div>
                       <h3 className="text-sm font-bold text-slate-900">{provider.name}</h3>
-                      <span className={provider.direction === "active"
-                        ? "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-sky-50 text-sky-800 border border-sky-200"
-                        : "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-violet-50 text-violet-800 border border-violet-200"}>
-                        {provider.direction === "active" ? t("modal.activeShort") : t("modal.passiveShort")}
+                      <span
+                        className={
+                          provider.direction === "active"
+                            ? "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-sky-50 text-sky-800 border border-sky-200"
+                            : "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-violet-50 text-violet-800 border border-violet-200"
+                        }
+                      >
+                        {provider.direction === "active"
+                          ? t("modal.activeShort")
+                          : t("modal.passiveShort")}
                       </span>
-                      <p className="text-[11px] text-slate-500 leading-snug">{t(provider.descriptionKey)}</p>
+                      <p className="text-[11px] text-slate-500 leading-snug">
+                        {t(provider.descriptionKey)}
+                      </p>
                     </div>
 
+                    {/*
+                      The chip reads as a name in the reader's language, the
+                      tooltip keeps the canonical key — the same arrangement as
+                      the explorer, and the reason the list holds slugs: a
+                      metric's two labels live in the registry, so a card cannot
+                      promise a metric under a name nothing writes.
+                    */}
                     <div className="flex flex-wrap gap-1 pt-1 border-t border-slate-200">
                       {provider.supportedMetrics.slice(0, 3).map((m) => (
-                        <span key={m} className="text-[9px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200 font-mono">
-                          {m}
+                        <span
+                          key={m}
+                          title={m}
+                          className="text-[9px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200 font-mono"
+                        >
+                          {describeMetric(m, locale).label}
                         </span>
                       ))}
                     </div>
@@ -589,9 +701,13 @@ export default function ConnectorModal({
         ) : (
           /* Step 2: Configuration Form for Selected Provider */
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className={isPassive
-              ? "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-violet-50 border-violet-200 text-violet-950"
-              : "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-sky-50 border-sky-200 text-sky-950"}>
+            <div
+              className={
+                isPassive
+                  ? "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-violet-50 border-violet-200 text-violet-950"
+                  : "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-sky-50 border-sky-200 text-sky-950"
+              }
+            >
               {isPassive ? (
                 <Upload className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
               ) : (
@@ -602,9 +718,7 @@ export default function ConnectorModal({
                   {isPassive ? t("modal.passiveTitle") : t("modal.activeTitle")}
                 </span>
                 <span className="text-[11px] leading-relaxed block mt-0.5">
-                  {isPassive
-                    ? t("modal.passiveBody")
-                    : t("modal.activeBody")}
+                  {isPassive ? t("modal.passiveBody") : t("modal.activeBody")}
                 </span>
               </div>
             </div>
@@ -690,7 +804,9 @@ export default function ConnectorModal({
                     type="button"
                     onClick={() => setYazioAuthMode("token")}
                     className={`flex-1 py-2 rounded-xl font-bold transition-all ${
-                      yazioAuthMode === "token" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+                      yazioAuthMode === "token"
+                        ? "bg-[#0d5c3a] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     {isEditing ? t("modal.yazioTokenOptional") : t("modal.yazioTokenMode")}
@@ -699,7 +815,9 @@ export default function ConnectorModal({
                     type="button"
                     onClick={() => setYazioAuthMode("login")}
                     className={`flex-1 py-2 rounded-xl font-bold transition-all ${
-                      yazioAuthMode === "login" ? "bg-[#0d5c3a] text-white shadow-sm" : "text-slate-600 hover:text-slate-900"
+                      yazioAuthMode === "login"
+                        ? "bg-[#0d5c3a] text-white shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
                     }`}
                   >
                     {isEditing ? t("modal.yazioLoginOptional") : t("modal.yazioLoginMode")}
@@ -710,7 +828,10 @@ export default function ConnectorModal({
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        Yazio E-Mail {isEditing && <span className="text-slate-400 font-normal lowercase">(optional)</span>}
+                        Yazio E-Mail{" "}
+                        {isEditing && (
+                          <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                        )}
                       </label>
                       <input
                         type="email"
@@ -722,7 +843,10 @@ export default function ConnectorModal({
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        Yazio Passwort {isEditing && <span className="text-slate-400 font-normal lowercase">(optional)</span>}
+                        Yazio Passwort{" "}
+                        {isEditing && (
+                          <span className="text-slate-400 font-normal lowercase">(optional)</span>
+                        )}
                       </label>
                       <input
                         type="password"
@@ -738,11 +862,17 @@ export default function ConnectorModal({
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
                       <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
                       <span>Yazio Bearer Access Token</span>
-                      {isEditing && <span className="text-slate-400 font-normal text-[11px] lowercase">(optional)</span>}
+                      {isEditing && (
+                        <span className="text-slate-400 font-normal text-[11px] lowercase">
+                          (optional)
+                        </span>
+                      )}
                     </label>
                     <input
                       type="password"
-                      placeholder={isEditing ? t("modal.keepCredentialsShort") : t("modal.pasteYazioToken")}
+                      placeholder={
+                        isEditing ? t("modal.keepCredentialsShort") : t("modal.pasteYazioToken")
+                      }
                       value={accessToken}
                       onChange={(e) => setAccessToken(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
@@ -771,7 +901,11 @@ export default function ConnectorModal({
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5 flex items-center gap-1.5">
                     <Key className="w-3.5 h-3.5 text-[#0d5c3a]" />
                     <span>Dawarich API Key</span>
-                    {isEditing && <span className="text-slate-400 font-normal text-[11px] lowercase">(optional)</span>}
+                    {isEditing && (
+                      <span className="text-slate-400 font-normal text-[11px] lowercase">
+                        (optional)
+                      </span>
+                    )}
                   </label>
                   <input
                     type="password"
@@ -801,7 +935,12 @@ export default function ConnectorModal({
                   />
                   <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
                     {t("modal.icsHint")}{" "}
-                    <a href="/docs/importers/calendar/" className="text-[#0d5c3a] underline" target="_blank" rel="noreferrer">
+                    <a
+                      href="/docs/importers/calendar/"
+                      className="text-[#0d5c3a] underline"
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       {t("modal.setupGuide")}
                     </a>
                   </p>
@@ -856,116 +995,118 @@ export default function ConnectorModal({
                 )}
 
                 {weatherMode === "guided" && (
-                <>
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    {t("modal.weatherPlaceLabel")}
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={weatherPlaceQuery}
-                      onChange={(event) => setWeatherPlaceQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          // The modal is a form; Enter here means "search", not "save".
-                          event.preventDefault();
-                          void searchWeatherPlace();
-                        }
-                      }}
-                      placeholder={t("modal.weatherPlacePlaceholder")}
-                      className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => void searchWeatherPlace()}
-                      disabled={weatherSearching || weatherPlaceQuery.trim().length < 2}
-                      className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50 whitespace-nowrap"
-                    >
-                      {weatherSearching ? t("modal.weatherSearching") : t("modal.weatherSearch")}
-                    </button>
-                  </div>
-                  {weatherSearchError && (
-                    <p className="mt-1.5 text-[11px] text-rose-600">{weatherSearchError}</p>
-                  )}
-                  {weatherPlaces.length > 0 && (
-                    <ul className="mt-2 space-y-1">
-                      {weatherPlaces.map((place) => (
-                        <li key={`${place.latitude},${place.longitude}`}>
-                          <button
-                            type="button"
-                            onClick={() => chooseWeatherPlace(place)}
-                            className="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-[#0d5c3a] text-xs text-slate-700"
-                          >
-                            <MapPin className="inline w-3 h-3 mr-1.5 text-[#0d5c3a]" />
-                            {placeLabel(place)}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {weatherPlaceLabel && (
-                    <p className="mt-1.5 text-[11px] text-slate-500">
-                      {t("modal.weatherChosenPlace", { place: weatherPlaceLabel })}
-                    </p>
-                  )}
-                </div>
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                        {t("modal.weatherPlaceLabel")}
+                      </label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={weatherPlaceQuery}
+                          onChange={(event) => setWeatherPlaceQuery(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              // The modal is a form; Enter here means "search", not "save".
+                              event.preventDefault();
+                              void searchWeatherPlace();
+                            }
+                          }}
+                          placeholder={t("modal.weatherPlacePlaceholder")}
+                          className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void searchWeatherPlace()}
+                          disabled={weatherSearching || weatherPlaceQuery.trim().length < 2}
+                          className="px-4 py-2.5 rounded-2xl bg-slate-100 border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-200 disabled:opacity-50 whitespace-nowrap"
+                        >
+                          {weatherSearching
+                            ? t("modal.weatherSearching")
+                            : t("modal.weatherSearch")}
+                        </button>
+                      </div>
+                      {weatherSearchError && (
+                        <p className="mt-1.5 text-[11px] text-rose-600">{weatherSearchError}</p>
+                      )}
+                      {weatherPlaces.length > 0 && (
+                        <ul className="mt-2 space-y-1">
+                          {weatherPlaces.map((place) => (
+                            <li key={`${place.latitude},${place.longitude}`}>
+                              <button
+                                type="button"
+                                onClick={() => chooseWeatherPlace(place)}
+                                className="w-full text-left px-3 py-2 rounded-xl bg-white border border-slate-200 hover:border-[#0d5c3a] text-xs text-slate-700"
+                              >
+                                <MapPin className="inline w-3 h-3 mr-1.5 text-[#0d5c3a]" />
+                                {placeLabel(place)}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {weatherPlaceLabel && (
+                        <p className="mt-1.5 text-[11px] text-slate-500">
+                          {t("modal.weatherChosenPlace", { place: weatherPlaceLabel })}
+                        </p>
+                      )}
+                    </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      {t("modal.weatherLatitude")}
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      required={!isEditing}
-                      value={weatherLatitude}
-                      onChange={(event) => setWeatherLatitude(event.target.value)}
-                      placeholder="52.52"
-                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                      {t("modal.weatherLongitude")}
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      required={!isEditing}
-                      value={weatherLongitude}
-                      onChange={(event) => setWeatherLongitude(event.target.value)}
-                      placeholder="13.41"
-                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
-                    />
-                  </div>
-                </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                          {t("modal.weatherLatitude")}
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          required={!isEditing}
+                          value={weatherLatitude}
+                          onChange={(event) => setWeatherLatitude(event.target.value)}
+                          placeholder="52.52"
+                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                          {t("modal.weatherLongitude")}
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          required={!isEditing}
+                          value={weatherLongitude}
+                          onChange={(event) => setWeatherLongitude(event.target.value)}
+                          placeholder="13.41"
+                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                        />
+                      </div>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                    {t("modal.weatherBaseUrl")}
-                  </label>
-                  <input
-                    type="url"
-                    value={weatherBaseUrl}
-                    onChange={(event) => setWeatherBaseUrl(event.target.value)}
-                    placeholder={WEATHER_DEFAULT_BASE_URL}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
-                  />
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
-                    {t("modal.weatherBaseUrlHint")}{" "}
-                    <a
-                      href="/docs/importers/weather/"
-                      className="text-[#0d5c3a] underline"
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {t("modal.setupGuide")}
-                    </a>
-                  </p>
-                </div>
-                </>
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                        {t("modal.weatherBaseUrl")}
+                      </label>
+                      <input
+                        type="url"
+                        value={weatherBaseUrl}
+                        onChange={(event) => setWeatherBaseUrl(event.target.value)}
+                        placeholder={WEATHER_DEFAULT_BASE_URL}
+                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                      />
+                      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
+                        {t("modal.weatherBaseUrlHint")}{" "}
+                        <a
+                          href="/docs/importers/weather/"
+                          className="text-[#0d5c3a] underline"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {t("modal.setupGuide")}
+                        </a>
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
             )}
@@ -994,7 +1135,9 @@ export default function ConnectorModal({
                     required={!isEditing}
                     value={accessToken}
                     onChange={(event) => setAccessToken(event.target.value)}
-                    placeholder={isEditing ? t("modal.keepTokenPlaceholder") : t("modal.tokenPlaceholder")}
+                    placeholder={
+                      isEditing ? t("modal.keepTokenPlaceholder") : t("modal.tokenPlaceholder")
+                    }
                     className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
                   />
                 </div>
@@ -1022,54 +1165,77 @@ export default function ConnectorModal({
             )}
 
             {!isPassive && !fileOnly && (
-            /* Sync Frequency & Period Configuration */
-            <div className="pt-3 border-t border-slate-100 space-y-3">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5" /> {t("modal.intervalSection")}
-              </h3>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
-                    <Clock className="w-3 h-3 text-[#0d5c3a]" /> {t("modal.syncFrequency")}
-                  </label>
-                  <select
-                    value={pollIntervalHours}
-                    onChange={(e) => setPollIntervalHours(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
-                  >
-                    <option value={1} className="bg-white text-slate-900">{t("modal.everyHour")}</option>
-                    <option value={3} className="bg-white text-slate-900">{t("modal.everyNHours", { count: 3 })}</option>
-                    <option value={6} className="bg-white text-slate-900">{t("modal.everyNHoursDefault", { count: 6 })}</option>
-                    <option value={12} className="bg-white text-slate-900">{t("modal.everyNHours", { count: 12 })}</option>
-                    <option value={24} className="bg-white text-slate-900">{t("modal.daily")}</option>
-                    <option value={168} className="bg-white text-slate-900">{t("modal.weekly")}</option>
-                  </select>
-                </div>
+              /* Sync Frequency & Period Configuration */
+              <div className="pt-3 border-t border-slate-100 space-y-3">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5" /> {t("modal.intervalSection")}
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-[#0d5c3a]" /> {t("modal.syncFrequency")}
+                    </label>
+                    <select
+                      value={pollIntervalHours}
+                      onChange={(e) => setPollIntervalHours(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
+                    >
+                      <option value={1} className="bg-white text-slate-900">
+                        {t("modal.everyHour")}
+                      </option>
+                      <option value={3} className="bg-white text-slate-900">
+                        {t("modal.everyNHours", { count: 3 })}
+                      </option>
+                      <option value={6} className="bg-white text-slate-900">
+                        {t("modal.everyNHoursDefault", { count: 6 })}
+                      </option>
+                      <option value={12} className="bg-white text-slate-900">
+                        {t("modal.everyNHours", { count: 12 })}
+                      </option>
+                      <option value={24} className="bg-white text-slate-900">
+                        {t("modal.daily")}
+                      </option>
+                      <option value={168} className="bg-white text-slate-900">
+                        {t("modal.weekly")}
+                      </option>
+                    </select>
+                  </div>
 
-                <div>
-                  <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
-                    <Calendar className="w-3 h-3 text-emerald-600" /> {t("modal.importPeriod")}
-                  </label>
-                  <select
-                    value={lookbackDays}
-                    onChange={(e) => setLookbackDays(Number(e.target.value))}
-                    className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
-                  >
-                    <option value={7} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 7 })}</option>
-                    <option value={14} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 14 })}</option>
-                    <option value={30} className="bg-white text-slate-900">{t("modal.lastNDaysDefault", { count: 30 })}</option>
-                    <option value={60} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 60 })}</option>
-                    <option value={90} className="bg-white text-slate-900">{t("modal.lastNDays", { count: 90 })}</option>
-                  </select>
+                  <div>
+                    <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-emerald-600" /> {t("modal.importPeriod")}
+                    </label>
+                    <select
+                      value={lookbackDays}
+                      onChange={(e) => setLookbackDays(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
+                    >
+                      <option value={7} className="bg-white text-slate-900">
+                        {t("modal.lastNDays", { count: 7 })}
+                      </option>
+                      <option value={14} className="bg-white text-slate-900">
+                        {t("modal.lastNDays", { count: 14 })}
+                      </option>
+                      <option value={30} className="bg-white text-slate-900">
+                        {t("modal.lastNDaysDefault", { count: 30 })}
+                      </option>
+                      <option value={60} className="bg-white text-slate-900">
+                        {t("modal.lastNDays", { count: 60 })}
+                      </option>
+                      <option value={90} className="bg-white text-slate-900">
+                        {t("modal.lastNDays", { count: 90 })}
+                      </option>
+                    </select>
+                  </div>
                 </div>
               </div>
-            </div>
             )}
 
             {isPassive && !fileOnly && (
               <div className="pt-3 border-t border-slate-100">
                 <p className="text-[11px] text-slate-500">
-                  <span className="font-bold text-violet-700">{t("modal.passiveFlowLead")}</span> {t("modal.passiveFlowBody")}
+                  <span className="font-bold text-violet-700">{t("modal.passiveFlowLead")}</span>{" "}
+                  {t("modal.passiveFlowBody")}
                 </p>
               </div>
             )}
@@ -1083,8 +1249,20 @@ export default function ConnectorModal({
               </div>
             )}
 
-            {error && <p role="alert" className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700">{error}</p>}
-            {message && <p className="rounded-2xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-800 flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-emerald-600" />{message}</p>}
+            {error && (
+              <p
+                role="alert"
+                className="rounded-2xl bg-rose-50 border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700"
+              >
+                {error}
+              </p>
+            )}
+            {message && (
+              <p className="rounded-2xl bg-emerald-50 border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-800 flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                {message}
+              </p>
+            )}
 
             <div className="flex justify-between items-center pt-4 border-t border-slate-100">
               {!isEditing ? (
@@ -1109,7 +1287,11 @@ export default function ConnectorModal({
                 disabled={loading}
                 className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
               >
-                {loading ? t("modal.saving") : isEditing ? t("modal.saveSettings") : t("modal.saveConnection")}
+                {loading
+                  ? t("modal.saving")
+                  : isEditing
+                    ? t("modal.saveSettings")
+                    : t("modal.saveConnection")}
               </button>
             </div>
           </form>

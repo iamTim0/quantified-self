@@ -478,3 +478,88 @@ async def test_a_cookie_upload_with_the_csrf_pair_goes_through():
             )
 
     assert response.status_code == 202
+
+
+@pytest.mark.asyncio
+async def test_every_step_of_a_chunked_upload_reaches_the_importer():
+    """A large archive arrives in parts, and each step is proxied to the same service.
+
+    The parts exist because the hops in front of this Gateway refuse a body of the size
+    an export reaches — Cloudflare answers 413 at the edge past 100 MB — so this route
+    carries `begin`, `chunk` and `complete` as well as the whole file.
+    """
+    from gateway import main as gateway_main
+
+    seen: list[str] = []
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(200, json={"received": 1})
+
+    token = _make_token()
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            for step, params in (
+                ("begin", {"source_id": "44444444-4444-4444-4444-444444444444"}),
+                ("chunk", {"upload_id": "u-1", "offset": "0"}),
+                ("complete", {"upload_id": "u-1"}),
+                ("abort", {"upload_id": "u-1"}),
+            ):
+                response = await ac.post(
+                    f"/api/v1/import/apple-health/upload/{step}",
+                    params=params,
+                    content=b"part",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                assert response.status_code == 200, response.text
+
+    assert [url.split("?")[0].rsplit("/", 2)[-2:] for url in seen] == [
+        ["upload", "begin"],
+        ["upload", "chunk"],
+        ["upload", "complete"],
+        ["upload", "abort"],
+    ]
+    assert all("8005" in url for url in seen)
+
+
+@pytest.mark.asyncio
+async def test_an_invented_upload_step_is_not_proxied_anywhere():
+    """The path segment ends up in a URL, so what it may spell is decided here."""
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"nothing should have been proxied, got {request.url}")
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/apple-health/upload/token",
+                params={"upload_id": "u-1"},
+                content=b"x",
+                headers={"Authorization": f"Bearer {_make_token()}"},
+            )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_a_chunk_without_the_csrf_pair_is_refused():
+    """Every step is a write, so every step needs the proof the whole upload needs."""
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("a request without CSRF proof must not be proxied")
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/import/apple-health/upload/chunk",
+                params={"upload_id": "u-1", "offset": "0"},
+                content=b"part",
+                cookies={"qs_access": _make_token(), "qs_csrf": "a-token"},
+            )
+
+    assert response.status_code == 403

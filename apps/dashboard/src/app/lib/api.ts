@@ -97,7 +97,16 @@ export async function apiFetch(url: string, init: RequestInit = {}): Promise<Res
 
 interface UploadRequestOptions {
   headers?: Record<string, string>;
-  onProgress?: (percentage: number) => void;
+  /**
+   * Bytes handed to the network so far, and how many this request holds.
+   *
+   * Bytes rather than a percentage: a large archive is uploaded one part at a time,
+   * and a part that only knows it is "40 % sent" cannot say anything about the file
+   * it belongs to. The caller adds them up; percentages are for display.
+   */
+  onProgress?: (loaded: number, total: number) => void;
+  /** Cancels the request. Bridged to `XMLHttpRequest.abort`, which predates signals. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -114,6 +123,11 @@ export async function apiUpload(
 ): Promise<Response> {
   const request = (): Promise<Response> =>
     new Promise((resolve, reject) => {
+      if (options.signal?.aborted) {
+        reject(new DOMException("Upload aborted", "AbortError"));
+        return;
+      }
+
       const xhr = new XMLHttpRequest();
       xhr.open("POST", url, true);
       xhr.withCredentials = true;
@@ -125,12 +139,19 @@ export async function apiUpload(
         xhr.setRequestHeader(name, value);
       }
 
+      // Removed again whichever way the request ends: a signal that outlives one
+      // part of a multi-part upload would otherwise collect a listener per part.
+      const abort = () => xhr.abort();
+      options.signal?.addEventListener("abort", abort);
+      const done = () => options.signal?.removeEventListener("abort", abort);
+
       xhr.upload.addEventListener("progress", (event) => {
         if (!event.lengthComputable || event.total <= 0) return;
-        options.onProgress?.(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+        options.onProgress?.(event.loaded, event.total);
       });
 
       xhr.addEventListener("load", () => {
+        done();
         const contentType = xhr.getResponseHeader("Content-Type");
         resolve(
           new Response(xhr.responseText, {
@@ -140,8 +161,14 @@ export async function apiUpload(
           }),
         );
       });
-      xhr.addEventListener("error", () => reject(new TypeError("Network request failed")));
-      xhr.addEventListener("abort", () => reject(new DOMException("Upload aborted", "AbortError")));
+      xhr.addEventListener("error", () => {
+        done();
+        reject(new TypeError("Network request failed"));
+      });
+      xhr.addEventListener("abort", () => {
+        done();
+        reject(new DOMException("Upload aborted", "AbortError"));
+      });
       xhr.send(file);
     });
 
@@ -152,7 +179,7 @@ export async function apiUpload(
   if (!refreshed) return response;
 
   // A retry starts a new request body, so make the reset visible to the user.
-  options.onProgress?.(0);
+  options.onProgress?.(0, file.size);
   response = await request();
   return response;
 }

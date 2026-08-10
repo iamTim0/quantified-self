@@ -7,14 +7,14 @@ import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
 import ImporterDetailPage from "./ImporterDetailPage";
 import { plural, useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
-import { 
-  Key, 
-  RefreshCw, 
-  Settings, 
-  ArrowUpRight, 
-  Activity, 
-  Plus, 
-  Radio, 
+import {
+  Key,
+  RefreshCw,
+  Settings,
+  ArrowUpRight,
+  Activity,
+  Plus,
+  Radio,
   Flame,
   MapPin,
   Smartphone,
@@ -23,7 +23,7 @@ import {
   CloudSun,
   HousePlug,
   CalendarDays,
-  BookOpen
+  BookOpen,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 
@@ -79,14 +79,70 @@ const POLL_INTERVAL_MS = 10_000;
 type ConnectorTab = "current" | "available";
 
 const CONNECTOR_CATALOG: CatalogConnector[] = [
-  { id: "yazio", name: "Yazio", descriptionKey: "connectors.desc.yazio", icon: Flame, available: true, docsPath: "/docs/importers/yazio/" },
-  { id: "dawarich", name: "Dawarich", descriptionKey: "connectors.desc.dawarich", icon: MapPin, available: true, docsPath: "/docs/importers/dawarich/" },
-  { id: "whoop", name: "WHOOP", descriptionKey: "connectors.desc.whoop", icon: Activity, available: true, docsPath: "/docs/importers/whoop/" },
-  { id: "apple_health", name: "Apple Health", descriptionKey: "connectors.desc.apple_health", icon: Smartphone, available: true, docsPath: "/docs/importers/apple-health/" },
-  { id: "streak", name: "Streak — gym log", descriptionKey: "connectors.desc.streak", icon: Dumbbell, available: true, docsPath: "/docs/importers/streak/" },
-  { id: "home_assistant", name: "Home Assistant", descriptionKey: "connectors.desc.home_assistant", icon: HousePlug, available: true, docsPath: "/docs/importers/home-assistant/" },
-  { id: "weather", nameKey: "connectors.nameWeather", descriptionKey: "connectors.desc.weather", icon: CloudSun, available: true, docsPath: "/docs/importers/weather/" },
-  { id: "calendar", nameKey: "connectors.nameCalendar", descriptionKey: "connectors.desc.calendar", icon: CalendarDays, available: true, docsPath: "/docs/importers/calendar/" },
+  {
+    id: "yazio",
+    name: "Yazio",
+    descriptionKey: "connectors.desc.yazio",
+    icon: Flame,
+    available: true,
+    docsPath: "/docs/importers/yazio/",
+  },
+  {
+    id: "dawarich",
+    name: "Dawarich",
+    descriptionKey: "connectors.desc.dawarich",
+    icon: MapPin,
+    available: true,
+    docsPath: "/docs/importers/dawarich/",
+  },
+  {
+    id: "whoop",
+    name: "WHOOP",
+    descriptionKey: "connectors.desc.whoop",
+    icon: Activity,
+    available: true,
+    docsPath: "/docs/importers/whoop/",
+  },
+  {
+    id: "apple_health",
+    name: "Apple Health",
+    descriptionKey: "connectors.desc.apple_health",
+    icon: Smartphone,
+    available: true,
+    docsPath: "/docs/importers/apple-health/",
+  },
+  {
+    id: "streak",
+    name: "Streak — gym log",
+    descriptionKey: "connectors.desc.streak",
+    icon: Dumbbell,
+    available: true,
+    docsPath: "/docs/importers/streak/",
+  },
+  {
+    id: "home_assistant",
+    name: "Home Assistant",
+    descriptionKey: "connectors.desc.home_assistant",
+    icon: HousePlug,
+    available: true,
+    docsPath: "/docs/importers/home-assistant/",
+  },
+  {
+    id: "weather",
+    nameKey: "connectors.nameWeather",
+    descriptionKey: "connectors.desc.weather",
+    icon: CloudSun,
+    available: true,
+    docsPath: "/docs/importers/weather/",
+  },
+  {
+    id: "calendar",
+    nameKey: "connectors.nameCalendar",
+    descriptionKey: "connectors.desc.calendar",
+    icon: CalendarDays,
+    available: true,
+    docsPath: "/docs/importers/calendar/",
+  },
 ];
 
 export default function ConnectorsPage({
@@ -102,15 +158,13 @@ export default function ConnectorsPage({
   const [activeTab, setActiveTab] = useState<ConnectorTab>("current");
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
   // Which connector the import dialog is open for, if any.
-  const [importDialogFor, setImportDialogFor] = useState<
-    {
-      id: string;
-      name: string;
-      passive: boolean;
-      sourceType: string;
-      fileImport: boolean;
-    } | null
-  >(null);
+  const [importDialogFor, setImportDialogFor] = useState<{
+    id: string;
+    name: string;
+    passive: boolean;
+    sourceType: string;
+    fileImport: boolean;
+  } | null>(null);
 
   const fetchConnectors = async () => {
     try {
@@ -155,7 +209,9 @@ export default function ConnectorsPage({
       return null;
     }
   })();
-  const detailConnector = detailId ? connectors.find((connector) => connector.id === detailId) : null;
+  const detailConnector = detailId
+    ? connectors.find((connector) => connector.id === detailId)
+    : null;
 
   // Disconnect one connector instance. Addressed by id, not type: with two
   // calendars configured, deleting "calendar" would remove an arbitrary one.
@@ -183,7 +239,9 @@ export default function ConnectorsPage({
   };
 
   if (detailId && loading) {
-    return <div className="py-16 text-center text-xs text-slate-500">{t("importerDetail.loading")}</div>;
+    return (
+      <div className="py-16 text-center text-xs text-slate-500">{t("importerDetail.loading")}</div>
+    );
   }
 
   if (detailId && !detailConnector) {
@@ -218,10 +276,10 @@ export default function ConnectorsPage({
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">{t("connectors.title")}</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            {t("connectors.subtitle")}
-          </p>
+          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+            {t("connectors.title")}
+          </h1>
+          <p className="text-xs text-slate-500 mt-1">{t("connectors.subtitle")}</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -277,208 +335,245 @@ export default function ConnectorsPage({
 
       {activeTab === "current" ? (
         <>
-      {/* Main Connected Sources & Queue Status Table */}
-      <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-slate-900">{t("connectors.tableTitle")}</h3>
-            <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-              <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />{" "}
-              {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
-            </span>
-          </div>
-          <span className="text-xs font-semibold text-slate-400">
-            {t(
-              plural(connectors.length, "connectors.configuredCount_one", "connectors.configuredCount_other"),
-              { count: connectors.length },
-            )}
-          </span>
-        </div>
+          {/* Main Connected Sources & Queue Status Table */}
+          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-900">{t("connectors.tableTitle")}</h3>
+                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                  <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />{" "}
+                  {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
+                </span>
+              </div>
+              <span className="text-xs font-semibold text-slate-400">
+                {t(
+                  plural(
+                    connectors.length,
+                    "connectors.configuredCount_one",
+                    "connectors.configuredCount_other",
+                  ),
+                  { count: connectors.length },
+                )}
+              </span>
+            </div>
 
-        {loading ? (
-          <div className="p-8 text-center text-xs text-slate-400">{t("connectors.loadingDetails")}</div>
-        ) : connectors.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
-                  <th className="pb-3 px-3">{t("connectors.colSource")}</th>
-                  <th className="pb-3 px-3">{t("connectors.colQueue")}</th>
-                  <th className="pb-3 px-3">{t("connectors.colLastSync")}</th>
-                  <th className="pb-3 px-3">{t("connectors.colTransfer")}</th>
-                  <th className="pb-3 px-3 text-right">{t("connectors.colActions")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {connectors.map((c) => {
-                  const rowFileOnly = c.import_mode === "file";
-                  const rowIsPassive =
-                    getConnectorDirection(c.source_type) === "passive" || rowFileOnly;
-                  return (
-                  <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="py-3.5 px-3">
-                      <div className="flex items-center gap-2.5">
-                        <Key className="w-4 h-4 text-[#0d5c3a]" />
-                        <div>
-                          <div className="flex items-center gap-2">
-                            {/* Name first, type beneath: two calendars differ only by name. */}
-                            <div className="font-bold text-slate-900">
-                              {c.display_name || c.source_type}
+            {loading ? (
+              <div className="p-8 text-center text-xs text-slate-400">
+                {t("connectors.loadingDetails")}
+              </div>
+            ) : connectors.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
+                      <th className="pb-3 px-3">{t("connectors.colSource")}</th>
+                      <th className="pb-3 px-3">{t("connectors.colQueue")}</th>
+                      <th className="pb-3 px-3">{t("connectors.colLastSync")}</th>
+                      <th className="pb-3 px-3">{t("connectors.colTransfer")}</th>
+                      <th className="pb-3 px-3 text-right">{t("connectors.colActions")}</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {connectors.map((c) => {
+                      const rowFileOnly = c.import_mode === "file";
+                      const rowIsPassive =
+                        getConnectorDirection(c.source_type) === "passive" || rowFileOnly;
+                      /*
+                    A passive connector has nothing to trigger, so the dialog held
+                    only a run history for it — the same history the detail page
+                    already shows in full, one column to the left. The action
+                    survives where the dialog can still do something: uploading an
+                    export archive, which for such a connector is the only way in.
+                  */
+                      const rowUploadOnly =
+                        rowIsPassive && (rowFileOnly || Boolean(c.supports_file_import));
+                      const rowHasImportAction = !rowIsPassive || rowUploadOnly;
+                      return (
+                        <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center gap-2.5">
+                              <Key className="w-4 h-4 text-[#0d5c3a]" />
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  {/* Name first, type beneath: two calendars differ only by name. */}
+                                  <div className="font-bold text-slate-900">
+                                    {c.display_name || c.source_type}
+                                  </div>
+                                  <a
+                                    href={
+                                      CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)
+                                        ?.docsPath ?? "/docs/importers/"
+                                    }
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors"
+                                    title={t("connectors.openDocs")}
+                                  >
+                                    <BookOpen className="w-3 h-3" />
+                                    <span className="text-[10px]">{t("connectors.docs")}</span>
+                                  </a>
+                                  <Link
+                                    href={`/connectors/${encodeURIComponent(c.id)}`}
+                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                                    title={t("connectors.openDetails")}
+                                  >
+                                    <Activity className="h-3 w-3" />
+                                    <span className="text-[10px]">{t("connectors.details")}</span>
+                                  </Link>
+                                </div>
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                  {c.source_type}
+                                </div>
+                                <div
+                                  className={
+                                    rowIsPassive
+                                      ? "text-[10px] font-bold uppercase tracking-wider text-violet-700"
+                                      : "text-[10px] font-bold uppercase tracking-wider text-sky-700"
+                                  }
+                                >
+                                  {rowIsPassive
+                                    ? t("connectors.passiveHint")
+                                    : t("connectors.activeHint")}
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono">
+                                  Fernet AES-256 Encrypted
+                                </div>
+                              </div>
                             </div>
-                            <a
-                              href={CONNECTOR_CATALOG.find((cat) => cat.id === c.source_type)?.docsPath ?? "/docs/importers/"}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors"
-                              title={t("connectors.openDocs")}
-                            >
-                              <BookOpen className="w-3 h-3" />
-                              <span className="text-[10px]">{t("connectors.docs")}</span>
-                            </a>
-                            <Link
-                              href={`/connectors/${encodeURIComponent(c.id)}`}
-                              className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
-                              title={t("connectors.openDetails")}
-                            >
-                              <Activity className="h-3 w-3" />
-                              <span className="text-[10px]">{t("connectors.details")}</span>
-                            </Link>
-                          </div>
-                          <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                            {c.source_type}
-                          </div>
-                          <div className={rowIsPassive ? "text-[10px] font-bold uppercase tracking-wider text-violet-700" : "text-[10px] font-bold uppercase tracking-wider text-sky-700"}>
-                            {rowIsPassive
-                              ? t("connectors.passiveHint")
-                              : t("connectors.activeHint")}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-mono">Fernet AES-256 Encrypted</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <div className="space-y-1">
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border inline-flex items-center gap-1.5 ${
-                          c.sync_status === "queued"
-                            ? "bg-amber-50 text-amber-800 border-amber-300 animate-pulse"
-                            : c.sync_status === "error"
-                            ? "bg-rose-50 text-rose-800 border-rose-300"
-                            : "bg-emerald-50 text-emerald-800 border-emerald-200"
-                        }`}>
-                          <Radio className={`w-3 h-3 ${
-                            c.sync_status === "queued"
-                              ? "text-amber-600 animate-spin"
-                              : c.sync_status === "error"
-                              ? "text-rose-600"
-                              : "text-emerald-600"
-                          }`} />
-                          <span>
-                            {c.sync_status === "queued"
-                              ? t("connectors.processing")
-                              : c.sync_status === "error"
-                              ? t("connectors.authErrorShort")
-                              : t("connectors.readyActive")}
-                          </span>
-                        </span>
-                        {c.last_sync_message && (
-                          <div className={`text-[10px] font-mono leading-tight ${
-                            c.sync_status === "error" ? "text-rose-600 font-semibold" : "text-slate-500"
-                          }`}>
-                            {c.last_sync_message}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
-                      {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
-                    </td>
-                    <td className="py-3.5 px-3 text-slate-600">
-                      {rowFileOnly
-                        ? t("connectors.fileDriven")
-                        : rowIsPassive
-                        ? t("connectors.webhookDriven")
-                        : t("connectors.everyHours", { hours: c.poll_interval_hours, days: c.lookback_days })}
-                    </td>
-                    {/*
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <div className="space-y-1">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border inline-flex items-center gap-1.5 ${
+                                  c.sync_status === "queued"
+                                    ? "bg-amber-50 text-amber-800 border-amber-300 animate-pulse"
+                                    : c.sync_status === "error"
+                                      ? "bg-rose-50 text-rose-800 border-rose-300"
+                                      : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                }`}
+                              >
+                                <Radio
+                                  className={`w-3 h-3 ${
+                                    c.sync_status === "queued"
+                                      ? "text-amber-600 animate-spin"
+                                      : c.sync_status === "error"
+                                        ? "text-rose-600"
+                                        : "text-emerald-600"
+                                  }`}
+                                />
+                                <span>
+                                  {c.sync_status === "queued"
+                                    ? t("connectors.processing")
+                                    : c.sync_status === "error"
+                                      ? t("connectors.authErrorShort")
+                                      : t("connectors.readyActive")}
+                                </span>
+                              </span>
+                              {c.last_sync_message && (
+                                <div
+                                  className={`text-[10px] font-mono leading-tight ${
+                                    c.sync_status === "error"
+                                      ? "text-rose-600 font-semibold"
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {c.last_sync_message}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                            {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-600">
+                            {rowFileOnly
+                              ? t("connectors.fileDriven")
+                              : rowIsPassive
+                                ? t("connectors.webhookDriven")
+                                : t("connectors.everyHours", {
+                                    hours: c.poll_interval_hours,
+                                    days: c.lookback_days,
+                                  })}
+                          </td>
+                          {/*
                       `text-right space-x-2` wrapped badly: Tailwind's space-x-* is a
                       sibling margin, so a button pushed onto a second line kept its left
                       margin and sat indented instead of flush right. A flex row with
                       `gap` puts the space between the items rather than beside them, and
                       wraps to the right edge.
                     */}
-                    <td className="py-3.5 px-3">
-                      <div className="flex flex-wrap items-center justify-end gap-2">
-                      {/*
-                        Offered for push connectors too: the dialog is where progress
-                        and history live, and a pushed import has both. The guard here
-                        also made the `passive` flag below dead — it could only ever be
-                        computed inside a branch that had already excluded passive
-                        connectors.
-                      */}
-                      <button
-                        onClick={() =>
-                          setImportDialogFor({
-                            id: c.id,
-                            name: c.display_name || c.source_type,
-                            passive: rowIsPassive,
-                            sourceType: c.source_type,
-                            fileImport: Boolean(c.supports_file_import),
-                          })
-                        }
-                        disabled={c.sync_status === "queued"}
-                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${c.sync_status === "queued" ? "animate-spin" : ""}`} />
-                        <span>
-                          {c.sync_status === "queued"
-                            ? t("connectors.queued")
-                            : rowFileOnly
-                            ? t("connectors.upload")
-                            : rowIsPassive
-                            ? t("connectors.history")
-                            : t("connectors.import")}
-                        </span>
-                      </button>
-                      <button
-                        onClick={() => onOpenConfigureModal(c)}
-                        className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
-                          c.sync_status === "error"
-                            ? "bg-rose-600 hover:bg-rose-700 text-white"
-                            : "bg-[#0d5c3a] hover:bg-[#08432a] text-white"
-                        }`}
-                      >
-                        <Settings className="w-3 h-3" />
-                        <span>{c.sync_status === "error" ? t("connectors.renewToken") : t("connectors.edit")}</span>
-                      </button>
-                      <button
-                        onClick={() => handleDeleteConnector(c)}
-                        disabled={deletingSource === c.id}
-                        className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
-                        title={t("connectors.disconnect")}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        <span>{t("common.delete")}</span>
-                      </button>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          <td className="py-3.5 px-3">
+                            <div className="flex flex-wrap items-center justify-end gap-2">
+                              {rowHasImportAction && (
+                                <button
+                                  onClick={() =>
+                                    setImportDialogFor({
+                                      id: c.id,
+                                      name: c.display_name || c.source_type,
+                                      passive: rowIsPassive,
+                                      sourceType: c.source_type,
+                                      fileImport: Boolean(c.supports_file_import),
+                                    })
+                                  }
+                                  disabled={c.sync_status === "queued"}
+                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
+                                >
+                                  <RefreshCw
+                                    className={`w-3 h-3 ${c.sync_status === "queued" ? "animate-spin" : ""}`}
+                                  />
+                                  <span>
+                                    {c.sync_status === "queued"
+                                      ? t("connectors.queued")
+                                      : rowUploadOnly
+                                        ? t("connectors.upload")
+                                        : t("connectors.import")}
+                                  </span>
+                                </button>
+                              )}
+                              <button
+                                onClick={() => onOpenConfigureModal(c)}
+                                className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
+                                  c.sync_status === "error"
+                                    ? "bg-rose-600 hover:bg-rose-700 text-white"
+                                    : "bg-[#0d5c3a] hover:bg-[#08432a] text-white"
+                                }`}
+                              >
+                                <Settings className="w-3 h-3" />
+                                <span>
+                                  {c.sync_status === "error"
+                                    ? t("connectors.renewToken")
+                                    : t("connectors.edit")}
+                                </span>
+                              </button>
+                              <button
+                                onClick={() => handleDeleteConnector(c)}
+                                disabled={deletingSource === c.id}
+                                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
+                                title={t("connectors.disconnect")}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                                <span>{t("common.delete")}</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl">
+                <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
+                <button
+                  onClick={() => setActiveTab("available")}
+                  className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
+                >
+                  {t("connectors.addFirst")}
+                </button>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl">
-            <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
-            <button
-              onClick={() => setActiveTab("available")}
-              className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
-            >
-              {t("connectors.addFirst")}
-            </button>
-          </div>
-        )}
-      </div>
         </>
       ) : (
         <section className="space-y-4">
@@ -529,8 +624,8 @@ export default function ConnectorsPage({
                       {!cat.available
                         ? t("connectors.soon")
                         : count > 0
-                        ? t("connectors.addAnother")
-                        : t("connectors.connectNow")}
+                          ? t("connectors.addAnother")
+                          : t("connectors.connectNow")}
                     </span>
                     {cat.available && <ArrowUpRight className="h-3.5 w-3.5" />}
                   </button>

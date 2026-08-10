@@ -318,6 +318,14 @@ _UPLOAD_TARGETS: dict[str, str] = {
 # a timeout here means the whole upload starts again from nothing.
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=10.0, read=900.0, write=900.0, pool=10.0)
 
+# The steps of a chunked upload, allowlisted for the same reason the targets above
+# are: the path segment reaches an importer, so what it may spell is decided here and
+# not by whoever typed the URL. An archive arrives in parts because the hops in front
+# of this service refuse a body of that size -- Cloudflare answers 413 at the edge
+# past 100 MB on every plan below Enterprise -- and no setting in this repository can
+# raise a limit that belongs to somebody else's proxy.
+_UPLOAD_ACTIONS = {"begin", "chunk", "complete", "abort"}
+
 # Mirrors core.security.cookies. The Gateway shares no code with Core by design
 # (rule 6), so the two spellings are kept in step by name.
 CSRF_COOKIE = "qs_csrf"
@@ -325,12 +333,19 @@ CSRF_HEADER = "X-CSRF-Token"
 
 
 @app.post("/api/v1/import/{source}/upload")
-async def proxy_import_upload(source: str, request: Request):
+@app.post("/api/v1/import/{source}/upload/{action}")
+async def proxy_import_upload(source: str, request: Request, action: str | None = None):
     """Stream an export archive to the importer that knows how to read it.
 
     Streamed rather than buffered: every other proxied route calls
     `await request.body()`, which for a whole-history Apple Health export means
     holding it in the Gateway's memory before the importer has seen a byte of it.
+
+    With no action this is the whole archive in one request, which suits a script and
+    a small export. With one it is a step of a chunked upload — `begin`, `chunk`,
+    `complete`, `abort` — which is how a browser sends a large one, because a body of
+    that size does not survive the proxies in front of this service. Both go to the
+    same importer and end in the same import; only the shape of the delivery differs.
 
     The session is validated here and the token passed on, because the importer
     cannot check one itself — Core keeps the JWT signing key away from the importers
@@ -340,6 +355,8 @@ async def proxy_import_upload(source: str, request: Request):
     setting_name = _UPLOAD_TARGETS.get(source)
     if setting_name is None:
         raise HTTPException(status_code=404, detail=f"No file import exists for '{source}'.")
+    if action is not None and action not in _UPLOAD_ACTIONS:
+        raise HTTPException(status_code=404, detail=f"No upload step named '{action}'.")
 
     token = _session_credential(request)
     if not token:
@@ -382,6 +399,8 @@ async def proxy_import_upload(source: str, request: Request):
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 
     target_url = f"{getattr(settings, setting_name)}/upload"
+    if action is not None:
+        target_url = f"{target_url}/{action}"
 
     async with httpx.AsyncClient(timeout=_UPLOAD_TIMEOUT) as client:
         try:

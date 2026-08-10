@@ -15,6 +15,8 @@ import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
 import LegalFooter from "./components/LegalFooter";
 import SystemWarnings from "./components/SystemWarnings";
+import UploadBanner from "./components/UploadBanner";
+import { UploadProvider } from "./lib/uploads/provider";
 import { SummaryMetrics } from "./components/MetricCards";
 import { METRIC_CATALOG } from "./lib/metrics/catalog";
 import { SessionUser, endSession, fetchSession } from "./lib/session";
@@ -107,7 +109,9 @@ export default function DashboardPage() {
   const [carbValues, setCarbValues] = useState<number[]>([]);
   const [fatValues, setFatValues] = useState<number[]>([]);
 
-  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorItem | undefined>(undefined);
+  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorItem | undefined>(
+    undefined,
+  );
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -334,9 +338,7 @@ export default function DashboardPage() {
            */
           const dailySeries = (dailyKey: string, itemKey?: string) => {
             const dailyNames = [dailyKey, ...(METRIC_CATALOG[dailyKey]?.aliases ?? [])];
-            const itemNames = itemKey
-              ? [itemKey, ...(METRIC_CATALOG[itemKey]?.aliases ?? [])]
-              : [];
+            const itemNames = itemKey ? [itemKey, ...(METRIC_CATALOG[itemKey]?.aliases ?? [])] : [];
 
             return timestamps.map((ts) => {
               const onDay = points.filter((p: Point) => formatDate(p.timestamp) === ts);
@@ -379,127 +381,128 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
-      {/* Main Outer App Window Shell */}
-      <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
-        {/* Sidebar Navigation with URL Sync */}
-        <Sidebar
-          activeTab={activeTab}
-          onTabChange={handleTabChange}
-          onShare={() => setIsShareModalOpen(true)}
-          onLogout={handleLogout}
-        />
-
-        {/* Main Content Area */}
-        <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
-          <TopHeader
-            userName={userName}
-            userEmail={userEmail}
-            userRole={userRole}
-            onOpenConfigureModal={() => handleOpenConfigureModal()}
+    // Export uploads run here, above every tab and outside every dialog: an archive
+    // takes minutes to send, and closing the dialog that started it used to cancel
+    // the transfer. `UploadBanner` is what a minimised upload looks like.
+    <UploadProvider>
+      <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
+        {/* Main Outer App Window Shell */}
+        <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
+          {/* Sidebar Navigation with URL Sync */}
+          <Sidebar
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
             onShare={() => setIsShareModalOpen(true)}
-            onNavigateToProfile={() => handleTabChange("profile")}
-            onRefresh={triggerRefresh}
+            onLogout={handleLogout}
           />
 
-          {/* Configuration and credential problems, on every tab. Previously
-              these lived only in a startup log and docs/operations.md. */}
-          <SystemWarnings apiBase={API_BASE} />
-
-          {activeTab === "overview" && (
-            <OverviewTab
-              summary={summary}
-              chartLabels={chartLabels}
-              sleepValues={sleepValues}
-              readinessValues={readinessValues}
-              calorieValues={calorieValues}
-              proteinValues={proteinValues}
-              carbValues={carbValues}
-              fatValues={fatValues}
-              apiBase={API_BASE}
-              tenantId={tenantId}
-              refreshTrigger={refreshTrigger}
-              onRefresh={triggerRefresh}
-              onNavigateToConnectors={() => handleTabChange("connectors")}
-            />
-          )}
-
-          {activeTab === "explorer" && (
-            <ExplorerTab key={refreshTrigger} apiBase={API_BASE} tenantId={tenantId} />
-          )}
-
-          {activeTab === "connectors" && (
-            // Refresh connector data through the prop so an open import dialog
-            // survives a visibility refresh.
-            <ConnectorsPage
-              apiBase={API_BASE}
-              tenantId={tenantId}
-              refreshTrigger={refreshTrigger}
-              onOpenConfigureModal={(c, st) => handleOpenConfigureModal(c, st)}
-            />
-          )}
-
-          {activeTab === "quality" && (
-            <DataQualityTab apiBase={API_BASE} tenantId={tenantId} />
-          )}
-
-          {activeTab === "analysis" && (
-            <AnalysisTab
-              apiBase={API_BASE}
-              tenantId={tenantId}
-              refreshTrigger={refreshTrigger}
-            />
-          )}
-
-          {activeTab === "profile" && (
-            <ProfileTab
-              apiBase={API_BASE}
-              tenantId={tenantId}
+          {/* Main Content Area */}
+          <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+            <TopHeader
               userName={userName}
               userEmail={userEmail}
               userRole={userRole}
-              tenantName={tenantName}
-              onUpdateProfile={(name: string, email: string) => {
-                // React state only. These used to be mirrored into localStorage
-                // to survive a reload; the reload now asks /auth/me instead, so
-                // the copy had nothing left reading it.
-                setUserName(name);
-                setUserEmail(email);
-              }}
-              onLogout={handleLogout}
+              onOpenConfigureModal={() => handleOpenConfigureModal()}
+              onShare={() => setIsShareModalOpen(true)}
+              onNavigateToProfile={() => handleTabChange("profile")}
+              onRefresh={triggerRefresh}
             />
-          )}
 
-          <ConnectorModal
-            isOpen={isModalOpen}
-            onClose={() => {
-              setIsModalOpen(false);
-              setSelectedModalConnector(undefined);
-            }}
-            initialSourceType={selectedModalConnector?.source_type}
-            // Which instance is being edited. Without it the modal would create a
-            // new connector every time, instead of updating the one clicked.
-            initialSourceId={selectedModalConnector?.id}
-            initialDisplayName={selectedModalConnector?.display_name}
-            initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
-            initialLookbackDays={selectedModalConnector?.lookback_days || 30}
-            // Which kind of connector this is, so editing one fed by uploads does
-            // not silently turn it back into a polled one.
-            initialImportMode={selectedModalConnector?.import_mode}
-            isEditing={Boolean(selectedModalConnector?.id)}
-            tenantId={tenantId}
-            onSaved={triggerRefresh}
-          />
+            {/* Configuration and credential problems, on every tab. Previously
+              these lived only in a startup log and docs/operations.md. */}
+            <SystemWarnings apiBase={API_BASE} />
 
-          <ShareModal
-            isOpen={isShareModalOpen}
-            onClose={() => setIsShareModalOpen(false)}
-            apiBase={API_BASE}
-          />
+            {activeTab === "overview" && (
+              <OverviewTab
+                summary={summary}
+                chartLabels={chartLabels}
+                sleepValues={sleepValues}
+                readinessValues={readinessValues}
+                calorieValues={calorieValues}
+                proteinValues={proteinValues}
+                carbValues={carbValues}
+                fatValues={fatValues}
+                apiBase={API_BASE}
+                tenantId={tenantId}
+                refreshTrigger={refreshTrigger}
+                onRefresh={triggerRefresh}
+                onNavigateToConnectors={() => handleTabChange("connectors")}
+              />
+            )}
 
-          <LegalFooter />
-        </main>
+            {activeTab === "explorer" && (
+              <ExplorerTab key={refreshTrigger} apiBase={API_BASE} tenantId={tenantId} />
+            )}
+
+            {activeTab === "connectors" && (
+              // Refresh connector data through the prop so an open import dialog
+              // survives a visibility refresh.
+              <ConnectorsPage
+                apiBase={API_BASE}
+                tenantId={tenantId}
+                refreshTrigger={refreshTrigger}
+                onOpenConfigureModal={(c, st) => handleOpenConfigureModal(c, st)}
+              />
+            )}
+
+            {activeTab === "quality" && <DataQualityTab apiBase={API_BASE} tenantId={tenantId} />}
+
+            {activeTab === "analysis" && (
+              <AnalysisTab apiBase={API_BASE} tenantId={tenantId} refreshTrigger={refreshTrigger} />
+            )}
+
+            {activeTab === "profile" && (
+              <ProfileTab
+                apiBase={API_BASE}
+                tenantId={tenantId}
+                userName={userName}
+                userEmail={userEmail}
+                userRole={userRole}
+                tenantName={tenantName}
+                onUpdateProfile={(name: string, email: string) => {
+                  // React state only. These used to be mirrored into localStorage
+                  // to survive a reload; the reload now asks /auth/me instead, so
+                  // the copy had nothing left reading it.
+                  setUserName(name);
+                  setUserEmail(email);
+                }}
+                onLogout={handleLogout}
+              />
+            )}
+
+            <ConnectorModal
+              isOpen={isModalOpen}
+              onClose={() => {
+                setIsModalOpen(false);
+                setSelectedModalConnector(undefined);
+              }}
+              initialSourceType={selectedModalConnector?.source_type}
+              // Which instance is being edited. Without it the modal would create a
+              // new connector every time, instead of updating the one clicked.
+              initialSourceId={selectedModalConnector?.id}
+              initialDisplayName={selectedModalConnector?.display_name}
+              initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
+              initialLookbackDays={selectedModalConnector?.lookback_days || 30}
+              // Which kind of connector this is, so editing one fed by uploads does
+              // not silently turn it back into a polled one.
+              initialImportMode={selectedModalConnector?.import_mode}
+              isEditing={Boolean(selectedModalConnector?.id)}
+              tenantId={tenantId}
+              onSaved={triggerRefresh}
+            />
+
+            <ShareModal
+              isOpen={isShareModalOpen}
+              onClose={() => setIsShareModalOpen(false)}
+              apiBase={API_BASE}
+            />
+
+            <LegalFooter />
+          </main>
+        </div>
+
+        <UploadBanner />
       </div>
-    </div>
+    </UploadProvider>
   );
 }

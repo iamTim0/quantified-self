@@ -33,6 +33,58 @@ work, which is longer than a browser should hold a connection open. What you wat
 the progress panel in the same dialog — it counts the data points as they are actually stored, and
 the connector's history keeps the outcome.
 
+You do not have to sit and watch it. **Minimise** closes the dialog and leaves the upload running,
+and a card in the bottom-right corner keeps showing which connector, which file and how far it has
+got, on whichever screen you happen to be. Cancelling there stops the transfer and deletes the
+parts that had already arrived. Closing the *tab* does end an upload — the browser asks first.
+
+### Why the file arrives in parts
+
+A large archive is sent in parts rather than as one request, and this is not a detail of taste: the
+hops between a browser and an importer each cap how large a request body may be, and the smallest
+cap wins. Cloudflare refuses a body over **100 MB** on every plan below Enterprise, and refuses it
+at the edge — a 200 MB Apple Health export was rejected after roughly 3 MB had been sent, which the
+progress bar showed as "2 %". Coolify's ingress and a stock nginx have limits of their own. None of
+them can be raised from this repository.
+
+So the dashboard asks the importer for a session, sends parts of a size the importer names (8 MB),
+and then says the archive is complete; the importer reassembles them into one file and reads it
+exactly as if it had arrived in one request. The importer owns the byte offsets, which is what makes
+the retries safe:
+
+| Situation | What happens |
+| --- | --- |
+| A part's response is lost and the part is sent again | Refused with the offset the importer wants, so it is never appended twice |
+| The connection drops mid-part | That part is retried; the spool is truncated back to the last complete offset |
+| The upload fails after 80 % | **Continue** resumes from 80 %, for up to an hour |
+| The upload is abandoned | The parts are deleted — after an hour of silence, at the next sweep, or immediately when the importer restarts |
+
+A single-request upload (`POST /api/v1/import/<provider>/upload` with the file as the body) still
+works and is the simpler choice for a script or a small export. It is subject to whatever body
+limit sits in front of the deployment.
+
+### The upload session, endpoint by endpoint
+
+Every step goes through the Gateway, needs the same session and CSRF proof as any other write, and
+reaches the importer for that provider (`apple-health`, `whoop`).
+
+| Step | Request | Answers |
+| --- | --- | --- |
+| Open | `POST /api/v1/import/<provider>/upload/begin?source_id=<id>&total_bytes=<n>` | `upload_id`, `chunk_bytes` (the part size to use), `max_bytes`, `received` |
+| Send a part | `POST /api/v1/import/<provider>/upload/chunk?upload_id=<id>&offset=<n>` with the bytes as the body | `received` — how much the importer now holds |
+| Finish | `POST /api/v1/import/<provider>/upload/complete?upload_id=<id>` | `202` with the `sync_run_id` of the import it started |
+| Give up | `POST /api/v1/import/<provider>/upload/abort?upload_id=<id>` | `200`, and the parts are deleted |
+
+`begin` refuses a `total_bytes` larger than the importer's limit with `413` before anything is sent.
+A `chunk` at the wrong offset is `409` and carries `expected_offset`; so is `complete` on a session
+that is still short of the size it announced. An `upload_id` belonging to another workspace is
+`404`, not `403` — whether an id exists is not another tenant's business.
+
+The run is opened by `complete`, not by `begin`: a run held open for the minutes a browser spends
+uploading would show an import that is importing nothing, and Core's scheduler treats a connector
+with an open run as busy, so an abandoned upload would have suppressed that connector's scheduled
+imports until the run went stale.
+
 The response contains a `sync_run_id` and the connector detail page at
 `/connectors/<connector-id>` shows the same run in its history. The importer reports the expected
 point count after parsing the file, then Core counts accepted and duplicate events as they arrive.
@@ -106,6 +158,17 @@ arrived, without renaming.
 **The processing progress panel shows nothing.** An upload only starts a run once the file has
 arrived in full. The transfer bar covers the upload itself; on a slow connection the processing
 panel therefore appears only after a large archive has finished uploading.
+
+**The upload stops after a few per cent.** That is a body limit in front of the platform, not the
+importer: Cloudflare's `413` arrives at the edge after a couple of megabytes, so the percentage it
+dies at says more about the file's size than about the cause. The dashboard sends parts of 8 MB
+precisely to stay under such limits — if an upload started from the dashboard still stops this way,
+check the reverse proxy for a limit *below* 8 MB and the importer's log for the part it refused.
+A `curl` of the whole file in one request is subject to the full limit and will fail this way.
+
+**A large upload failed near the end.** Press **Continue** on the card: the importer still holds
+what arrived, for an hour after the last part, and the transfer resumes from there rather than from
+the beginning.
 
 **Numbers look duplicated.** They are not: check the connector. Two connectors of the same type
 are two series on purpose, so an export uploaded into a second Apple Health connector sits beside

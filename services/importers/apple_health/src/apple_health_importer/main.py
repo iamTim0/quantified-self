@@ -16,7 +16,13 @@ import nats
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
-from shared_schemas import FieldReportCollector
+from shared_schemas import (
+    FieldReportCollector,
+    OffsetMismatch,
+    SpoolTooLarge,
+    UnknownUpload,
+    UploadSpool,
+)
 
 from apple_health_importer.auth import extract_presented_key, resolve_api_key
 from apple_health_importer.client import (
@@ -51,6 +57,36 @@ nc_client: nats.NATS | None = None
 #: anywhere.
 _running_imports: set[asyncio.Task] = set()
 
+#: Archives arriving in parts. An export can be hundreds of megabytes and the proxies
+#: between a browser and this service refuse a body that large — Cloudflare at 100 MB,
+#: before three of them have been sent — so the dashboard sends parts and this
+#: reassembles them. See `shared_schemas.upload_spool`.
+_uploads = UploadSpool(
+    Path(tempfile.gettempdir()) / "qs-apple-health-uploads",
+    max_bytes=MAX_ARCHIVE_BYTES,
+)
+
+#: How often the spool is checked for uploads nobody came back to finish.
+_SWEEP_INTERVAL_SECONDS = 300
+
+
+async def _sweep_uploads_forever() -> None:
+    """Delete abandoned upload parts for as long as the service runs.
+
+    An unfinished upload is a piece of somebody's medical history in a temporary
+    file. A failure to sweep is logged and the loop continues: giving up would turn
+    one bad sweep into a spool that grows forever.
+    """
+    while True:
+        await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
+        try:
+            discarded = _uploads.sweep()
+        except Exception as exc:
+            logger.warning("Sweeping unfinished uploads failed: %s", exc)
+            continue
+        if discarded:
+            logger.info("Discarded %d unfinished upload(s).", discarded)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -62,7 +98,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"Could not connect to NATS on startup: {e}")
 
+    sweeper = asyncio.create_task(_sweep_uploads_forever())
+
     yield
+
+    sweeper.cancel()
 
     if nc_client and not nc_client.is_closed:
         await nc_client.close()
@@ -467,6 +507,220 @@ async def upload_export_archive(
             "source_type": target.source_type,
         },
     )
+
+
+# --------------------------------------------------------------------------------
+# The same archive, in parts.
+#
+# `/upload` above is one request, which is the right shape for a script, a test or a
+# small export and the wrong shape for the browser path: the hops in between refuse a
+# body of that size. Cloudflare answers 413 at the edge on every plan below Enterprise
+# once a body passes 100 MB, and it answers after roughly three megabytes have been
+# pushed — a 200 MB export therefore failed at "2 %" with nothing here ever running.
+#
+# So the dashboard asks for a session, sends parts that fit through anything, and then
+# says it is done. The three steps are separate requests rather than one clever route
+# because each answers a different question: where do I send, here is more, that was
+# everything.
+# --------------------------------------------------------------------------------
+
+
+def _upload_failure(exc: Exception) -> JSONResponse:
+    """Turn a spool refusal into the response that tells a client what to do next.
+
+    409 carries the offset the spool wants, which is the whole resume mechanism: a
+    client that lost a response, or a connection, learns where to continue instead of
+    starting a 200 MB upload again.
+    """
+    if isinstance(exc, OffsetMismatch):
+        return JSONResponse(
+            status_code=409,
+            content={"detail": str(exc), "expected_offset": exc.expected},
+        )
+    if isinstance(exc, SpoolTooLarge):
+        return JSONResponse(status_code=413, content={"detail": str(exc)})
+    if isinstance(exc, UnknownUpload):
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+    raise exc
+
+
+@app.post("/upload/begin")
+@app.post("/api/v1/import/apple-health/upload/begin")
+async def begin_chunked_upload(
+    source_id: str = Query(..., description="The connector this archive belongs to"),
+    total_bytes: int | None = Query(
+        None, ge=0, description="Size of the archive, so an impossible one fails now"
+    ),
+    authorization: str | None = Header(None, alias="Authorization"),
+    x_request_id: str = Header("req_apple_health_upload", alias="X-Request-ID"),
+):
+    """Open an upload session and say how large a part may be.
+
+    The part size comes from the server so that the limit lives in one place. A
+    dashboard that hardcoded it would have to be redeployed to follow a proxy.
+
+    The connector is resolved here, before any bytes are sent: an archive uploaded for
+    a quarter of an hour and then rejected for naming an unknown connector is a quarter
+    of an hour of somebody's evening.
+    """
+    tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
+    target = await resolve_upload_target(tenant_id, source_id, req_id=x_request_id)
+
+    try:
+        session = _uploads.begin(tenant_id, target.source_id, total_bytes=total_bytes)
+    except (OffsetMismatch, SpoolTooLarge, UnknownUpload) as exc:
+        return _upload_failure(exc)
+
+    logger.info(
+        "[req_id=%s] Tenant %s: upload session opened for connector %s (%s byte(s) announced).",
+        x_request_id,
+        tenant_id,
+        target.source_id,
+        total_bytes if total_bytes is not None else "unknown",
+    )
+    return JSONResponse(
+        status_code=201,
+        content={
+            "upload_id": session.id,
+            "chunk_bytes": _uploads.chunk_bytes,
+            "max_bytes": _uploads.max_bytes,
+            "received": session.received,
+            "source_id": target.source_id,
+            "source_type": target.source_type,
+        },
+    )
+
+
+@app.post("/upload/chunk")
+@app.post("/api/v1/import/apple-health/upload/chunk")
+async def append_chunked_upload(
+    request: Request,
+    upload_id: str = Query(..., description="The session this part belongs to"),
+    offset: int = Query(..., ge=0, description="Where this part starts in the archive"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    x_request_id: str = Header("req_apple_health_upload", alias="X-Request-ID"),
+):
+    """Append one part at ``offset``.
+
+    Streamed into the spool file as it arrives: a part is never held in memory here,
+    for the same reason the single-request route never held an archive.
+    """
+    tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
+
+    try:
+        session = await _uploads.append(
+            upload_id, tenant_id, offset=offset, chunks=request.stream()
+        )
+    except (OffsetMismatch, SpoolTooLarge, UnknownUpload) as exc:
+        return _upload_failure(exc)
+
+    return JSONResponse(
+        status_code=200,
+        content={"received": session.received, "chunk_bytes": _uploads.chunk_bytes},
+    )
+
+
+@app.post("/upload/complete")
+@app.post("/api/v1/import/apple-health/upload/complete")
+async def complete_chunked_upload(
+    upload_id: str = Query(..., description="The session that is now complete"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    x_request_id: str = Header("req_apple_health_upload", alias="X-Request-ID"),
+):
+    """Read the assembled archive, exactly as if it had arrived in one request.
+
+    The run is opened here rather than when the session was, deliberately. A run open
+    for the twenty minutes a browser spends uploading would show the dashboard an
+    import that is importing nothing, and Core's scheduler treats a connector with an
+    open run as busy — an upload someone abandoned would have suppressed that
+    connector's scheduled imports until the run went stale six hours later. The upload
+    itself is visible in the dashboard while it happens; a run describes the import.
+    """
+    tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
+
+    try:
+        session = _uploads.session(upload_id, tenant_id)
+        if not session.complete:
+            raise OffsetMismatch(session.received)
+        if session.received == 0:
+            _uploads.abort(upload_id, tenant_id)
+            raise HTTPException(status_code=400, detail="The upload was empty.")
+        session = _uploads.finish(upload_id, tenant_id)
+    except (OffsetMismatch, SpoolTooLarge, UnknownUpload) as exc:
+        return _upload_failure(exc)
+
+    target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
+
+    if (nc_client is None or not nc_client.is_connected) and not getattr(
+        app.state, "testing", False
+    ):
+        session.path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=503, detail="NATS event broker unavailable. Please retry later."
+        )
+
+    sync_run_id = await open_sync_run(
+        tenant_id,
+        target.source_id,
+        req_id=x_request_id,
+        trigger="upload",
+        message=f"Apple Health archive received ({session.received} byte(s)).",
+    )
+
+    task = asyncio.create_task(
+        _import_archive(
+            str(session.path),
+            tenant_id=tenant_id,
+            source_id=target.source_id,
+            sync_run_id=sync_run_id,
+            req_id=x_request_id,
+        )
+    )
+    _running_imports.add(task)
+    task.add_done_callback(_running_imports.discard)
+
+    logger.info(
+        "[req_id=%s] Tenant %s: assembled a %d byte Apple Health archive for connector %s.",
+        x_request_id,
+        tenant_id,
+        session.received,
+        target.source_id,
+    )
+
+    return JSONResponse(
+        status_code=202,
+        content={
+            "status": "accepted",
+            "sync_run_id": sync_run_id,
+            "source_id": target.source_id,
+            "source_type": target.source_type,
+            "received": session.received,
+        },
+    )
+
+
+@app.post("/upload/abort")
+@app.post("/api/v1/import/apple-health/upload/abort")
+async def abort_chunked_upload(
+    upload_id: str = Query(..., description="The session to give up on"),
+    authorization: str | None = Header(None, alias="Authorization"),
+    x_request_id: str = Header("req_apple_health_upload", alias="X-Request-ID"),
+):
+    """Give up on a session and delete the parts that arrived.
+
+    A cancelled upload deletes health data now instead of at the next sweep, which is
+    the difference between a user's decision being carried out and being scheduled.
+    """
+    tenant_id = await resolve_session(bearer_token(authorization), req_id=x_request_id)
+
+    try:
+        _uploads.abort(upload_id, tenant_id)
+    except UnknownUpload:
+        # Nothing to give up on: the session already ended, or never existed. Either
+        # way the caller's intent holds, so this is not an error it needs to handle.
+        pass
+
+    return JSONResponse(status_code=200, content={"status": "aborted"})
 
 
 if __name__ == "__main__":

@@ -101,8 +101,7 @@ export const en = {
 
   // ── Sharing ─────────────────────────────────────────────────────────────
   "share.title": "Share data",
-  "share.intro":
-    "Give coaches, doctors or partners secure read access to your health data.",
+  "share.intro": "Give coaches, doctors or partners secure read access to your health data.",
   "share.emailPlaceholder": "recipient@example.com",
   "share.submit": "Send invitation",
   "share.submitting": "Sharing…",
@@ -122,31 +121,26 @@ export const en = {
   "warning.password_published.title": "This password is publicly known",
   "warning.password_published.detail":
     "The hash of this password appeared in a published source — it was the development account earlier versions of this project shipped. bcrypt delays an attack, it does not prevent one: whoever holds the hash can try passwords offline for as long as they like.",
-  "warning.password_published.action":
-    "Change the password now — and anywhere else it is used.",
+  "warning.password_published.action": "Change the password now — and anywhere else it is used.",
   "warning.insecure_jwt_secret.title": "JWT_SECRET is a published default",
   "warning.insecure_jwt_secret.detail":
     "Sessions are signed with a key that is printed in this project's own source. Anyone who knows it can issue a token for any account and any workspace.",
   "warning.insecure_jwt_secret.action": "Set a value of your own: {generate}",
-  "warning.insecure_encryption_key.title":
-    "ENCRYPTION_KEY is a published default",
+  "warning.insecure_encryption_key.title": "ENCRYPTION_KEY is a published default",
   "warning.insecure_encryption_key.detail":
     "Every stored connector credential can be decrypted by anyone who knows this key — and it is in the source.",
   "warning.insecure_encryption_key.action":
     "Re-encrypt first, then switch: python -m core.rotate_encryption_key --old … --new … Changing it without that step makes every stored token permanently unreadable.",
-  "warning.insecure_internal_secret.title":
-    "INTERNAL_SERVICE_SECRET is a published default",
+  "warning.insecure_internal_secret.title": "INTERNAL_SERVICE_SECRET is a published default",
   "warning.insecure_internal_secret.detail":
     "With it, anyone can present themselves as an internal service and fetch decrypted connector credentials.",
-  "warning.insecure_internal_secret.action":
-    "Set a value of your own: {generate}",
+  "warning.insecure_internal_secret.action": "Set a value of your own: {generate}",
   "warning.registration_open.title": "Self-service sign-up is open",
   "warning.registration_open.detail":
     "Anyone who knows this address can create an account and a workspace of their own.",
   "warning.registration_open.action":
     "Set ALLOW_REGISTRATION=false. The first account is created with python -m core.create_owner.",
-  "warning.cookies_not_secure.title":
-    "Session cookies without the Secure flag",
+  "warning.cookies_not_secure.title": "Session cookies without the Secure flag",
   "warning.cookies_not_secure.detail":
     "The cookies are sent over unencrypted connections too, where anyone on the path can read them.",
   "warning.cookies_not_secure.action":
@@ -154,13 +148,11 @@ export const en = {
   "warning.development_environment.title": "ENVIRONMENT is “{environment}”",
   "warning.development_environment.detail":
     "That is why the services start despite the points above. With a production-like ENVIRONMENT, Core and the Gateway refuse to start while any value is a published default.",
-  "warning.development_environment.action":
-    "Set ENVIRONMENT=production for a real deployment.",
+  "warning.development_environment.action": "Set ENVIRONMENT=production for a real deployment.",
 
   // ── Overview ────────────────────────────────────────────────────────────
   "overview.title": "Dashboard",
-  "overview.subtitle":
-    "Aggregated analysis of the sensors and trackers you have connected.",
+  "overview.subtitle": "Aggregated analysis of the sensors and trackers you have connected.",
   "overview.empty": "No data points stored yet.",
   "overview.emptyAction": "Connect a source and import data",
   "overview.loadingChart": "Loading the chart…",
@@ -179,11 +171,9 @@ export const en = {
   "quality.conflictsTitle": "Conflicting sources",
   "quality.conflictsDetail": "Deviations above 5 %",
   "quality.conflictsNone": "No competing sources worth a second look.",
-  "quality.conflictsHelp":
-    "Check the units and which source should be the primary one.",
+  "quality.conflictsHelp": "Check the units and which source should be the primary one.",
   "quality.recommendationComplete": "The data looks complete.",
-  "quality.recommendationMinor":
-    "Small gaps: usable for analysis, but check the trends.",
+  "quality.recommendationMinor": "Small gaps: usable for analysis, but check the trends.",
   "quality.recommendationSerious":
     "Check the connector, its token and how often it syncs before drawing conclusions.",
   "quality.explainTitle": "What do these numbers mean?",
@@ -213,8 +203,7 @@ export const en = {
   "quality.backfillHint":
     "The import dialog proposes the period that is missing and skips what is already stored.",
   "quality.conflictsNoneLong": "No contradictory measurements found.",
-  "quality.conflictsSome":
-    "{count} measurements differ noticeably between sources.",
+  "quality.conflictsSome": "{count} measurements differ noticeably between sources.",
   "quality.conflictsAdvice":
     "Where sources conflict, pick the most reliable one per metric and check the unit in the importer's transformer.",
 
@@ -237,8 +226,7 @@ export const en = {
   "chart.refresh": "Refresh the chart",
   "chart.emptyPeriod": "No data points in the selected period.",
   "chart.emptyFilter": "No data points for the current filter.",
-  "map.tilesFailed":
-    "The map could not be loaded. Falling back to the plain view.",
+  "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",
   "map.today": "Today",
   "map.showTiles": "Load the map",
   "map.hideTiles": "Hide the map",
@@ -275,18 +263,13 @@ export const en = {
     "Calories, macronutrients (protein, carbohydrates, fat) and the meal diary.",
   "connectors.desc.dawarich":
     "GPS locations and movement traces, stored with a PostGIS spatial index.",
-  "connectors.desc.whoop":
-    "Heart-rate variability, sleep stages and the strain score.",
+  "connectors.desc.whoop": "Heart-rate variability, sleep stages and the strain score.",
   "connectors.desc.apple_health":
     "Steps, active energy, resting heart rate and sleep stages via Health Auto Export.",
-  "connectors.desc.streak":
-    "Strength training from Streak 2.0: exercises, sets, reps and weight.",
-  "connectors.desc.home_assistant":
-    "Temperature, humidity, light and sound sensors.",
-  "connectors.desc.weather":
-    "Temperature, air pressure, precipitation and the UV index.",
-  "connectors.desc.calendar":
-    "ICS feeds: appointments, meeting duration and busy hours per day.",
+  "connectors.desc.streak": "Strength training from Streak 2.0: exercises, sets, reps and weight.",
+  "connectors.desc.home_assistant": "Temperature, humidity, light and sound sensors.",
+  "connectors.desc.weather": "Temperature, air pressure, precipitation and the UV index.",
+  "connectors.desc.calendar": "ICS feeds: appointments, meeting duration and busy hours per day.",
   "connectors.nameWeather": "Weather",
   "connectors.nameCalendar": "Calendar",
   "connectors.confirmDelete":
@@ -317,7 +300,6 @@ export const en = {
 
   // ── Connector actions ───────────────────────────────────────────────────
   "connectors.import": "Import",
-  "connectors.history": "History",
   "connectors.upload": "Upload",
   "connectors.fileDriven": "Fed by uploaded exports",
   "connectors.queued": "Queued",
@@ -405,16 +387,14 @@ export const en = {
   "apikeys.copy": "Copy to the clipboard",
   "apikeys.storeNow":
     "Store it in the app now. Once this closes it cannot be shown again — only revoked and replaced.",
-  "apikeys.none":
-    "No key for {provider} yet. Create one to start receiving data.",
+  "apikeys.none": "No key for {provider} yet. Create one to start receiving data.",
   "apikeys.created": "Created {date}",
   "apikeys.expires": "expires {date}",
   "apikeys.lastUsed": "last used {date}",
   "apikeys.neverUsed": "never used",
   "apikeys.statusActive": "active",
   "apikeys.statusRevoked": "revoked",
-  "apikeys.rotateTitle":
-    "Create a successor; this key stays valid until it is revoked",
+  "apikeys.rotateTitle": "Create a successor; this key stays valid until it is revoked",
   "apikeys.revokeTitle": "Invalidate immediately",
   "apikeys.namePlaceholder": "e.g. iPhone",
   "apikeys.noExpiry": "No expiry",
@@ -445,8 +425,7 @@ export const en = {
   "oidc.toggleEnabledHint": "Appears on the sign-in screen.",
 
   // ── Profile and import ──────────────────────────────────────────────────
-  "profile.subtitle":
-    "Manage your account, security settings and one-click data deletion.",
+  "profile.subtitle": "Manage your account, security settings and one-click data deletion.",
   "profile.passwordMismatch": "The new passwords do not match.",
   "profile.passwordFailed": "Changing the password failed.",
   "profile.passwordChanged": "Password changed.",
@@ -466,8 +445,7 @@ export const en = {
     "Connector tokens are encrypted with Fernet AES-256 before they are stored.",
   "profile.signOut": "Sign out of this account",
   "profile.wipeConfirmTitle": "Delete all data points?",
-  "profile.wipeConfirmBody":
-    "This deletes every imported data point in your workspace.",
+  "profile.wipeConfirmBody": "This deletes every imported data point in your workspace.",
   "profile.wipeConfirmAction": "Yes, delete all data points",
   "profile.wipeRunning": "Deleting data…",
   "profile.deleteAccountTitle": "Delete the whole account?",
@@ -475,8 +453,7 @@ export const en = {
     "This irreversibly deletes every data point, connector token and share belonging to your account (GDPR Art. 17).",
   "profile.deleteAccountAction": "Delete irreversibly",
   "profile.deleteAccountRunning": "Deleting the account…",
-  "profile.privacyLead":
-    "Which data is processed, on what basis, and how to delete it",
+  "profile.privacyLead": "Which data is processed, on what basis, and how to delete it",
   "import.days": "{count} days",
   "import.title": "Import data — {name}",
   "import.from": "From",
@@ -510,6 +487,10 @@ export const en = {
   "import.uploadProgressPercent": "{percent}% uploaded",
   "import.uploadAccepted": "The file has arrived and is being read. Progress appears above.",
   "import.uploadFailed": "The file could not be uploaded.",
+  "import.uploadInParts":
+    "The file is being sent in parts, so a large export gets through. You can close this dialog — the upload keeps going.",
+  "import.minimize": "Minimise",
+  "import.minimizeHint": "Close the dialog. The upload keeps running and stays visible.",
   "import.uploadReimportNote":
     "The same file can be uploaded again without creating duplicates: a reading already stored stays one reading.",
   "import.planFailed": "The import plan could not be loaded.",
@@ -518,8 +499,7 @@ export const en = {
   "import.queued": "Import queued.",
   "import.subtitle": "Check and adjust the period before the import starts.",
   "import.close": "Close the dialog",
-  "import.smartHint":
-    "Periods that are already complete are skipped. Only the",
+  "import.smartHint": "Periods that are already complete are skipped. Only the",
   "import.forceLabel": "Force everything",
   "import.forceHint":
     "but the run takes longer and uses more of the provider's rate limit. It is marked as force in the import log.",
@@ -531,22 +511,42 @@ export const en = {
   "import.start": "Start the import",
   "import.nothingToImport": "Nothing to import",
 
+  // ── Upload banner (an upload that outlived its dialog) ──────────────────────
+  "upload.title": "Uploading — {name}",
+  "upload.doneTitle": "Upload complete — {name}",
+  "upload.errorTitle": "Upload failed — {name}",
+  "upload.cancelledTitle": "Upload cancelled — {name}",
+  "upload.sentOf": "{done} of {total} MB · {percent}%",
+  "upload.progressPercent": "{percent}% uploaded",
+  "upload.assembling": "All parts have arrived. The importer is reading the archive…",
+  "upload.doneBody": "The archive is being read. The connector shows how the import is going.",
+  "upload.errorBody": "The upload stopped before the file was complete.",
+  "upload.cancelledBody": "The parts that had arrived were deleted.",
+  "upload.cancel": "Cancel the upload",
+  "upload.resume": "Continue",
+  "upload.dismiss": "Dismiss",
+
   // ── Import duration ─────────────────────────────────────────────────────
   "import.hours": "{count} h",
 
   // ── Data explorer ───────────────────────────────────────────────────────
+  "explorer.title": "Raw data explorer",
+  "explorer.subtitle":
+    "Direct access to every raw data point stored for this workspace. Saved views live in PostgreSQL.",
   "explorer.refresh": "Refresh the data",
   "explorer.savedViews": "Saved views",
   "explorer.saveCurrent": "Save the current view",
+  "explorer.viewNamePlaceholder": "Name of the view…",
   "explorer.deleteView": "Delete this view",
   "explorer.noViews":
     "No saved views yet. Configure the filters and press “Save the current view”.",
   "explorer.source": "Source:",
   "explorer.allSources": "All sources",
   "explorer.period": "Period:",
+  "explorer.aggregation": "Aggregate:",
   "explorer.dailySum": "Daily total",
   "explorer.dailyAverage": "Daily average",
-  "explorer.selectedMetrics": "Selected metrics ({count}):",
+  "explorer.dailyMax": "Daily maximum",
   "explorer.selectAll": "Select all",
   "explorer.searchPlaceholder":
     "Full-text search across the raw data (food name, category, metric name or JSON metadata…)",
@@ -554,15 +554,62 @@ export const en = {
   "explorer.colValue": "Value",
   "explorer.empty": "No data points for the current query.",
 
+  // ── Data explorer: views ────────────────────────────────────────────────
+  "explorer.tabChart": "Chart",
+  "explorer.tabRaw": "Raw data points",
+  "explorer.tabOverview": "Metrics",
+
+  // ── Data explorer: metric picker ────────────────────────────────────────
+  "explorer.metrics": "Metrics:",
+  "explorer.metricsNone": "No metric selected",
+  "explorer.metricsSelected_one": "{count} metric",
+  "explorer.metricsSelected_other": "{count} metrics",
+  "explorer.metricFilterPlaceholder": "Filter metrics…",
+  "explorer.clearSelection": "Clear the selection",
+  "explorer.metricsEmpty": "No metrics stored yet.",
+  "explorer.metricsNoMatch": "No metric matches that filter.",
+
+  // ── Data explorer: raw point log ────────────────────────────────────────
+  "explorer.rawCount_one": "{count} match",
+  "explorer.rawCount_other": "{count} matches",
+  "explorer.rawTruncated": "Showing the newest {shown} of {total} matches.",
+  "explorer.liveQuery": "Live TimescaleDB query",
+  "explorer.sampleNote":
+    "The chart and the table read the newest {count} data points. Open a single metric from the {tab} tab to load that metric's own history instead.",
+  "explorer.scopeActive": "Loaded on its own: {metric}",
+  "explorer.scopeClear": "Back to all metrics",
+  "explorer.colTimestamp": "Timestamp",
+  "explorer.colMetric": "Metric",
+  "explorer.colMetadata": "Metadata (JSON)",
+  "explorer.colDetails": "Details",
+  "explorer.inspect": "Inspect the JSON",
+  "explorer.inspectorTitle": "Raw data point",
+  "explorer.inspectorMetadata": "Metadata (JSONB)",
+
+  // ── Data explorer: metric overview ──────────────────────────────────────
+  "explorer.overviewHint":
+    "Every metric type this workspace holds, counted over the whole history rather than over the loaded sample. Open one to read its raw data points.",
+  "explorer.overviewEmpty": "No metrics stored yet, so there is nothing to summarise.",
+  "explorer.overviewFailed": "The metric overview could not be loaded.",
+  "explorer.colUnit": "Unit",
+  "explorer.colPoints": "Data points",
+  "explorer.colTypical": "Meaningful value",
+  "explorer.colRange": "Min / max",
+  "explorer.colLatest": "Latest",
+  "explorer.showRaw": "Raw data points",
+  "explorer.unregistered": "Not in the registry",
+  "explorer.aggAverage": "Average",
+  "explorer.aggSum": "Total",
+  "explorer.aggMax": "Maximum",
+  "explorer.aggLast": "Latest value",
+
   // ── Remaining OIDC and profile fields ───────────────────────────────────
   "oidc.emptyState":
     "No provider configured yet. Signing in with an email address and password works regardless.",
   "oidc.toggleSignup": "Allow sign-up",
-  "oidc.toggleSignupHint":
-    "Creates a new account when the identity is unknown.",
+  "oidc.toggleSignupHint": "Creates a new account when the identity is unknown.",
   "oidc.toggleVerified": "Require a verified email",
-  "oidc.toggleVerifiedHint":
-    "Recommended. Without verification an address is not an identity.",
+  "oidc.toggleVerifiedHint": "Recommended. Without verification an address is not an identity.",
   "oidc.issuerHint":
     "The issuer is checked when saving: the discovery document has to be reachable and name the same issuer.",
   "profile.currentPassword": "Current password",
@@ -584,16 +631,12 @@ export const en = {
     "Active: reads temperature, humidity, light and any other exposed sensor state.",
   "modal.desc.weather":
     "Active: imports local weather time series through an Open-Meteo compatible API.",
-  "modal.desc.calendar":
-    "Active: imports the appointments you expose and the busy time per day.",
-  "modal.needEmailPassword":
-    "Please enter both an email address and a password.",
+  "modal.desc.calendar": "Active: imports the appointments you expose and the busy time per day.",
+  "modal.needEmailPassword": "Please enter both an email address and a password.",
   "modal.needYazioToken": "Please enter a Yazio bearer access token.",
   "modal.needDawarichKey": "Please enter the Dawarich API key.",
-  "modal.needCalendarUrl":
-    "Please enter the URL of your calendar feed (.ics).",
-  "modal.calendarUrlScheme":
-    "The calendar URL has to start with http:// or https://.",
+  "modal.needCalendarUrl": "Please enter the URL of your calendar feed (.ics).",
+  "modal.calendarUrlScheme": "The calendar URL has to start with http:// or https://.",
   "modal.needBaseUrl": "Please enter the HTTPS base URL of the provider API.",
   "modal.baseUrlLabel": "Base URL",
   "modal.calendarUrlLabel": "Calendar feed URL",
@@ -626,14 +669,12 @@ export const en = {
   "modal.weatherRequestUrlLabel": "Full request URL",
   "modal.weatherRequestUrlHint":
     "Sent exactly as written, query included — so a URL copied from the provider's own documentation works, including the archive endpoint for periods further back than the forecast API reaches. The import period is added only where you have not set one.",
-  "modal.weatherNeedRequestUrl":
-    "Please enter a complete URL starting with http:// or https://.",
+  "modal.weatherNeedRequestUrl": "Please enter a complete URL starting with http:// or https://.",
   "modal.weatherBaseUrl": "Provider URL",
   "modal.weatherBaseUrlHint":
     "Open-Meteo is preset and needs no API key. Replace it only for a self-hosted or commercial endpoint.",
   "modal.needApiKey": "Please enter a valid API key for {provider}.",
-  "modal.needApiKeyOrGenerate":
-    "Please enter a valid API key for {provider}, or generate one.",
+  "modal.needApiKeyOrGenerate": "Please enter a valid API key for {provider}, or generate one.",
   "modal.saved": "{provider} settings saved.",
   "modal.saveFailed": "The configuration could not be saved.",
   "modal.networkError": "Network error: {message}",
@@ -680,8 +721,7 @@ export const en = {
   "modal.yazioLoginOptional": "Yazio login (optional)",
   "modal.modeConnect": "Connect now",
   "modal.modeFile": "Import a file",
-  "modal.modeConnectHint":
-    "The connector fetches your data itself, on the schedule set below.",
+  "modal.modeConnectHint": "The connector fetches your data itself, on the schedule set below.",
   "modal.modeFileHint":
     "No account connection: you upload the export this provider gives you, and it is read into this connector. You can still connect it later — the same data stays one series.",
   "modal.fileFlowLead": "Fed by files:",
@@ -723,8 +763,7 @@ export const en = {
   "analysis.howToRead": "How to read these analyses",
   "analysis.noData":
     "There is no data to analyse yet. Set up a connector and import at least two weeks.",
-  "analysis.excludedForQuality":
-    "{count} hidden because the data is too thin",
+  "analysis.excludedForQuality": "{count} hidden because the data is too thin",
   "analysis.allMetricsQualify": "every metric meets the minimum requirements",
   "analysis.significantRelationships": "Significant relationships",
   "analysis.ofPairsChecked": "of {count} pairs checked",
@@ -733,19 +772,16 @@ export const en = {
   "analysis.noneMatchFilters":
     "No relationships match the filters. That is a valid result — not every metric relates to another.",
   "analysis.laggedTitle": "Time-shifted relationships",
-  "analysis.laggedTail":
-    "later. A sequence in time is no evidence of a cause.",
+  "analysis.laggedTail": "later. A sequence in time is no evidence of a cause.",
   "analysis.lagDays": "+{count} days",
   "analysis.sameDirection": "same direction",
   "analysis.oppositeDirection": "opposite direction",
   "analysis.tooFewForTrend": "Too few days for a statement about a trend.",
   "analysis.trendStats": "Mean {mean} · R² {r2} · n={n} days",
-  "analysis.tooFewForNormalRange":
-    "Too few days to establish a personal normal range.",
+  "analysis.tooFewForNormalRange": "Too few days to establish a personal normal range.",
   "analysis.anomalyBasis":
     "Based on the median and mean absolute deviation over {days} days. Unusual means unusual for you, not",
-  "analysis.tooFewForWeekly":
-    "At least two weeks of data are needed to see weekly patterns.",
+  "analysis.tooFewForWeekly": "At least two weeks of data are needed to see weekly patterns.",
   "analysis.colDays": "Days",
   "analysis.sufficient": "sufficient",
   "analysis.tooThin": "too thin",

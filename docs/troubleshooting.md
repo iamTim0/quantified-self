@@ -30,6 +30,25 @@ Normal when the period had already been imported: the idempotency check discards
 Compare `points_accepted` against `points_duplicate` in the import history. If every point is a
 duplicate, nothing is broken.
 
+### Uploading an export file stops at a few per cent
+
+A body-size limit in front of the platform, in almost every case. Cloudflare refuses a request body
+over 100 MB on every plan below Enterprise and refuses it **at the edge**, after a couple of
+megabytes have been pushed — which on a 200 MB Apple Health export reads as "it dies at 2 %". No
+setting in this repository can raise it, and neither the Gateway nor the importer ever sees the
+request.
+
+The dashboard therefore sends an archive in parts of 8 MB and the importer reassembles them, so an
+upload started from the interface is not subject to that limit at all. If one still stops this way:
+
+1. Reproduce it in the interface rather than with `curl`. A single-request `POST …/upload` carries
+   the whole file and is subject to the full limit; the interface is not.
+2. Look for a proxy limit below 8 MB (`client_max_body_size` in nginx, a `buffering` middleware in
+   Traefik).
+3. Check the importer's log for the part it refused, and the connector's history for the run.
+
+Details and the resume behaviour are under [Uploading an export file](features/file-import.md).
+
 ### A connector keeps reporting "auth error (401)"
 
 The stored token has expired or was revoked. Enter the credentials again in the connector dialog.

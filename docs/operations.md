@@ -186,14 +186,15 @@ export QS_VERSION=1.0.0        # which release should run
 docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variables
 docker compose -f docker-compose.prod.yml pull
 docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml run --rm core alembic upgrade head
 docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email you@example.com --workspace "My data"
 ```
 
-Migrations run as a step of their own on purpose, rather than when a service starts: several replicas
-coming up at once would otherwise migrate against each other. Self-registration is off, hence the last
-command — see [Creating the first account](#creating-the-first-account).
+`up` migrates before Core serves: the `core-migrate` service runs `alembic upgrade head` and exits, and
+Core starts only once that has succeeded. A container of its own rather than Core's entrypoint, so that
+several replicas coming up at once cannot migrate against each other — and not a step in these
+instructions, because a deploy that only starts the stack has nowhere to type one. Self-registration is
+off, hence the last command — see [Creating the first account](#creating-the-first-account).
 
 If there is already real data in the database, `ENCRYPTION_KEY` is **not** free to choose — then
 [re-encrypt](#rotating-encryption_key) first.

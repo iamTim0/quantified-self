@@ -26,7 +26,7 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
 );
 
 ChartJS.defaults.font.family = "var(--font-outfit), 'Outfit', system-ui, sans-serif";
@@ -34,7 +34,14 @@ ChartJS.defaults.font.family = "var(--font-outfit), 'Outfit', system-ui, sans-se
 interface ExplorerChartProps {
   dates: string[];
   series: Array<{
+    /** Canonical `metric_type` — the series identity, and what the data are keyed by. */
     metric: string;
+    /**
+     * What the legend reads: the metric's name in the reader's language, with its
+     * unit. Absent falls back to the key, which is what the legend showed for every
+     * series before — `strength_set_heart_rate_max` where a name belonged.
+     */
+    label?: string;
     color: string;
     values: number[];
   }>;
@@ -42,12 +49,17 @@ interface ExplorerChartProps {
   aggregation: "sum" | "avg" | "max" | "raw";
 }
 
-export default function ExplorerChart({ dates, series, chartType, aggregation }: ExplorerChartProps) {
+export default function ExplorerChart({
+  dates,
+  series,
+  chartType,
+  aggregation,
+}: ExplorerChartProps) {
   const t = useT();
   const chartData = {
     labels: dates,
     datasets: series.map((s) => ({
-      label: s.metric,
+      label: s.label ?? s.metric,
       data: s.values,
       borderColor: s.color,
       backgroundColor: chartType === "area" ? `${s.color}25` : `${s.color}aa`,
@@ -104,7 +116,10 @@ export default function ExplorerChart({ dates, series, chartType, aggregation }:
       },
       y: {
         type: "linear" as const,
-        ticks: { color: "#64748b", font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 } },
+        ticks: {
+          color: "#64748b",
+          font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 },
+        },
         grid: { color: "#f1f5f9" },
       },
     },
