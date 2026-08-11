@@ -98,8 +98,10 @@ async def report_sync_result_to_core(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=headers, json=payload)
-        except Exception as e:
-            logger.warning(f"Could not report sync result to Core: {e}")
+        except Exception as exc:  # noqa: BLE001 - status reporting is best effort
+            logger.warning(
+                "Could not report sync result to Core (%s)", type(exc).__name__
+            )
 
 
 async def get_connector_token_from_core(
@@ -135,8 +137,11 @@ async def get_connector_token_from_core(
                         return None, None, None
                     return data["access_token"], source_id, data.get("config", {})
             return None, None, None
-        except Exception as e:
-            logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
+        except Exception as exc:  # noqa: BLE001 - credentials remain absent on failure
+            logger.warning(
+                "Could not reach Core Data Service to fetch connector token (%s)",
+                type(exc).__name__,
+            )
             return None, None, None
 
 
@@ -155,7 +160,7 @@ async def resolve_product_info(client: YazioClient, product_id: str) -> dict[str
             if brand and name:
                 full_name = f"{brand} - {name}"
             else:
-                full_name = name or brand or f"Produkt #{product_id[:8]}"
+                full_name = name or brand or f"Product #{product_id[:8]}"
 
             nutrients = p.get("nutrients") or {}
             base_unit = str(p.get("base_unit") or p.get("base") or p.get("unit") or "100g").lower()
@@ -165,9 +170,14 @@ async def resolve_product_info(client: YazioClient, product_id: str) -> dict[str
                 base_amount = float(raw_base_amt)
             elif "100" in base_unit:
                 base_amount = 100.0
-            elif "1g" in base_unit or "1ml" in base_unit or base_unit in ("g", "ml"):
-                base_amount = 1.0
-            elif "serving" in base_unit or "portion" in base_unit or "piece" in base_unit:
+            elif (
+                "1g" in base_unit
+                or "1ml" in base_unit
+                or base_unit in ("g", "ml")
+                or "serving" in base_unit
+                or "portion" in base_unit
+                or "piece" in base_unit
+            ):
                 base_amount = 1.0
             else:
                 base_amount = 100.0
@@ -183,11 +193,15 @@ async def resolve_product_info(client: YazioClient, product_id: str) -> dict[str
             }
             product_cache[product_id] = info
             return info
-    except Exception as e:
-        logger.debug(f"Could not fetch info for product {product_id}: {e}")
+    except Exception as exc:  # noqa: BLE001 - provider shape changes use the fallback
+        logger.debug(
+            "Could not fetch info for product %s (%s)",
+            product_id,
+            type(exc).__name__,
+        )
 
     fallback = {
-        "name": f"Produkt #{product_id[:8]}",
+        "name": f"Product #{product_id[:8]}",
         "base_amount": 100.0,
         "energy_kcal": 0.0,
         "protein_g": 0.0,
@@ -207,8 +221,12 @@ async def resolve_recipe_name(client: YazioClient, recipe_id: str) -> str:
             name = r.get("name") or r.get("title") or f"Recipe #{recipe_id[:8]}"
             recipe_cache[recipe_id] = {"name": name}
             return name
-    except Exception as e:
-        logger.debug(f"Could not fetch name for recipe {recipe_id}: {e}")
+    except Exception as exc:  # noqa: BLE001 - provider shape changes use the fallback
+        logger.debug(
+            "Could not fetch name for recipe %s (%s)",
+            recipe_id,
+            type(exc).__name__,
+        )
     fallback = f"Recipe #{recipe_id[:8]}"
     recipe_cache[recipe_id] = {"name": fallback}
     return fallback
@@ -364,20 +382,20 @@ async def process_task_message(msg, nc: nats.NATS):
         finally:
             active_syncs.discard(lock_key)
             await msg.ack()
-    except Exception as e:
-        logger.error(f"Error processing task message: {e}")
+    except Exception as exc:  # noqa: BLE001 - task failures must be acknowledged
+        logger.error("Error processing task message (%s)", type(exc).__name__)
 
 
 async def main():
     logger.info("Starting Yazio Importer Service; awaiting sync tasks on NATS...")
     nc = await nats.connect(settings.NATS_URL)
-    logger.info(f"Connected to NATS at {settings.NATS_URL}")
+    logger.info("Connected to NATS")
 
     js = nc.jetstream()
     try:
         await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception as e:
-        logger.info(f"Stream 'tasks' check: {e}")
+    except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+        logger.info("Stream 'tasks' check failed (%s)", type(exc).__name__)
 
     await js.subscribe(
         "qs.task.sync.yazio",

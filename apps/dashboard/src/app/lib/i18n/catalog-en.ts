@@ -176,6 +176,46 @@ export const en = {
   "quality.unsupportedLastSeen": "Last seen",
   "quality.unsupportedCopy": "Copy report",
   "quality.unsupportedCopied": "Copied",
+  "quality.quarantineTitle": "Held for your decision",
+  "quality.quarantineHint":
+    "These values are safe outside charts and analysis until you map, adopt, discard or keep their connector-specific name.",
+  "quality.quarantineCapacityTitle": "Quarantine capacity",
+  "quality.quarantineCapacityIntro":
+    "Unknown values are held here for mapping. Resolve them before the connector reaches its limit; values arriving after a full limit cannot be recovered by mapping later.",
+  "quality.quarantineCapacityPending":
+    "Unknown values are waiting for a decision. Resolve them before the next large import so the quarantine has room for new values.",
+  "quality.quarantineCapacityHalf":
+    "The quarantine is {percent}% full. If the limit is reached, additional unknown values will not be retained and cannot be mapped later.",
+  "quality.quarantineCapacityNearFull":
+    "The quarantine is {percent}% full. Resolve this connector now: additional unknown values may soon be refused and lost for later mapping.",
+  "quality.quarantineCapacityFull":
+    "The quarantine limit is full. Additional unknown values are not retained and cannot be recovered by mapping this connector later.",
+  "quality.quarantineCapacityRefused":
+    "Unknown values have already been refused for this connector. They are not in quarantine; re-import the source after resolving the mapping.",
+  "quality.quarantineCapacityUsage":
+    "Held points: {rows} / {maxRows} · Unknown names: {names} / {maxNames}",
+  "quality.quarantineConnectorDetail": "{connector} · {count} point(s)",
+  "quality.mappingDecision": "Mapping decision",
+  "quality.mappingMap": "Map to a registry metric",
+  "quality.mappingAdopt": "Adopt as a custom metric",
+  "quality.mappingDiscard": "Discard and keep discarding",
+  "quality.mappingKeep": "Keep unresolved",
+  "quality.mappingTarget": "Target metric",
+  "quality.mappingCustomName": "custom_metric_name",
+  "quality.mappingSourceUnit": "Source unit",
+  "quality.mappingTargetUnit": "Declared unit",
+  "quality.mappingAggregation": "Aggregation",
+  "quality.mappingCadence": "Cadence",
+  "quality.mappingAverage": "Average",
+  "quality.mappingSum": "Sum",
+  "quality.mappingLast": "Last",
+  "quality.mappingMax": "Maximum",
+  "quality.mappingDaily": "Daily",
+  "quality.mappingContinuous": "Continuous",
+  "quality.mappingEvent": "Event",
+  "quality.mappingApply": "Apply and replay",
+  "quality.mappingSaving": "Applying…",
+  "quality.mappingKeepIndefinitely": "Keep unresolved values indefinitely",
   "quality.largestGaps": "Largest data gaps",
   "quality.largestGapsHint":
     "Consecutive missing days. “Backfill” opens the import dialog with exactly this period filled in.",

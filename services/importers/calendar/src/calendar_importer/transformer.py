@@ -56,6 +56,7 @@ def _event(
     return {
         "tenant_id": tenant_id,
         "source_id": source_id,
+        "idempotency_source_id": key_source_id or source_id,
         "source_type": SOURCE_TYPE,
         "metric_type": metric_type,
         "timestamp": iso,

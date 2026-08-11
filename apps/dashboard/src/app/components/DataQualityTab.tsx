@@ -12,6 +12,7 @@ import {
 import ImportDialog from "./ImportDialog";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
+import { CANONICAL_KEYS } from "../lib/metrics/catalog";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
 // prop is kept only for call-site compatibility with the other tabs.
@@ -48,6 +49,50 @@ type UnsupportedField = {
   last_seen_at: string | null;
 };
 
+type QuarantinedMetric = {
+  source_id: string;
+  source_type: string;
+  connector_name: string;
+  raw_metric_type: string;
+  points: number;
+  seen: number;
+  units: string | null;
+  first_seen_at: string;
+  last_seen_at: string;
+  action: "map" | "adopt" | "discard" | "keep" | null;
+};
+
+type QuarantineWarningCode =
+  | "quarantine_has_pending"
+  | "quarantine_half_full"
+  | "quarantine_near_full"
+  | "quarantine_full"
+  | "quarantine_values_refused";
+
+type QuarantineCapacity = {
+  source_id: string;
+  source_type: string;
+  connector_name: string;
+  active_rows: number;
+  max_rows: number;
+  active_names: number;
+  max_names: number;
+  usage_percent: number;
+  limiting_dimension: "rows" | "names";
+  refused_occurrences: number;
+  warning_code: QuarantineWarningCode;
+};
+
+type MappingDraft = {
+  action: "map" | "adopt" | "discard" | "keep";
+  target_metric_type: string;
+  source_unit: string;
+  target_unit: string;
+  aggregation: "average" | "sum" | "last" | "max";
+  cadence: "daily" | "continuous" | "event";
+  keep_indefinitely: boolean;
+};
+
 /** Contiguous runs of missing days, so "12 Tage" becomes a usable backfill range. */
 function toRanges(dates: string[]): { start: string; end: string; days: number }[] {
   const sorted = [...dates].sort();
@@ -76,7 +121,7 @@ const gapRecommendation = (t: Translate, missingDays: number): string => {
 };
 
 export default function DataQualityTab({ apiBase }: Props) {
-  const { t, formatDate } = useI18n();
+  const { t, formatDate, formatNumber } = useI18n();
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [conflicts, setConflicts] = useState<number>(0);
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -85,6 +130,10 @@ export default function DataQualityTab({ apiBase }: Props) {
   // Fields a connector is being given and this platform does not store. Shapes
   // only — the response carries a path and a value *kind*, never a value.
   const [unsupported, setUnsupported] = useState<UnsupportedField[]>([]);
+  const [quarantine, setQuarantine] = useState<QuarantinedMetric[]>([]);
+  const [quarantineCapacity, setQuarantineCapacity] = useState<QuarantineCapacity[]>([]);
+  const [mappingDrafts, setMappingDrafts] = useState<Record<string, MappingDraft>>({});
+  const [savingMapping, setSavingMapping] = useState<string | null>(null);
   const [cadenceGaps, setCadenceGaps] = useState<CadenceGap[]>([]);
   const [copied, setCopied] = useState(false);
   const [backfill, setBackfill] = useState<{ sourceType: string } | null>(null);
@@ -96,7 +145,7 @@ export default function DataQualityTab({ apiBase }: Props) {
     start.setDate(end.getDate() - (windowDays - 1));
 
     try {
-      const [gapRes, conflictRes, connectorRes, unsupportedRes] = await Promise.all([
+      const [gapRes, conflictRes, connectorRes, unsupportedRes, quarantineRes] = await Promise.all([
         apiFetch(
           `${apiBase}/api/v1/data/quality/gaps?start_date=${start
             .toISOString()
@@ -106,6 +155,7 @@ export default function DataQualityTab({ apiBase }: Props) {
         apiFetch(`${apiBase}/api/v1/data/quality/conflicts`),
         apiFetch(`${apiBase}/api/v1/data/sources`),
         apiFetch(`${apiBase}/api/v1/data/quality/unsupported-fields`),
+        apiFetch(`${apiBase}/api/v1/data/quality/quarantine`),
       ]);
       if (gapRes.ok) {
         const data = await gapRes.json();
@@ -115,10 +165,64 @@ export default function DataQualityTab({ apiBase }: Props) {
       if (conflictRes.ok) setConflicts(((await conflictRes.json()).conflicts ?? []).length);
       if (connectorRes.ok) setConnectors((await connectorRes.json()).connectors ?? []);
       if (unsupportedRes.ok) setUnsupported((await unsupportedRes.json()).fields ?? []);
+      if (quarantineRes.ok) {
+        const data = await quarantineRes.json();
+        setQuarantine(data.metrics ?? []);
+        setQuarantineCapacity(data.capacity ?? []);
+      }
     } finally {
       setLoading(false);
     }
   }, [apiBase, windowDays]);
+
+  const draftFor = (metric: QuarantinedMetric): MappingDraft => {
+    const key = `${metric.source_id}:${metric.raw_metric_type}`;
+    return (
+      mappingDrafts[key] ?? {
+        action: metric.action ?? "keep",
+        target_metric_type: CANONICAL_KEYS[0] ?? "steps",
+        source_unit: metric.units ?? "count",
+        target_unit: "",
+        aggregation: "average",
+        cadence: "event",
+        keep_indefinitely: false,
+      }
+    );
+  };
+
+  const updateDraft = (metric: QuarantinedMetric, change: Partial<MappingDraft>) => {
+    const key = `${metric.source_id}:${metric.raw_metric_type}`;
+    setMappingDrafts((current) => ({
+      ...current,
+      [key]: { ...draftFor(metric), ...change },
+    }));
+  };
+
+  const saveMapping = async (metric: QuarantinedMetric) => {
+    const key = `${metric.source_id}:${metric.raw_metric_type}`;
+    const draft = draftFor(metric);
+    setSavingMapping(key);
+    try {
+      const response = await apiFetch(`${apiBase}/api/v1/data/quality/mapping-rules`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_id: metric.source_id,
+          raw_metric_type: metric.raw_metric_type,
+          action: draft.action,
+          target_metric_type: draft.action === "map" || draft.action === "adopt" ? draft.target_metric_type : undefined,
+          source_unit: draft.action === "map" || draft.action === "adopt" ? draft.source_unit : undefined,
+          target_unit: draft.action === "adopt" ? draft.target_unit : undefined,
+          aggregation: draft.action === "adopt" ? draft.aggregation : undefined,
+          cadence: draft.action === "adopt" ? draft.cadence : undefined,
+          keep_indefinitely: draft.action === "keep" ? draft.keep_indefinitely : false,
+        }),
+      });
+      if (response.ok) await load();
+    } finally {
+      setSavingMapping(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -126,10 +230,71 @@ export default function DataQualityTab({ apiBase }: Props) {
       await Promise.resolve();
       if (!cancelled) await load();
     })();
+    const interval = window.setInterval(() => {
+      if (!cancelled) void load();
+    }, 15000);
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
     };
   }, [load]);
+
+  const quarantineWarningKey = (code: QuarantineWarningCode) => {
+    switch (code) {
+      case "quarantine_half_full":
+        return "quality.quarantineCapacityHalf" as const;
+      case "quarantine_near_full":
+        return "quality.quarantineCapacityNearFull" as const;
+      case "quarantine_full":
+        return "quality.quarantineCapacityFull" as const;
+      case "quarantine_values_refused":
+        return "quality.quarantineCapacityRefused" as const;
+      default:
+        return "quality.quarantineCapacityPending" as const;
+    }
+  };
+
+  const quarantineWarningClasses = (code: QuarantineWarningCode) => {
+    if (code === "quarantine_values_refused" || code === "quarantine_full") {
+      return {
+        container: "border-rose-300 bg-rose-50",
+        title: "text-rose-950",
+        text: "text-rose-900",
+        icon: "text-rose-700",
+      };
+    }
+    if (code === "quarantine_near_full") {
+      return {
+        container: "border-orange-300 bg-orange-50",
+        title: "text-orange-950",
+        text: "text-orange-900",
+        icon: "text-orange-700",
+      };
+    }
+    if (code === "quarantine_half_full") {
+      return {
+        container: "border-amber-300 bg-amber-50",
+        title: "text-amber-950",
+        text: "text-amber-900",
+        icon: "text-amber-700",
+      };
+    }
+    return {
+      container: "border-violet-300 bg-violet-50",
+      title: "text-violet-950",
+      text: "text-violet-900",
+      icon: "text-violet-700",
+    };
+  };
+
+  const quarantineCapacityLiveMode = quarantineCapacity.some(
+    ({ warning_code }) =>
+      warning_code === "quarantine_near_full" ||
+      warning_code === "quarantine_full" ||
+      warning_code === "quarantine_values_refused",
+  )
+    ? "assertive"
+    : "polite";
 
   /**
    * A ready-to-paste report of what is not being stored.
@@ -230,6 +395,53 @@ export default function DataQualityTab({ apiBase }: Props) {
         ))}
       </div>
 
+      {quarantineCapacity.length > 0 && (
+        <article className="space-y-3" aria-live={quarantineCapacityLiveMode}>
+          <div>
+            <h2 className="font-bold text-slate-900">{t("quality.quarantineCapacityTitle")}</h2>
+            <p className="mt-1 text-sm text-slate-600">
+              {t("quality.quarantineCapacityIntro")}
+            </p>
+          </div>
+          {quarantineCapacity.map((capacity) => {
+            const classes = quarantineWarningClasses(capacity.warning_code);
+            return (
+              <div
+                key={capacity.source_id}
+                className={`rounded-3xl border p-5 ${classes.container}`}
+              >
+                <div className="flex gap-3">
+                  <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${classes.icon}`} />
+                  <div className="min-w-0">
+                    <h3 className={`font-bold ${classes.title}`}>
+                      {capacity.connector_name || capacity.source_type}
+                    </h3>
+                    <p className={`mt-1 text-sm ${classes.text}`}>
+                      {t(quarantineWarningKey(capacity.warning_code), {
+                        percent: formatNumber(capacity.usage_percent),
+                        rows: formatNumber(capacity.active_rows),
+                        maxRows: formatNumber(capacity.max_rows),
+                        names: formatNumber(capacity.active_names),
+                        maxNames: formatNumber(capacity.max_names),
+                        refused: formatNumber(capacity.refused_occurrences),
+                      })}
+                    </p>
+                    <p className={`mt-2 text-xs ${classes.text}`}>
+                      {t("quality.quarantineCapacityUsage", {
+                        rows: formatNumber(capacity.active_rows),
+                        maxRows: formatNumber(capacity.max_rows),
+                        names: formatNumber(capacity.active_names),
+                        maxNames: formatNumber(capacity.max_names),
+                      })}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </article>
+      )}
+
       <article className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
         <div className="flex gap-3">
           <Lightbulb className="h-5 w-5 shrink-0 text-amber-700" />
@@ -325,6 +537,154 @@ export default function DataQualityTab({ apiBase }: Props) {
           >
             {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
           </button>
+        </article>
+      )}
+
+      {quarantine.length > 0 && (
+        <article className="rounded-3xl border border-violet-200 bg-violet-50/60 p-6">
+          <h2 className="mb-1 font-bold text-violet-950">{t("quality.quarantineTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-violet-900">
+            {t("quality.quarantineHint")}
+          </p>
+          <div className="space-y-4">
+            {quarantine.map((metric) => {
+              const key = `${metric.source_id}:${metric.raw_metric_type}`;
+              const draft = draftFor(metric);
+              return (
+                <div key={key} className="rounded-2xl border border-violet-200 bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-mono text-sm font-semibold text-slate-900">
+                        {metric.raw_metric_type}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {t("quality.quarantineConnectorDetail", {
+                          connector: metric.connector_name || metric.source_type,
+                          count: metric.points,
+                        })}
+                      </p>
+                    </div>
+                    <select
+                      value={draft.action}
+                      onChange={(event) =>
+                        updateDraft(metric, {
+                          action: event.target.value as MappingDraft["action"],
+                        })
+                      }
+                      className="rounded-xl border border-violet-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
+                      aria-label={t("quality.mappingDecision")}
+                    >
+                      <option value="map">{t("quality.mappingMap")}</option>
+                      <option value="adopt">{t("quality.mappingAdopt")}</option>
+                      <option value="discard">{t("quality.mappingDiscard")}</option>
+                      <option value="keep">{t("quality.mappingKeep")}</option>
+                    </select>
+                  </div>
+
+                  {(draft.action === "map" || draft.action === "adopt") && (
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                      {draft.action === "map" ? (
+                        <select
+                          value={draft.target_metric_type}
+                          onChange={(event) =>
+                            updateDraft(metric, { target_metric_type: event.target.value })
+                          }
+                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                          aria-label={t("quality.mappingTarget")}
+                        >
+                          {CANONICAL_KEYS.map((keyName) => (
+                            <option key={keyName} value={keyName}>
+                              {keyName}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          value={draft.target_metric_type}
+                          onChange={(event) =>
+                            updateDraft(metric, { target_metric_type: event.target.value })
+                          }
+                          placeholder={t("quality.mappingCustomName")}
+                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                          aria-label={t("quality.mappingTarget")}
+                        />
+                      )}
+                      <input
+                        value={draft.source_unit}
+                        onChange={(event) => updateDraft(metric, { source_unit: event.target.value })}
+                        placeholder={t("quality.mappingSourceUnit")}
+                        className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                        aria-label={t("quality.mappingSourceUnit")}
+                      />
+                      {draft.action === "adopt" && (
+                        <>
+                          <input
+                            value={draft.target_unit}
+                            onChange={(event) => updateDraft(metric, { target_unit: event.target.value })}
+                            placeholder={t("quality.mappingTargetUnit")}
+                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            aria-label={t("quality.mappingTargetUnit")}
+                          />
+                          <select
+                            value={draft.aggregation}
+                            onChange={(event) =>
+                              updateDraft(metric, {
+                                aggregation: event.target.value as MappingDraft["aggregation"],
+                              })
+                            }
+                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            aria-label={t("quality.mappingAggregation")}
+                          >
+                            <option value="average">{t("quality.mappingAverage")}</option>
+                            <option value="sum">{t("quality.mappingSum")}</option>
+                            <option value="last">{t("quality.mappingLast")}</option>
+                            <option value="max">{t("quality.mappingMax")}</option>
+                          </select>
+                          <select
+                            value={draft.cadence}
+                            onChange={(event) =>
+                              updateDraft(metric, {
+                                cadence: event.target.value as MappingDraft["cadence"],
+                              })
+                            }
+                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            aria-label={t("quality.mappingCadence")}
+                          >
+                            <option value="daily">{t("quality.mappingDaily")}</option>
+                            <option value="continuous">{t("quality.mappingContinuous")}</option>
+                            <option value="event">{t("quality.mappingEvent")}</option>
+                          </select>
+                        </>
+                      )}
+                    </div>
+                  )}
+
+                  {draft.action === "keep" && (
+                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={draft.keep_indefinitely}
+                        onChange={(event) =>
+                          updateDraft(metric, { keep_indefinitely: event.target.checked })
+                        }
+                        className="rounded border-slate-300"
+                      />
+                      {t("quality.mappingKeepIndefinitely")}
+                    </label>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => void saveMapping(metric)}
+                    disabled={savingMapping === key}
+                    className="mt-3 rounded-xl bg-violet-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
+                  >
+                    {savingMapping === key ? t("quality.mappingSaving") : t("quality.mappingApply")}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </article>
       )}
 

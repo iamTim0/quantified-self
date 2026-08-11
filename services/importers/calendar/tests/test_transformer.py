@@ -8,9 +8,8 @@ Maps to Fizzbee Invariants:
 from datetime import datetime, timedelta, timezone
 
 from calendar_importer.ics import CalendarEvent
-from shared_schemas.metrics import canonical_metric_type
-
 from calendar_importer.transformer import transform_events
+from shared_schemas.metrics import canonical_metric_type
 
 TENANT = "tenant-1"
 SOURCE = "source-1"

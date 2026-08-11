@@ -1,7 +1,7 @@
 """Pure analytics helpers used by tenant-scoped Core endpoints."""
 
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import date, datetime, timedelta, timezone, tzinfo
 from math import sqrt
 from typing import Any
@@ -17,6 +17,7 @@ def detect_daily_gaps(
     end: date,
     *,
     local_timezone: tzinfo = timezone.utc,
+    cadence_overrides: Mapping[str, Cadence] | None = None,
 ) -> list[dict[str, Any]]:
     """Missing days per metric — for the metrics where a missing day means anything.
 
@@ -38,7 +39,7 @@ def detect_daily_gaps(
     """
     observed: dict[str, set[date]] = defaultdict(set)
     for metric_type, timestamp in points:
-        if _cadence_of(metric_type) is not Cadence.DAILY:
+        if _cadence_of(metric_type, cadence_overrides) is not Cadence.DAILY:
             continue
         observed[metric_type].add(timestamp.astimezone(local_timezone).date())
 
@@ -61,6 +62,7 @@ def detect_cadence_gaps(
     window: TimeRange,
     *,
     tolerance_factor: float = 2.5,
+    cadence_overrides: Mapping[str, Cadence] | None = None,
 ) -> list[dict[str, Any]]:
     """Interruptions in metrics sampled faster than daily.
 
@@ -76,7 +78,7 @@ def detect_cadence_gaps(
     """
     by_metric: dict[str, list[datetime]] = defaultdict(list)
     for metric_type, timestamp in points:
-        if _cadence_of(metric_type) is Cadence.CONTINUOUS:
+        if _cadence_of(metric_type, cadence_overrides) is Cadence.CONTINUOUS:
             by_metric[metric_type].append(timestamp)
 
     gaps: list[dict[str, Any]] = []
@@ -92,13 +94,17 @@ def detect_cadence_gaps(
     return gaps
 
 
-def _cadence_of(metric_type: str) -> Cadence:
+def _cadence_of(
+    metric_type: str, cadence_overrides: Mapping[str, Cadence] | None = None
+) -> Cadence:
     """The registry's cadence, or ``EVENT`` for a name it does not catalogue.
 
     Namespaced metrics (`home_assistant_*`, `apple_health_*`) are defined by the
     user's own setup, so nothing here can know how often they should appear —
     and claiming a gap in one would be an invention.
     """
+    if cadence_overrides and metric_type in cadence_overrides:
+        return cadence_overrides[metric_type]
     definition = METRIC_CATALOG.get(metric_type)
     return definition.cadence if definition is not None else Cadence.EVENT
 

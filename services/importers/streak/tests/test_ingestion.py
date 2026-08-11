@@ -192,8 +192,10 @@ async def test_resolver_fails_closed_when_core_unreachable():
         async def post(self, *a, **kw):
             raise httpx.ConnectError("core is down")
 
-    with patch.object(httpx, "AsyncClient", lambda **kw: _ExplodingClient()):
-        with pytest.raises(HTTPException) as excinfo:
-            await auth_module.resolve_api_key(VALID_KEY, req_id="req_test")
+    with (
+        patch.object(httpx, "AsyncClient", lambda **kw: _ExplodingClient()),
+        pytest.raises(HTTPException) as excinfo,
+    ):
+        await auth_module.resolve_api_key(VALID_KEY, req_id="req_test")
 
     assert excinfo.value.status_code == 503

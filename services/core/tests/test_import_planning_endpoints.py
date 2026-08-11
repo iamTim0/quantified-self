@@ -92,7 +92,7 @@ async def test_coverage_reports_present_and_missing_ranges():
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id)
-        await _seed_hourly_days(tenant_id, source_id, range(0, 5))
+        await _seed_hourly_days(tenant_id, source_id, range(5))
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
@@ -126,7 +126,7 @@ async def test_coverage_does_not_leak_across_tenants():
     tenant_b = await create_test_tenant()
     try:
         source_a = await _seed_source(tenant_a)
-        await _seed_hourly_days(tenant_a, source_a, range(0, 5))
+        await _seed_hourly_days(tenant_a, source_a, range(5))
         await _seed_source(tenant_b)
 
         async with AsyncClient(
@@ -154,7 +154,7 @@ async def test_import_plan_narrows_to_the_missing_tail():
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id)
-        await _seed_hourly_days(tenant_id, source_id, range(0, 5))
+        await _seed_hourly_days(tenant_id, source_id, range(5))
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
@@ -186,7 +186,7 @@ async def test_import_plan_force_skips_nothing():
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id)
-        await _seed_hourly_days(tenant_id, source_id, range(0, 5))
+        await _seed_hourly_days(tenant_id, source_id, range(5))
 
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://testserver"
@@ -257,7 +257,7 @@ async def test_sync_skips_when_the_range_is_already_complete(mock_nats):
     try:
         source_id = await _seed_source(tenant_id, "whoop")
         # Cover a wide, dense range so the derived window lands inside it.
-        await _seed_hourly_days(tenant_id, source_id, range(0, 40))
+        await _seed_hourly_days(tenant_id, source_id, range(40))
         before = len(mock_nats.published)
 
         now = BASE + timedelta(days=30)
@@ -290,7 +290,7 @@ async def test_force_sync_enqueues_even_when_complete(mock_nats):
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id, "whoop")
-        await _seed_hourly_days(tenant_id, source_id, range(0, 40))
+        await _seed_hourly_days(tenant_id, source_id, range(40))
 
         now = BASE + timedelta(days=30)
         async with AsyncClient(

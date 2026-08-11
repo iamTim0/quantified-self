@@ -1,0 +1,55 @@
+# Phase 8: quarantine an unknown point, resolve it once, then replay or discard it.
+#
+# The implementation's transaction does not expose a quarantined value to readers.
+# This small model concentrates on the safety boundary: a point belongs to one
+# tenant, and resolution has exactly one terminal outcome.
+
+TENANTS = ["tenant_a", "tenant_b"]
+MAX_POINTS = 2
+
+action Init:
+    quarantine = []
+    promoted = []
+    discarded = []
+    next_point = 0
+
+atomic action Quarantine:
+    require len(quarantine) < MAX_POINTS
+    tenant = oneof(TENANTS)
+    point = {"id": next_point, "tenant": tenant}
+    next_point = next_point + 1
+    quarantine.append(point)
+
+atomic action Resolve:
+    require len(quarantine) > 0
+    point = quarantine[0]
+    quarantine.pop(0)
+    decision = oneof(["promote", "discard"])
+    if decision == "promote":
+        promoted.append(point)
+    else:
+        discarded.append(point)
+
+always assertion APointHasOneTerminalOutcome:
+    for point in promoted:
+        for other in discarded:
+            if point["id"] == other["id"]:
+                return False
+    return True
+
+always assertion APointIsPromotedAtMostOnce:
+    promoted_ids = set([])
+    for point in promoted:
+        if point["id"] in promoted_ids:
+            return False
+        promoted_ids.add(point["id"])
+    return True
+
+always assertion ResolutionKeepsTenant:
+    for point in promoted:
+        if point["tenant"] not in TENANTS:
+            return False
+    for point in discarded:
+        if point["tenant"] not in TENANTS:
+            return False
+    return True

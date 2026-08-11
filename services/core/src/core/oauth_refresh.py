@@ -108,7 +108,7 @@ async def refresh_credential(
     try:
         refresh_token = decrypt_secret(config["encrypted_refresh_token"])
         client_secret = decrypt_secret(config["encrypted_client_secret"])
-    except Exception as exc:  # noqa: BLE001 - decryption failure detail must not leak
+    except Exception as exc:
         raise RefreshError("Stored credential could not be decrypted") from exc
 
     payload = {

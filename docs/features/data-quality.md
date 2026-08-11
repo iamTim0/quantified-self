@@ -9,7 +9,8 @@ for analysis.
 | --- | --- | --- |
 | Data gaps | Days without a value, for metrics that are expected daily (see below) | Check the connector, renew the token, or start the sync again. |
 | Source conflicts | Values for the same metric differ noticeably between sources | Pick a primary source, or check the units. |
-| Not yet supported | Fields a connector receives and this platform does not store | Nothing to fix on your side — copy the report and open an issue. |
+| Not yet supported | Fields a connector receives and this platform does not store | Copy the shape-only report, or resolve a held metric below. |
+| Held for decision | Point values whose metric name is not yet recognised | Map, adopt, discard or keep the connector-specific name. |
 
 ## How to read it
 
@@ -73,3 +74,60 @@ identifiers — ready to paste into an issue.
 Filing that report automatically as a GitHub issue is the obvious next step and is deliberately
 not built yet: it is an outward-facing action needing its own credential, and a report that
 leaves the machine on its own should be a decision the user makes each time, not a setting.
+
+## Resolve held metric values
+
+An importer event whose `metric_type` is neither a canonical registry key nor an allowed
+dynamic namespace is not written to `data_points` and is not silently dropped. Core stores one
+tenant- and connector-scoped quarantine row for the point, including its value, timestamp,
+provider provenance metadata and original idempotency key. The row is not returned by metric
+queries, analyses or exports while it is held. Whole provider payloads are never stored.
+When a provider has several child records at the same timestamp, Core also retains their
+connector-scoped logical source identity so replay cannot merge those records.
+
+The Data Quality Center groups held rows by connector and unresolved name. Each name has a
+per-connector rule with one of four outcomes:
+
+- **Map** selects an existing canonical registry metric and the unit the source stated. Core
+  converts the value to the registry unit and replays it with a newly derived canonical
+  idempotency key.
+- **Adopt** creates a tenant-local `custom_` metric name with an explicitly declared unit,
+  aggregation and cadence. This does not extend the shared registry or create a bare metric.
+- **Discard** marks every matching held row discarded and records the decision, so future
+  arrivals are acknowledged without filling the queue again.
+- **Keep** stores the rule but leaves the rows held for a later decision.
+
+Replay is a normal tenant-scoped Core transaction and creates a `mapping_replay` entry in the
+connector's sync history. `ON CONFLICT DO NOTHING` makes a repeated replay safe; each held row
+ends in exactly one terminal state, promoted or discarded, never both. The quarantine is
+bounded per connector by distinct unresolved names and point rows. Refusals are counted in a
+separate shape-only audit table rather than being silently lost; that audit is bounded too, with
+additional refused names aggregated into an overflow bucket.
+
+Held rows expire after 30 days by default when they have not been seen again. The Data Quality
+Center exposes an explicit **keep indefinitely** choice for a name when that is appropriate;
+there is no accidental unbounded retention.
+
+### Quarantine capacity warnings
+
+The quarantine is bounded per connector so one provider export cannot turn unresolved metric
+names into unbounded database growth. Core reports both dimensions to the Data Quality Center:
+
+- **100 distinct unresolved names** per connector.
+- **100,000 active point rows** per connector.
+
+The interface shows a notice as soon as a connector has held values, a clear warning at 50% of
+either limit, and an urgent warning at 75%. At 100%, new unknown values are refused rather than
+held for a later mapping decision. A refusal audit records the connector, reason and count, but
+not the refused value; those values must be re-imported after the mapping is resolved. Existing
+held rows are not deleted when a threshold is crossed.
+
+The warning is evaluated against whichever dimension is closer to its limit. If a connector has
+already produced refusals, that state remains the highest-priority warning even if mapping rules
+later free some quarantine space. The dashboard refreshes this status while the Data Quality
+Center is open, so a large import does not need a manual page reload to surface the escalation.
+
+Rules are connector-specific: the same provider name can mean different things in two feeds.
+They are intentionally not aliases in the shared registry. If the same resolution appears
+across connectors, that is evidence for a reviewed registry alias or importer fix; a tenant
+rule never redefines a catalogued name and nothing is exported automatically.

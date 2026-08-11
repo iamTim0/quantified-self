@@ -8,7 +8,6 @@ Verifies Fizzbee Invariants:
 import hashlib
 
 from shared_schemas.metrics import canonical_metric_type
-
 from yazio_importer.transformer import (
     generate_idempotency_key,
     transform_consumed_items,

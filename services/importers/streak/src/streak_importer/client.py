@@ -41,8 +41,10 @@ async def open_sync_run(
             if response.status_code == 201:
                 return response.json().get("sync_run_id")
             logger.warning("Could not open a Streak sync run: Core returned %s", response.status_code)
-        except Exception as exc:
-            logger.warning("Could not open a Streak sync run: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - Core outage is reported as no run
+            logger.warning(
+                "Could not open a Streak sync run (%s)", type(exc).__name__
+            )
     return None
 
 
@@ -73,8 +75,11 @@ async def close_sync_run(
                 headers=internal_headers(req_id, tenant_id),
                 json=payload,
             )
-        except Exception as exc:
-            logger.warning("Could not report Streak sync result to Core: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - status reporting is best effort
+            logger.warning(
+                "Could not report Streak sync result to Core (%s)",
+                type(exc).__name__,
+            )
 
 
 async def report_sync_progress(
@@ -105,8 +110,11 @@ async def report_sync_progress(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
-        except Exception as exc:
-            logger.warning("Could not report Streak sync progress to Core: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - progress reporting is best effort
+            logger.warning(
+                "Could not report Streak sync progress to Core (%s)",
+                type(exc).__name__,
+            )
 
 
 async def get_connector_credentials_from_core(
@@ -138,6 +146,9 @@ async def get_connector_credentials_from_core(
                     # connector configuration whenever Core emitted that key.
                     return token, source_id, data.get("config", {})
             return None, None, None
-        except Exception as e:
-            logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
+        except Exception as exc:  # noqa: BLE001 - credentials remain absent on failure
+            logger.warning(
+                "Could not reach Core Data Service to fetch connector token (%s)",
+                type(exc).__name__,
+            )
             return None, None, None
