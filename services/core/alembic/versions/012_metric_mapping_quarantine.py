@@ -36,7 +36,10 @@ def upgrade() -> None:
             CONSTRAINT uq_metric_mapping_tenant_source_raw
                 UNIQUE (tenant_id, source_id, raw_metric_type)
         );
-
+        """
+    )
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS quarantined_data_points (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
@@ -58,7 +61,10 @@ def upgrade() -> None:
             CONSTRAINT uq_quarantine_tenant_source_key_time
                 UNIQUE (tenant_id, source_id, idempotency_key, timestamp)
         );
-
+        """
+    )
+    op.execute(
+        """
         CREATE TABLE IF NOT EXISTS quarantine_refusals (
             id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
             tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,

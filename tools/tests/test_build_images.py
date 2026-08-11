@@ -28,6 +28,8 @@ def test_manifest_paths_exist():
     for image in IMAGES:
         assert (REPO_ROOT / image.dockerfile).is_file(), image.dockerfile
         assert (REPO_ROOT / image.context).is_dir(), image.context
+        if image.dependency_manifest is not None:
+            assert (REPO_ROOT / image.dependency_manifest).is_file(), image.dependency_manifest
 
 
 def test_image_names_are_unique_and_registry_safe():
@@ -149,8 +151,12 @@ def test_every_declared_path_dependency_is_copied_into_the_image(image):
     Cheap to check statically, so it does not need a Docker daemon: the dependency is
     declared in the service's own `pyproject.toml` and the COPY is in its Dockerfile.
     """
-    service = (REPO_ROOT / image.dockerfile).parent
-    manifest = (service / "pyproject.toml").read_text(encoding="utf-8")
+    manifest_path = (
+        REPO_ROOT / image.dependency_manifest
+        if image.dependency_manifest is not None
+        else (REPO_ROOT / image.dockerfile).parent / "pyproject.toml"
+    )
+    manifest = manifest_path.read_text(encoding="utf-8")
     dockerfile = (REPO_ROOT / image.dockerfile).read_text(encoding="utf-8")
 
     # `qs-proto = { path = "../../packages/proto", editable = true }`
@@ -177,7 +183,7 @@ def test_every_declared_path_dependency_is_copied_into_the_image(image):
 def test_cache_modes_are_valid_and_bounded():
     """`cache` goes straight into buildx's cache-to, and the budget is 10 GB.
 
-    Only two values mean anything to buildx, and `max` on all thirteen would
+    Only two values mean anything to buildx, and `max` on all fourteen would
     overflow the Actions cache — which is the failure this field exists to avoid,
     so a future edit that sets them all to max should fail here.
     """

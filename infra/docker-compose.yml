@@ -49,7 +49,7 @@ services:
   core-migrate:
     build:
       context: ..
-      dockerfile: services/core/Dockerfile
+      dockerfile: services/core/Dockerfile.migrate
     # Not `always` (nothing sets it here) and meant to exit: `core` waits for that
     # exit to succeed.
     restart: "no"

@@ -1,6 +1,6 @@
 # Quantified Self Platform — production stack, from published images.
 #
-# A previous version used a Coolify Compose file that built all thirteen images
+# A previous version used a Coolify Compose file that built all fourteen images
 # from source on the deployment host, which meant a deploy needed the
 # repository, a toolchain and several minutes of CPU, and that what ran in
 # production had been built exactly once, by nobody, with no record of from which
@@ -146,7 +146,7 @@ services:
   # process runs `alembic upgrade head` and the rest wait for it to succeed.
   # Running it by hand stays valid -- `alembic upgrade head` is idempotent.
   core-migrate:
-    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core-migrate:${QS_VERSION:-latest}
     # Not `always`: this container is meant to exit. A restart policy would run it
     # again forever and `service_completed_successfully` would never fire.
     restart: "no"

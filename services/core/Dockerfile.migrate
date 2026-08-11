@@ -1,0 +1,36 @@
+# Minimal runtime for the one-shot migration service.
+#
+# Build from the repository root. The migration environment imports only Core's
+# settings and SQLAlchemy models; it does not need the HTTP, gRPC, NATS, or
+# authentication runtime used by the Core service.
+
+FROM python:3.12-slim AS dependencies
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app/migrations
+COPY services/core/migrations/pyproject.toml services/core/migrations/uv.lock ./
+RUN uv sync --frozen --no-install-project
+
+FROM python:3.12-slim
+
+WORKDIR /app/services/core
+
+# Keep only the migration runtime, not uv or the full Core virtualenv.
+COPY --from=dependencies /app/migrations/.venv /app/migrations/.venv
+
+COPY services/core/alembic.ini ./alembic.ini
+COPY services/core/alembic/ ./alembic/
+COPY services/core/src/core/__init__.py ./src/core/__init__.py
+COPY services/core/src/core/config.py ./src/core/config.py
+COPY services/core/src/core/db/__init__.py ./src/core/db/__init__.py
+COPY services/core/src/core/db/models.py ./src/core/db/models.py
+
+ENV PATH="/app/migrations/.venv/bin:${PATH}"
+ENV PYTHONPATH="/app/services/core/src"
+ENV PYTHONDONTWRITEBYTECODE="1"
+
+# The migration process only reads application files and writes to PostgreSQL.
+USER 10001:10001
+
+CMD ["alembic", "upgrade", "head"]

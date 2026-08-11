@@ -28,7 +28,7 @@ Start here:
 ## Deploying it
 
 From published images, not from source: `.github/workflows/release.yml` builds all
-thirteen images, pushes them to `ghcr.io/iamtim0/quantified-self/*` and attaches a
+fourteen images, pushes them to `ghcr.io/iamtim0/quantified-self/*` and attaches a
 deployment bundle to a GitHub Release. The host needs Docker and nothing else — no
 checkout, no toolchain. See [Release & Deployment](docs/deployment.md) for the full
 procedure, and for the `ENCRYPTION_KEY` ordering trap.

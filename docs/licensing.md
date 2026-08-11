@@ -9,9 +9,9 @@ the places where that distinction matters are marked as such below.
 `LICENSE` in the repository root: the GNU Affero General Public License, version 3, in the FSF's
 wording, with a copyright line in front of it. So that this is not only stated there:
 
-- all thirteen `pyproject.toml` files and the dashboard's `package.json` declare
+- all fourteen `pyproject.toml` files and the dashboard's `package.json` declare
   `license = "AGPL-3.0-only"`,
-- all thirteen images carry `org.opencontainers.image.licenses=AGPL-3.0-only` as an OCI label,
+- all fourteen images carry `org.opencontainers.image.licenses=AGPL-3.0-only` as an OCI label,
 - the deployment bundle of every release contains `LICENSE`.
 
 The project was MIT licensed before. The change was possible because at that point **nobody** had

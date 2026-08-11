@@ -2,8 +2,8 @@
 
 One manifest, two consumers: `.github/workflows/release.yml` reads it with
 `--matrix` to generate its build matrix, and a developer runs it directly to build
-the same thirteen images on their machine. Written as one list rather than two
-because a duplicated list of thirteen entries drifts -- a new importer gets added
+the same fourteen images on their machine. Written as one list rather than two
+because a duplicated list of fourteen entries drifts -- a new importer gets added
 to the compose file and the Taskfile and then silently never gets published.
 
     python tools/build_images.py                  # build all of them
@@ -51,17 +51,26 @@ class Image:
     dockerfile: str
     # Buildx cache mode for the release workflow. `max` caches every intermediate
     # layer and `min` only the final ones, and the choice is a budget: the Actions
-    # cache is 10 GB per repository with least-recently-used eviction, so thirteen
+    # cache is 10 GB per repository with least-recently-used eviction, so fourteen
     # `max` scopes overflow it and then evict each other in an order nobody
     # controls -- which is slower than caching less on purpose. `max` therefore
     # goes to the three images whose builds are long (a full Next.js production
-    # build, two `uv sync` resolutions against packages/proto) and `min` to the ten
-    # importers, whose layers are small and quick to rebuild.
+    # build, two `uv sync` resolutions against packages/proto) and `min` to the eleven
+    # remaining images, whose layers are small and quick to rebuild.
     cache: str = "min"
+    # Most images use the service pyproject in the Dockerfile's directory. A
+    # deliberately minimal image can declare a smaller dependency closure.
+    dependency_manifest: str | None = None
 
 
 IMAGES: tuple[Image, ...] = (
     Image("core", ".", "services/core/Dockerfile", cache="max"),
+    Image(
+        "core-migrate",
+        ".",
+        "services/core/Dockerfile.migrate",
+        dependency_manifest="services/core/migrations/pyproject.toml",
+    ),
     Image("analysis", ".", "services/analysis/Dockerfile", cache="max"),
     Image("api-gateway", "services/api-gateway", "services/api-gateway/Dockerfile"),
     Image("dashboard", "apps/dashboard", "apps/dashboard/Dockerfile", cache="max"),
@@ -106,7 +115,11 @@ def find_unlisted_dockerfiles() -> list[str]:
     listed = {image.dockerfile for image in IMAGES} | set(UNPUBLISHED_DOCKERFILES)
     found: list[str] = []
 
-    for path in (*REPO_ROOT.glob("**/Dockerfile"), *REPO_ROOT.glob("**/*.Dockerfile")):
+    for path in (
+        *REPO_ROOT.glob("**/Dockerfile"),
+        *REPO_ROOT.glob("**/*.Dockerfile"),
+        *REPO_ROOT.glob("**/Dockerfile.*"),
+    ):
         relative = path.relative_to(REPO_ROOT).as_posix()
         if any(part in relative for part in ("node_modules/", ".venv/", "site/")):
             continue

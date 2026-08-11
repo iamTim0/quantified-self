@@ -6,7 +6,7 @@ release with container images, and how that release runs on a server. For runnin
 
 ## Why images at all
 
-An earlier Coolify Compose file described the production stack and built all thirteen images **on the
+An earlier Coolify Compose file described the production stack and built all fourteen images **on the
 target server**. That had three consequences that hurt in practice:
 
 - A deployment needed the repository, a toolchain and several minutes of CPU on a machine that is
@@ -60,10 +60,10 @@ ghcr.io/iamtim0/quantified-self/core:latest       # moving, never for pre-releas
 `sha-…` is the tag that traces a published image back to a source state without trusting a name that
 can move.
 
-The two **moving** tags are set by a job of their own (`promote`), only after all thirteen images are
-built. The reason is `fail-fast: false`: if the twelfth image fails, the other twelve have long since
+The two **moving** tags are set by a job of their own (`promote`), only after all fourteen images are
+built. The reason is `fail-fast: false`: if the thirteenth image fails, the other twelve have long since
 been pushed. If they moved `latest` along with them, `latest` would point at the new version for
-twelve images and at the old one for the thirteenth — a stack nobody assembled and nobody tested. On
+thirteen images and at the old one for the fourteenth — a stack nobody assembled and nobody tested. On
 top of that they only move on a run from the default branch: a run from an unmerged branch publishes
 `1.0.0` and `sha-…`, but moves nothing a deployment points at.
 
@@ -97,13 +97,13 @@ this repository.
 
 ### Checking locally before a release
 
-The thirteen images are not built together anywhere else, and a Dockerfile can rot without a test
+The fourteen images are not built together anywhere else, and a Dockerfile can rot without a test
 noticing — which is exactly what had happened to the dashboard: it had two lockfiles, CI installed from
 `package-lock.json` and the Dockerfile from a stale `pnpm-lock.yaml`. There is only `bun.lock` now, and
 one tool that reads it everywhere. Even so:
 
 ```bash
-task images:build                    # all thirteen, as in the release workflow
+task images:build                    # all fourteen, as in the release workflow
 task images:build -- core dashboard  # only certain ones
 ```
 
@@ -160,6 +160,11 @@ Migrations run in a container of their own (`core-migrate`) rather than in Core'
 is what keeps replicas safe: however many Core containers start, exactly one process runs
 `alembic upgrade head` and the others wait for it to exit successfully. `task prod:migrate` still runs
 it by hand — the command is idempotent — but no deployment depends on anyone remembering to.
+
+`core-migrate` uses a separate minimal image. It contains only Alembic, SQLAlchemy, the async PostgreSQL
+driver, the spatial model types and the Core settings/models needed to load the migration environment;
+it does not contain the HTTP, gRPC, NATS or authentication application runtime. The image is published
+alongside `core` under the `core-migrate` name and is versioned with the same release.
 
 This used to be a step in these instructions, and an instruction is not a mechanism: a Coolify deploy
 starts the stack and has nowhere to type one, so a release whose schema had moved ran against the old
@@ -258,7 +263,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 The importers are stateless and may be replaced at any time. The ordering that matters — the new
 images first, then the migration, never the other way round — is now in the Compose file rather than in
-this paragraph: `core-migrate` runs the new image's `alembic upgrade head` and Core starts only once it
+this paragraph: the new `core-migrate` image runs `alembic upgrade head` and Core starts only once it
 has exited successfully.
 
 ### Rolling back
