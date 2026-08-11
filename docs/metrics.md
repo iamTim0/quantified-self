@@ -46,7 +46,7 @@ That is why no canonical name carries a unit suffix. A test in
 | --- | --- |
 | The importers' transformers | call `canonical_metric_type()` **before** the `idempotency_key` is derived |
 | `shared_schemas.IngestEvent` | rejects anything that is not canonical — aliases included |
-| Core's NATS consumer | validates every event; unknown names are discarded with a log entry rather than stored |
+| Core's NATS consumer | validates every event; unknown names are held in tenant-scoped quarantine until a mapping decision |
 | Core's batch/CSV import | maps aliases onto the canonical name, otherwise HTTP 422 |
 | `GET /api/v1/data/metrics/catalog` | serves the complete registry |
 | Dashboard | uses `apps/dashboard/src/app/lib/metrics/catalog.ts`, generated from the same source |

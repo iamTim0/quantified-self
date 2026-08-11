@@ -80,7 +80,7 @@ def _resolve_timezone(name: str) -> ZoneInfo:
         return ZoneInfo("UTC")
 
 
-def _to_utc(value: Any, display_tz: ZoneInfo, *, end_of_day: bool = False) -> datetime:
+def _to_utc(value: Any, display_tz: ZoneInfo) -> datetime:
     """Normalise an ICS date/datetime to an absolute UTC instant.
 
     A bare ``DATE`` (all-day event) has no instant of its own; it is anchored in
@@ -93,7 +93,7 @@ def _to_utc(value: Any, display_tz: ZoneInfo, *, end_of_day: bool = False) -> da
         return value.astimezone(timezone.utc)
 
     if isinstance(value, date):
-        anchor = time(0, 0) if not end_of_day else time(0, 0)
+        anchor = time(0, 0)
         local = datetime.combine(value, anchor, tzinfo=display_tz)
         return local.astimezone(timezone.utc)
 
@@ -167,7 +167,7 @@ def _build_event(component: Any, display_tz: ZoneInfo) -> CalendarEvent | None:
 
     dtend = component.get("DTEND")
     if dtend is not None:
-        end = _to_utc(dtend.dt, display_tz, end_of_day=True)
+        end = _to_utc(dtend.dt, display_tz)
     elif component.get("DURATION") is not None:
         duration = component.get("DURATION").dt
         if not isinstance(duration, timedelta):

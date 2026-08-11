@@ -142,6 +142,67 @@ CREATE INDEX idx_field_reports_tenant_source ON ingest_field_reports (tenant_id,
 CREATE INDEX idx_field_reports_unmapped
     ON ingest_field_reports (tenant_id, source_id) WHERE metric_type IS NULL;
 
+-- Unknown metric values stay outside data_points until the tenant resolves their
+-- meaning. These are point rows, not raw provider payload archives.
+CREATE TABLE metric_mapping_rules (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    source_id UUID NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    source_type VARCHAR(64) NOT NULL,
+    raw_metric_type VARCHAR(128) NOT NULL,
+    action VARCHAR(16) NOT NULL,
+    target_metric_type VARCHAR(128),
+    source_unit VARCHAR(32),
+    target_unit VARCHAR(32),
+    aggregation VARCHAR(16),
+    cadence VARCHAR(16),
+    retention_days INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_metric_mapping_tenant_source_raw
+        UNIQUE (tenant_id, source_id, raw_metric_type)
+);
+
+CREATE TABLE quarantined_data_points (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    source_id UUID NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    source_type VARCHAR(64) NOT NULL,
+    raw_metric_type VARCHAR(128) NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    value DOUBLE PRECISION,
+    metadata JSONB NOT NULL DEFAULT '{}',
+    idempotency_source_id VARCHAR(512) NOT NULL,
+    idempotency_key VARCHAR(128) NOT NULL,
+    sync_run_id UUID,
+    status VARCHAR(16) NOT NULL DEFAULT 'active',
+    seen_count INTEGER NOT NULL DEFAULT 1,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ,
+    resolution_rule_id UUID,
+    CONSTRAINT uq_quarantine_tenant_source_key_time
+        UNIQUE (tenant_id, source_id, idempotency_key, timestamp)
+);
+
+CREATE INDEX idx_quarantine_active_source_name
+    ON quarantined_data_points (tenant_id, source_id, raw_metric_type)
+    WHERE status = 'active';
+
+CREATE TABLE quarantine_refusals (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    tenant_id UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+    source_id UUID NOT NULL REFERENCES data_sources(id) ON DELETE CASCADE,
+    source_type VARCHAR(64) NOT NULL,
+    raw_metric_type VARCHAR(128) NOT NULL,
+    reason VARCHAR(128) NOT NULL,
+    occurrences INTEGER NOT NULL DEFAULT 0,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT uq_quarantine_refusal_tenant_source_raw_reason
+        UNIQUE (tenant_id, source_id, raw_metric_type, reason)
+);
+
 -- No seed data. This file used to end by inserting a tenant and an owner account
 -- with a bcrypt hash committed to the repository, which is two problems at once:
 -- AGENTS.md rule 9 forbids automatic seeding, and anybody with a copy of this

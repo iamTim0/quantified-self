@@ -121,6 +121,7 @@ def transform_streak_export_json(
                 dp_weight = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
+                    "idempotency_source_id": f"{source_id}_{set_id}",
                     "metric_type": METRIC_SET_WEIGHT,
                     "timestamp": set_ts,
                     "value": weight_val,
@@ -142,6 +143,7 @@ def transform_streak_export_json(
                 dp_reps = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
+                    "idempotency_source_id": f"{source_id}_{set_id}",
                     "metric_type": METRIC_SET_REPS,
                     "timestamp": set_ts,
                     "value": reps_val,
@@ -161,6 +163,7 @@ def transform_streak_export_json(
                     dp_vol = {
                         "tenant_id": tenant_id,
                         "source_id": source_id,
+                        "idempotency_source_id": f"{source_id}_{set_id}",
                         "metric_type": METRIC_SET_VOLUME,
                         "timestamp": set_ts,
                         "value": set_vol,
@@ -185,6 +188,7 @@ def transform_streak_export_json(
                 dp_pulse = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
+                    "idempotency_source_id": f"{source_id}_{set_id}",
                     "metric_type": METRIC_SET_HEART_RATE_MAX,
                     "timestamp": set_ts,
                     "value": float(max_pulse),

@@ -73,8 +73,12 @@ async def record_api_key_failure(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(url, headers=internal_headers(req_id), json=payload)
-    except Exception as exc:
-        logger.debug("[req_id=%s] Could not record rejected Streak request: %s", req_id, exc)
+    except Exception as exc:  # noqa: BLE001 - audit reporting must not affect rejection
+        logger.debug(
+            "[req_id=%s] Could not record rejected Streak request (%s)",
+            req_id,
+            type(exc).__name__,
+        )
 
 
 @dataclass(frozen=True)
@@ -124,9 +128,13 @@ async def resolve_api_key(presented_key: str | None, req_id: str) -> ApiKeyIdent
                 headers=internal_headers(req_id),
                 json={"key_hash": key_hash, "source_type": settings.SOURCE_TYPE},
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - authority failures fail closed below
         # Never fall back to "allow" when the authority is unavailable.
-        logger.error("[req_id=%s] Could not reach Core to resolve API key: %s", req_id, exc)
+        logger.error(
+            "[req_id=%s] Could not reach Core to resolve API key (%s)",
+            req_id,
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=503, detail="Authentication service unavailable. Please retry."
         )

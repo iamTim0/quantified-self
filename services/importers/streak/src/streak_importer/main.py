@@ -30,12 +30,12 @@ nc_client: nats.NATS | None = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global nc_client
-    logger.info(f"Connecting to NATS at {settings.NATS_URL}...")
+    logger.info("Connecting to NATS...")
     try:
         nc_client = await nats.connect(settings.NATS_URL)
         logger.info("Connected to NATS JetStream successfully.")
-    except Exception as e:
-        logger.warning(f"Could not connect to NATS on startup: {e}")
+    except Exception as exc:  # noqa: BLE001 - service starts degraded and retries by deployment
+        logger.warning("Could not connect to NATS on startup (%s)", type(exc).__name__)
 
     yield
 
@@ -128,7 +128,7 @@ async def ingest_streak_payload(
 
     try:
         payload = await request.json()
-    except Exception:
+    except Exception:  # noqa: BLE001 - malformed request bodies have one public response
         await close_sync_run(
             tenant_id,
             source_id,
@@ -151,21 +151,26 @@ async def ingest_streak_payload(
         raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
 
     # Prevent silent data loss: Return 503 if NATS is offline
-    if nc_client is None or not nc_client.is_connected:
-        if not getattr(request.app.state, "testing", False):
-            await close_sync_run(
-                tenant_id,
-                source_id,
-                sync_run_id,
-                req_id=x_request_id,
-                status="error",
-                message="NATS event broker unavailable; the request was rejected.",
-            )
-            logger.error(f"[req_id={x_request_id}] NATS connection offline. Rejecting payload with 503.")
-            raise HTTPException(
-                status_code=503,
-                detail="NATS event broker unavailable. Please retry later.",
-            )
+    if (
+        (nc_client is None or not nc_client.is_connected)
+        and not getattr(request.app.state, "testing", False)
+    ):
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="NATS event broker unavailable; the request was rejected.",
+        )
+        logger.error(
+            "[req_id=%s] NATS connection offline. Rejecting payload with 503.",
+            x_request_id,
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="NATS event broker unavailable. Please retry later.",
+        )
 
     workout_count = len(payload.get("workouts") or [])
 
@@ -194,15 +199,23 @@ async def ingest_streak_payload(
                 published_count += 1
         else:
             published_count = len(events)
-    except Exception as exc:
-        logger.exception("[req_id=%s] Streak import failed after %d events.", x_request_id, published_count)
+    except Exception as exc:  # noqa: BLE001 - provider payload failures need a safe response
+        logger.error(
+            "[req_id=%s] Streak import failed after %d events (%s).",
+            x_request_id,
+            published_count,
+            type(exc).__name__,
+        )
         await close_sync_run(
             tenant_id,
             source_id,
             sync_run_id,
             req_id=x_request_id,
             status="error",
-            message=f"Streak import failed after {published_count} event(s): {exc}",
+            message=(
+                f"Streak import failed after {published_count} event(s) "
+                f"({type(exc).__name__})."
+            ),
             points_received=published_count,
         )
         raise HTTPException(status_code=500, detail="The Streak import failed.") from None

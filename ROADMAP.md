@@ -1,6 +1,6 @@
 # 🗺️ Quantified Self Platform — Project Roadmap
 
-**Current Status**: **MILESTONE 6 IN PROGRESS** (Roadmap foundation: environmental importers, tenant-scoped data quality, mapped batch imports, correlations and conflict discovery).
+**Current Status**: **MILESTONE 8 COMPLETE** (Metric quarantine, tenant-scoped mapping rules and deferred replay are implemented; Phase 5/6 follow-up and final Phase 10 verification remain).
 
 ---
 
@@ -64,7 +64,7 @@
 
 ## 🔵 Phase 5: Planned Importers & Integrations (Upcoming)
 
-- [ ] **🏋️ Streak / Gym Log App Importer**:
+- [x] **🏋️ Streak / Gym Log App Importer**:
   - Importer service for Streak gym logging app to record workout sessions, sets, reps, weight lifted, and exercise progression history.
 - [x] **🏠 Home Assistant Importer**:
   - Importer service integrating with Home Assistant API to collect smart home environmental metrics (bedroom temperature, humidity, noise levels, light exposure) for sleep & recovery correlation.
@@ -100,27 +100,27 @@
 
 ## 🔵 Phase 7: Adaptive Ingestion, Importer Reliability & Authentication (Planned)
 
-- [ ] **Adaptive Import Windows & Gap Backfill**: derive connector-specific overlap windows, detect missing data, and recommend exact tenant-scoped backfill periods in the data UI.
-- [ ] **Smart Time-Range Duplicate Detection**: use coarse blocks and interval/binary search by default, with safe fallback for non-contiguous duplicates and a user-confirmed Force Import mode.
+- [x] **Adaptive Import Windows & Gap Backfill**: derive connector-specific overlap windows, detect missing data, and recommend exact tenant-scoped backfill periods in the data UI.
+- [x] **Smart Time-Range Duplicate Detection**: use coarse blocks and interval/binary search by default, with safe fallback for non-contiguous duplicates and a user-confirmed Force Import mode.
 - [ ] **Importer Audit & Integration Coverage**: review every importer, including credentials, API/feed semantics, pagination, rate limits, time zones, incremental sync, retries, NATS, Gateway/Core, Docker and health checks.
-- [ ] **Calendar ICS Correctness**: valid Outlook/Office ICS URLs must not require an unrelated API key; distinguish public/private ICS feeds from OAuth/API integrations.
+- [x] **Calendar ICS Correctness**: valid Outlook/Office ICS URLs must not require an unrelated API key; distinguish public/private ICS feeds from OAuth/API integrations.
 - [ ] **Importer Tests**: add self-contained unit, integration and end-to-end coverage using Docker-backed test services where appropriate.
-- [ ] **Tenant-Bound Authentication**: map bearer tokens and generated inbound API keys to exactly one tenant using only `Authorization: Bearer <token>`; hash, rotate, revoke and least-privilege keys.
-- [ ] **Logout & OIDC**: invalidate all session material on logout and add Google plus generic OIDC using Authorization Code + PKCE, state/nonce validation and safe account linking.
-- [ ] **Analysis Dashboard Expansion**: organize correlations, trends, anomalies, data quality, period comparisons, routines and baselines with interactive, statistically cautious visualizations.
-- [ ] **Vector-First Geodata UI**: make vectors the default, lazy-load optional map providers, evaluate free alternatives, and always provide a vector fallback.
+- [x] **Tenant-Bound Authentication**: map bearer tokens and generated inbound API keys to exactly one tenant using only `Authorization: Bearer <token>`; hash, rotate, revoke and least-privilege keys.
+- [x] **Logout & OIDC**: invalidate all session material on logout and add Google plus generic OIDC using Authorization Code + PKCE, state/nonce validation and safe account linking.
+- [x] **Analysis Dashboard Expansion**: organize correlations, trends, anomalies, data quality, period comparisons, routines and baselines with interactive, statistically cautious visualizations.
+- [x] **Vector-First Geodata UI**: make vectors the default, lazy-load optional map providers, evaluate free alternatives, and always provide a vector fallback.
 
-## 🔵 Phase 8: Metric Mapping & Deferred Ingestion (Planned)
+## 🟢 Phase 8: Metric Mapping & Deferred Ingestion (COMPLETED)
 
-A name this platform does not recognise currently costs the reading. Core acks and drops the
-event (`core/events/consumer.py`), and only the *shape* survives, in `ingest_field_reports`,
-which stores no values by design. That is the right answer for a field nobody has looked at
-yet and the wrong one for a field whose only problem is its spelling: an export names its steps
-column in whatever language the app was set to, and a provider that renames `avgHeartRate` to
-`heartRate` costs every workout's heart rate until somebody notices. This phase keeps the value
-while the question is open, and lets the user answer it.
+Before Phase 8, a name this platform did not recognise cost the reading. Core acked and dropped
+the event (`core/events/consumer.py`), and only the *shape* survived in
+`ingest_field_reports`, which stores no values by design. That was the right answer for a field
+nobody had looked at yet and the wrong one for a field whose only problem was its spelling: an
+export can name its steps column in whatever language the app was set to, and a provider can
+rename `avgHeartRate` to `heartRate`. Phase 8 keeps the value while the question is open and
+lets the tenant answer it.
 
-- [ ] **🧊 Quarantine instead of drop**:
+- [x] **🧊 Quarantine instead of drop**:
   - Store an unresolvable point in its own tenant-scoped table rather than discarding it —
     raw `metric_type`, timestamp, value, metadata (including `provider_value` and `units`),
     the importer's `idempotency_key`, connector, sync run, first and last seen.
@@ -128,7 +128,7 @@ while the question is open, and lets the user answer it.
     export, which is what keeps rule 15 true while the value is held.
   - Cascades from tenant and connector and is covered by account deletion, like
     `ingest_field_reports`.
-- [ ] **🔗 Per-connector mapping rules**:
+- [x] **🔗 Per-connector mapping rules**:
   - Resolve an unmapped name in the Data Quality Center, which already lists it under
     **Not yet supported**, with four outcomes: **map**, **adopt**, **discard**, **keep**.
   - **Map** — the name is a catalogued metric under another spelling. The rule names the target
@@ -141,7 +141,7 @@ while the question is open, and lets the user answer it.
   - **Keep** — no decision yet. The rows wait, which is the point.
   - Rules are applied by Core before rejection and are held by Core. Importers stay stateless
     (rule 8) and learn nothing they would have to store.
-- [ ] **🔁 Retroactive replay**:
+- [x] **🔁 Retroactive replay**:
   - Applying a rule replays every quarantined row it matches as an ordinary tenant-scoped run,
     visible in the connector's history with the usual `ON CONFLICT DO NOTHING`.
   - Promotion **re-derives** `idempotency_key` from the canonical name via the shared
@@ -150,7 +150,7 @@ while the question is open, and lets the user answer it.
     rejects today, because it is how a series ends up with two rows per reading.
   - A rule applies to new arrivals from then on: a translation problem is answered once, not
     once per sync.
-- [ ] **🚧 The limits — a mapping is not a licence to invent**:
+- [x] **🚧 The limits — a mapping is not a licence to invent**:
   - A rule may never redefine a name the registry already catalogues. A tenant-local rewrite of
     `steps` would put a wrong number in the same column as the right ones, and a wrong number is
     worse than a missing one (rule 19) because nothing distinguishes it from a right one.
@@ -161,20 +161,23 @@ while the question is open, and lets the user answer it.
     per-name choice. A provider that nests record identifiers into keys otherwise fills the table
     with one name per record, the same failure `MAX_TRACKED_PATHS` already guards the field report
     against.
+  - The Data Quality Center reports both capacity dimensions per connector, warns as soon as held
+    values exist, explains the possible loss at 50%, escalates at 75%, and keeps a critical state
+    visible after any value has been refused. It refreshes while the page is open, so a large
+    import does not make the user discover the limit only after mapping.
   - Quarantine holds values, which the field report deliberately does not, so it stays a queue and
     never becomes the raw-payload archive rule 19 forbids: one row per unresolved point, no whole
     payloads. The categories the Apple Health archive path skips on purpose — ECG, cycle tracking,
     medications, State of Mind, clinical records — are excluded *before* quarantine and stay named
     in the field report only. An unrecognised field is not a way around a decision made deliberately.
-- [ ] **📊 Feedback into the registry**:
-  - The same rule appearing across connectors or tenants is evidence the registry is missing an
-    alias, not that every user should re-enter it. An aggregate view of rules — names and counts,
-    no values, no identifiers — is what turns "one user fixed their CSV" into a registry alias or
-    a transformer fix, and it is how the field report's shapes and this phase's resolutions become
-    the same signal.
+- [x] **📊 Feedback into the registry**:
+  - A tenant-scoped aggregate view of repeated rules — names and counts, no values or connector
+    identifiers — turns repeated resolutions into evidence for a registry alias or transformer
+    fix without leaking one tenant's data into another. It joins the field report's shape signal
+    with this phase's resolution signal.
   - Nothing leaves the machine on its own, for the reason the field report's **Copy report** already
     gives: an outward-facing action is a decision the user makes each time.
-- [ ] **✅ Specification, tests and documentation**:
+- [x] **✅ Specification, tests and documentation**:
   - Fizzbee spec for the quarantine → resolve → replay transition: a quarantined row is promoted
     exactly once or discarded, never both, and never lands under a tenant other than the one it
     arrived for.
@@ -183,14 +186,14 @@ while the question is open, and lets the user answer it.
 
 ## 🔵 Phase 9: Documentation & Legal Pages (Planned)
 
-- [ ] **Hosted MkDocs Material Documentation**: build and host a standalone `squidfunk/mkdocs-material` site with navigation, search, mobile layout, CI build and link validation.
-- [ ] Document architecture, data flows, analyses, importers, data gaps, Smart/Force import, APIs, operations, security, limitations and troubleshooting.
+- [x] **Hosted MkDocs Material Documentation**: build and host a standalone `squidfunk/mkdocs-material` site with navigation, search, mobile layout, CI build and link validation.
+- [x] Document architecture, data flows, analyses, importers, data gaps, Smart/Force import, APIs, operations, security, limitations and troubleshooting.
 - [ ] Add contextual links from dashboard, import configuration, gap detection, duplicate detection, settings, login, registration and footer.
-- [ ] **German Privacy Policy & Imprint**: add plain, responsive text pages without cards or decorative UI; use realistic implementation-based templates, explicit placeholders, and a legal-review warning.
+- [x] **German Privacy Policy & Imprint**: add plain, responsive text pages without cards or decorative UI; use realistic implementation-based templates, explicit placeholders, and a legal-review warning.
 
 ## 🔵 Phase 10: Verification & Governance (Required)
 
 - [ ] Use Sub-Agents for independent importer, integration, test and documentation reviews when available; critically validate their results.
 - [ ] Verify Core-only database ownership, gRPC Analysis access, NATS importer flow, tenant filters, idempotency, `X-Request-ID`, secret handling and no shared mutable state.
-- [ ] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
+- [x] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
 - [ ] Run linting, type checking, unit/integration/E2E tests and the MkDocs build; record unavailable external services, failures, risks and follow-up work.

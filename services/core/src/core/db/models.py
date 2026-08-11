@@ -357,6 +357,144 @@ class IngestFieldReport(Base):
     )
 
 
+class QuarantinedDataPoint(Base):
+    """One unresolved point held outside the readable data-point store.
+
+    Quarantine is deliberately one row per point rather than a raw payload archive.
+    The provider value and the point metadata remain available for a later mapping,
+    while unknown names cannot enter charts, analysis, or exports before a tenant has
+    made an explicit decision.
+    """
+
+    __tablename__ = "quarantined_data_points"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSON, nullable=True)
+    idempotency_source_id: Mapped[str] = mapped_column(String(512), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    sync_run_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active", index=True)
+    seen_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_rule_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "idempotency_key",
+            "timestamp",
+            name="uq_quarantine_tenant_source_key_time",
+        ),
+    )
+
+
+class MetricMappingRule(Base):
+    """A tenant's explicit answer for one unresolved connector metric name."""
+
+    __tablename__ = "metric_mapping_rules"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(16), nullable=False)
+    target_metric_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    source_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    target_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    aggregation: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cadence: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    #: NULL means the tenant explicitly chose to keep unresolved rows indefinitely.
+    retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "raw_metric_type",
+            name="uq_metric_mapping_tenant_source_raw",
+        ),
+    )
+
+
+class QuarantineRefusal(Base):
+    """Bounded-quarantine refusal audit, without retaining the rejected value."""
+
+    __tablename__ = "quarantine_refusals"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("data_sources.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    source_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    raw_metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    reason: Mapped[str] = mapped_column(String(128), nullable=False)
+    occurrences: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "raw_metric_type",
+            "reason",
+            name="uq_quarantine_refusal_tenant_source_raw_reason",
+        ),
+    )
+
+
 class OidcProvider(Base):
     """A configurable OpenID Connect provider.
 

@@ -20,6 +20,7 @@ from typing import Any, Literal
 from urllib.parse import parse_qs
 
 import httpx
+import nats
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -39,6 +40,7 @@ from shared_schemas.metrics import (
     METRIC_ALIASES,
     METRIC_CATALOG,
     Cadence,
+    MetricDefinition,
     UnknownMetricTypeError,
     canonical_metric_type,
     describe,
@@ -70,8 +72,11 @@ from core.db.models import (
     DataSource,
     ExplorerView,
     IngestFieldReport,
+    MetricMappingRule,
     OidcAuthRequest,
     OidcProvider,
+    QuarantinedDataPoint,
+    QuarantineRefusal,
     RefreshToken,
     RevokedAccessToken,
     SyncRun,
@@ -83,7 +88,11 @@ from core.db.models import (
 from core.db.session import async_session_maker, get_session
 from core.db.tenant import _current_tenant_id, get_current_tenant_id
 from core.deployment_warnings import account_warnings, deployment_warnings
-from core.events.consumer import run_consumer_forever
+from core.events.consumer import (
+    MAX_QUARANTINED_NAMES,
+    MAX_QUARANTINED_ROWS,
+    run_consumer_forever,
+)
 from core.grpc.server import serve_grpc
 from core.ingest_planning import (
     BucketCount,
@@ -91,6 +100,13 @@ from core.ingest_planning import (
     analyse_coverage,
     compute_sync_window,
     plan_import,
+)
+from core.metric_mapping import (
+    MappingAction,
+    ValidatedMapping,
+    custom_metric_definition,
+    replay_value,
+    validate_mapping,
 )
 from core.oauth_refresh import (
     RefreshError,
@@ -149,6 +165,34 @@ from core.tracing import (
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+MAX_QUARANTINE_LIST_ROWS = 5000
+QUARANTINE_REPLAY_BATCH_SIZE = 500
+
+
+def _quarantine_capacity_warning(
+    *,
+    active_rows: int,
+    active_names: int,
+    refused_occurrences: int,
+) -> tuple[str, str]:
+    """Return a stable warning code and the capacity dimension closest to full."""
+    row_ratio = active_rows / MAX_QUARANTINED_ROWS
+    name_ratio = active_names / MAX_QUARANTINED_NAMES
+    limiting_dimension = "rows" if row_ratio >= name_ratio else "names"
+    usage_ratio = max(row_ratio, name_ratio)
+
+    # A refusal is more urgent than the current queue size: values have already
+    # failed to enter quarantine and cannot be recovered by a later mapping rule.
+    if refused_occurrences > 0:
+        return "quarantine_values_refused", limiting_dimension
+    if usage_ratio >= 1:
+        return "quarantine_full", limiting_dimension
+    if usage_ratio >= 0.75:
+        return "quarantine_near_full", limiting_dimension
+    if usage_ratio >= 0.5:
+        return "quarantine_half_full", limiting_dimension
+    return "quarantine_has_pending", limiting_dimension
 
 # SECURITY H3: Constrain source_type to known connectors
 ValidSourceType = Literal[
@@ -1580,7 +1624,47 @@ async def unlink_identity(
 
 # ─── Core Metric Endpoints ───────────────────────────────────
 
-def _definition_payload(metric_type: str) -> dict[str, Any] | None:
+def _custom_definitions(
+    rules: Sequence[MetricMappingRule],
+) -> dict[str, MetricDefinition]:
+    """Return valid tenant-local adopted definitions, ignoring corrupt legacy rows."""
+    definitions: dict[str, MetricDefinition] = {}
+    ambiguous: set[str] = set()
+    for rule in rules:
+        if rule.action != "adopt" or not rule.target_metric_type:
+            continue
+        try:
+            mapping = validate_mapping(
+                raw_metric_type=rule.raw_metric_type,
+                action=rule.action,
+                target_metric_type=rule.target_metric_type,
+                source_unit=rule.source_unit,
+                target_unit=rule.target_unit,
+                aggregation=rule.aggregation,
+                cadence=rule.cadence,
+            )
+            definition = custom_metric_definition(mapping)
+        except ValueError:
+            continue
+        if rule.target_metric_type in ambiguous:
+            continue
+        existing = definitions.get(rule.target_metric_type)
+        if existing is None:
+            definitions[rule.target_metric_type] = definition
+        elif existing != definition:
+            # Older installations may contain conflicting rows from before the
+            # one-name-one-definition check existed. Never present an arbitrary
+            # definition as authoritative for data whose unit or aggregation is
+            # ambiguous; omit it until an administrator repairs the rules.
+            definitions.pop(rule.target_metric_type, None)
+            ambiguous.add(rule.target_metric_type)
+    return definitions
+
+
+def _definition_payload(
+    metric_type: str,
+    custom_definitions: dict[str, MetricDefinition] | None = None,
+) -> dict[str, Any] | None:
     """Registry definition for a stored metric name, or ``None`` if it has none.
 
     A tenant can hold rows written before a catalog entry was renamed or removed, and
@@ -1588,6 +1672,8 @@ def _definition_payload(metric_type: str) -> dict[str, Any] | None:
     without a current definition", which a caller can render; omitting the metric would
     make it look like the data were gone.
     """
+    if custom_definitions and metric_type in custom_definitions:
+        return custom_definitions[metric_type].model_dump(mode="json")
     try:
         return describe(metric_type).model_dump(mode="json")
     except UnknownMetricTypeError:
@@ -1693,11 +1779,20 @@ async def list_metric_types(
     )
     res = await session.execute(stmt)
     metric_types = list(res.scalars().all())
+    custom_rules = await session.execute(
+        select(MetricMappingRule).where(
+            MetricMappingRule.tenant_id == tenant_id,
+            MetricMappingRule.action == "adopt",
+        )
+    )
+    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
 
     return {
         "tenant_id": tenant_id,
         "metric_types": metric_types,
-        "definitions": {name: _definition_payload(name) for name in metric_types},
+        "definitions": {
+            name: _definition_payload(name, custom_definitions) for name in metric_types
+        },
     }
 
 
@@ -1724,10 +1819,17 @@ async def get_metrics_summary(
 
     res = await session.execute(stmt)
     rows = res.all()
+    custom_rules = await session.execute(
+        select(MetricMappingRule).where(
+            MetricMappingRule.tenant_id == tenant_id,
+            MetricMappingRule.action == "adopt",
+        )
+    )
+    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
 
     summary = {}
     for row in rows:
-        definition = _definition_payload(row.metric_type)
+        definition = _definition_payload(row.metric_type, custom_definitions)
         # Rounding follows the metric rather than a blanket one decimal: a step count
         # with a fractional part is noise, a coordinate rounded to 0.1° is a different
         # town.
@@ -1775,6 +1877,17 @@ async def get_data_gaps(
     if end_date < start_date or (end_date - start_date).days > 366:
         raise HTTPException(status_code=400, detail="Date range must contain at most 367 ordered days")
 
+    custom_rules = await session.execute(
+        select(MetricMappingRule).where(
+            MetricMappingRule.tenant_id == tenant_id,
+            MetricMappingRule.action == "adopt",
+        )
+    )
+    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
+    cadence_overrides = {
+        key: definition.cadence for key, definition in custom_definitions.items()
+    }
+
     window_start = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
     window_end = datetime.combine(
         end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
@@ -1788,6 +1901,11 @@ async def get_data_gaps(
         for key, definition in METRIC_CATALOG.items()
         if definition.cadence in (Cadence.DAILY, Cadence.CONTINUOUS)
     ]
+    judged.extend(
+        key
+        for key, definition in custom_definitions.items()
+        if definition.cadence in (Cadence.DAILY, Cadence.CONTINUOUS)
+    )
     result = await session.execute(
         select(DataPoint.metric_type, DataPoint.timestamp).where(
             DataPoint.tenant_id == tenant_id,
@@ -1801,8 +1919,18 @@ async def get_data_gaps(
     # The reader's own zone, not UTC. Without this the parameter added for exactly
     # this purpose was exercised only by its unit test, and the first and last day
     # of every window stayed misreported.
-    gaps = detect_daily_gaps(rows, start_date, end_date, local_timezone=_window_timezone(offset_minutes))
-    cadence_gaps = detect_cadence_gaps(rows, TimeRange(window_start, window_end))
+    gaps = detect_daily_gaps(
+        rows,
+        start_date,
+        end_date,
+        local_timezone=_window_timezone(offset_minutes),
+        cadence_overrides=cadence_overrides,
+    )
+    cadence_gaps = detect_cadence_gaps(
+        rows,
+        TimeRange(window_start, window_end),
+        cadence_overrides=cadence_overrides,
+    )
     return {
         "tenant_id": tenant_id,
         "gaps": gaps,
@@ -2518,7 +2646,7 @@ async def configure_connector(
                     raise HTTPException(status_code=401, detail="Yazio sign-in failed: wrong email address or password.")
                 if not resp.is_success:
                     logger.warning(
-                        "Yazio sign-in failed with HTTP %s: %s", resp.status_code, resp.text[:500]
+                        "Yazio sign-in failed with HTTP %s", resp.status_code
                     )
                     raise HTTPException(
                         status_code=resp.status_code,
@@ -2530,8 +2658,15 @@ async def configure_connector(
                     raise HTTPException(status_code=400, detail="The Yazio OAuth response contained no access_token.")
             except HTTPException:
                 raise
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Yazio OAuth connection failed: {e}")
+            except (httpx.HTTPError, ValueError, TypeError, AttributeError) as exc:
+                logger.warning(
+                    "Yazio OAuth connection failed with %s",
+                    type(exc).__name__,
+                )
+                raise HTTPException(
+                    status_code=502,
+                    detail="Yazio OAuth connection failed.",
+                ) from None
 
     config_data: dict[str, Any] = {
         "status": req.status,
@@ -2663,13 +2798,20 @@ async def configure_connector(
                 js = nc.jetstream()
                 try:
                     await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-                except Exception:
-                    pass
+                except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+                    logger.debug(
+                        "Could not create the task stream; it may already exist (%s)",
+                        type(exc).__name__,
+                    )
                 await js.publish(f"qs.task.sync.{req.source_type}", payload)
             else:
                 await nc.publish(f"qs.task.sync.{req.source_type}", payload)
-        except Exception as e:
-            logger.warning(f"Failed to publish task sync event: {e}")
+        except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+            logger.warning(
+                "Failed to publish task sync event for source_type=%s (%s)",
+                req.source_type,
+                type(exc).__name__,
+            )
 
     return {
         "status": "success",
@@ -2874,7 +3016,7 @@ async def plan_and_enqueue_sync(
             request_id=req_id,
             mode=mode,
             trigger=trigger,
-            message=f"Import planning failed: {type(exc).__name__}: {exc}",
+            message=f"Import planning failed: {type(exc).__name__}.",
         )
         raise
 
@@ -2943,18 +3085,26 @@ async def plan_and_enqueue_sync(
                 js = nc.jetstream()
                 try:
                     await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-                except Exception:
-                    pass
+                except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+                    logger.debug(
+                        "Could not create the task stream; it may already exist (%s)",
+                        type(exc).__name__,
+                    )
                 await js.publish(f"qs.task.sync.{source_type}", payload)
             else:
                 await nc.publish(f"qs.task.sync.{source_type}", payload)
-        except Exception as exc:
+        except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
             publish_error = exc
     else:
         publish_error = RuntimeError("NATS client is unavailable")
 
     if publish_error is not None:
-        message = f"Could not queue the import: {type(publish_error).__name__}: {publish_error}"
+        message = f"Could not queue the import ({type(publish_error).__name__})."
+        logger.warning(
+            "Could not queue import for source_type=%s (%s)",
+            source_type,
+            type(publish_error).__name__,
+        )
         run.status = "error"
         run.message = message[:512]
         run.finished_at = datetime.now(timezone.utc)
@@ -3749,6 +3899,539 @@ async def list_unsupported_fields(
     return {"tenant_id": tenant_id, "fields": fields}
 
 
+class MetricMappingRequest(BaseModel):
+    """A tenant's decision for one connector-specific unresolved metric name."""
+
+    source_id: str = Field(..., min_length=1, max_length=64)
+    raw_metric_type: str = Field(..., min_length=1, max_length=128)
+    action: MappingAction
+    target_metric_type: str | None = Field(None, max_length=128)
+    source_unit: str | None = Field(None, max_length=32)
+    target_unit: str | None = Field(None, max_length=32)
+    aggregation: str | None = Field(None, max_length=16)
+    cadence: str | None = Field(None, max_length=16)
+    keep_indefinitely: bool = False
+
+
+async def _replay_quarantined_rows(
+    session: AsyncSession,
+    *,
+    tenant_id: str,
+    source: DataSource,
+    rule: MetricMappingRule,
+    mapping: ValidatedMapping,
+) -> dict[str, Any]:
+    """Replay or discard active rows in one tenant-scoped audit run.
+
+    Rows are processed in bounded batches. Quarantine has a deliberately generous
+    cap for recovery, but loading every point and its metadata into one Python list
+    would turn that safety valve into an API-triggered memory exhaustion vector.
+    """
+    await session.execute(
+        select(DataSource.id)
+        .where(DataSource.tenant_id == tenant_id, DataSource.id == source.id)
+        .with_for_update()
+    )
+    filters = (
+        QuarantinedDataPoint.tenant_id == tenant_id,
+        QuarantinedDataPoint.source_id == source.id,
+        QuarantinedDataPoint.raw_metric_type == rule.raw_metric_type,
+        QuarantinedDataPoint.status == "active",
+    )
+    total_result = await session.execute(
+        select(func.count(QuarantinedDataPoint.id)).where(*filters)
+    )
+    total = total_result.scalar_one() or 0
+    if total == 0:
+        return {"replayed": 0, "accepted": 0, "duplicates": 0, "discarded": 0, "sync_run_id": None}
+
+    first_result = await session.execute(
+        select(QuarantinedDataPoint.timestamp)
+        .where(*filters)
+        .order_by(QuarantinedDataPoint.timestamp, QuarantinedDataPoint.id)
+        .limit(1)
+    )
+    last_result = await session.execute(
+        select(QuarantinedDataPoint.timestamp)
+        .where(*filters)
+        .order_by(QuarantinedDataPoint.timestamp.desc(), QuarantinedDataPoint.id.desc())
+        .limit(1)
+    )
+    window_start = first_result.scalar_one()
+    window_end = last_result.scalar_one()
+
+    now = datetime.now(timezone.utc)
+    run = SyncRun(
+        tenant_id=tenant_id,
+        source_id=source.id,
+        source_type=source.source_type,
+        request_id=get_current_request_id() or str(uuid.uuid4()),
+        mode="force",
+        trigger="mapping_replay",
+        window_start=window_start,
+        window_end=window_end,
+        window_reason="Replay of values held for a resolved metric mapping.",
+        status="running",
+        points_expected=total,
+        started_at=now,
+    )
+    session.add(run)
+    await session.flush()
+
+    accepted = 0
+    duplicates = 0
+    discarded = 0
+    processed = 0
+    while processed < total:
+        result = await session.execute(
+            select(QuarantinedDataPoint)
+            .where(*filters)
+            .order_by(QuarantinedDataPoint.timestamp, QuarantinedDataPoint.id)
+            .limit(QUARANTINE_REPLAY_BATCH_SIZE)
+        )
+        rows = list(result.scalars())
+        if not rows:
+            break
+        for row in rows:
+            if mapping.action == "discard":
+                row.status = "discarded"
+                discarded += 1
+            else:
+                value, metadata = replay_value(row.value, row.metadata_, mapping)
+                if mapping.target_metric_type is None:
+                    raise ValueError("replay mapping has no target metric")
+                statement = pg_insert(DataPoint).values(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    source_id=source.id,
+                    metric_type=mapping.target_metric_type,
+                    timestamp=row.timestamp,
+                    value=value,
+                    metadata_=metadata,
+                    idempotency_key=idempotency_key(
+                        tenant_id,
+                        row.idempotency_source_id or source.id,
+                        mapping.target_metric_type,
+                        row.timestamp,
+                    ),
+                ).on_conflict_do_nothing(
+                    index_elements=["tenant_id", "idempotency_key", "timestamp"]
+                )
+                inserted = (await session.execute(statement)).rowcount or 0
+                if inserted:
+                    accepted += 1
+                else:
+                    duplicates += 1
+                row.status = "promoted"
+            row.resolved_at = now
+            row.resolution_rule_id = rule.id
+        processed += len(rows)
+
+    run.status = "success"
+    run.points_received = processed
+    run.points_accepted = accepted
+    run.points_duplicate = duplicates
+    run.message = (
+        f"Replayed {accepted} value(s), skipped {duplicates} duplicate(s), "
+        f"discarded {discarded} value(s)."
+    )[:512]
+    run.finished_at = datetime.now(timezone.utc)
+    return {
+        "replayed": processed,
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "discarded": discarded,
+        "sync_run_id": run.id,
+    }
+
+
+@app.get("/api/v1/data/quality/quarantine")
+async def list_quarantined_metrics(
+    session: AsyncSession = Depends(get_session),
+):
+    """List unresolved metrics and tenant-scoped capacity warnings.
+
+    The response exposes counts and stable warning codes only. Held values remain
+    inaccessible through this summary endpoint, while the capacity data lets the
+    dashboard warn before the bounded quarantine can refuse a new point.
+    """
+    tenant_id = get_current_tenant_id()
+    result = await session.execute(
+        select(QuarantinedDataPoint, DataSource.display_name)
+        .join(
+            DataSource,
+            (DataSource.id == QuarantinedDataPoint.source_id)
+            & (DataSource.tenant_id == tenant_id),
+        )
+        .where(
+            QuarantinedDataPoint.tenant_id == tenant_id,
+            QuarantinedDataPoint.status == "active",
+        )
+        .order_by(QuarantinedDataPoint.last_seen_at.desc())
+        .limit(MAX_QUARANTINE_LIST_ROWS)
+    )
+    rules_result = await session.execute(
+        select(MetricMappingRule).where(MetricMappingRule.tenant_id == tenant_id)
+    )
+    rules = {
+        (rule.source_id, rule.raw_metric_type): rule
+        for rule in rules_result.scalars()
+    }
+
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    for row, display_name in result.all():
+        key = (row.source_id, row.raw_metric_type)
+        item = grouped.get(key)
+        if item is None:
+            rule = rules.get(key)
+            item = {
+                "source_id": row.source_id,
+                "source_type": row.source_type,
+                "connector_name": display_name,
+                "raw_metric_type": row.raw_metric_type,
+                "points": 0,
+                "seen": 0,
+                "units": (row.metadata_ or {}).get("units") or None,
+                "first_seen_at": row.first_seen_at.isoformat(),
+                "last_seen_at": row.last_seen_at.isoformat(),
+                "action": rule.action if rule else None,
+            }
+            grouped[key] = item
+        item["points"] += 1
+        item["seen"] += row.seen_count
+        item["first_seen_at"] = min(item["first_seen_at"], row.first_seen_at.isoformat())
+        item["last_seen_at"] = max(item["last_seen_at"], row.last_seen_at.isoformat())
+        if not item["units"]:
+            item["units"] = (row.metadata_ or {}).get("units") or None
+
+    active_counts_result = await session.execute(
+        select(
+            QuarantinedDataPoint.source_id,
+            func.count(QuarantinedDataPoint.id),
+            func.count(func.distinct(QuarantinedDataPoint.raw_metric_type)),
+        )
+        .where(
+            QuarantinedDataPoint.tenant_id == tenant_id,
+            QuarantinedDataPoint.status == "active",
+        )
+        .group_by(QuarantinedDataPoint.source_id)
+    )
+    active_counts = {
+        source_id: (int(row_count), int(name_count))
+        for source_id, row_count, name_count in active_counts_result.all()
+    }
+
+    refusal_counts_result = await session.execute(
+        select(
+            QuarantineRefusal.source_id,
+            func.coalesce(func.sum(QuarantineRefusal.occurrences), 0),
+        )
+        .where(QuarantineRefusal.tenant_id == tenant_id)
+        .group_by(QuarantineRefusal.source_id)
+    )
+    refusal_counts = {
+        source_id: int(occurrences)
+        for source_id, occurrences in refusal_counts_result.all()
+    }
+
+    capacity_source_ids = set(active_counts) | set(refusal_counts)
+    capacity: list[dict[str, Any]] = []
+    if capacity_source_ids:
+        sources_result = await session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == tenant_id,
+                DataSource.id.in_(capacity_source_ids),
+            )
+        )
+        for source in sources_result.scalars():
+            active_rows, active_names = active_counts.get(source.id, (0, 0))
+            refused_occurrences = refusal_counts.get(source.id, 0)
+            warning_code, limiting_dimension = _quarantine_capacity_warning(
+                active_rows=active_rows,
+                active_names=active_names,
+                refused_occurrences=refused_occurrences,
+            )
+            capacity.append(
+                {
+                    "source_id": source.id,
+                    "source_type": source.source_type,
+                    "connector_name": source.display_name,
+                    "active_rows": active_rows,
+                    "max_rows": MAX_QUARANTINED_ROWS,
+                    "active_names": active_names,
+                    "max_names": MAX_QUARANTINED_NAMES,
+                    "usage_percent": round(
+                        max(
+                            active_rows / MAX_QUARANTINED_ROWS,
+                            active_names / MAX_QUARANTINED_NAMES,
+                        )
+                        * 100,
+                        1,
+                    ),
+                    "limiting_dimension": limiting_dimension,
+                    "refused_occurrences": refused_occurrences,
+                    "warning_code": warning_code,
+                }
+            )
+
+    return {
+        "tenant_id": tenant_id,
+        "metrics": list(grouped.values()),
+        "capacity": capacity,
+    }
+
+
+@app.get("/api/v1/data/quality/mapping-rules")
+async def list_metric_mapping_rules(
+    session: AsyncSession = Depends(get_session),
+):
+    """List connector rules and their current unresolved point counts."""
+    tenant_id = get_current_tenant_id()
+    result = await session.execute(
+        select(MetricMappingRule, DataSource.display_name)
+        .join(
+            DataSource,
+            (DataSource.id == MetricMappingRule.source_id)
+            & (DataSource.tenant_id == tenant_id),
+        )
+        .where(MetricMappingRule.tenant_id == tenant_id)
+        .order_by(MetricMappingRule.updated_at.desc())
+    )
+    counts_result = await session.execute(
+        select(
+            QuarantinedDataPoint.source_id,
+            QuarantinedDataPoint.raw_metric_type,
+            func.count(QuarantinedDataPoint.id),
+        )
+        .where(
+            QuarantinedDataPoint.tenant_id == tenant_id,
+            QuarantinedDataPoint.status == "active",
+        )
+        .group_by(QuarantinedDataPoint.source_id, QuarantinedDataPoint.raw_metric_type)
+    )
+    counts = {(source_id, raw): count for source_id, raw, count in counts_result.all()}
+    return {
+        "tenant_id": tenant_id,
+        "rules": [
+            {
+                "id": rule.id,
+                "source_id": rule.source_id,
+                "source_type": rule.source_type,
+                "connector_name": display_name,
+                "raw_metric_type": rule.raw_metric_type,
+                "action": rule.action,
+                "target_metric_type": rule.target_metric_type,
+                "source_unit": rule.source_unit,
+                "target_unit": rule.target_unit,
+                "aggregation": rule.aggregation,
+                "cadence": rule.cadence,
+                "keep_indefinitely": rule.retention_days is None,
+                "unresolved_points": counts.get((rule.source_id, rule.raw_metric_type), 0),
+                "updated_at": rule.updated_at.isoformat() if rule.updated_at else None,
+            }
+            for rule, display_name in result.all()
+        ],
+    }
+
+
+@app.get("/api/v1/data/quality/mapping-summary")
+async def summarize_metric_mapping_rules(
+    session: AsyncSession = Depends(get_session),
+):
+    """Summarize repeated tenant decisions without returning values or identifiers."""
+    tenant_id = get_current_tenant_id()
+    result = await session.execute(
+        select(MetricMappingRule).where(MetricMappingRule.tenant_id == tenant_id)
+    )
+    counts_result = await session.execute(
+        select(
+            QuarantinedDataPoint.raw_metric_type,
+            func.count(QuarantinedDataPoint.id),
+        )
+        .where(
+            QuarantinedDataPoint.tenant_id == tenant_id,
+            QuarantinedDataPoint.status == "active",
+        )
+        .group_by(QuarantinedDataPoint.raw_metric_type)
+    )
+    unresolved = {raw: count for raw, count in counts_result.all()}
+    summary: dict[str, dict[str, Any]] = {}
+    for rule in result.scalars():
+        item = summary.setdefault(
+            rule.raw_metric_type,
+            {"raw_metric_type": rule.raw_metric_type, "connector_count": 0, "actions": {}, "unresolved_points": 0},
+        )
+        item["connector_count"] += 1
+        item["actions"][rule.action] = item["actions"].get(rule.action, 0) + 1
+        item["unresolved_points"] = unresolved.get(rule.raw_metric_type, 0)
+    # This is the registry-feedback view: names and counts only, with no connector
+    # identifiers, tenant identifiers, held values or other personal data.
+    return {"metrics": list(summary.values())}
+
+
+@app.post("/api/v1/data/quality/mapping-rules", status_code=202)
+async def save_metric_mapping_rule(
+    request: MetricMappingRequest,
+    principal: Principal = Depends(require_role("owner", "admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """Save one mapping decision and replay its held points atomically."""
+    tenant_id = principal.tenant_id
+    source_result = await session.execute(
+        select(DataSource)
+        .where(
+            DataSource.id == request.source_id,
+            DataSource.tenant_id == tenant_id,
+        )
+        .with_for_update()
+    )
+    source = source_result.scalars().first()
+    if source is None:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    try:
+        canonical_metric_type(request.raw_metric_type)
+    except UnknownMetricTypeError:
+        pass
+    else:
+        raise HTTPException(
+            status_code=422,
+            detail="A catalogued or namespaced metric cannot be redefined by a tenant rule.",
+        )
+
+    try:
+        mapping = validate_mapping(
+            raw_metric_type=request.raw_metric_type,
+            action=request.action,
+            target_metric_type=request.target_metric_type,
+            source_unit=request.source_unit,
+            target_unit=request.target_unit,
+            aggregation=request.aggregation,
+            cadence=request.cadence,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    if request.keep_indefinitely and request.action != "keep":
+        raise HTTPException(
+            status_code=422,
+            detail="keep_indefinitely is only valid for a keep rule.",
+        )
+
+    result = await session.execute(
+        select(MetricMappingRule).where(
+            MetricMappingRule.tenant_id == tenant_id,
+            MetricMappingRule.source_id == source.id,
+            MetricMappingRule.raw_metric_type == mapping.raw_metric_type,
+        )
+    )
+    rule = result.scalars().first()
+    if mapping.action == "adopt" and mapping.target_metric_type is not None:
+        # Serialize tenant-local custom-definition changes so two connectors cannot
+        # concurrently give the same custom name different meanings.
+        await session.execute(
+            select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
+        )
+        conflict_filters = [
+            MetricMappingRule.tenant_id == tenant_id,
+            MetricMappingRule.action == "adopt",
+            MetricMappingRule.target_metric_type == mapping.target_metric_type,
+            or_(
+                MetricMappingRule.source_unit != mapping.source_unit.value,
+                MetricMappingRule.target_unit != mapping.target_unit.value,
+                MetricMappingRule.aggregation != mapping.aggregation.value,
+                MetricMappingRule.cadence != mapping.cadence.value,
+            ),
+        ]
+        if rule is not None:
+            conflict_filters.append(MetricMappingRule.id != rule.id)
+        conflicting = await session.execute(
+            select(MetricMappingRule.id).where(*conflict_filters)
+            .limit(1)
+        )
+        if conflicting.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="This custom metric name already has a different tenant definition.",
+            )
+    now = datetime.now(timezone.utc)
+    values = {
+        "source_type": source.source_type,
+        "action": mapping.action,
+        "target_metric_type": mapping.target_metric_type,
+        "source_unit": mapping.source_unit.value if mapping.source_unit else None,
+        "target_unit": mapping.target_unit.value if mapping.target_unit else None,
+        "aggregation": mapping.aggregation.value if mapping.aggregation else None,
+        "cadence": mapping.cadence.value if mapping.cadence else None,
+        "retention_days": None if request.keep_indefinitely else 30,
+        "updated_at": now,
+    }
+    if rule is None:
+        rule = MetricMappingRule(
+            id=str(uuid.uuid4()),
+            tenant_id=tenant_id,
+            source_id=source.id,
+            raw_metric_type=mapping.raw_metric_type,
+            created_at=now,
+            **values,
+        )
+        session.add(rule)
+    else:
+        for key, value in values.items():
+            setattr(rule, key, value)
+
+    replay = {"replayed": 0, "accepted": 0, "duplicates": 0, "discarded": 0, "sync_run_id": None}
+    if mapping.action in {"map", "adopt", "discard"}:
+        replay = await _replay_quarantined_rows(
+            session,
+            tenant_id=tenant_id,
+            source=source,
+            rule=rule,
+            mapping=mapping,
+        )
+    await session.commit()
+    return {
+        "tenant_id": tenant_id,
+        "source_id": source.id,
+        "raw_metric_type": mapping.raw_metric_type,
+        "action": mapping.action,
+        **replay,
+    }
+
+
+@app.get("/api/v1/data/quality/quarantine-refusals")
+async def list_quarantine_refusals(
+    session: AsyncSession = Depends(get_session),
+):
+    """Show bounded-queue refusals without exposing any refused point value."""
+    tenant_id = get_current_tenant_id()
+    result = await session.execute(
+        select(QuarantineRefusal, DataSource.display_name)
+        .join(
+            DataSource,
+            (DataSource.id == QuarantineRefusal.source_id)
+            & (DataSource.tenant_id == tenant_id),
+        )
+        .where(QuarantineRefusal.tenant_id == tenant_id)
+        .order_by(QuarantineRefusal.last_seen_at.desc())
+        .limit(500)
+    )
+    return {
+        "tenant_id": tenant_id,
+        "refusals": [
+            {
+                "source_id": row.source_id,
+                "source_type": row.source_type,
+                "connector_name": display_name,
+                "raw_metric_type": row.raw_metric_type,
+                "reason": row.reason,
+                "occurrences": row.occurrences,
+                "last_seen_at": row.last_seen_at.isoformat(),
+            }
+            for row, display_name in result.all()
+        ],
+    }
+
+
 class OpenSyncRunRequest(BaseModel):
     """Start an import that Core did not schedule."""
 
@@ -3903,27 +4586,35 @@ async def update_connector_status_internal(
 
 @app.delete("/api/v1/data/wipe")
 async def wipe_tenant_data_points(
-    tenant_id: str = Depends(get_current_tenant_id),
+    principal: Principal = Depends(require_role("owner", "admin")),
     session: AsyncSession = Depends(get_session),
 ):
-    """1-Click deletion of all ingested data points for current tenant."""
+    """1-Click deletion of all ingested and held point values for current tenant."""
+    tenant_id = principal.tenant_id
     stmt = delete(DataPoint).where(DataPoint.tenant_id == tenant_id)
     result = await session.execute(stmt)
+    quarantine_result = await session.execute(
+        delete(QuarantinedDataPoint).where(QuarantinedDataPoint.tenant_id == tenant_id)
+    )
     await session.commit()
 
     return {
         "status": "wiped",
-        "deleted_count": result.rowcount,
-        "message": f"Successfully deleted {result.rowcount} data points for tenant.",
+        "deleted_count": (result.rowcount or 0) + (quarantine_result.rowcount or 0),
+        "message": (
+            f"Successfully deleted {(result.rowcount or 0) + (quarantine_result.rowcount or 0)} "
+            "data points for tenant."
+        ),
     }
 
 
 @app.delete("/api/v1/data/account")
 async def delete_tenant_account(
-    tenant_id: str = Depends(get_current_tenant_id),
+    principal: Principal = Depends(require_role("owner")),
     session: AsyncSession = Depends(get_session),
 ):
     """1-Click full account wipe (data points, data sources, tenant shares)."""
+    tenant_id = principal.tenant_id
     dp_res = await session.execute(delete(DataPoint).where(DataPoint.tenant_id == tenant_id))
     ds_res = await session.execute(delete(DataSource).where(DataSource.tenant_id == tenant_id))
     # Cross-tenant sharing was withdrawn before it could read anything, so nothing

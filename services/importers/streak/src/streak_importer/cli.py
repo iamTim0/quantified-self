@@ -39,17 +39,19 @@ async def main():
         logger.error(f"File not found: {file_path}")
         return
 
-    with open(file_path, "r", encoding="utf-8") as f:
-        try:
-            payload = json.load(f)
-        except Exception as e:
-            logger.error(f"Failed to parse JSON file {file_path}: {e}")
-            return
+    try:
+        raw_payload = await asyncio.to_thread(file_path.read_text, encoding="utf-8")
+        payload = json.loads(raw_payload)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.error(
+            "Failed to parse JSON file %s (%s)", file_path, type(exc).__name__
+        )
+        return
 
     source_id = args.source_id or f"streak_{args.tenant_id[:8]}"
     events = transform_streak_export_json(payload, tenant_id=args.tenant_id, source_id=source_id)
 
-    logger.info(f"Parsed {len(events)} events from {file_path}. Connecting to NATS at {args.nats_url}...")
+    logger.info("Parsed %d events from %s. Connecting to NATS...", len(events), file_path)
     nc = await nats.connect(args.nats_url)
     js = nc.jetstream()
 

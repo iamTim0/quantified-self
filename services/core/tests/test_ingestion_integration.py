@@ -22,6 +22,7 @@ import pytest
 from core.db.models import DataPoint, DataSource, Tenant
 from core.db.session import async_session_maker
 from core.events.consumer import process_message
+from shared_schemas import idempotency_key as derive_idempotency_key
 from sqlalchemy import select
 
 from tests.db_helpers import cleanup_test_tenant
@@ -37,7 +38,9 @@ async def test_end_to_end_ingestion_deduplication():
     tenant_id = str(uuid.uuid4())
     source_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
-    idempotency_key = f"test-idemp-{uuid.uuid4().hex[:8]}"
+    idempotency_key = derive_idempotency_key(
+        tenant_id, source_id, "oura_sleep_score", now.isoformat()
+    )
 
     nc = None
     created_stream = False
@@ -124,7 +127,7 @@ async def test_end_to_end_ingestion_deduplication():
             if created_stream:
                 try:
                     await nc.jetstream().delete_stream(STREAM_NAME)
-                except Exception:  # noqa: BLE001 - teardown must not mask a test failure
+                except nats.js.errors.NotFoundError:
                     pass
             await nc.close()
         await cleanup_test_tenant(tenant_id)

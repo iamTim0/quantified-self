@@ -59,9 +59,12 @@ async def credentials(
                 headers=headers,
             )
             return response.json() if response.status_code == 200 else None
-        except Exception as e:
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
             logger.warning(
-                f"[req_id={request_id}] Failed to fetch credentials for tenant {tenant_id}: {e}"
+                "[req_id=%s] Failed to fetch credentials for tenant %s (%s)",
+                request_id,
+                tenant_id,
+                type(exc).__name__,
             )
             return None
 
@@ -87,8 +90,10 @@ async def report_sync_result_to_core(
             await client.post(
                 url, headers=internal_headers(task.request_id, task.tenant_id), json=payload
             )
-        except Exception as e:
-            logger.warning(f"Could not report sync result to Core: {e}")
+        except (httpx.HTTPError, ValueError, TypeError) as exc:
+            logger.warning(
+                "Could not report sync result to Core (%s)", type(exc).__name__
+            )
 
 
 async def sync_calendar(task: SyncTask, connection: Any) -> int:
@@ -184,11 +189,11 @@ async def process(message: Any, connection: Any) -> None:
     except (CalendarFetchError, IcsParseError) as e:
         logger.error("[req_id=%s] Calendar sync failed: %s", task.request_id, e)
         await report_sync_result_to_core(task, status="error", message=str(e)[:500])
-    except Exception as e:
-        logger.error(f"Error processing calendar task: {e}")
+    except Exception as exc:  # noqa: BLE001 - task failures must be acknowledged
+        logger.error("Error processing calendar task (%s)", type(exc).__name__)
         if task is not None:
             await report_sync_result_to_core(
-                task, status="error", message=f"Unexpected error: {type(e).__name__}"
+                task, status="error", message=f"Unexpected error: {type(exc).__name__}"
             )
     finally:
         await message.ack()
@@ -200,8 +205,11 @@ async def main() -> None:
     stream = connection.jetstream()
     try:
         await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception:
-        pass
+    except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+        logger.debug(
+            "Could not create the task stream; it may already exist (%s)",
+            type(exc).__name__,
+        )
     await stream.subscribe(
         "qs.task.sync.calendar",
         queue="calendar_importer_task_group",

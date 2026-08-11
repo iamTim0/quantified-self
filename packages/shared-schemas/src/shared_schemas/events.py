@@ -68,6 +68,11 @@ class IngestEvent(BaseModel):
     value: float = Field(..., description="The recorded value")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Additional context or properties")
     idempotency_key: str = Field(..., description="Key to prevent duplicate processing")
+    #: Stable identity of a child item when several provider records share one
+    #: connector. It is still scoped to ``source_id`` by Core before hashing.
+    idempotency_source_id: str | None = Field(
+        None, description="Stable child identity used for idempotency when needed"
+    )
     source_type: str = Field(..., description="Type of source (e.g., 'oura', 'whoop')")
 
     @field_validator("tenant_id")

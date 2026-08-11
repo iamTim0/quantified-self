@@ -11,6 +11,9 @@ from core.db.models import (
     DataPoint,
     DataSource,
     ExplorerView,
+    MetricMappingRule,
+    QuarantinedDataPoint,
+    QuarantineRefusal,
     RefreshToken,
     RevokedAccessToken,
     SyncRun,
@@ -98,6 +101,15 @@ async def cleanup_test_tenant(tenant_id: str) -> None:
             delete(ExplorerView).where(ExplorerView.tenant_id == tenant_id)
         )
         await session.execute(delete(DataPoint).where(DataPoint.tenant_id == tenant_id))
+        await session.execute(
+            delete(QuarantinedDataPoint).where(QuarantinedDataPoint.tenant_id == tenant_id)
+        )
+        await session.execute(
+            delete(QuarantineRefusal).where(QuarantineRefusal.tenant_id == tenant_id)
+        )
+        await session.execute(
+            delete(MetricMappingRule).where(MetricMappingRule.tenant_id == tenant_id)
+        )
         await session.execute(delete(DataSource).where(DataSource.tenant_id == tenant_id))
         await session.execute(delete(User).where(User.tenant_id == tenant_id))
         await session.execute(delete(Tenant).where(Tenant.id == tenant_id))

@@ -140,6 +140,7 @@ def transform_consumed_items(
         dp = {
             "tenant_id": tenant_id,
             "source_id": source_id,
+            "idempotency_source_id": item_source_id,
             "metric_type": metric_type,
             "timestamp": timestamp,
             "value": val_flt,
@@ -197,6 +198,7 @@ def transform_consumed_items(
         dp = {
             "tenant_id": tenant_id,
             "source_id": source_id,
+            "idempotency_source_id": item_source_id,
             "metric_type": metric_type,
             "timestamp": timestamp,
             "value": float(portion_count),
@@ -245,6 +247,7 @@ def transform_consumed_items(
         dp = {
             "tenant_id": tenant_id,
             "source_id": source_id,
+            "idempotency_source_id": item_source_id,
             "metric_type": metric_type,
             "timestamp": timestamp,
             "value": float(cal_val),
@@ -296,6 +299,7 @@ def transform_consumed_items(
             dp = {
                 "tenant_id": tenant_id,
                 "source_id": source_id,
+                "idempotency_source_id": item_source_id,
                 "metric_type": metric_type,
                 "timestamp": timestamp,
                 "value": val_flt,
@@ -389,6 +393,7 @@ def transform_consumed_items(
                     dp = {
                         "tenant_id": tenant_id,
                         "source_id": source_id,
+                        "idempotency_source_id": f"{source_id}_meal_{meal_cat}",
                         "metric_type": metric_type,
                         "timestamp": timestamp,
                         "value": float(cal_val),

@@ -179,6 +179,46 @@ export const de: Record<MessageKey, string> = {
   "quality.unsupportedLastSeen": "Zuletzt",
   "quality.unsupportedCopy": "Bericht kopieren",
   "quality.unsupportedCopied": "Kopiert",
+  "quality.quarantineTitle": "Für deine Entscheidung zurückgehalten",
+  "quality.quarantineHint":
+    "Diese Werte bleiben außerhalb von Diagrammen und Analysen, bis du den Connector-Namen zuordnest, übernimmst, verwirfst oder offen lässt.",
+  "quality.quarantineCapacityTitle": "Quarantänekapazität",
+  "quality.quarantineCapacityIntro":
+    "Unbekannte Werte werden hier für die Zuordnung zurückgehalten. Löse sie auf, bevor der Connector sein Limit erreicht; Werte nach einem vollen Limit können später nicht durch ein Mapping wiederhergestellt werden.",
+  "quality.quarantineCapacityPending":
+    "Unbekannte Werte warten auf eine Entscheidung. Löse sie vor dem nächsten großen Import auf, damit die Quarantäne Platz für neue Werte hat.",
+  "quality.quarantineCapacityHalf":
+    "Die Quarantäne ist zu {percent} % ausgelastet. Wenn das Limit erreicht ist, werden weitere unbekannte Werte nicht behalten und können später nicht zugeordnet werden.",
+  "quality.quarantineCapacityNearFull":
+    "Die Quarantäne ist zu {percent} % ausgelastet. Löse diesen Connector jetzt auf: Weitere unbekannte Werte können bald abgewiesen werden und für die spätere Zuordnung verloren gehen.",
+  "quality.quarantineCapacityFull":
+    "Das Quarantänelimit ist voll. Weitere unbekannte Werte werden nicht behalten und können durch ein späteres Mapping dieses Connectors nicht wiederhergestellt werden.",
+  "quality.quarantineCapacityRefused":
+    "Für diesen Connector wurden bereits unbekannte Werte abgewiesen. Sie befinden sich nicht in der Quarantäne; importiere die Quelle nach der Zuordnung erneut.",
+  "quality.quarantineCapacityUsage":
+    "Zurückgehaltene Punkte: {rows} / {maxRows} · Unbekannte Namen: {names} / {maxNames}",
+  "quality.quarantineConnectorDetail": "{connector} · {count} Punkt(e)",
+  "quality.mappingDecision": "Zuordnungsentscheidung",
+  "quality.mappingMap": "Einem Registry-Metrik zuordnen",
+  "quality.mappingAdopt": "Als eigene Metrik übernehmen",
+  "quality.mappingDiscard": "Verwerfen und weiter verwerfen",
+  "quality.mappingKeep": "Ungeklärt behalten",
+  "quality.mappingTarget": "Zielmetrik",
+  "quality.mappingCustomName": "custom_metric_name",
+  "quality.mappingSourceUnit": "Quelleneinheit",
+  "quality.mappingTargetUnit": "Angegebene Einheit",
+  "quality.mappingAggregation": "Aggregation",
+  "quality.mappingCadence": "Frequenz",
+  "quality.mappingAverage": "Durchschnitt",
+  "quality.mappingSum": "Summe",
+  "quality.mappingLast": "Letzter Wert",
+  "quality.mappingMax": "Maximum",
+  "quality.mappingDaily": "Täglich",
+  "quality.mappingContinuous": "Kontinuierlich",
+  "quality.mappingEvent": "Ereignis",
+  "quality.mappingApply": "Anwenden und wiedergeben",
+  "quality.mappingSaving": "Wird angewendet…",
+  "quality.mappingKeepIndefinitely": "Ungeklärte Werte unbegrenzt behalten",
   "quality.largestGaps": "Größte Datenlücken",
   "quality.largestGapsHint":
     "Zusammenhängende fehlende Tage. Über „Nachladen“ wird der Importdialog mit genau diesem Zeitraum vorbelegt.",
