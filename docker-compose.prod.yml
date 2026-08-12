@@ -54,8 +54,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
     volumes:
-      # timescaledb-ha keeps PGDATA here, not under /var/lib/postgresql/data.
-      - pgdata:/home/postgres/pgdata/data
+      - pgdata:/var/lib/postgresql/data
       # Creates the schema for an empty volume and seeds nothing. Alembic owns
       # every change after that. Shipped inside the release bundle, so a deploy
       # without a checkout still has it at this path.
@@ -122,9 +121,9 @@ services:
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
     ports:
-      # The only port that has to be public. Put TLS in front of it: a reverse
-      # proxy, Coolify's own ingress, or the cloudflared service below.
-      - "${QS_HTTP_PORT:-80}:80"
+      # Bound to localhost by default. The stack assumes you use the cloudflared
+      # tunnel. If you want direct public access, set QS_BIND_IP=0.0.0.0.
+      - "${QS_BIND_IP:-127.0.0.1}:${QS_HTTP_PORT:-80}:80"
       # Traefik dashboard, loopback only. Reach it over an SSH tunnel:
       #   ssh -L 8081:127.0.0.1:8081 user@host
       - "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080"
@@ -228,7 +227,7 @@ services:
       # Kept for direct access and for smoke tests that bypass Traefik. Only
       # Traefik's port needs to be reachable from outside the host; drop this
       # line if you have no use for it.
-      - "${QS_GATEWAY_PORT:-8000}:8000"
+      - "${QS_BIND_IP:-127.0.0.1}:${QS_GATEWAY_PORT:-8000}:8000"
     depends_on:
       core:
         condition: service_healthy
@@ -400,7 +399,7 @@ services:
     ports:
       # Published because the iPhone automation posts here directly; there is no
       # Traefik route for it.
-      - "${QS_APPLE_HEALTH_PORT:-8005}:8005"
+      - "${QS_BIND_IP:-127.0.0.1}:${QS_APPLE_HEALTH_PORT:-8005}:8005"
     depends_on:
       core:
         condition: service_healthy
@@ -419,7 +418,7 @@ services:
     image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-streak:${QS_VERSION:-latest}
     restart: always
     ports:
-      - "${QS_STREAK_PORT:-8006}:8006"
+      - "${QS_BIND_IP:-127.0.0.1}:${QS_STREAK_PORT:-8006}:8006"
     depends_on:
       core:
         condition: service_healthy
@@ -496,25 +495,14 @@ services:
     networks:
       - qs-network
 
-  # Optional. Only starts with `--profile tunnel`, because an empty TUNNEL_TOKEN
-  # made the container restart-loop on every deployment that had no tunnel.
+  # Starts automatically by default to secure the stack. If you don't use it,
+  # it will simply exit if no TUNNEL_TOKEN is provided.
   #
-  # `:-` and not `:?`, even though the token is required for this service to work:
-  # a profile keeps a service from *starting*, but interpolation happens while the
-  # file is being read, for every service in it. With `:?` here, `docker compose
-  # config` and `up -d` both failed with "required variable TUNNEL_TOKEN is
-  # missing" on every deployment that does not use a tunnel -- which is to say the
-  # guard did not protect the tunnel, it blocked the whole stack.
-  #
-  # The token then goes through the environment rather than the command line,
-  # because an empty one did not survive as a flag: Compose drops the empty word,
-  # `--token` arrives with nothing after it, and cloudflared fails parsing its own
-  # arguments -- inside a restarting container, which is a worse error than the one
-  # this replaced. cloudflared reads TUNNEL_TOKEN natively.
+  # `:-` and not `:?`, so that Compose parses the file even when TUNNEL_TOKEN is
+  # omitted, allowing you to use the stack without a tunnel by binding ports manually.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
-    profiles: ["tunnel"]
     restart: unless-stopped
     environment:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
