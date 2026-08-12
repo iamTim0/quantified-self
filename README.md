@@ -37,7 +37,8 @@ procedure, and for the `ENCRYPTION_KEY` ordering trap.
 
 For Coolify, choose the Docker Compose build pack at repository root and set the
 Compose file to `docker-compose.coolify.yml`; it uses Coolify's managed network
-and proxy instead of the standalone Traefik stack.
+with its own cloudflared-to-Traefik ingress, without host ports or access to
+unrelated containers on the server.
 
 ```bash
 curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
@@ -206,7 +207,7 @@ quantified-self/
 ├── packages/
 │   ├── proto/             # Protobuf definitions (buf)
 │   └── shared-schemas/    # Shared Pydantic models
-├── specs/                 # Fizzbee formal specifications (13, all model-checked)
+├── specs/                 # Fizzbee formal specifications (15, all model-checked)
 ├── infra/                 # Infrastructure configuration
 │   ├── docker-compose.yml
 │   ├── fizzbee.Dockerfile # The model checker; no Windows build exists
@@ -214,7 +215,7 @@ quantified-self/
 ├── .agents/scripts/       # Lifecycle hooks and spec tooling, shared by all agents
 ├── tools/build_images.py  # The published image list; the release workflow reads it
 ├── docker-compose.prod.yml # Production stack from published images. No build:
-├── docker-compose.coolify.yml # Coolify stack using its managed network and proxy
+├── docker-compose.coolify.yml # Coolify stack with private tunnel ingress
 ├── Taskfile.yml
 ├── README.md
 └── AGENTS.md

@@ -1,0 +1,84 @@
+# Fizzbee specification for the embedded Cloudflare Tunnel ingress.
+#
+# The public path is Cloudflare -> cloudflared -> the stack-owned Traefik.
+# Traefik is the only ingress service and dispatches to private application
+# services. No application service or database receives a host port.
+
+REQUEST_PATHS = [
+    "/",
+    "/explorer",
+    "/api/v1/data",
+    "/health",
+    "/docs",
+    "/ingest/streak"
+]
+
+action Init:
+    proxy_ready = False
+    tunnel_connected = False
+    tunnel_origin = ""
+    public_entrypoint = ""
+    last_path = ""
+    last_backend = ""
+
+atomic action StartProxy:
+    proxy_ready = True
+
+atomic action StopProxy:
+    proxy_ready = False
+    tunnel_connected = False
+    tunnel_origin = ""
+    public_entrypoint = ""
+
+atomic action StartTunnel:
+    require proxy_ready == True
+    tunnel_connected = True
+    tunnel_origin = "traefik:80"
+    public_entrypoint = "traefik"
+
+atomic action StopTunnel:
+    tunnel_connected = False
+    tunnel_origin = ""
+    public_entrypoint = ""
+
+atomic action RoutePublicRequest:
+    require proxy_ready == True
+    require tunnel_connected == True
+
+    path = oneof(REQUEST_PATHS)
+    last_path = path
+
+    if path == "/api/v1/data" or path == "/health":
+        last_backend = "api-gateway"
+    elif path == "/docs":
+        last_backend = "docs"
+    elif path == "/ingest/streak":
+        last_backend = "streak-importer"
+    else:
+        last_backend = "dashboard"
+
+always assertion TunnelTargetsOnlyStackProxy:
+    if tunnel_connected:
+        return tunnel_origin == "traefik:80"
+    return tunnel_origin == ""
+
+always assertion NoPrivateServicePublicExposure:
+    return public_entrypoint == "" or public_entrypoint == "traefik"
+
+always assertion TunnelRequiresHealthyProxy:
+    if tunnel_connected:
+        return proxy_ready == True
+    return True
+
+always assertion SpecificRoutesPrecedeDashboard:
+    if last_path == "/api/v1/data" or last_path == "/health":
+        return last_backend == "api-gateway"
+    if last_path == "/docs":
+        return last_backend == "docs"
+    if last_path == "/ingest/streak":
+        return last_backend == "streak-importer"
+    if last_path == "/" or last_path == "/explorer":
+        return last_backend == "dashboard"
+    return True
+
+

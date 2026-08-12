@@ -240,8 +240,9 @@ configuration. A correctly set up production deployment reports nothing there.
 ### Network boundaries (standalone Compose)
 
 This section describes the standalone `docker-compose.prod.yml` topology. For Coolify, use the
-[Coolify networking procedure](deployment.md#coolify-networking): Coolify's proxy and managed application
-network replace the embedded Traefik and the custom Compose network.
+[Coolify networking procedure](deployment.md#coolify-networking): the application network contains its own
+cloudflared-to-Traefik ingress without host ports. Coolify's global proxy can continue serving unrelated
+applications but is not in this stack's request path.
 
 Only Traefik belongs on the outside, and through it the Gateway, the dashboard and the docs. **Core must
 not be publicly reachable** — it serves decrypted connector credentials over `/api/v1/internal/*`. Core

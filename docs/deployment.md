@@ -297,21 +297,23 @@ correctly". The dashboard shows the same findings to owners as a banner, see
 
 ## Coolify networking
 
-The current `docker-compose.prod.yml` is the **standalone Compose topology**. It contains its own Traefik
-container, binds host port 80, and declares a custom `qs-network`. Do not deploy that file unchanged as a
-standard Coolify Docker Compose application. Coolify supplies the reverse proxy and a network of its own;
-adding a second proxy and a second application network makes routing ambiguous.
-
-Coolify's documented network-safe topology is:
+The Coolify topology is self-contained: Coolify supplies only the application network. A remotely managed
+Cloudflare Tunnel enters that network through `cloudflared`, and a stack-owned Traefik routes the request.
+Neither service publishes a host port, so Coolify's global proxy remains free to serve unrelated applications
+on the same server without becoming part of this stack's ingress path.
 
 ```text
 Internet
    │
-Coolify Proxy ── Coolify-managed application network
+Cloudflare Edge
+   │  outbound tunnel
+cloudflared
+   │  http://traefik:80
+stack Traefik
    ├── /                  → dashboard:3000
    ├── /api and /health   → api-gateway:8000
    ├── /docs              → docs:8003  (strip /docs)
-   └── /ingest            → streak-importer:8006  (if enabled)
+   └── /ingest            → streak-importer:8006
 
 api-gateway ──→ core:8001 ──→ postgres:5432
 analysis     ──→ core:50051
@@ -328,31 +330,32 @@ allowlist alone does not make external exposure safe.
 
 ### Required Coolify setup
 
-Use the committed `docker-compose.coolify.yml` as the Coolify Compose file. It is the network-safe
-counterpart to `docker-compose.prod.yml` and must be updated in the same
-change whenever a service, image, internal port, or public route changes.
+Use the committed `docker-compose.coolify.yml` as the Coolify Compose file. It is the tunnel-backed
+counterpart to `docker-compose.prod.yml` and must be updated in the same change whenever a service, image,
+internal port, or public route changes.
 
 1. Choose the **Docker Compose** build pack, use repository root `/` as the base directory, and set the
    Compose file location to `docker-compose.coolify.yml`.
 2. Set `QS_VERSION`, `PUBLIC_HOST`, `ALLOWED_ORIGINS`, `POSTGRES_PASSWORD`, `JWT_SECRET`,
-   `INTERNAL_SERVICE_SECRET`, and `ENCRYPTION_KEY` in Coolify. Use `ALLOWED_ORIGINS=https://<host>` for
-   the normal single-origin deployment.
-3. Do not add the `traefik` or `cloudflared` services, a custom network, or host `ports:` mappings to the
-   Coolify file. Coolify's managed network and proxy must remain the only network and public entrypoint.
-4. Keep the service names unchanged. Internal URLs such as `http://core:8001`, `core:50051`,
-   `postgres:5432`, `nats:4222`, and `http://analysis:8010` then continue to resolve through Coolify's
-   internal Docker DNS.
-5. Use the HTTPS proxy routes defined by the file. The Gateway already provides
-   `/api/v1/ingest/apple-health` and `/api/v1/ingest/streak`; use `/ingest` for the short Streak route
-   only when that route is deliberately configured.
-6. Keep the proxy entrypoint aligned with the Coolify instance. The committed file uses `http`, as required
-   by the standard Coolify Traefik setup; do not copy the standalone stack's `web` entrypoint label into it.
+   `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY`, and `TUNNEL_TOKEN` in Coolify. Mark the token and secrets
+   as secret values. Use `ALLOWED_ORIGINS=https://<host>` for the normal single-origin deployment.
+3. Create a remotely managed tunnel in Cloudflare. Add one Published Application route whose hostname is
+   `PUBLIC_HOST`, whose path is empty, and whose service URL is **`http://traefik:80`**. Do not use
+   `localhost`: inside the cloudflared container that name means cloudflared itself.
+4. Do not assign a Coolify domain to dashboard, Gateway, docs, Traefik, or cloudflared. Do not add host
+   `ports:`, a custom network, or Coolify proxy labels. The tunnel is the only public entrypoint.
+5. Keep the service names unchanged. Internal URLs such as `http://core:8001`, `core:50051`,
+   `postgres:5432`, `nats:4222`, and `http://analysis:8010` resolve through the application network.
+6. Keep Cloudflare's incoming `Host` header unchanged. The file-provider routes require `PUBLIC_HOST` and
+   prioritize `/ingest`, `/docs`, and `/api` ahead of the dashboard catch-all.
+7. Let Cloudflare terminate public TLS and keep `COOKIE_SECURE=true`. The tunnel-to-Traefik hop stays private
+   HTTP inside the application network.
 
 The Coolify stack lets `core-migrate` create and upgrade the schema through Alembic. It deliberately does
 not bind-mount `infra/db/init.sql`: Coolify's remote Compose runner cannot reliably expose a repository file
 as a Docker-host bind source and may create a directory at the container target instead. PostgreSQL data is
-mounted at the HA image's actual `PGDATA` path, `/home/postgres/pgdata/data`; changing that target places the
-database in the disposable container layer instead of the named `pgdata` volume.
+kept in the named `pgdata` volume by explicitly setting `PGDATA` to its mount target. Without that override,
+the HA image's own default would place the real database in the disposable container layer.
 
 The dashboard, Gateway, and docs may share one public hostname because the proxy routes by path. Core,
 Analysis, PostgreSQL, NATS, and all polling importers remain private services with no public domain.
@@ -364,8 +367,11 @@ Before putting the hostname into service, verify both the public routes and the 
 ```bash
 # From the Coolify host, using the stack's Compose project.
 docker compose ps
+docker compose exec traefik traefik healthcheck --ping
 docker compose exec api-gateway python -c \
   "import urllib.request; urllib.request.urlopen('http://core:8001/health', timeout=5)"
+docker compose exec api-gateway python -c \
+  "import urllib.request; r=urllib.request.Request('http://traefik/health', headers={'Host':'your-host.example'}); urllib.request.urlopen(r, timeout=5)"
 docker compose exec analysis python -c \
   "import socket; socket.getaddrinfo('core', 50051)"
 
@@ -376,9 +382,10 @@ curl -fsS https://your-host.example/docs/
 ```
 
 If an internal hostname resolves to `127.0.0.1`, a service name does not resolve, or a public request
-returns a Coolify 404/504, inspect the stack for a leftover custom network or an embedded Traefik service
-before changing application URLs. The service-to-service names above are the contract; `localhost` is the
-container itself, not another service.
+returns 404/502, inspect cloudflared and the stack Traefik logs. A Cloudflare route to `localhost` cannot
+reach Traefik; its service URL must be `http://traefik:80`. A Traefik 404 usually means the incoming Host
+does not equal `PUBLIC_HOST`. The service-to-service names above are the contract; `localhost` is always the
+current container, not another service.
 
 For a standalone host, continue using `docker-compose.prod.yml` behind its embedded Traefik or another
 external reverse proxy. The standalone file and the Coolify-managed network must not be mixed.
@@ -389,6 +396,8 @@ external reverse proxy. The standalone file and the Coolify-managed network must
 | --- | --- |
 | `denied` on `pull` | The packages are still private. See [package visibility](#one-off-package-visibility). |
 | `required variable JWT_SECRET is missing` | Exactly as intended. Set the three secrets. |
+| `required variable TUNNEL_TOKEN is missing` | Set the remotely managed tunnel token in Coolify and keep it secret. |
+| Cloudflare reports the tunnel healthy but returns 502 | Set the Published Application service URL to `http://traefik:80`, not `localhost`. |
 | `manifest unknown` | `QS_VERSION` points at a version for which there is no release. |
 | Importers run but import nothing | `INTERNAL_SERVICE_SECRET` has to be identical on Core **and on all eight importers** — in the old production compose file it was missing from the importers, so every credential fetch was rejected. |
 | The dashboard loads, API calls fail | The UI calls its own origin. Check that Traefik routes `/api` to the Gateway and that `PUBLIC_HOST` is right. |

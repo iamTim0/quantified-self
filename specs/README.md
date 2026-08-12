@@ -97,6 +97,10 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `NoProtocolSessionState` | `test_no_protocol_session_state` | Analysis MCP |
 | `RequestIdReachesCore` | `test_request_id_reaches_core` | Analysis MCP |
 | `RevokedMcpSessionRejectedImmediately` | `test_revoked_mcp_session_is_rejected_immediately` | Analysis MCP / Core |
+| `TunnelTargetsOnlyStackProxy` | `test_tunnel_targets_only_stack_proxy` | Coolify ingress |
+| `NoPrivateServicePublicExposure` | `test_no_private_service_public_exposure` | Coolify ingress |
+| `TunnelRequiresHealthyProxy` | `test_tunnel_requires_healthy_proxy` | Coolify ingress |
+| `SpecificRoutesPrecedeDashboard` | `test_specific_routes_precede_dashboard` | Coolify ingress |
 
 ## Adding New Specs
 
