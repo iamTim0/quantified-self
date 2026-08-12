@@ -192,7 +192,7 @@ deployment itself:
 | `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | The Traefik dashboard, bound **to loopback only**. |
 | `POSTGRES_PASSWORD` | `qs_dev_password` | Reachable only inside the compose network. See the note below. |
 | `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | The Gateway's CORS origins. The default is its own origin under both schemes — **not** `*`: the Gateway runs with `allow_credentials=True`, and a wildcard makes Starlette reflect back whichever origin asks. Both schemes, because a proxy or tunnel in front of the stack may terminate TLS and `QS_HTTP_PORT` is deliberately http. |
-| `TUNNEL_TOKEN` | empty | Only with `--profile tunnel`. Leave it empty if no Cloudflare tunnel is used — without the profile the container does not start at all. |
+| `TUNNEL_TOKEN` | empty | Your Cloudflare Tunnel token. The `cloudflared` container starts automatically in production to secure access. Leave empty if you don't use it, but you'll need to set `QS_BIND_IP=0.0.0.0` to expose the ports. |
 
 `POSTGRES_PASSWORD` is deliberately not a `:?` required value like the three secrets: PostgreSQL sets the
 password **once**, while initializing an empty volume. A new value against an existing volume changes

@@ -543,7 +543,7 @@ jobs:
           # \`docker compose run --rm core python -m core.create_owner\`.
           ALLOW_REGISTRATION=false
 
-          # Optional Cloudflare Tunnel; only used with \`--profile tunnel\`.
+          # Cloudflare Tunnel token; required if using the default secure tunnel setup.
           TUNNEL_TOKEN=
           EOF
 
