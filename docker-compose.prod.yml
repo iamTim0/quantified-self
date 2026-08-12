@@ -128,7 +128,7 @@ services:
       #   ssh -L 8081:127.0.0.1:8081 user@host
       - "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080"
     environment:
-      - DOCKER_API_VERSION=1.41
+      - DOCKER_API_VERSION=1.44
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
