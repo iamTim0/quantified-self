@@ -334,7 +334,7 @@ jobs:
             org.opencontainers.image.licenses=AGPL-3.0-only
 
       - name: Attest provenance
-        if: needs.guard.outputs.push == 'true'
+        if: needs.guard.outputs.push == 'true' && !github.event.repository.private
         # Signed provenance is worth having and is not worth failing a release
         # over. Without this, an attestation hiccup -- a rate limit across fourteen
         # parallel calls, or a repository that is not eligible while it is still
