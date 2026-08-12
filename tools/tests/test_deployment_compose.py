@@ -26,7 +26,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 #: reason as the deployed ones: it drifted the same way.
 TOPOLOGIES = [
     "docker-compose.prod.yml",
-    "docker-compose.coolify.yml",
     "infra/docker-compose.yml",
 ]
 

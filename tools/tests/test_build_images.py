@@ -74,28 +74,10 @@ def test_production_compose_and_manifest_name_the_same_images():
     assert in_compose == {image.name for image in IMAGES}
 
 
-def test_coolify_compose_and_manifest_name_the_same_images():
-    """The Coolify topology must publish exactly the images it intends to run."""
-    text = COOLIFY_COMPOSE.read_text(encoding="utf-8")
-    in_compose = set(re.findall(r"\$\{QS_IMAGE_PREFIX:-[^}]+\}/([a-z0-9-]+):", text))
-    assert in_compose == {image.name for image in IMAGES}
-
-
-def test_coolify_compose_leaves_networking_to_coolify():
-    """Coolify's proxy must see one managed network, not a second embedded topology."""
-    text = COOLIFY_COMPOSE.read_text(encoding="utf-8")
-    assert not re.search(r"^\s+networks:\s*$", text, re.MULTILINE)
-    assert not re.search(r"^\s+ports:\s*$", text, re.MULTILINE)
-    assert not re.search(r"^\s+traefik:\s*$", text, re.MULTILINE)
-    assert not re.search(r"^\s+cloudflared:\s*$", text, re.MULTILINE)
-    assert "traefik.http.routers.qs-coolify-api.entrypoints=http" in text
-
-
-def test_release_bundle_contains_the_coolify_topology():
-    """A release must ship the maintained Coolify file alongside standalone Compose."""
+def test_release_bundle_contains_the_prod_topology():
+    """A release must ship the maintained prod compose file."""
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     assert 'cp docker-compose.prod.yml "$bundle/"' in workflow
-    assert 'cp docker-compose.coolify.yml "$bundle/"' in workflow
 
 
 def test_matrix_shape_matches_what_the_workflow_reads():
