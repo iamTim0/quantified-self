@@ -54,7 +54,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # timescaledb-ha keeps PGDATA here, not under /var/lib/postgresql/data.
+      - pgdata:/home/postgres/pgdata/data
       # Creates the schema for an empty volume and seeds nothing. Alembic owns
       # every change after that. Shipped inside the release bundle, so a deploy
       # without a checkout still has it at this path.
