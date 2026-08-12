@@ -89,7 +89,6 @@ _allowed_origins = [o.strip() for o in settings.ALLOWED_ORIGINS.split(",") if o.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_origin_regex=r"https://.*\.trycloudflare\.com",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=[
@@ -239,7 +238,7 @@ async def proxy_apple_health_ingest(request: Request):
     target_url = f"{settings.APPLE_HEALTH_IMPORTER_URL}/ingest"
     forwarded_headers = {
         k: v for k, v in request.headers.items()
-        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() in {"x-tenant-id", "x-api-key"}
+        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() == "x-api-key"
     }
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 
@@ -275,7 +274,7 @@ async def proxy_streak_ingest(request: Request):
     target_url = f"{settings.STREAK_IMPORTER_URL}/ingest"
     forwarded_headers = {
         k: v for k, v in request.headers.items()
-        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() in {"x-tenant-id", "x-api-key"}
+        if k.lower() in _SAFE_FORWARD_HEADERS or k.lower() == "x-api-key"
     }
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 

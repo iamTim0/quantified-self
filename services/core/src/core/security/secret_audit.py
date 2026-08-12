@@ -66,12 +66,9 @@ def _findings(*, jwt_secret: str, encryption_key: str, internal_secret: str) -> 
             "credentials *before* changing it: python -m core.rotate_encryption_key "
             "--old <current> --new <new>"
         )
-    # Empty is legitimate here: core.security.tokens derives a value from
-    # JWT_SECRET when this is unset, and that derivation is only as good as
-    # JWT_SECRET — which is checked above. A *published* value never is.
-    if internal_secret in PUBLISHED_DEFAULTS:
+    if not internal_secret or internal_secret in PUBLISHED_DEFAULTS:
         problems.append(
-            f"INTERNAL_SERVICE_SECRET is a published default. Generate one with: {_GENERATE}"
+            f"INTERNAL_SERVICE_SECRET is unset or a published default. Generate one with: {_GENERATE}"
         )
     return problems
 

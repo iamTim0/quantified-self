@@ -38,7 +38,13 @@ class WhoopClient:
             if res.status_code == 429:
                 raise WhoopRateLimitError("WHOOP API rate limit exceeded.")
             if not res.is_success:
-                raise WhoopApiError(f"WHOOP API error {res.status_code}: {res.text}")
+                safe_msg = "Unknown error"
+                try:
+                    err_payload = res.json()
+                    safe_msg = err_payload.get("message", err_payload.get("error", "Unknown error"))
+                except Exception:
+                    pass
+                raise WhoopApiError(f"WHOOP API error {res.status_code}: {safe_msg}")
             payload = res.json()
             if not isinstance(payload, dict):
                 raise WhoopApiError("Invalid JSON response payload from WHOOP API.")

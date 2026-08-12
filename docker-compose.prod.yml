@@ -112,7 +112,7 @@ services:
   # would make `PathPrefix('/')` outrank nothing and depend on how the other rules
   # happen to be spelled.
   traefik:
-    image: traefik:v3.1
+    image: traefik:latest
     container_name: qs-traefik
     restart: always
     command:

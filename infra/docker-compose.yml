@@ -24,7 +24,7 @@ services:
   nats:
     image: nats:2.10-alpine
     ports:
-      - "4222:4222" # Client port
+      - "127.0.0.1:4222:4222" # Client port
       - "127.0.0.1:8222:8222" # Monitoring port — bound to localhost only (SECURITY H5)
     # `--http_port` is what makes the published monitoring port above answer at all.
     # Without it nothing listened there, so the one place that shows a consumer's pending
@@ -69,9 +69,9 @@ services:
       context: ..
       dockerfile: services/core/Dockerfile
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"
       # gRPC read API, consumed by the Analysis Service.
-      - "50051:50051"
+      - "127.0.0.1:50051:50051"
     depends_on:
       postgres:
         condition: service_healthy
