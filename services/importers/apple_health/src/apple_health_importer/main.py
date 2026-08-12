@@ -93,7 +93,7 @@ async def _sweep_uploads_forever() -> None:
         await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
         try:
             discarded = _uploads.sweep()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Sweeping unfinished uploads failed: %s", exc)
             continue
         if discarded:
@@ -107,7 +107,7 @@ async def lifespan(app: FastAPI):
     try:
         nc_client = await nats.connect(settings.NATS_URL)
         logger.info("Connected to NATS JetStream successfully.")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.warning(f"Could not connect to NATS on startup: {e}")
 
     sweeper = asyncio.create_task(_sweep_uploads_forever())
@@ -194,7 +194,7 @@ async def ingest_health_auto_export_payload(
 
     try:
         payload = await request.json()
-    except Exception:
+    except Exception:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             source_id,
@@ -217,7 +217,7 @@ async def ingest_health_auto_export_payload(
         raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
 
     # Prevent silent data loss: Return 503 if NATS is unavailable so webhook client retries delivery
-    if nc_client is None or not nc_client.is_connected:
+    if nc_client is None or not nc_client.is_connected:  # noqa: SIM102
         # Check if running in test environment where NATS is mocked/disabled
         if not getattr(request.app.state, "testing", False):
             await close_sync_run(
@@ -239,7 +239,7 @@ async def ingest_health_auto_export_payload(
         events = transform_health_auto_export_json(
             payload, tenant_id=tenant_id, source_id=source_id, report=field_report
         )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             source_id,
@@ -326,7 +326,7 @@ async def _spool_upload(request: Request, limit: int) -> str:
     holding the whole archive. Counted while it arrives, because `Content-Length` is a
     claim by the sender.
     """
-    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
     total = 0
     try:
         async for chunk in request.stream():
@@ -450,7 +450,7 @@ async def _import_archive(
             message=str(exc), points_received=published,
         )
         return
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error("[req_id=%s] Reading the archive failed after %d points: %s", req_id, published, exc)
         await close_sync_run(
             tenant_id, source_id, sync_run_id, req_id=req_id, status="error",
@@ -532,7 +532,7 @@ async def upload_export_archive(
             message=str(exc.detail),
         )
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             target.source_id,

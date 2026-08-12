@@ -73,7 +73,7 @@ async def record_api_key_failure(
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             await client.post(url, headers=internal_headers(req_id), json=payload)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.debug("[req_id=%s] Could not record rejected Apple Health request: %s", req_id, exc)
 
 
@@ -124,7 +124,7 @@ async def resolve_api_key(presented_key: str | None, req_id: str) -> ApiKeyIdent
                 headers=internal_headers(req_id),
                 json={"key_hash": key_hash, "source_type": settings.SOURCE_TYPE},
             )
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         # Never fall back to "allow" when the authority is unavailable.
         logger.error("[req_id=%s] Could not reach Core to resolve API key: %s", req_id, exc)
         raise HTTPException(

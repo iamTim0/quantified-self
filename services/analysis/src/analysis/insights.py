@@ -21,10 +21,11 @@ from __future__ import annotations
 
 import math
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from statistics import fmean, median, pstdev
-from typing import Any, Iterable, Literal
+from typing import Any, Literal
 
 from shared_schemas.metrics import METRIC_CATALOG, Cadence
 
@@ -276,7 +277,7 @@ def lagged_correlations(
 
     for i, left in enumerate(metrics):
         for right in metrics:
-            if right == left or (right in metrics[:i] and left in metrics):
+            if right == left or (right in metrics[:i] and left in metrics):  # noqa: SIM102
                 # Evaluate each ordered pair once; direction matters for lags.
                 if metrics.index(right) < i:
                     continue

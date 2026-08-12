@@ -30,7 +30,7 @@ def filter_log_line(
         return False
     if level and f"[{level.upper()}]" not in line:
         return False
-    if query and query.lower() not in line.lower():
+    if query and query.lower() not in line.lower():  # noqa: SIM103
         return False
     return True
 

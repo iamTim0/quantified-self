@@ -38,7 +38,7 @@ EXPORT_XML = """<?xml version="1.0" encoding="UTF-8"?>
 
 def _spooled(content: bytes) -> str:
     """A file where the upload endpoint would have put one, for the reader to consume."""
-    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+    handle = tempfile.NamedTemporaryFile(suffix=".zip", delete=False)  # noqa: SIM115
     handle.write(content)
     handle.close()
     return handle.name

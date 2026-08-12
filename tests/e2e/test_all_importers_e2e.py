@@ -16,17 +16,17 @@ Verifies Rule 2 (Tenant Isolation) & Rule 4 (Deterministic Idempotency Key).
 
 import uuid
 from datetime import datetime, timezone
-import pytest
 
-from yazio_importer.transformer import transform_consumed_items
-from dawarich_importer.transformer import transform_dawarich_points
-from whoop_importer.transformer import transform_whoop_records
+import pytest
 from apple_health_importer.transformer import transform_health_auto_export_json
-from streak_importer.transformer import transform_streak_export_json
 from calendar_importer.ics import CalendarEvent
 from calendar_importer.transformer import transform_events as transform_calendar_events
+from dawarich_importer.transformer import transform_dawarich_points
 from home_assistant_importer.transformer import transform as transform_home_assistant
+from streak_importer.transformer import transform_streak_export_json
 from weather_importer.transformer import transform as transform_weather
+from whoop_importer.transformer import transform_whoop_records
+from yazio_importer.transformer import transform_consumed_items
 
 
 @pytest.fixture
@@ -206,7 +206,7 @@ def test_streak_importer_e2e_mock_import(mock_tenant_context):
 
 
 def _occurrence(**overrides) -> CalendarEvent:
-    base = dict(
+    base = dict(  # noqa: C408
         uid="event-1",
         summary="Deep Work",
         start=datetime(2026, 8, 4, 10, 0, tzinfo=timezone.utc),

@@ -66,7 +66,7 @@ async def test_get_points_follows_pagination():
     ]
     calls: list[int] = []
 
-    async def fake_get(self, url, headers=None, params=None):  # noqa: ANN001
+    async def fake_get(self, url, headers=None, params=None):
         page = params.get("page", 1)
         calls.append(page)
         body = pages[page - 1] if page <= len(pages) else []
@@ -91,7 +91,7 @@ async def test_get_points_stops_when_server_ignores_page_parameter():
     page_one = [{"id": i, "latitude": 52.0, "longitude": 13.0} for i in range(500)]
     calls = {"n": 0}
 
-    async def fake_get(self, url, headers=None, params=None):  # noqa: ANN001
+    async def fake_get(self, url, headers=None, params=None):
         calls["n"] += 1
         return httpx.Response(
             status_code=200,
@@ -113,7 +113,7 @@ async def test_get_points_single_short_page_makes_one_request():
     """The common case must not cost an extra round trip."""
     calls = {"n": 0}
 
-    async def fake_get(self, url, headers=None, params=None):  # noqa: ANN001
+    async def fake_get(self, url, headers=None, params=None):
         calls["n"] += 1
         return httpx.Response(
             status_code=200,

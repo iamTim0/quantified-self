@@ -94,7 +94,7 @@ async def report_sync_result_to_core(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=headers, json=payload)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not report sync result to Core: {e}")
 
 
@@ -131,7 +131,7 @@ async def get_connector_credentials_from_core(
                         return None, None, None
                     return data["access_token"], source_id, data.get("config", {})
             return None, None, None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
             return None, None, None
 
@@ -228,7 +228,7 @@ async def process_task_message(msg, nc: nats.NATS):
         finally:
             active_syncs.discard(lock_key)
             await msg.ack()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Error processing task message: {e}")
 
 
@@ -240,7 +240,7 @@ async def main():
     js = nc.jetstream()
     try:
         await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.info(f"Stream 'tasks' check: {e}")
 
     await js.subscribe(

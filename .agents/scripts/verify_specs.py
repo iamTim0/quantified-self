@@ -43,7 +43,7 @@ DEFAULT_TIMEOUT_SECONDS = 180
 def _docker_available() -> bool:
     if not shutil.which("docker"):
         return False
-    probe = subprocess.run(
+    probe = subprocess.run(  # noqa: PLW1510
         ["docker", "image", "inspect", IMAGE],
         capture_output=True,
         text=True,
@@ -53,7 +53,7 @@ def _docker_available() -> bool:
 
 def _build_image() -> bool:
     print(f"Building {IMAGE} (first run only, downloads ~340 MB)...", flush=True)
-    build = subprocess.run(
+    build = subprocess.run(  # noqa: PLW1510
         [
             "docker", "build",
             "-f", str(REPO_ROOT / "infra" / "fizzbee.Dockerfile"),
@@ -80,7 +80,7 @@ def _command_for(spec: Path, native: str | None) -> list[str]:
 def run_spec(spec: Path, native: str | None, timeout: int) -> tuple[bool, str, float]:
     started = time.monotonic()
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: PLW1510
             _command_for(spec, native),
             cwd=REPO_ROOT,
             capture_output=True,

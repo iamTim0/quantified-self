@@ -18,7 +18,7 @@ def get_modified_files() -> list[str]:
                 if len(parts) == 2:
                     files.append(parts[1])
         return files
-    except Exception:
+    except Exception:  # noqa: BLE001
         return []
 
 CODE_ROOTS = ("services/", "packages/", "specs/")
@@ -57,7 +57,7 @@ def validate_markdown_links(filepath: str) -> list[str]:
     base_dir = os.path.dirname(filepath) or "."
 
     for text, target in links:
-        if target.startswith("http://") or target.startswith("https://") or target.startswith("#") or target.startswith("mailto:"):
+        if target.startswith("http://") or target.startswith("https://") or target.startswith("#") or target.startswith("mailto:"):  # noqa: PIE810
             continue
         
         # Clean query/hash

@@ -1,7 +1,8 @@
 """Unit tests for tools.log_query."""
-from tools.log_query import filter_log_line, query_logs
-import tempfile
 import os
+import tempfile
+
+from tools.log_query import filter_log_line, query_logs
 
 
 def test_filter_by_req_id_match():

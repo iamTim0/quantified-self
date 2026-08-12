@@ -62,7 +62,7 @@ def _value_for(node: ast.Dict, wanted: str) -> ast.AST | None:
 def _mentions_provenance(node: ast.AST) -> bool:
     """True if this subtree writes `provider_value` or calls `provenance()`."""
     for inner in ast.walk(node):
-        if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):
+        if isinstance(inner, ast.Call) and isinstance(inner.func, ast.Name):  # noqa: SIM102
             if inner.func.id == "provenance":
                 return True
         if isinstance(inner, ast.Constant) and inner.value == "provider_value":

@@ -16,20 +16,19 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
+from core.db.models import DataSource
 from core.db.session import engine as core_engine
 from core.main import app, get_session
-from core.db.models import DataSource
+from fastapi.testclient import TestClient
 
 from tests.e2e.e2e_helpers import (
     auth_headers,
-    init_e2e_db,
-    override_get_session,
     cleanup_test_tenant,
     create_test_tenant,
     e2e_session_maker,
+    init_e2e_db,
+    override_get_session,
 )
-
 
 # Entering the TestClient context manager runs the app's lifespan. Without this
 # flag that would audit secrets, start the gRPC server and open a NATS consumer
@@ -158,7 +157,7 @@ async def test_dashboard_quality_tab_e2e(api_client):
         headers = auth_headers(tenant_id)
 
         # 1. Check Gaps endpoint
-        today = date.today()
+        today = date.today()  # noqa: DTZ011
         start = today - timedelta(days=2)
         res_gaps = api_client.get(f"/api/v1/data/quality/gaps?start_date={start.isoformat()}&end_date={today.isoformat()}", headers=headers)
         assert res_gaps.status_code == 200

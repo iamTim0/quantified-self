@@ -49,7 +49,7 @@ HISTORY_RESPONSE = [
 
 
 def _patch(monkeypatch, response: httpx.Response, capture: dict | None = None):
-    async def fake_get(self, url, headers=None, params=None):  # noqa: ANN001
+    async def fake_get(self, url, headers=None, params=None):
         if capture is not None:
             capture["url"] = url
             capture["headers"] = headers or {}

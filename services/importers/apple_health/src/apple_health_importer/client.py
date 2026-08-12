@@ -126,7 +126,7 @@ async def get_connector_credentials_from_core(
                         return None, None, None
                     return data.get("access_token"), source_id, data.get("config", {})
             return None, None, None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"Could not reach Core Data Service to fetch connector token: {e}")
             return None, None, None
 
@@ -159,7 +159,7 @@ async def open_sync_run(
             if res.status_code == 201:
                 return res.json().get("sync_run_id")
             logger.warning("Could not open a sync run: Core returned %s", res.status_code)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not open a sync run: {exc}")
     return None
 
@@ -187,7 +187,7 @@ async def close_sync_run(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not report sync result to Core: {exc}")
 
 
@@ -219,7 +219,7 @@ async def report_sync_progress(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not report sync progress to Core: {exc}")
 
 
@@ -244,5 +244,5 @@ async def send_field_report(
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not send the field report to Core: {exc}")

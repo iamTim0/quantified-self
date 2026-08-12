@@ -6,15 +6,14 @@ import json
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import jwt
-import pytest
-from fastapi.testclient import TestClient
-
 import analysis.chat_api as chat_module
 import analysis.mcp_server as mcp_module
+import jwt
+import pytest
 from analysis.codex_app_server import ToolContext
 from analysis.config import settings
 from analysis.main import app
+from fastapi.testclient import TestClient
 
 TENANT_A = "22222222-2222-2222-2222-222222222222"
 TENANT_B = "33333333-3333-3333-3333-333333333333"

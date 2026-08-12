@@ -706,7 +706,7 @@ async def proxy_next_websocket(websocket: WebSocket, path: str):
                     try:
                         async for msg in client_ws:
                             await websocket.send_text(msg)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
 
                 async def forward_to_target():
@@ -714,12 +714,12 @@ async def proxy_next_websocket(websocket: WebSocket, path: str):
                         while True:
                             msg = await websocket.receive_text()
                             await client_ws.send(msg)
-                    except Exception:
+                    except Exception:  # noqa: BLE001, S110
                         pass
 
                 await asyncio.gather(forward_to_client(), forward_to_target())
                 return
-        except Exception:
+        except Exception:  # noqa: BLE001, S112
             continue
 
     await websocket.close()

@@ -35,11 +35,11 @@ from shared_schemas.metrics import METRIC_CATALOG
 
 from apple_health_importer.transformer import (
     SLEEP_STAGE_MAP,
-    route_points,
     canonical_name,
     generate_idempotency_key,
     normalise_value,
     parse_timestamp,
+    route_points,
 )
 
 logger = logging.getLogger(__name__)

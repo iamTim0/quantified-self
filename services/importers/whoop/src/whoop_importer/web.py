@@ -75,7 +75,7 @@ async def _sweep_uploads_forever() -> None:
         await asyncio.sleep(_SWEEP_INTERVAL_SECONDS)
         try:
             discarded = _uploads.sweep()
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Sweeping unfinished uploads failed: %s", exc)
             continue
         if discarded:
@@ -186,7 +186,7 @@ async def _publish(
                 event["sync_run_id"] = sync_run_id
             await js.publish("qs.ingest.whoop", json.dumps(event).encode("utf-8"))
             published += 1
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error("[req_id=%s] Publishing the export failed after %d points: %s", req_id, published, exc)
         await close_sync_run(
             tenant_id,
@@ -268,7 +268,7 @@ async def _accept_export(
             message=str(exc.detail),
         )
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             target.source_id,
@@ -289,7 +289,7 @@ async def _accept_export(
     )
 
     nc = getattr(state, "nats_client", None)
-    if nc is None or not nc.is_connected:
+    if nc is None or not nc.is_connected:  # noqa: SIM102
         if not getattr(state, "testing", False):
             await close_sync_run(
                 tenant_id,
@@ -402,7 +402,7 @@ async def upload_export(
             message=str(exc.detail),
         )
         raise
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             target.source_id,

@@ -108,7 +108,7 @@ def test_a_naive_datetime_is_read_as_utc():
     time. The importers normalize before they get here — this is the floor, not the
     contract.
     """
-    assert idempotency_key(TENANT, SOURCE, "steps", datetime(2026, 5, 1)) == idempotency_key(
+    assert idempotency_key(TENANT, SOURCE, "steps", datetime(2026, 5, 1)) == idempotency_key(  # noqa: DTZ001
         TENANT, SOURCE, "steps", datetime(2026, 5, 1, tzinfo=timezone.utc)
     )
 

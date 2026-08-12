@@ -26,9 +26,9 @@ def get_container_logs() -> str:
     """Fetch recent logs from cloudflared container via docker compose."""
     cmd = ["docker", "compose", "-f", "infra/docker-compose.yml", "logs", "--tail=100", "cloudflared"]
     try:
-        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=10)  # noqa: PLW1510
         return res.stdout + "\n" + res.stderr
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         return f"Error fetching docker logs: {e}"
 
 

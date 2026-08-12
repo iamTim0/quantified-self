@@ -127,7 +127,7 @@ def lint(path: Path) -> list[Finding]:
             )
 
         target = _assignment_target(line) if not line.startswith((" ", "\t")) else None
-        if target is not None and not in_block:
+        if target is not None and not in_block:  # noqa: SIM102
             if target.islower() or (target.startswith("_") and not target.isupper()):
                 findings.append(
                     Finding(

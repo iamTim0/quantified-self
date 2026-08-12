@@ -38,7 +38,7 @@ async def credentials(
                 headers=headers,
             )
             return response.json() if response.status_code == 200 else None
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.warning(f"[req_id={request_id}] Failed to fetch credentials for tenant {tenant_id}: {e}")
             return None
 
@@ -63,7 +63,7 @@ async def report_sync_result_to_core(
             await client.post(
                 url, headers=internal_headers(task.request_id, task.tenant_id), json=payload
             )
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001
             logger.warning(f"Could not report sync result to Core: {exc}")
 
 
@@ -135,7 +135,7 @@ async def process(message: Any, connection: Any) -> None:
         )
         if task:
             await report_sync_result_to_core(task, status="error", message=str(exc)[:500])
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.error(f"Error processing home_assistant task: {exc}")
         if task:
             await report_sync_result_to_core(
@@ -151,7 +151,7 @@ async def main() -> None:
     stream = connection.jetstream()
     try:
         await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     await stream.subscribe(
         "qs.task.sync.home_assistant",

@@ -39,10 +39,10 @@ async def main():
         logger.error(f"File not found: {file_path}")
         return
 
-    with open(file_path, "r", encoding="utf-8") as f:
+    with open(file_path, "r", encoding="utf-8") as f:  # noqa: ASYNC230
         try:
             payload = json.load(f)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to parse JSON file {file_path}: {e}")
             return
 

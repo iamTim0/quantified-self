@@ -42,7 +42,7 @@ class WhoopClient:
                 try:
                     err_payload = res.json()
                     safe_msg = err_payload.get("message", err_payload.get("error", "Unknown error"))
-                except Exception:
+                except Exception:  # noqa: BLE001, S110
                     pass
                 raise WhoopApiError(f"WHOOP API error {res.status_code}: {safe_msg}")
             payload = res.json()
