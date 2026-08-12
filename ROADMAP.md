@@ -197,3 +197,4 @@ lets the tenant answer it.
 - [ ] Verify Core-only database ownership, gRPC Analysis access, NATS importer flow, tenant filters, idempotency, `X-Request-ID`, secret handling and no shared mutable state.
 - [x] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
 - [ ] Run linting, type checking, unit/integration/E2E tests and the MkDocs build; record unavailable external services, failures, risks and follow-up work.
+- [ ] **Automated Release Workflow**: Implement a release workflow that automatically derives the version bump from conventional commits (e.g. `feat:`, `fix:`), generates changelogs, and publishes releases.
