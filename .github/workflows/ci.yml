@@ -402,6 +402,7 @@ jobs:
             --exclude '^https?://localhost'
             --exclude '^https?://127\.0\.0\.1'
             --exclude '^https?://example\.com'
+            --exclude '^https?://platform\.openai\.com'
             --exclude 'file://.*/legal/'
             'docs/**/*.md' 'README.md'
           fail: true
