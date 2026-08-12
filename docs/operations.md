@@ -311,4 +311,7 @@ the connector credentials is worthless.
 - The scheduler is single-flight through a transaction-scoped Postgres advisory lock. Several Core
   replicas are therefore unproblematic: exactly one of them plans per tick. If it dies, the connection
   releases the lock.
-- The Analysis service is stateless and holds no database connection; it scales independently of Core.
+- Analysis holds no database connection. Deterministic analysis and the MCP endpoint
+  scale independently of Core without sticky routing. Codex chat threads are ephemeral
+  process state, so `/api/v1/chat/turn` needs sticky routing when Analysis has multiple
+  replicas; see [AI chat](features/ai-chat.md#known-limitations).

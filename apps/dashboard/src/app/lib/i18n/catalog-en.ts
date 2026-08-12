@@ -37,6 +37,7 @@ export const en = {
   "sidebar.explorer": "Data explorer",
   "sidebar.quality": "Data quality",
   "sidebar.analysis": "Analysis",
+  "sidebar.chat": "AI chat",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Documentation",
   "sidebar.docsTitle": "Open the platform documentation",
@@ -818,6 +819,42 @@ export const en = {
   // ── Analysis sections ───────────────────────────────────────────────────
   "analysis.tabTrends": "Trends",
   "analysis.tabRoutines": "Routines",
+
+  // ── AI chat ────────────────────────────────────────────────────────────────
+  "chat.title": "AI chat",
+  "chat.subtitle": "Ask questions about your personal metrics and patterns.",
+  "chat.statusChecking": "Checking chat availability…",
+  "chat.statusReady": "ChatGPT {plan}",
+  "chat.newConversation": "New chat",
+  "chat.unavailableTitle": "Codex is not available",
+  "chat.unavailableBody":
+    "Install the Codex CLI next to the Analysis service or enable it in the service image to use chat.",
+  "chat.loginTitle": "Connect your ChatGPT subscription",
+  "chat.loginBody":
+    "Sign in through the official Codex device flow. The platform never receives or stores your ChatGPT password or token.",
+  "chat.loginAction": "Connect ChatGPT",
+  "chat.deviceInstruction": "Open the sign-in page and enter this one-time code.",
+  "chat.deviceCodeLabel": "One-time code",
+  "chat.copyCode": "Copy the one-time code",
+  "chat.openLogin": "Open ChatGPT sign-in",
+  "chat.waitingForLogin": "This page will continue automatically after sign-in.",
+  "chat.welcomeTitle": "What would you like to understand?",
+  "chat.welcomeBody":
+    "Ask about trends, data quality, unusual values, or relationships between your metrics. Data is read through tenant-scoped, read-only tools.",
+  "chat.userMessage": "Your message",
+  "chat.assistantMessage": "AI assistant message",
+  "chat.inputPlaceholder": "Ask about your data…",
+  "chat.inputLabel": "Message for the AI assistant",
+  "chat.send": "Send message",
+  "chat.sending": "Sending message",
+  "chat.disclaimer":
+    "AI output may be wrong. Relationships are not causes, and health interpretations are not medical advice.",
+  "chat.errorStatus": "Chat availability could not be checked.",
+  "chat.errorLogin": "ChatGPT sign-in could not be started.",
+  "chat.errorCopy": "The code could not be copied.",
+  "chat.errorLoginRequired": "Connect your ChatGPT subscription before sending a message.",
+  "chat.errorResponse": "The assistant could not complete this response.",
+  "chat.errorStream": "The chat connection was interrupted.",
   // --- end of catalogue ---
 } satisfies Record<string, string>;
 

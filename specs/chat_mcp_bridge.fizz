@@ -1,0 +1,95 @@
+# Fizzbee Formal Specification: Tenant-bound AI Chat over Stateless MCP
+#
+# Models Browser -> Gateway -> Analysis chat bridge -> Codex app server ->
+# stateless MCP -> Core. Conversation state belongs to the authenticated user;
+# every data tool call authenticates independently and carries the same request
+# identity to Core.
+
+PRINCIPALS = ["tenant_a:user_a", "tenant_b:user_b"]
+REQUEST_IDS = ["req_1", "req_2"]
+
+action Init:
+    platform_principal = "NONE"
+    thread_principal = "NONE"
+    mcp_principal = "NONE"
+    requested_thread_principal = "NONE"
+    request_id = "NONE"
+    core_request_id = "NONE"
+    platform_session_valid = False
+    response_returned = False
+    tool_result_returned = False
+    write_count = 0
+
+atomic action StartChat:
+    platform_principal = oneof(PRINCIPALS)
+    thread_principal = platform_principal
+    requested_thread_principal = "NONE"
+    mcp_principal = "NONE"
+    core_request_id = "NONE"
+    request_id = oneof(REQUEST_IDS)
+    platform_session_valid = True
+    response_returned = True
+    tool_result_returned = False
+
+atomic action ContinueOwnChat:
+    require thread_principal != "NONE"
+    platform_principal = thread_principal
+    requested_thread_principal = thread_principal
+    mcp_principal = "NONE"
+    core_request_id = "NONE"
+    request_id = oneof(REQUEST_IDS)
+    platform_session_valid = True
+    response_returned = True
+    tool_result_returned = False
+
+atomic action RejectForeignThread:
+    require thread_principal != "NONE"
+    platform_principal = oneof(PRINCIPALS)
+    require platform_principal != thread_principal
+    requested_thread_principal = thread_principal
+    mcp_principal = "NONE"
+    core_request_id = "NONE"
+    platform_session_valid = True
+    response_returned = False
+    tool_result_returned = False
+
+atomic action RejectRevokedChatSession:
+    platform_principal = oneof(PRINCIPALS)
+    requested_thread_principal = "NONE"
+    mcp_principal = "NONE"
+    core_request_id = "NONE"
+    platform_session_valid = False
+    response_returned = False
+    tool_result_returned = False
+
+atomic action InvokeReadOnlyMcpTool:
+    require response_returned
+    require platform_session_valid
+    # The bridge supplies identity from the verified platform credential. The
+    # model never supplies or changes the MCP principal.
+    mcp_principal = platform_principal
+    core_request_id = request_id
+    tool_result_returned = True
+
+always assertion ChatRequiresValidPlatformSession:
+    if response_returned:
+        return platform_session_valid
+    return True
+
+always assertion ThreadBoundToPlatformPrincipal:
+    if requested_thread_principal != "NONE" and response_returned:
+        return requested_thread_principal == platform_principal
+    return True
+
+always assertion ToolCallUsesPlatformPrincipal:
+    if tool_result_returned:
+        return mcp_principal == platform_principal
+    return True
+
+always assertion ChatToolsAreReadOnly:
+    return write_count == 0
+
+always assertion ChatRequestIdReachesCore:
+    if tool_result_returned:
+        return core_request_id == request_id
+    return True

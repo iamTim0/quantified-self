@@ -37,6 +37,7 @@ export const de: Record<MessageKey, string> = {
   "sidebar.explorer": "Datenexplorer",
   "sidebar.quality": "Datenqualität",
   "sidebar.analysis": "Analysen",
+  "sidebar.chat": "KI-Chat",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Dokumentation",
   "sidebar.docsTitle": "Zentrale Plattform-Dokumentation öffnen",
@@ -829,5 +830,41 @@ export const de: Record<MessageKey, string> = {
   // ── Analysis sections ───────────────────────────────────────────────────
   "analysis.tabTrends": "Trends",
   "analysis.tabRoutines": "Routinen",
+
+  // ── KI-Chat ────────────────────────────────────────────────────────────────
+  "chat.title": "KI-Chat",
+  "chat.subtitle": "Stelle Fragen zu deinen persönlichen Messwerten und Mustern.",
+  "chat.statusChecking": "Chat-Verfügbarkeit wird geprüft…",
+  "chat.statusReady": "ChatGPT {plan}",
+  "chat.newConversation": "Neuer Chat",
+  "chat.unavailableTitle": "Codex ist nicht verfügbar",
+  "chat.unavailableBody":
+    "Installiere die Codex CLI beim Analysis Service oder aktiviere sie im Service-Image, um den Chat zu nutzen.",
+  "chat.loginTitle": "ChatGPT-Abonnement verbinden",
+  "chat.loginBody":
+    "Melde dich über den offiziellen Codex-Gerätefluss an. Die Plattform erhält oder speichert weder dein ChatGPT-Passwort noch dein Token.",
+  "chat.loginAction": "ChatGPT verbinden",
+  "chat.deviceInstruction": "Öffne die Anmeldeseite und gib diesen einmaligen Code ein.",
+  "chat.deviceCodeLabel": "Einmaliger Code",
+  "chat.copyCode": "Einmaligen Code kopieren",
+  "chat.openLogin": "ChatGPT-Anmeldung öffnen",
+  "chat.waitingForLogin": "Diese Seite macht nach der Anmeldung automatisch weiter.",
+  "chat.welcomeTitle": "Was möchtest du verstehen?",
+  "chat.welcomeBody":
+    "Frage nach Trends, Datenqualität, ungewöhnlichen Werten oder Zusammenhängen zwischen deinen Messwerten. Daten werden ausschließlich über mandantengebundene Lese-Werkzeuge abgerufen.",
+  "chat.userMessage": "Deine Nachricht",
+  "chat.assistantMessage": "Nachricht des KI-Assistenten",
+  "chat.inputPlaceholder": "Frage etwas zu deinen Daten…",
+  "chat.inputLabel": "Nachricht an den KI-Assistenten",
+  "chat.send": "Nachricht senden",
+  "chat.sending": "Nachricht wird gesendet",
+  "chat.disclaimer":
+    "KI-Ausgaben können falsch sein. Zusammenhänge sind keine Ursachen und gesundheitliche Einordnungen sind keine medizinische Beratung.",
+  "chat.errorStatus": "Die Chat-Verfügbarkeit konnte nicht geprüft werden.",
+  "chat.errorLogin": "Die ChatGPT-Anmeldung konnte nicht gestartet werden.",
+  "chat.errorCopy": "Der Code konnte nicht kopiert werden.",
+  "chat.errorLoginRequired": "Verbinde dein ChatGPT-Abonnement, bevor du eine Nachricht sendest.",
+  "chat.errorResponse": "Der Assistent konnte diese Antwort nicht abschließen.",
+  "chat.errorStream": "Die Chat-Verbindung wurde unterbrochen.",
   // --- Ende des Katalogs ---
 };

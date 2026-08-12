@@ -90,3 +90,5 @@ yarn-error.log*
 # a change in the commit that made it.
 /.superpowers/
 /docs/superpowers/
+
+.tmp*

@@ -21,12 +21,14 @@ from __future__ import annotations
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
 from analysis.auth import resolve_tenant
+from analysis.chat_api import codex
+from analysis.chat_api import router as chat_router
 from analysis.config import settings
 from analysis.core_client import CoreClient, CoreUnavailable, MetricPoint
 from analysis.insights import (
@@ -52,10 +54,14 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     """Run the mounted MCP transport manager with the Analysis application."""
     async with mcp_asgi_app.lifespan():
-        yield
+        try:
+            yield
+        finally:
+            await codex.close()
 
 
 app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
+app.include_router(chat_router)
 
 core_client = CoreClient()
 
@@ -110,7 +116,7 @@ async def get_insights(
     and analyses whose input is too thin are omitted rather than shown weakly.
     """
     request_id = _request_id(request)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     window_start = now - timedelta(days=days)
 
     try:

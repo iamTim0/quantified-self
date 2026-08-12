@@ -1,8 +1,8 @@
 # Stateless MCP analytics
 
 The Analysis service exposes personal metrics and deterministic statistics through
-Model Context Protocol (MCP) revision `2026-07-28`. It is the data boundary for a
-future AI chat and for other MCP clients: callers can read and analyse measurements,
+Model Context Protocol (MCP) revision `2026-07-28`. It is the data boundary for the
+dashboard AI chat and for other MCP clients: callers can read and analyse measurements,
 but they cannot create, update, or delete platform data.
 
 ## Why the endpoint is stateless
@@ -99,11 +99,10 @@ External publication requires all of these changes together:
 4. Keep `2026-07-28` mandatory; do not enable the initialization-era compatibility
    path supplied by the SDK.
 
-The current Codex MCP client still uses an initialization-era protocol. A future chat
-that uses a ChatGPT subscription should initially register these same handler schemas
-through Codex App Server dynamic tools. The callback invokes the Analysis handlers
-with the verified platform principal. Once Codex supports `2026-07-28` directly, that
-adapter can be replaced without changing the MCP contract.
+The Codex app-server adapter registers these same schemas as dynamic tools for the
+dashboard [AI chat](ai-chat.md). Each callback invokes this endpoint with the verified
+platform credential and request ID. Once Codex supports `2026-07-28` directly, that
+adapter can be removed without changing the MCP contract or tool handlers.
 
 ## Known limitations
 
@@ -115,5 +114,6 @@ adapter can be replaced without changing the MCP contract.
   marked `truncated`.
 - Configured source types provide response-level provenance; individual source IDs are
   not exposed.
-- Chat history, the dashboard chat page, and ChatGPT device-code login are separate
-  features and are not implemented by this endpoint.
+- Chat history and ChatGPT device-code login are adapter concerns and are not part of
+  this endpoint. The MCP request remains sessionless even while a Codex conversation
+  continues across several turns.

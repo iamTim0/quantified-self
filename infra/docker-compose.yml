@@ -106,6 +106,12 @@ services:
       - CORE_GRPC_URL=core:50051
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      # A container has no OS keyring. Codex may use its file store only because
+      # the entire home below is RAM-backed and disappears on restart.
+      - CHAT_CREDENTIALS_STORE=file
+      - CODEX_HOME=/run/qs-codex
+    tmpfs:
+      - /run/qs-codex:mode=0700
     networks:
       - qs-network
 

@@ -12,7 +12,7 @@ flowchart TB
     traefik["Traefik&nbsp;&mdash; routes by role, one origin"]
     ui["Dashboard&nbsp;:3000&nbsp;&mdash; Next.js"]
     gateway["API Gateway&nbsp;:8000&nbsp;&mdash; verifies the JWT,<br/>injects X-Tenant-ID and X-Request-ID"]
-    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies,<br/>stateless MCP tools"]
+    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies,<br/>stateless MCP tools and AI chat"]
     bus{{"NATS JetStream"}}
     importers["Importers&nbsp;&mdash; 8 stateless services, one per provider"]
     providers[/"Provider APIs and devices"/]
@@ -46,7 +46,7 @@ flowchart TB
 | `services/api-gateway/` | Entry point, JWT verification, header injection, reverse proxy | no |
 | `services/core/` | REST API, gRPC read interface, ingest consumer, import planning, scheduler | **yes, exclusively** |
 | `services/importers/*` | Fetching or receiving external data | no |
-| `services/analysis/` | Correlations, trends, anomalies, routines, read-only MCP tools | no, reads from Core over gRPC |
+| `services/analysis/` | Correlations, trends, anomalies, routines, read-only MCP tools, Codex chat adapter | no, reads from Core over gRPC |
 | `apps/dashboard/` | Next.js interface | no |
 
 ## The data flow of an import
@@ -179,6 +179,13 @@ Core's `ValidateUserSession` gRPC method checks the token `jti` and the user's
 all-session cutoff, so revocation remains immediate without giving Analysis database
 access. See
 [Stateless MCP analytics](features/mcp.md).
+
+The dashboard's `/chat` page reaches Analysis through the Gateway. Analysis drives the
+official Codex app server over local JSONL stdio and exposes the MCP schemas as dynamic
+tools. A callback becomes a fresh authenticated MCP `2026-07-28` request, so the model
+cannot select a tenant and conversation state never becomes data-access authority.
+ChatGPT device login is owned by Codex; the platform does not receive that credential.
+See [AI chat](features/ai-chat.md).
 
 ## Scheduled imports
 

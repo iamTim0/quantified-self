@@ -477,6 +477,117 @@ async def proxy_analysis_service(path: str, request: Request):
             )
 
 
+_CHAT_ROUTES = {
+    ("GET", "status"),
+    ("POST", "login"),
+    ("POST", "turn"),
+}
+_CHAT_STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=None, write=30.0, pool=10.0)
+
+
+@app.api_route("/api/v1/chat/{path:path}", methods=["GET", "POST"])
+async def proxy_chat_service(path: str, request: Request):
+    """Authenticate and proxy the explicit chat surface to Analysis.
+
+    The browser credential is converted to a bearer token because Analysis
+    independently verifies it and derives the tenant from its claims. POSTs made
+    with cookies require the same double-submit CSRF proof as every other
+    state-changing browser request. The turn response remains streamed end to
+    end so model deltas reach the dashboard as they are produced.
+    """
+    if (request.method, path) not in _CHAT_ROUTES:
+        raise HTTPException(status_code=404, detail="Unknown chat operation")
+
+    token = _session_credential(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing session cookie or Authorization Bearer header"},
+        )
+    try:
+        claims = decode_jwt(token)
+    except HTTPException as exc:
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    claimed_tenant = request.headers.get("X-Tenant-ID")
+    if claimed_tenant and claimed_tenant != claims["tenant_id"]:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "X-Tenant-ID does not match authenticated tenant"},
+        )
+
+    if request.method == "POST" and not request.headers.get("Authorization"):
+        cookie_token = request.cookies.get(CSRF_COOKIE) or ""
+        header_token = request.headers.get(CSRF_HEADER) or ""
+        if not cookie_token or not secrets.compare_digest(cookie_token, header_token):
+            return JSONResponse(
+                status_code=403, content={"detail": "Missing or invalid CSRF token"}
+            )
+
+    forwarded_headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() in {"content-type", "accept", "user-agent"}
+    }
+    forwarded_headers["Authorization"] = f"Bearer {token}"
+    forwarded_headers["X-Tenant-ID"] = claims["tenant_id"]
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+    target_url = f"{settings.ANALYSIS_SERVICE_URL}/api/v1/chat/{path}"
+    body = await request.body()
+
+    if path != "turn":
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                upstream = await client.request(
+                    request.method,
+                    target_url,
+                    headers=forwarded_headers,
+                    params=request.query_params,
+                    content=body,
+                )
+            except httpx.RequestError as exc:
+                raise HTTPException(
+                    status_code=503, detail=f"Analysis Service unavailable: {exc!s}"
+                ) from exc
+            return _relay_response(upstream)
+
+    client = httpx.AsyncClient(timeout=_CHAT_STREAM_TIMEOUT)
+    upstream_request = client.build_request(
+        request.method,
+        target_url,
+        headers=forwarded_headers,
+        params=request.query_params,
+        content=body,
+    )
+    try:
+        upstream = await client.send(upstream_request, stream=True)
+    except httpx.RequestError as exc:
+        await client.aclose()
+        raise HTTPException(
+            status_code=503, detail=f"Analysis Service unavailable: {exc!s}"
+        ) from exc
+
+    response_headers = {
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower()
+        not in {
+            "transfer-encoding",
+            "connection",
+            "server",
+            "content-encoding",
+            "content-length",
+        }
+    }
+    response_headers["X-Request-ID"] = get_current_request_id()
+    return StreamingResponse(
+        upstream.aiter_bytes(),
+        status_code=upstream.status_code,
+        headers=response_headers,
+        background=BackgroundTask(_close_upstream, upstream, client),
+    )
+
+
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,

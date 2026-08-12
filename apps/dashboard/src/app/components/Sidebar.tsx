@@ -12,11 +12,19 @@ import {
   ScanSearch,
   BrainCircuit,
   BookOpen,
+  MessagesSquare,
 } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 
-export type TabType = "overview" | "explorer" | "quality" | "analysis" | "connectors" | "profile";
+export type TabType =
+  | "overview"
+  | "explorer"
+  | "quality"
+  | "analysis"
+  | "chat"
+  | "connectors"
+  | "profile";
 
 interface SidebarProps {
   activeTab: TabType;
@@ -31,6 +39,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
     { id: "explorer" as TabType, label: t("sidebar.explorer"), icon: LineChart },
     { id: "quality" as TabType, label: t("sidebar.quality"), icon: ScanSearch },
     { id: "analysis" as TabType, label: t("sidebar.analysis"), icon: BrainCircuit },
+    { id: "chat" as TabType, label: t("sidebar.chat"), icon: MessagesSquare },
     { id: "connectors" as TabType, label: t("sidebar.connectors"), icon: Plug },
   ];
 

@@ -238,7 +238,13 @@ def _window(start: datetime | None, end: datetime | None) -> tuple[datetime, dat
 
 
 def _metric_definition(metric_type: str):
-    raw = metric_type.strip()
+    if metric_type != metric_type.strip():
+        raise MCPError(
+            -32602,
+            "Metric type must not contain padding whitespace",
+            {"code": "INVALID_METRIC_NAME", "metric_type": metric_type},
+        )
+    raw = metric_type
     try:
         canonical = canonical_metric_type(raw)
     except UnknownMetricTypeError as exc:
@@ -362,6 +368,12 @@ def _series_points(
             for point in ordered
         ]
     elif bucket == "hour":
+        if definition.cadence is Cadence.DAILY:
+            raise MCPError(
+                -32602,
+                "Daily metrics cannot be bucketed by hour",
+                {"code": "HOURLY_BUCKETING_UNSUPPORTED", "metric_type": definition.key},
+            )
         grouped: dict[datetime, list[MetricPoint]] = defaultdict(list)
         for point in ordered:
             grouped[_bucket_start(point.timestamp, bucket)].append(point)

@@ -24,6 +24,7 @@ Start here:
 | [Authentication](docs/features/authentication.md) | Sessions, logout, tenant mapping |
 | [API keys](docs/features/api-keys.md) | Tenant-bound inbound keys |
 | [Stateless MCP analytics](docs/features/mcp.md) | Read-only metric tools over MCP `2026-07-28` |
+| [AI chat](docs/features/ai-chat.md) | ChatGPT subscription chat over tenant-scoped MCP tools |
 | [Troubleshooting](docs/troubleshooting.md) | Common failures and what they mean |
 
 ## Deploying it
@@ -130,7 +131,7 @@ the row. The full picture, including sessions and the scheduler, is in
 | **Traefik** | `:8080` | The single origin: `/` to the dashboard, `/api` to the Gateway, `/docs` to the docs, `/ingest` to the Streak importer | no |
 | **API Gateway** | `:8000` | Verifies the JWT, injects `X-Tenant-ID` and `X-Request-ID`, proxies | no |
 | **Core** | `:8001`, gRPC `:50051` | REST API, ingest consumer, scheduler, import planning, migrations | **yes, exclusively** |
-| **Analysis** | `:8010` | Correlations, trends, anomalies, data quality, stateless MCP tools | no — reads Core over gRPC |
+| **Analysis** | `:8010` | Correlations, trends, data quality, stateless MCP tools, AI chat adapter | no — reads Core over gRPC |
 | **Dashboard** | `:3000` | Next.js interface, bilingual | no |
 | **Docs** | `:8003` at `/docs` | This documentation, built with Material for MkDocs | no |
 | **Importers** | see below | One per provider, stateless | no |

@@ -1,6 +1,8 @@
 import hashlib
 import os
+import tempfile
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -40,6 +42,19 @@ class Settings(BaseSettings):
     )
     MCP_ALLOWED_ORIGINS: str = ""
 
+    # The chat uses the official Codex app server and therefore accepts a
+    # ChatGPT subscription login instead of an OpenAI API key. Codex keeps that
+    # credential in the operating-system keyring; the platform never reads,
+    # logs, persists, or forwards it.
+    CHAT_ENABLED: bool = True
+    CHAT_CODEX_COMMAND: str = "codex"
+    CHAT_CREDENTIALS_STORE: Literal["keyring", "file"] = "keyring"
+    CHAT_MODEL: str = ""
+    CHAT_ALLOWED_ROLES: str = "owner"
+    CHAT_THREAD_TTL_MINUTES: int = 720
+    CHAT_TURN_TIMEOUT_SECONDS: int = 300
+    CHAT_MAX_MESSAGE_CHARS: int = 8_000
+
     model_config = SettingsConfigDict(
         env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore"
     )
@@ -76,6 +91,30 @@ class Settings(BaseSettings):
             for value in self.MCP_ALLOWED_ORIGINS.split(",")
             if value.strip()
         ]
+
+    @property
+    def chat_allowed_roles(self) -> frozenset[str]:
+        """Platform roles permitted to use the operator's subscription."""
+        return frozenset(
+            value.strip()
+            for value in self.CHAT_ALLOWED_ROLES.split(",")
+            if value.strip()
+        )
+
+    @property
+    def chat_workdir(self) -> Path:
+        """An empty service-local workspace that exposes no platform files."""
+        return Path(tempfile.gettempdir()) / "quantified-self-chat"
+
+    @property
+    def chat_codex_home(self) -> Path:
+        """Isolated Codex config home; Compose supplies a RAM-backed override."""
+        configured = os.environ.get("CODEX_HOME")
+        return (
+            Path(configured)
+            if configured
+            else Path(tempfile.gettempdir()) / "quantified-self-codex"
+        )
 
 
 settings = Settings()

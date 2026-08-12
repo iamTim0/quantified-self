@@ -563,3 +563,85 @@ async def test_a_chunk_without_the_csrf_pair_is_refused():
             )
 
     assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_chat_turn_streams_with_verified_tenant_and_request_id():
+    """Verifies Fizzbee Invariants: ChatRequiresValidPlatformSession, ChatRequestIdReachesCore"""
+    from gateway import main as gateway_main
+
+    seen: dict[str, str] = {}
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        seen["tenant"] = request.headers.get("X-Tenant-ID", "")
+        seen["authorization"] = request.headers.get("Authorization", "")
+        seen["request_id"] = request.headers.get("X-Request-ID", "")
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/x-ndjson"},
+            content=_emit(
+                [
+                    b'{"type":"delta","delta":"one"}\n',
+                    b'{"type":"done"}\n',
+                ]
+            ),
+        )
+
+    token = _make_token()
+    with _upstreams(upstream):
+        async with AsyncClient(
+            transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat/turn",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Request-ID": "req_chat_gateway",
+                },
+                json={"message": "Analyse my sleep"},
+            )
+
+    assert response.status_code == 200
+    assert response.text.endswith('{"type":"done"}\n')
+    assert seen["url"].endswith("/api/v1/chat/turn")
+    assert seen["tenant"] == "11111111-1111-1111-1111-111111111111"
+    assert seen["authorization"] == f"Bearer {token}"
+    assert seen["request_id"] == "req_chat_gateway"
+
+
+@pytest.mark.asyncio
+async def test_cookie_chat_post_requires_csrf_pair():
+    """Verifies Fizzbee Invariant: ChatRequiresValidPlatformSession"""
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError("a chat request without CSRF proof must not be proxied")
+
+    with _upstreams(upstream):
+        async with AsyncClient(
+            transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
+        ) as client:
+            response = await client.post(
+                "/api/v1/chat/login",
+                cookies={"qs_access": _make_token(), "qs_csrf": "csrf-token"},
+            )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_unknown_chat_operation_is_not_proxied():
+    from gateway import main as gateway_main
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise AssertionError(f"nothing should have been proxied, got {request.url}")
+
+    with _upstreams(upstream):
+        async with AsyncClient(
+            transport=ASGITransport(app=gateway_main.app), base_url="http://testserver"
+        ) as client:
+            response = await client.get(
+                "/api/v1/chat/arbitrary",
+                headers={"Authorization": f"Bearer {_make_token()}"},
+            )
+    assert response.status_code == 404

@@ -39,6 +39,7 @@ nav:
       - Uploading an export file: features/file-import.md
       - Correlations and simple analyses: features/correlations.md
       - Stateless MCP analytics: features/mcp.md
+      - AI chat: features/ai-chat.md
       - GPS visualization: features/gps-visualization.md
   - Security:
       - Authentication and sessions: features/authentication.md

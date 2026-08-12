@@ -12,6 +12,7 @@ import AuthScreen, { UserAuthData } from "./components/AuthScreen";
 import ProfileTab from "./components/ProfileTab";
 import DataQualityTab from "./components/DataQualityTab";
 import AnalysisTab from "./components/AnalysisTab";
+import ChatTab from "./components/ChatTab";
 import LegalFooter from "./components/LegalFooter";
 import SystemWarnings from "./components/SystemWarnings";
 import UploadBanner from "./components/UploadBanner";
@@ -74,6 +75,7 @@ export default function DashboardPage() {
     if (path.startsWith("/connectors")) return "connectors";
     if (path.startsWith("/quality")) return "quality";
     if (path.startsWith("/analysis")) return "analysis";
+    if (path.startsWith("/chat")) return "chat";
     if (path.startsWith("/profile") || path.startsWith("/settings")) return "profile";
     return "overview";
   };
@@ -85,6 +87,7 @@ export default function DashboardPage() {
     else if (tab === "connectors") router.push("/connectors");
     else if (tab === "quality") router.push("/quality");
     else if (tab === "analysis") router.push("/analysis");
+    else if (tab === "chat") router.push("/chat");
     else if (tab === "profile") router.push("/profile");
     else router.push("/");
   };
@@ -445,6 +448,8 @@ export default function DashboardPage() {
             {activeTab === "analysis" && (
               <AnalysisTab apiBase={API_BASE} tenantId={tenantId} refreshTrigger={refreshTrigger} />
             )}
+
+            {activeTab === "chat" && <ChatTab apiBase={API_BASE} />}
 
             {activeTab === "profile" && (
               <ProfileTab
