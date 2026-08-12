@@ -63,7 +63,7 @@ other would be wrong by a factor of four with nothing looking amiss.
 
 WHOOP localises the archive to the account's language — file names and column headers both — so
 both vocabularies are recognised; see
-[Uploading an export file](../features/file-import.md#whoop---the-emailed-export). The export also
+[Uploading an export file](../features/file-import.md#whoop-the-emailed-export). The export also
 states more than the API's score objects do: a night's duration, its time in bed and its four
 stages, and a workout's duration and maximum heart rate. Those are the same registry metrics the
 rest of the platform uses, not export-only names.
