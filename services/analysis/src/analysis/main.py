@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import logging
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-import jwt
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
+from analysis.auth import resolve_tenant
 from analysis.config import settings
 from analysis.core_client import CoreClient, CoreUnavailable, MetricPoint
 from analysis.insights import (
@@ -38,6 +39,7 @@ from analysis.insights import (
     trend_for_metric,
     weekday_pattern,
 )
+from analysis.mcp_server import mcp_asgi_app
 
 logging.basicConfig(
     level=logging.INFO,
@@ -45,53 +47,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title=settings.SERVICE_NAME)
 
-ISSUER = "qs-core"
-AUDIENCE_USER = "qs-api"
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Run the mounted MCP transport manager with the Analysis application."""
+    async with mcp_asgi_app.lifespan():
+        yield
+
+
+app = FastAPI(title=settings.SERVICE_NAME, lifespan=lifespan)
 
 core_client = CoreClient()
 
 
 def _request_id(request: Request) -> str:
     return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
-
-
-def resolve_tenant(request: Request) -> str:
-    """The tenant, from the validated access token and nowhere else.
-
-    An `X-Tenant-ID` header is accepted only when it agrees with the token, never
-    as a source of truth. Trusting a freely-supplied tenant id is the defect that
-    let anyone read any tenant's data over Core's HTTP port.
-    """
-    header = request.headers.get("Authorization") or ""
-    if not header.startswith("Bearer "):
-        raise HTTPException(
-            status_code=401, detail="Missing Authorization Bearer credential"
-        )
-
-    try:
-        claims = jwt.decode(
-            header[7:].strip(),
-            settings.JWT_SECRET,
-            algorithms=["HS256"],
-            audience=AUDIENCE_USER,
-            issuer=ISSUER,
-            options={"require": ["exp", "tenant_id", "user_id"]},
-        )
-    except jwt.PyJWTError as exc:
-        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
-
-    tenant_id = claims.get("tenant_id")
-    if not tenant_id:
-        raise HTTPException(status_code=401, detail="Token carries no tenant")
-
-    claimed = request.headers.get("X-Tenant-ID")
-    if claimed and claimed != tenant_id:
-        raise HTTPException(
-            status_code=403, detail="X-Tenant-ID does not match the authenticated tenant"
-        )
-    return tenant_id
 
 
 def build_daily_series(points: list[MetricPoint]) -> dict[str, dict[str, float]]:
@@ -103,9 +73,9 @@ def build_daily_series(points: list[MetricPoint]) -> dict[str, dict[str, float]]
     """
     series: dict[str, dict[str, float]] = {}
     for point in sorted(points, key=lambda p: p.timestamp):
-        series.setdefault(point.metric_type, {})[
-            point.timestamp.date().isoformat()
-        ] = float(point.value)
+        series.setdefault(point.metric_type, {})[point.timestamp.date().isoformat()] = (
+            float(point.value)
+        )
     return series
 
 
@@ -118,10 +88,15 @@ async def health_check() -> dict[str, str]:
 async def get_insights(
     request: Request,
     days: int = Query(90, ge=14, le=365, description="Analysis window in days"),
-    metric_type: str | None = Query(None, description="Restrict trends/anomalies to one metric"),
-    min_strength: float = Query(0.0, ge=0.0, le=1.0, description="Minimum |coefficient|"),
+    metric_type: str | None = Query(
+        None, description="Restrict trends/anomalies to one metric"
+    ),
+    min_strength: float = Query(
+        0.0, ge=0.0, le=1.0, description="Minimum |coefficient|"
+    ),
     compare_to_previous: bool = Query(
-        False, description="Also compare the window with the equally long window before it"
+        False,
+        description="Also compare the window with the equally long window before it",
     ),
     tenant_id: str = Depends(resolve_tenant),
 ) -> dict[str, Any]:
@@ -191,12 +166,17 @@ async def get_insights(
     comparisons: dict[str, Any] = {}
     if compare_to_previous:
         mid = now - timedelta(days=days // 2)
-        earlier = ((now - timedelta(days=days)).date().isoformat(), mid.date().isoformat())
+        earlier = (
+            (now - timedelta(days=days)).date().isoformat(),
+            mid.date().isoformat(),
+        )
         later = (mid.date().isoformat(), now.date().isoformat())
         for metric, daily in usable.items():
             if metric_type and metric != metric_type:
                 continue
-            if (cmp := compare_periods(daily, period_a=earlier, period_b=later)) is not None:
+            if (
+                cmp := compare_periods(daily, period_a=earlier, period_b=later)
+            ) is not None:
                 comparisons[metric] = cmp
 
     excluded = sorted(set(series) - set(usable))
@@ -219,6 +199,11 @@ async def get_insights(
         "period_comparisons": comparisons,
         "docs_url": "/docs/features/correlations/",
     }
+
+
+# Keep the MCP app last so the service's ordinary FastAPI routes win before the
+# catch-all mount delegates `/mcp` to the protocol implementation.
+app.mount("/", mcp_asgi_app, name="mcp")
 
 
 if __name__ == "__main__":

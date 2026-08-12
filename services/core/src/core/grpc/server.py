@@ -41,7 +41,7 @@ from quantified_self.v1 import data_point_pb2 as dp_pb
 from sqlalchemy import distinct, select
 
 from core.config import settings
-from core.db.models import DataPoint, DataSource
+from core.db.models import DataPoint, DataSource, RevokedAccessToken, User
 from core.db.session import async_session_maker
 from core.security.tokens import TokenError, verify_service_credential
 from core.tracing import get_current_request_id, set_current_request_id
@@ -249,6 +249,43 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                     for row in rows
                 ]
             )
+
+    async def ValidateUserSession(
+        self, request: pb.ValidateUserSessionRequest, context: grpc.aio.ServicerContext
+    ) -> pb.ValidateUserSessionResponse:
+        """Check denylist and all-session cutoff for a locally verified user JWT."""
+        async with _guard(context):
+            tenant_id = _require_tenant(request.tenant_id)
+            if not request.user_id or not request.jti:
+                raise ValueError("user_id and jti are required")
+            issued_at = _from_timestamp(request.issued_at)
+            if issued_at is None:
+                raise ValueError("issued_at is required")
+
+            async with async_session_maker() as session:
+                revoked = await session.execute(
+                    select(RevokedAccessToken.jti).where(
+                        RevokedAccessToken.tenant_id == tenant_id,
+                        RevokedAccessToken.jti == request.jti,
+                    )
+                )
+                if revoked.scalar_one_or_none() is not None:
+                    return pb.ValidateUserSessionResponse(
+                        valid=False, code="TOKEN_REVOKED"
+                    )
+
+                cutoff = (
+                    await session.execute(
+                        select(User.sessions_valid_from).where(
+                            User.tenant_id == tenant_id,
+                            User.id == request.user_id,
+                        )
+                    )
+                ).scalar_one_or_none()
+
+            if cutoff is not None and issued_at < cutoff:
+                return pb.ValidateUserSessionResponse(valid=False, code="SESSION_ENDED")
+            return pb.ValidateUserSessionResponse(valid=True, code="VALID")
 
 
 class _guard:

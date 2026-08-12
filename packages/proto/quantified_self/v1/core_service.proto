@@ -57,9 +57,25 @@ message ListDataSourcesResponse {
   repeated DataSourceSummary sources = 1;
 }
 
+// Analysis validates the JWT locally, then asks Core whether that exact session
+// has been revoked. The raw bearer token never crosses this service boundary.
+message ValidateUserSessionRequest {
+  string tenant_id = 1;
+  string user_id = 2;
+  string jti = 3;
+  google.protobuf.Timestamp issued_at = 4;
+}
+
+message ValidateUserSessionResponse {
+  bool valid = 1;
+  // Stable machine code: VALID, TOKEN_REVOKED, or SESSION_ENDED.
+  string code = 2;
+}
+
 service CoreDataService {
   rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
   rpc GetDataPoint(GetDataPointRequest) returns (DataPoint);
   rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
   rpc ListDataSources(ListDataSourcesRequest) returns (ListDataSourcesResponse);
+  rpc ValidateUserSession(ValidateUserSessionRequest) returns (ValidateUserSessionResponse);
 }

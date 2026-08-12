@@ -99,6 +99,7 @@ def _token(**overrides) -> str:
         "iss": "qs-core",
         "aud": "qs-api",
         "token_type": "access",
+        "jti": "44444444-4444-4444-4444-444444444444",
         "iat": datetime.now(timezone.utc),
         "exp": datetime.now(timezone.utc) + timedelta(minutes=30),
     }

@@ -318,6 +318,14 @@ analysis     ──→ core:50051
 importers    ──→ nats:4222 and core:8001
 ```
 
+Analysis also listens on internal `POST /mcp`. It is not assigned a public proxy
+route. `MCP_ALLOWED_HOSTS` defaults to loopback and the Compose service name; set a
+comma-separated replacement only when the internal DNS names differ.
+`MCP_ALLOWED_ORIGINS` is empty by default because non-browser MCP clients do not send
+an Origin header. Publishing MCP externally requires the authentication, TLS, and rate
+limit work described in [Stateless MCP analytics](features/mcp.md); changing the host
+allowlist alone does not make external exposure safe.
+
 ### Required Coolify setup
 
 Use the committed `docker-compose.coolify.yml` as the Coolify Compose file. It is the network-safe

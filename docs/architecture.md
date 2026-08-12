@@ -12,7 +12,7 @@ flowchart TB
     traefik["Traefik&nbsp;&mdash; routes by role, one origin"]
     ui["Dashboard&nbsp;:3000&nbsp;&mdash; Next.js"]
     gateway["API Gateway&nbsp;:8000&nbsp;&mdash; verifies the JWT,<br/>injects X-Tenant-ID and X-Request-ID"]
-    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies"]
+    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies,<br/>stateless MCP tools"]
     bus{{"NATS JetStream"}}
     importers["Importers&nbsp;&mdash; 8 stateless services, one per provider"]
     providers[/"Provider APIs and devices"/]
@@ -46,7 +46,7 @@ flowchart TB
 | `services/api-gateway/` | Entry point, JWT verification, header injection, reverse proxy | no |
 | `services/core/` | REST API, gRPC read interface, ingest consumer, import planning, scheduler | **yes, exclusively** |
 | `services/importers/*` | Fetching or receiving external data | no |
-| `services/analysis/` | Correlations, trends, anomalies, routines | no, reads from Core over gRPC |
+| `services/analysis/` | Correlations, trends, anomalies, routines, read-only MCP tools | no, reads from Core over gRPC |
 | `apps/dashboard/` | Next.js interface | no |
 
 ## The data flow of an import
@@ -156,7 +156,7 @@ transport a separate service could have read over at all.
 Today:
 
 - Core runs `CoreDataService` on port `50051` with `QueryDataPoints`, `GetDataPoint`,
-  `ListMetricTypes` and `ListDataSources`.
+  `ListMetricTypes`, `ListDataSources` and `ValidateUserSession`.
 - Every call needs an internal service credential; every query filters by `tenant_id`, which is
   validated as a UUID first.
 - `DataSourceSummary` carries only `id`, `source_type` and `display_name`. There is deliberately no
@@ -171,6 +171,14 @@ imported driver, on a *declared* dependency on one, and on a migration directory
 new importer is covered the day it is added, rather than the day somebody writes it a test.
 
 The interface calls `/api/v1/analysis/insights`; the Gateway proxies it through.
+Analysis also owns the internal `POST /mcp` endpoint. It accepts only the sessionless
+MCP `2026-07-28` revision, authenticates every request independently, and derives the
+tenant from the user token rather than from tool arguments. Its four read-only tools
+reuse the same gRPC client and metric registry as the HTTP analysis. Before dispatch,
+Core's `ValidateUserSession` gRPC method checks the token `jti` and the user's
+all-session cutoff, so revocation remains immediate without giving Analysis database
+access. See
+[Stateless MCP analytics](features/mcp.md).
 
 ## Scheduled imports
 

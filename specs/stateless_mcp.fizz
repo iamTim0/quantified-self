@@ -1,0 +1,91 @@
+# Fizzbee Formal Specification: Stateless MCP Analysis Reads
+# Models the authentication and routing invariants of the MCP 2026-07-28
+# Analysis endpoint. Application data remains tenant-owned by Core.
+
+TENANTS = ["tenant_a", "tenant_b"]
+REQUEST_IDS = ["req_1", "req_2"]
+
+action Init:
+    request_count = 0
+    authenticated = False
+    token_tenant = "NONE"
+    model_tenant = "NONE"
+    effective_tenant = "NONE"
+    result_tenant = "NONE"
+    request_id = "NONE"
+    core_request_id = "NONE"
+    write_count = 0
+    protocol_session_created = False
+    response_returned = False
+    session_valid = False
+
+atomic action ServeAuthenticatedRead:
+    require request_count < 2
+    token_tenant = oneof(TENANTS)
+    model_tenant = oneof(TENANTS)
+    request_id = oneof(REQUEST_IDS)
+
+    request_count = request_count + 1
+    authenticated = True
+    session_valid = True
+    # A model-supplied tenant is deliberately ignored.
+    effective_tenant = token_tenant
+    result_tenant = effective_tenant
+    core_request_id = request_id
+    response_returned = True
+
+atomic action RejectRevokedSession:
+    require request_count < 2
+    request_count = request_count + 1
+    authenticated = True
+    session_valid = False
+    response_returned = False
+
+atomic action RejectUnauthenticatedRead:
+    require request_count < 2
+    request_count = request_count + 1
+    authenticated = False
+    session_valid = False
+    token_tenant = "NONE"
+    effective_tenant = "NONE"
+    result_tenant = "NONE"
+    response_returned = False
+
+atomic action RejectLegacySession:
+    require request_count < 2
+    request_count = request_count + 1
+    authenticated = False
+    session_valid = False
+    protocol_session_created = False
+    response_returned = False
+
+always assertion EveryRequestAuthenticatesIndependently:
+    if response_returned:
+        return authenticated
+    return True
+
+always assertion RevokedMcpSessionRejectedImmediately:
+    if session_valid == False:
+        return response_returned == False
+    return True
+
+always assertion PrincipalIsNeverModelSupplied:
+    if response_returned:
+        return effective_tenant == token_tenant
+    return True
+
+always assertion NoCrossTenantResults:
+    if response_returned:
+        return result_tenant == token_tenant
+    return True
+
+always assertion AllToolsAreReadOnly:
+    return write_count == 0
+
+always assertion NoProtocolSessionState:
+    return protocol_session_created == False
+
+always assertion RequestIdReachesCore:
+    if response_returned:
+        return core_request_id == request_id
+    return True

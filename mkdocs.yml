@@ -38,6 +38,7 @@ nav:
       - Data quality: features/data-quality.md
       - Uploading an export file: features/file-import.md
       - Correlations and simple analyses: features/correlations.md
+      - Stateless MCP analytics: features/mcp.md
       - GPS visualization: features/gps-visualization.md
   - Security:
       - Authentication and sessions: features/authentication.md

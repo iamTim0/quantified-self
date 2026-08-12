@@ -30,7 +30,15 @@ class Settings(BaseSettings):
     # Empty means "derive the same deterministic dev value Core derives", so a
     # local checkout works without configuration while a deployment sets both.
     INTERNAL_SERVICE_SECRET: str = ""
-    JWT_SECRET: str = os.environ.get("JWT_SECRET", "dev-secret-key-quantified-self-2026")
+    JWT_SECRET: str = os.environ.get(
+        "JWT_SECRET", "dev-secret-key-quantified-self-2026"
+    )
+    # The MCP endpoint is internal in v1. Explicit hosts keep DNS-rebinding
+    # protection enabled without making a local checkout depend on Compose DNS.
+    MCP_ALLOWED_HOSTS: str = (
+        "127.0.0.1,127.0.0.1:*,localhost,localhost:*,[::1],[::1]:*,analysis,analysis:*"
+    )
+    MCP_ALLOWED_ORIGINS: str = ""
 
     model_config = SettingsConfigDict(
         env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore"
@@ -50,6 +58,24 @@ class Settings(BaseSettings):
         return hashlib.sha256(
             f"internal-service::{self.JWT_SECRET}".encode()
         ).hexdigest()
+
+    @property
+    def mcp_allowed_hosts(self) -> list[str]:
+        """Configured Host allowlist for the Streamable HTTP transport."""
+        return [
+            value.strip()
+            for value in self.MCP_ALLOWED_HOSTS.split(",")
+            if value.strip()
+        ]
+
+    @property
+    def mcp_allowed_origins(self) -> list[str]:
+        """Configured browser Origin allowlist; non-browser clients omit Origin."""
+        return [
+            value.strip()
+            for value in self.MCP_ALLOWED_ORIGINS.split(",")
+            if value.strip()
+        ]
 
 
 settings = Settings()

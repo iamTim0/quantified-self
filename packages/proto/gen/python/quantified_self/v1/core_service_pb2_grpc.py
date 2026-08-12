@@ -55,6 +55,11 @@ class CoreDataServiceStub:
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesRequest.SerializeToString,
                 response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesResponse.FromString,
                 _registered_method=True)
+        self.ValidateUserSession = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/ValidateUserSession',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
+                _registered_method=True)
 
 
 class CoreDataServiceServicer:
@@ -84,6 +89,12 @@ class CoreDataServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ValidateUserSession(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CoreDataServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -106,6 +117,11 @@ def add_CoreDataServiceServicer_to_server(servicer, server):
                     servicer.ListDataSources,
                     request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesRequest.FromString,
                     response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesResponse.SerializeToString,
+            ),
+            'ValidateUserSession': grpc.unary_unary_rpc_method_handler(
+                    servicer.ValidateUserSession,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -216,6 +232,33 @@ class CoreDataService:
             '/quantified_self.v1.CoreDataService/ListDataSources',
             quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesRequest.SerializeToString,
             quantified__self_dot_v1_dot_core__service__pb2.ListDataSourcesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ValidateUserSession(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/ValidateUserSession',
+            quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
             options,
             channel_credentials,
             insecure,

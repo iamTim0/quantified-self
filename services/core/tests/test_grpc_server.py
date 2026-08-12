@@ -22,19 +22,24 @@ from datetime import datetime, timedelta, timezone
 import grpc
 import pytest
 import pytest_asyncio
-from core.db.models import DataPoint, DataSource
+from core.db.models import DataPoint, DataSource, RevokedAccessToken, User
 from core.db.session import async_session_maker
 from core.grpc.server import serve_grpc
-from core.security.tokens import create_service_token
+from core.security.tokens import (
+    create_access_token,
+    create_service_token,
+    decode_access_token,
+)
+from google.protobuf.timestamp_pb2 import Timestamp
 from quantified_self.v1 import common_pb2 as common_pb
 from quantified_self.v1 import core_service_pb2 as pb
 from quantified_self.v1 import core_service_pb2_grpc as pb_grpc
 
-from tests.db_helpers import cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import cleanup_test_tenant, create_test_tenant, owner_user_id
 
 # Not the configured GRPC_PORT: a developer running Core locally would already
 # have that bound, and the failure would look like a test bug.
-TEST_PORT = 50251
+TEST_PORT = 51051
 
 
 def _auth() -> list[tuple[str, str]]:
@@ -46,7 +51,14 @@ async def _seed(tenant_id: str, *, metric: str, count: int) -> str:
     source_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     async with async_session_maker() as session:
-        session.add(DataSource(id=source_id, tenant_id=tenant_id, source_type="oura", display_name="Oura"))
+        session.add(
+            DataSource(
+                id=source_id,
+                tenant_id=tenant_id,
+                source_type="oura",
+                display_name="Oura",
+            )
+        )
         await session.flush()
         for index in range(count):
             session.add(
@@ -126,6 +138,85 @@ async def test_unauthenticated_call_is_rejected(grpc_channel):
 
 
 @pytest.mark.asyncio
+async def test_validate_user_session_rejects_a_denied_jti(grpc_channel):
+    """Verifies Fizzbee Invariant: RevokedMcpSessionRejectedImmediately"""
+    tenant_id = await create_test_tenant()
+    try:
+        token, jti, expires_at = create_access_token(
+            user_id=owner_user_id(tenant_id),
+            tenant_id=tenant_id,
+            email=f"owner-{tenant_id}@example.test",
+            role="owner",
+        )
+        claims = decode_access_token(token)
+        async with async_session_maker() as session:
+            session.add(
+                RevokedAccessToken(
+                    jti=jti,
+                    tenant_id=tenant_id,
+                    user_id=owner_user_id(tenant_id),
+                    expires_at=expires_at,
+                    reason="logout",
+                )
+            )
+            await session.commit()
+
+        issued_at = Timestamp()
+        issued_at.FromDatetime(datetime.fromtimestamp(claims["iat"], tz=timezone.utc))
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.ValidateUserSession(
+            pb.ValidateUserSessionRequest(
+                tenant_id=tenant_id,
+                user_id=owner_user_id(tenant_id),
+                jti=jti,
+                issued_at=issued_at,
+            ),
+            metadata=_auth(),
+        )
+        assert response.valid is False
+        assert response.code == "TOKEN_REVOKED"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_validate_user_session_honors_the_all_session_cutoff(grpc_channel):
+    """Verifies Fizzbee Invariant: RevokedMcpSessionRejectedImmediately"""
+    tenant_id = await create_test_tenant()
+    try:
+        token, jti, _expires_at = create_access_token(
+            user_id=owner_user_id(tenant_id),
+            tenant_id=tenant_id,
+            email=f"owner-{tenant_id}@example.test",
+            role="owner",
+        )
+        claims = decode_access_token(token)
+        issued_at_value = datetime.fromtimestamp(claims["iat"], tz=timezone.utc)
+        async with async_session_maker() as session:
+            user = await session.get(User, owner_user_id(tenant_id))
+            assert user is not None
+            user.sessions_valid_from = issued_at_value + timedelta(seconds=1)
+            await session.commit()
+
+        issued_at = Timestamp()
+        issued_at.FromDatetime(issued_at_value)
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.ValidateUserSession(
+            pb.ValidateUserSessionRequest(
+                tenant_id=tenant_id,
+                user_id=owner_user_id(tenant_id),
+                jti=jti,
+                issued_at=issued_at,
+            ),
+            metadata=_auth(),
+        )
+        assert response.valid is False
+        assert response.code == "SESSION_ENDED"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_a_user_access_token_is_not_a_service_credential(grpc_channel):
     """The two credential families are disjoint, here as well as over HTTP.
 
@@ -184,7 +275,9 @@ async def test_pagination_walks_the_whole_window_exactly_once(grpc_channel):
             response = await stub.QueryDataPoints(
                 pb.QueryDataPointsRequest(
                     tenant_id=tenant_id,
-                    pagination=common_pb.PaginationRequest(page_size=3, page_token=token),
+                    pagination=common_pb.PaginationRequest(
+                        page_size=3, page_token=token
+                    ),
                 ),
                 metadata=_auth(),
             )

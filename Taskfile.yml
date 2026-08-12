@@ -204,7 +204,7 @@ tasks:
       - uv run --directory services/api-gateway --with pytest --with pytest-asyncio pytest tests
 
   test:analysis:
-    desc: "Run Analysis Service tests (statistics, service boundary)"
+    desc: "Run Analysis Service tests (statistics, service boundary, stateless MCP)"
     # httpx is a test-only dependency here: the boundary test drives the app through
     # Starlette's TestClient, which the service itself never does.
     cmds:

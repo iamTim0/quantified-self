@@ -90,6 +90,13 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `ArchiveIsNotRetained` | `test_the_archive_is_published_then_deleted` | Apple Health Importer |
 | `NoEmptyDataWhenReady` | `test_no_empty_data_when_ready` | Next.js Dashboard |
 | `ModalStateValid` | `test_modal_state_valid` | Next.js Dashboard |
+| `EveryRequestAuthenticatesIndependently` | `test_every_request_authenticates_independently` | Analysis MCP |
+| `PrincipalIsNeverModelSupplied` | `test_principal_is_never_model_supplied` | Analysis MCP |
+| `NoCrossTenantResults` | `test_no_cross_tenant_results` | Analysis MCP |
+| `AllToolsAreReadOnly` | `test_all_tools_are_read_only` | Analysis MCP |
+| `NoProtocolSessionState` | `test_no_protocol_session_state` | Analysis MCP |
+| `RequestIdReachesCore` | `test_request_id_reaches_core` | Analysis MCP |
+| `RevokedMcpSessionRejectedImmediately` | `test_revoked_mcp_session_is_rejected_immediately` | Analysis MCP / Core |
 
 ## Adding New Specs
 

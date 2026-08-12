@@ -98,7 +98,8 @@ services:
       context: ..
       dockerfile: services/analysis/Dockerfile
     ports:
-      - "8010:8010"
+      # Direct MCP testing is local-only; production does not publish Analysis.
+      - "127.0.0.1:8010:8010"
     depends_on:
       - core
     environment:

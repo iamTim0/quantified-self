@@ -11,6 +11,9 @@ dependencies = [
     "pydantic-settings>=2.2.0",
     # Mints the service credential this presents to Core's gRPC endpoint.
     "pyjwt>=2.13.0",
+    # MCP SDK v2 implements the stateless 2026-07-28 protocol. The transport
+    # layer rejects legacy negotiation rather than falling back to a session.
+    "mcp>=2,<3",
     "qs-proto",
     # The metric registry, for the cadence each metric is expected at. Judging
     # coverage against the calendar excluded every event-driven metric from every
