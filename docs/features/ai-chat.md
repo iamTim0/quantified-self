@@ -53,7 +53,7 @@ receives the resulting token. A local checkout requires `codex` on `PATH` and st
 the login in the operating-system keyring. The Analysis image already contains the
 official Codex CLI. Containers use a RAM-backed `CODEX_HOME`; a container restart
 therefore requires device login again instead of writing a plaintext token to a
-volume. See the official [Codex authentication documentation](https://learn.chatgpt.com/docs/authentication).
+volume. See the official [OpenAI authentication documentation](https://platform.openai.com/docs/api-reference/authentication).
 
 ## Configuration
 

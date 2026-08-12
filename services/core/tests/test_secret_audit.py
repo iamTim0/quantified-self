@@ -54,13 +54,13 @@ def test_an_unset_secret_is_refused():
         audit(jwt_secret="")
 
 
-def test_an_unset_internal_secret_is_allowed():
-    """Empty means "derive it from JWT_SECRET", which core.security.tokens does.
-
-    That derivation is exactly as good as JWT_SECRET, which is checked. Refusing
-    here would force an operator to set a variable that has a correct default.
+def test_an_unset_internal_secret_is_refused():
+    """Empty means it falls back to a derivation from JWT_SECRET.
+    However, Importers don't know the JWT_SECRET, so they would derive it from their own
+    hardcoded default, causing a mismatch. Therefore, it must be explicitly set.
     """
-    audit(internal_secret="")
+    with pytest.raises(InsecureConfiguration):
+        audit(internal_secret="")
 
 
 def test_a_published_internal_secret_is_refused():
