@@ -348,6 +348,12 @@ change whenever a service, image, internal port, or public route changes.
 6. Keep the proxy entrypoint aligned with the Coolify instance. The committed file uses `http`, as required
    by the standard Coolify Traefik setup; do not copy the standalone stack's `web` entrypoint label into it.
 
+The Coolify stack lets `core-migrate` create and upgrade the schema through Alembic. It deliberately does
+not bind-mount `infra/db/init.sql`: Coolify's remote Compose runner cannot reliably expose a repository file
+as a Docker-host bind source and may create a directory at the container target instead. PostgreSQL data is
+mounted at the HA image's actual `PGDATA` path, `/home/postgres/pgdata/data`; changing that target places the
+database in the disposable container layer instead of the named `pgdata` volume.
+
 The dashboard, Gateway, and docs may share one public hostname because the proxy routes by path. Core,
 Analysis, PostgreSQL, NATS, and all polling importers remain private services with no public domain.
 
