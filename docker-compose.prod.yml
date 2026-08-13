@@ -54,8 +54,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-qs_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
-      # The HA image defaults to /home/postgres/pgdata/data. Keep the database
-      # inside the named volume instead of the disposable container layer.
+      # Keep the database inside the named volume instead of the disposable
+      # container layer, overriding the image's default data directory.
       PGDATA: /var/lib/postgresql/data
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -137,6 +137,9 @@ services:
     restart: always
     command:
       - "--api.insecure=true"
+      # Enable Traefik's private liveness endpoint on the internal admin
+      # entrypoint. It is not exposed through the public web entrypoint.
+      - "--ping=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -147,6 +150,14 @@ services:
       # Traefik dashboard, loopback only. Reach it over an SSH tunnel:
       #   ssh -L 8081:127.0.0.1:8081 user@host
       - "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080"
+    healthcheck:
+      # Coolify and Docker can use the native Traefik check without curl or
+      # wget. The default ping entrypoint is port 8080, which remains loopback-only.
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     environment:
       - DOCKER_API_VERSION=1.44
     volumes:
@@ -241,6 +252,12 @@ services:
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - CHAT_CREDENTIALS_STORE=file
       - CODEX_HOME=/run/qs-codex
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     tmpfs:
       - /run/qs-codex:mode=0700
     networks:
@@ -325,6 +342,12 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     labels:
       # `workspace`, priority 1: the UI is whatever no other route claimed.
       - "traefik.enable=true"
@@ -351,6 +374,12 @@ services:
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
       - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
       - "traefik.http.routers.docs.middlewares=docs-stripprefix"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8003/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - qs-network
 
@@ -379,6 +408,12 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -395,6 +430,12 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -412,6 +453,12 @@ services:
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8007
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8007/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     # Not published: the export upload is reached through the Gateway, which is
     # where the session is checked. The port exists for that hop alone.
     expose:
@@ -437,6 +484,12 @@ services:
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8005
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - qs-network
 
@@ -456,6 +509,12 @@ services:
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8006
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     labels:
       # `ingest`, priority 30: the short URL an external tracker posts to,
       # without needing a second open port.
@@ -486,6 +545,12 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -502,6 +567,12 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -518,6 +589,12 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 

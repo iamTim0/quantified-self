@@ -44,4 +44,7 @@ ENV PATH="/app/services/core/.venv/bin:${PATH}"
 # 8001 is HTTP; 50051 is the gRPC read API the Analysis Service uses.
 EXPOSE 8001 50051
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"
+
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8001"]

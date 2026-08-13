@@ -15,6 +15,7 @@ plus [CLAUDE.md](CLAUDE.md).
 - **Idempotency**: All ingestion events require deterministic `idempotency_key` = `SHA256(tenant_id + source_id + metric_type + timestamp)`.
 - **Inter-service Communication**: Importers publish to NATS (`qs.ingest.<source>`); Analysis queries Core via gRPC.
 - **No Auto-Seed Data**: Microservices and importers MUST NEVER automatically generate mock seed data on startup or missing config.
+- **Health Checks**: Every long-running first-party service image and production Compose service declares a healthcheck; the public Traefik ingress is covered as well. HTTP services use a cheap local endpoint; NATS-only workers check broker connectivity without requiring credentials or provider availability. One-shot migration and volume-init jobs are exempt.
 
 ## 2. Enabled Skills
 Canonical definitions live in `.agents/skills/`; Claude Code registers them via stubs in `.claude/skills/`.

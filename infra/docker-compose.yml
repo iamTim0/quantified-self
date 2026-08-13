@@ -7,8 +7,8 @@ services:
       POSTGRES_USER: qs_dev
       POSTGRES_PASSWORD: qs_dev_password
       POSTGRES_DB: quantified_self
-      # The HA image defaults to /home/postgres/pgdata/data. Keep the database
-      # inside the named volume instead of the disposable container layer.
+      # Keep the database inside the named volume instead of the disposable
+      # container layer, overriding the image's default data directory.
       PGDATA: /var/lib/postgresql/data
     volumes:
       - pgdata:/var/lib/postgresql/data

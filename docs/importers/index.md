@@ -21,6 +21,25 @@ transformer tests together whenever a provider changes its payload.
 | Weather | active | Open-Meteo-compatible HTTP API | `qs.ingest.weather` | Temperature, pressure, precipitation, UV |
 | Calendar | active | ICS/iCalendar feed URL | `qs.ingest.calendar` | Events, busy hours, meeting duration |
 
+## Healthcheck contract
+
+Healthchecks are part of the importer runtime contract, not an optional deployment decoration.
+Every importer image declares a Docker `HEALTHCHECK`, and its production Compose service repeats the
+check so Coolify can observe it.
+
+- HTTP importers use an unauthenticated local `/health` endpoint. It checks that the importer process
+  can serve requests and does not require a tenant, connector token, or provider API.
+- NATS-only workers check TCP connectivity to the configured `NATS_URL`. They remain healthy while
+  no connector is configured, because an idle importer is an expected state rather than a failure.
+- Provider APIs and connector credentials are never called from a healthcheck. Provider outages belong
+  in sync-run status and deployment logs, not in container liveness.
+- One-shot services such as migrations and volume initialization are excluded: successful exit is their
+  healthy outcome, so a running healthcheck would report the wrong state.
+
+When adding an importer, add the image-level check and the matching production Compose check together,
+then add a contract assertion under `tools/tests/`. The complete implementation checklist is in
+[AGENTS.md](../../AGENTS.md#when-adding-a-new-importer).
+
 *Active* means the platform fetches from the provider; *passive* means the data arrives when
 the provider or the phone sends it. Neither kind keeps a timer: Core's scheduler decides when
 an active connector is due and publishes a task the importer executes — see
