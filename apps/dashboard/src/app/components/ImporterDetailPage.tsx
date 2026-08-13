@@ -34,6 +34,7 @@ function statusKey(status: string): MessageKey {
   if (status === "skipped") return "importerDetail.statusSkipped";
   if (status === "queued") return "importerDetail.statusQueued";
   if (status === "running") return "importerDetail.statusRunning";
+  if (status === "loading") return "importerDetail.statusLoading";
   return "importerDetail.statusUnknown";
 }
 
@@ -68,6 +69,7 @@ function durationLabel(
 function statusClass(status: string): string {
   if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800";
   if (status === "error") return "border-rose-200 bg-rose-50 text-rose-800";
+  if (status === "loading") return "border-sky-200 bg-sky-50 text-sky-800";
   if (status === "skipped") return "border-slate-200 bg-slate-100 text-slate-700";
   return "border-amber-200 bg-amber-50 text-amber-800";
 }
@@ -313,6 +315,7 @@ export default function ImporterDetailPage({
                       </div>
                       <p className="mt-1 text-[11px] text-slate-500">
                         {t("importerDetail.points", {
+                          processed: formatNumber(run.points_processed),
                           accepted: formatNumber(run.points_accepted),
                           duplicate: formatNumber(run.points_duplicate),
                           expected:

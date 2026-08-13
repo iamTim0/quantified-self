@@ -52,6 +52,9 @@ export interface ImportPlan {
 export interface SyncRun {
   id: string;
   request_id: string;
+  source_id: string | null;
+  source_type: string;
+  connector_name: string | null;
   mode: string;
   trigger: string;
   status: string;
@@ -60,6 +63,7 @@ export interface SyncRun {
   window_reason: string | null;
   points_expected: number | null;
   points_received: number;
+  points_processed: number;
   points_accepted: number;
   points_duplicate: number;
   message: string | null;
@@ -636,7 +640,8 @@ export default function ImportDialog({
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("import.running")}
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                  {running.status === "loading" ? t("import.loadingCore") : t("import.running")}
                 </h3>
                 {typicalHint && <span className="text-[11px] text-emerald-700">{typicalHint}</span>}
               </div>
@@ -650,7 +655,7 @@ export default function ImportDialog({
                         width: `${Math.min(
                           100,
                           Math.round(
-                            ((running.points_accepted + running.points_duplicate) /
+                            (running.points_processed /
                               (running.points_expected ?? running.points_received)) *
                               100,
                           ),
@@ -660,14 +665,14 @@ export default function ImportDialog({
                   </div>
                   <p className="mt-1.5 text-[11px] text-emerald-900">
                     {t("import.progressOf", {
-                      done: running.points_accepted + running.points_duplicate,
+                      done: running.points_processed,
                       total: running.points_expected ?? running.points_received,
                     })}
                   </p>
                 </>
               ) : (
                 <p className="text-[11px] text-emerald-900">
-                  {t("import.progressCounted", { count: running.points_accepted })}
+                  {t("import.progressCounted", { count: running.points_processed })}
                 </p>
               )}
             </div>

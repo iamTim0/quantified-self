@@ -295,6 +295,10 @@ class SyncRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
     points_expected: Mapped[int | None] = mapped_column(Integer, nullable=True)
     points_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Events published by an importer are not stored synchronously. This count
+    # advances in the Core consumer and is what separates "published" from
+    # "loaded" in the run lifecycle.
+    points_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped_ranges: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)

@@ -61,7 +61,11 @@ TICK_SECONDS = 300
 STALE_RUN_AFTER = timedelta(hours=6)
 
 # Statuses that mean "this connector is busy".
-IN_FLIGHT_STATUSES = ("queued", "running")
+# Core loading is still part of the same import. A second scheduled run must
+# wait until the consumer has drained the first run's events, otherwise the
+# connector can report two overlapping imports while its first batch is only
+# just being written.
+IN_FLIGHT_STATUSES = ("queued", "running", "loading")
 
 DEFAULT_POLL_INTERVAL_HOURS = 6.0
 

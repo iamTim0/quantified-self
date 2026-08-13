@@ -87,8 +87,17 @@ the same audit trail as successful work.
 The tenant-protected endpoint
 `GET /api/v1/data/sources/<connector-id>/sync-runs` returns the newest runs for that connector.
 Each entry includes its status, trigger, request id, import window, accepted and duplicate point
-counts, optional expected point count, message and duration. The connector id is used deliberately:
+counts, the importer publish count, the Core processing count, optional expected point count, message
+and duration. The connector id is used deliberately:
 two connectors of the same type must never share a history or progress display.
+
+The Connectors page also reads `GET /api/v1/data/sync-runs` for a tenant-wide overview. It includes
+the connector display name and supports pagination plus optional `status` and `source_type` filters.
+The lifecycle is explicit: `queued` means Core has not handed the task to an importer yet, `running`
+is the importer/discovery phase, `loading` means the importer has published its events and Core is
+still consuming them, `success` means Core has processed the complete published count, and `error`
+or `skipped` are terminal outcomes. `points_received` is the number published by the importer;
+`points_processed` is the number Core has stored, deduplicated or quarantined.
 
 An importer can report a known total while it is still running through Core's internal
 `.../sync-runs/<sync-run-id>/progress` endpoint. `points_expected` may remain unknown for a
@@ -97,7 +106,7 @@ the only owner of the run record and the dashboard reads it through the tenant-s
 connector detail view at `/connectors/<connector-id>` shows the latest status, progress counts,
 durations and history.
 
-Core also expires a `queued` or `running` run after six hours without completion. It records an
+Core also expires a `queued`, `running` or `loading` run after six hours without completion. It records an
 error and allows the next scheduled attempt to proceed, so a crashed importer cannot block a
 connector forever. Rejected push API keys may be attributed to their connector using only the
 stored key hash; the plaintext key is never sent to Core or written to the run history.

@@ -143,8 +143,19 @@ GET /api/v1/data/sources/{source_type}/sync-runs?limit=20
 Authorization: Bearer <jwt>
 ```
 
+For a tenant-wide view across all connector instances, use:
+
+```http
+GET /api/v1/data/sync-runs?limit=50&status=loading
+Authorization: Bearer <jwt>
+```
+
 Every run carries its window, mode, trigger, status and skipped ranges, plus the counters
-`points_received`, `points_accepted` and `points_duplicate`.
+`points_received`, `points_processed`, `points_accepted` and `points_duplicate`. The statuses are
+`queued` (waiting for the importer), `running` (the importer is discovering and publishing),
+`loading` (Core is consuming the published events), `success`, `error` or `skipped`. A run is not
+successful merely because publishing finished: Core closes it only after `points_processed` reaches
+the published/expected count.
 
 ## How to read it, and its limits
 

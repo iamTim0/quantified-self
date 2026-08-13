@@ -92,6 +92,10 @@
   - Tenant-scoped daily Pearson correlation analysis with a Dashboard Data Quality Center.
 - [ ] **🤖 Generative AI & Vector Insight Features**:
   - gRPC reader querying Core → vector embeddings with `pgvector` → LLM health insights, trend anomaly alerts, and cross-metric correlation analysis.
+- [ ] **📱 Mobile-first Dashboard**:
+  - Optimize the dashboard layout, navigation, charts and import controls for phone-sized screens so the workspace remains useful on mobile.
+- [ ] **🗓️ Daily Story Dashboard**:
+  - Add a deliberate daily overview that turns the newest imported activity into an understandable timeline, highlights what happened today, and surfaces selected statistics from the analysis service instead of showing an arbitrary collection of cards.
 - [ ] **🤝 Cross-Tenant Data Sharing**:
   - UI & API for managing `tenant_shares` consent grants with friends, family, or health coaches.
 - [ ] **🔀 Smart Duplicate & Cross-Source Conflict Resolution**:

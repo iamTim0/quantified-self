@@ -30,7 +30,7 @@ import nats
 from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, case, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -549,6 +549,10 @@ async def process_message(msg):
                             raw_metric_type,
                             refusal,
                         )
+                    if sync_run_id:
+                        await _tally(
+                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -560,6 +564,10 @@ async def process_message(msg):
                         raw_metric_type=raw_metric_type,
                         reason="discarded_by_rule",
                     )
+                    if sync_run_id:
+                        await _tally(
+                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -580,6 +588,10 @@ async def process_message(msg):
                         raw_metric_type,
                         exc,
                     )
+                    if sync_run_id:
+                        await _tally(
+                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -632,7 +644,13 @@ async def process_message(msg):
                 # reported "done" while the other 49,999 were still queued — and
                 # every message rewrote the same row, which serialised the whole
                 # import behind one row lock for nothing.
-                await _tally(session, tenant_id, sync_run_id, inserted=inserted)
+                await _tally(
+                    session,
+                    tenant_id,
+                    sync_run_id,
+                    source_id=source.id,
+                    inserted=inserted,
+                )
             else:
                 await _mark_source_seen(session, tenant_id, data)
 
@@ -742,18 +760,81 @@ async def _mark_source_seen(session, tenant_id: str, data: dict) -> None:
         ds.config = cfg
 
 
-async def _tally(session, tenant_id: str, sync_run_id: str, *, inserted: bool) -> None:
-    """Accumulate accepted/duplicate counts on the run that requested this data.
+async def _tally(
+    session: AsyncSession,
+    tenant_id: str,
+    sync_run_id: str,
+    *,
+    source_id: str | None = None,
+    inserted: bool | None,
+) -> None:
+    """Accumulate Core processing counts and close a drained import run.
 
-    Tenant-scoped on purpose: a forged ``sync_run_id`` from another tenant must not
-    let an event touch that tenant's audit record.
+    Tenant- and connector-scoped on purpose: a forged ``sync_run_id`` from another
+    tenant or connector must not let an event touch that audit record.
+
+    ``points_received`` is the importer's publish count. ``points_processed`` is
+    advanced here, after Core has stored, deduplicated or quarantined the event.
+    The distinction prevents the importer from reporting success while NATS still
+    holds events that Core has not loaded.
     """
-    column = SyncRun.points_accepted if inserted else SyncRun.points_duplicate
-    await session.execute(
-        update(SyncRun)
-        .where(SyncRun.id == sync_run_id, SyncRun.tenant_id == tenant_id)
-        .values({column: column + 1})
+    processed = SyncRun.points_processed + 1
+    values = {SyncRun.points_processed: processed}
+    if inserted is not None:
+        column = SyncRun.points_accepted if inserted else SyncRun.points_duplicate
+        values[column] = column + 1
+
+    drained = and_(
+        SyncRun.status == "loading",
+        SyncRun.finished_at.is_(None),
+        SyncRun.points_expected.is_not(None),
+        processed >= SyncRun.points_expected,
     )
+    now = datetime.now(timezone.utc)
+    values.update(
+        {
+            SyncRun.status: case((drained, "success"), else_=SyncRun.status),
+            SyncRun.finished_at: case((drained, now), else_=SyncRun.finished_at),
+            SyncRun.message: case(
+                (drained, "Core loaded all published data points."),
+                else_=SyncRun.message,
+            ),
+        }
+    )
+
+    run_query = update(SyncRun).where(
+        SyncRun.id == sync_run_id,
+        SyncRun.tenant_id == tenant_id,
+    )
+    if source_id is not None:
+        run_query = run_query.where(SyncRun.source_id == source_id)
+    result = await session.execute(
+        run_query.values(values).returning(
+            SyncRun.source_id, SyncRun.status, SyncRun.points_processed
+        )
+    )
+    completed = result.first()
+    if not completed or completed.status != "success":
+        return
+
+    # The connector badge follows the same authoritative transition as the run.
+    # It must not return to idle when the importer merely finished publishing.
+    source_id = completed.source_id
+    if not source_id:
+        return
+    source_result = await session.execute(
+        select(DataSource).where(
+            DataSource.tenant_id == tenant_id,
+            DataSource.id == source_id,
+        )
+    )
+    source = source_result.scalars().first()
+    if source is not None:
+        config = dict(source.config or {})
+        config["sync_status"] = "idle"
+        config["last_sync_at"] = now.isoformat()
+        config["last_sync_message"] = "Core loaded all published data points."
+        source.config = config
 
 
 # One connection attempt fails fast rather than burning the library's default
