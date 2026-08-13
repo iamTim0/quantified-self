@@ -65,7 +65,13 @@ SKIP_FILES = {
 SKIP_PREFIXES = ("site/", "node_modules/", ".venv/", "apps/dashboard/licenses/")
 
 EMAIL = re.compile(r"\b[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})\b")
-LOCAL_PATH = re.compile(r"(?:[A-Za-z]:\\Users\\[A-Za-z0-9._-]+|/home/[a-z0-9._-]+|/Users/[A-Za-z0-9._-]+)")
+# Match the complete path so a known container-internal path can be allowed
+# without accidentally allowing every path below the same user directory.
+LOCAL_PATH = re.compile(
+    r"(?:[A-Za-z]:\\Users\\[A-Za-z0-9._-]+(?:\\[A-Za-z0-9._-]+)*"
+    r"|/home/[a-z0-9._-]+(?:/[a-z0-9._-]+)*"
+    r"|/Users/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*)"
+)
 BCRYPT = re.compile(r"\$2[aby]\$[0-9]{2}\$[./A-Za-z0-9]{53}")
 # A literal host in a Traefik rule. `${VAR}` and localhost are the only forms a
 # published repository should contain.
@@ -75,6 +81,10 @@ TRAEFIK_HOST = re.compile(r"Host\(`([^`]+)`\)")
 # both places that use it, matching no real password.
 ALLOWED_BCRYPT = {"$2b$12$abcdefghijklmnopqrstuv0123456789012345678901234567890ab"}
 ALLOWED_HOSTS = {"localhost", "127.0.0.1"}
+# This is the default data directory inside the Timescale container, not a
+# developer's or operator's host filesystem. Keep the allowance exact: other
+# paths in the container's user directory must still be reported.
+ALLOWED_CONTAINER_PATHS = {"/home/postgres/pgdata/data"}
 
 
 def tracked_files() -> list[str]:
@@ -88,13 +98,7 @@ def tracked_files() -> list[str]:
     ]
 
 
-def check_file(relative: str) -> list[str]:
-    path = REPO_ROOT / relative
-    try:
-        text = path.read_text(encoding="utf-8")
-    except (UnicodeDecodeError, OSError):
-        return []  # binary or unreadable; nothing to read here
-
+def check_text(relative: str, text: str) -> list[str]:
     problems: list[str] = []
     for number, line in enumerate(text.splitlines(), start=1):
         for match in EMAIL.finditer(line):
@@ -109,8 +113,11 @@ def check_file(relative: str) -> list[str]:
                 )
 
         for match in LOCAL_PATH.finditer(line):
+            path_name = match.group(0).rstrip(".,;:!?")
+            if path_name in ALLOWED_CONTAINER_PATHS:
+                continue
             problems.append(
-                f"{relative}:{number}: absolute local path {match.group(0)!r} "
+                f"{relative}:{number}: absolute local path {path_name!r} "
                 "(use a repository-relative path)"
             )
 
@@ -135,6 +142,16 @@ def check_file(relative: str) -> list[str]:
                 )
 
     return problems
+
+
+def check_file(relative: str) -> list[str]:
+    path = REPO_ROOT / relative
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return []  # binary or unreadable; nothing to read here
+
+    return check_text(relative, text)
 
 
 def main() -> int:
