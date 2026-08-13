@@ -258,6 +258,24 @@ For local development set `ENVIRONMENT=dev` — then it only warns.
 `docker-compose.prod.yml` uses `${VAR:?…}`. A missing variable stops the deploy before a container
 starts. Before, the same deploy would have carried on with the public default without saying anything.
 
+### PostgreSQL is unhealthy during a production or Coolify deploy
+
+The `timescale/timescaledb-ha` image uses `/home/postgres/pgdata/data` by default and runs as UID 1000.
+The deployment Compose files explicitly set `PGDATA=/var/lib/postgresql/data` and initialize the named
+volume's ownership before starting PostgreSQL. If a custom Compose override omits either setting, the healthcheck
+can fail during initialization and data can remain in the disposable container layer.
+
+Inspect the actual healthcheck output on the Coolify host before changing or removing a volume:
+
+```bash
+docker logs --tail=200 <postgres-container>
+docker inspect <postgres-container> \
+  --format '{{range .State.Health.Log}}{{println .Output}}{{end}}'
+```
+
+Do not delete `pgdata` until its contents have been confirmed disposable. The `postgres-volume-init` service
+only changes ownership; it does not remove database files.
+
 ### Connector credentials can no longer be decrypted
 
 `ENCRYPTION_KEY` differs from the one they were stored with. Re-encrypt with the old value rather than

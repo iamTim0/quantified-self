@@ -77,7 +77,7 @@ gh attestation verify --owner iamTim0 \
 
 Along with that, a GitHub release is created with the tag `v<version>`, the changelog and an attached
 `quantified-self-<version>-deploy.tar.gz`. That bundle contains exactly what a server needs —
-`docker-compose.prod.yml`, `docker-compose.coolify.yml`, `infra/db/init.sql`, a prepared `.env` with the
+`docker-compose.prod.yml`, `infra/db/init.sql`, a prepared `.env` with the
 version pinned, and a short README. No source code, no Git, no toolchain.
 
 The release notes also list the digest of every image. Where it has to be reproducible, pin the digest
@@ -192,7 +192,7 @@ deployment itself:
 | `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | The Traefik dashboard, bound **to loopback only**. |
 | `POSTGRES_PASSWORD` | `qs_dev_password` | Reachable only inside the compose network. See the note below. |
 | `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | The Gateway's CORS origins. The default is its own origin under both schemes — **not** `*`: the Gateway runs with `allow_credentials=True`, and a wildcard makes Starlette reflect back whichever origin asks. Both schemes, because a proxy or tunnel in front of the stack may terminate TLS and `QS_HTTP_PORT` is deliberately http. |
-| `TUNNEL_TOKEN` | empty | Your Cloudflare Tunnel token. The `cloudflared` container starts automatically in production to secure access. Leave empty if you don't use it, but you'll need to set `QS_BIND_IP=0.0.0.0` to expose the ports. |
+| `TUNNEL_TOKEN` | required | Your Cloudflare Tunnel token. The production `cloudflared` container is the only public entrypoint. |
 
 `POSTGRES_PASSWORD` is deliberately not a `:?` required value like the three secrets: PostgreSQL sets the
 password **once**, while initializing an empty volume. A new value against an existing volume changes
@@ -295,12 +295,12 @@ thinks of its own configuration — that is the part that distinguishes "it answ
 correctly". The dashboard shows the same findings to owners as a banner, see
 [What the dashboard says about itself](operations.md#what-the-dashboard-says-about-itself).
 
-## Coolify networking
+## Cloudflare networking in Coolify
 
-The Coolify topology is self-contained: Coolify supplies only the application network. A remotely managed
-Cloudflare Tunnel enters that network through `cloudflared`, and a stack-owned Traefik routes the request.
-Neither service publishes a host port, so Coolify's global proxy remains free to serve unrelated applications
-on the same server without becoming part of this stack's ingress path.
+The standard production Compose file is intentionally used in Coolify. Coolify starts and supervises the
+containers, while the stack owns its ingress: a remotely managed Cloudflare Tunnel enters through `cloudflared`,
+and the stack-owned Traefik routes the request. Every service joins the private `qs-network`; Coolify's proxy is
+not part of the request path.
 
 ```text
 Internet
@@ -330,20 +330,20 @@ allowlist alone does not make external exposure safe.
 
 ### Required Coolify setup
 
-Use the committed `docker-compose.coolify.yml` as the Coolify Compose file. It is the tunnel-backed
-counterpart to `docker-compose.prod.yml` and must be updated in the same change whenever a service, image,
-internal port, or public route changes.
+Use the committed `docker-compose.prod.yml` as the Coolify Compose file. It is the single production topology
+and must be updated whenever a service, image, internal port, or public route changes.
 
 1. Choose the **Docker Compose** build pack, use repository root `/` as the base directory, and set the
-   Compose file location to `docker-compose.coolify.yml`.
+   Compose file location to `docker-compose.prod.yml`.
 2. Set `QS_VERSION`, `PUBLIC_HOST`, `ALLOWED_ORIGINS`, `POSTGRES_PASSWORD`, `JWT_SECRET`,
    `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY`, and `TUNNEL_TOKEN` in Coolify. Mark the token and secrets
    as secret values. Use `ALLOWED_ORIGINS=https://<host>` for the normal single-origin deployment.
 3. Create a remotely managed tunnel in Cloudflare. Add one Published Application route whose hostname is
    `PUBLIC_HOST`, whose path is empty, and whose service URL is **`http://traefik:80`**. Do not use
    `localhost`: inside the cloudflared container that name means cloudflared itself.
-4. Do not assign a Coolify domain to dashboard, Gateway, docs, Traefik, or cloudflared. Do not add host
-   `ports:`, a custom network, or Coolify proxy labels. The tunnel is the only public entrypoint.
+4. Do not assign a Coolify domain to dashboard, Gateway, docs, Traefik, or cloudflared. Do not add another
+   network or Coolify proxy labels. The tunnel is the only public entrypoint; the stack's host bindings are
+   loopback-only by default.
 5. Keep the service names unchanged. Internal URLs such as `http://core:8001`, `core:50051`,
    `postgres:5432`, `nats:4222`, and `http://analysis:8010` resolve through the application network.
 6. Keep Cloudflare's incoming `Host` header unchanged. The file-provider routes require `PUBLIC_HOST` and
@@ -351,11 +351,15 @@ internal port, or public route changes.
 7. Let Cloudflare terminate public TLS and keep `COOKIE_SECURE=true`. The tunnel-to-Traefik hop stays private
    HTTP inside the application network.
 
-The Coolify stack lets `core-migrate` create and upgrade the schema through Alembic. It deliberately does
-not bind-mount `infra/db/init.sql`: Coolify's remote Compose runner cannot reliably expose a repository file
-as a Docker-host bind source and may create a directory at the container target instead. PostgreSQL data is
-kept in the named `pgdata` volume by explicitly setting `PGDATA` to its mount target. Without that override,
-the HA image's own default would place the real database in the disposable container layer.
+The stack's `core-migrate` service creates and upgrades the schema through Alembic. On a fresh volume,
+`infra/db/init.sql` creates the base extensions and schema; subsequent changes belong to migrations. PostgreSQL
+data is kept in the named `pgdata` volume by explicitly setting `PGDATA` to `/var/lib/postgresql/data`. The stack
+also normalizes the named volume to the HA image's UID 1000 before PostgreSQL starts. Without those settings,
+the HA image's own default would place the real database in the disposable container layer or fail initialization
+with a permissions error.
+
+The same `PGDATA` and volume-ownership settings are present in the standalone production and development
+topologies. Do not remove them when changing the PostgreSQL image or volume target.
 
 The dashboard, Gateway, and docs may share one public hostname because the proxy routes by path. Core,
 Analysis, PostgreSQL, NATS, and all polling importers remain private services with no public domain.
@@ -387,8 +391,8 @@ reach Traefik; its service URL must be `http://traefik:80`. A Traefik 404 usuall
 does not equal `PUBLIC_HOST`. The service-to-service names above are the contract; `localhost` is always the
 current container, not another service.
 
-For a standalone host, continue using `docker-compose.prod.yml` behind its embedded Traefik or another
-external reverse proxy. The standalone file and the Coolify-managed network must not be mixed.
+The same `docker-compose.prod.yml` can be run directly on a host or by Coolify. In both cases, keep the
+Cloudflare-to-cloudflared-to-Traefik path and the `qs-network` service names unchanged.
 
 ## When it goes wrong
 
@@ -396,7 +400,7 @@ external reverse proxy. The standalone file and the Coolify-managed network must
 | --- | --- |
 | `denied` on `pull` | The packages are still private. See [package visibility](#one-off-package-visibility). |
 | `required variable JWT_SECRET is missing` | Exactly as intended. Set the three secrets. |
-| `required variable TUNNEL_TOKEN is missing` | Set the remotely managed tunnel token in Coolify and keep it secret. |
+| `cloudflared` repeatedly restarts | Set the remotely managed `TUNNEL_TOKEN` in Coolify and keep it secret. |
 | Cloudflare reports the tunnel healthy but returns 502 | Set the Published Application service URL to `http://traefik:80`, not `localhost`. |
 | `manifest unknown` | `QS_VERSION` points at a version for which there is no release. |
 | Importers run but import nothing | `INTERNAL_SERVICE_SECRET` has to be identical on Core **and on all eight importers** — in the old production compose file it was missing from the importers, so every credential fetch was rejected. |

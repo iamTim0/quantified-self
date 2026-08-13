@@ -7,9 +7,10 @@
 # commit. Images are now built and published by `.github/workflows/release.yml`
 # and this file only pulls them, so a deploy is a download and a restart.
 #
-# This is the standalone topology. Coolify deployments use the maintained
-# `docker-compose.coolify.yml`, which leaves networking and public routing to
-# Coolify's proxy.
+# This is the standard production topology, including its own Traefik and
+# cloudflared ingress. Coolify may run this file as the deployment controller,
+# but it is not part of the request path: traffic enters through Cloudflare,
+# reaches cloudflared, and then stays on this stack's private network.
 #
 #     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml pull
 #     QS_VERSION=1.0.0 docker compose -f docker-compose.prod.yml up -d
@@ -53,6 +54,9 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-qs_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
+      # The HA image defaults to /home/postgres/pgdata/data. Keep the database
+      # inside the named volume instead of the disposable container layer.
+      PGDATA: /var/lib/postgresql/data
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Creates the schema for an empty volume and seeds nothing. Alembic owns
@@ -63,7 +67,23 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qs_dev} -d ${POSTGRES_DB:-quantified_self}"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 30s
+    depends_on:
+      postgres-volume-init:
+        condition: service_completed_successfully
+    networks:
+      - qs-network
+
+  # The HA image runs as UID 1000. Coolify can create a named volume as root,
+  # so normalize ownership before PostgreSQL attempts its first initialization.
+  postgres-volume-init:
+    image: alpine:3.22
+    restart: "no"
+    user: "0:0"
+    command: ["sh", "-c", "chown -R 1000:1000 /var/lib/postgresql/data && chmod 700 /var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     networks:
       - qs-network
 
@@ -501,17 +521,14 @@ services:
     networks:
       - qs-network
 
-  # Starts automatically by default to secure the stack. If you don't use it,
-  # it will simply exit if no TUNNEL_TOKEN is provided.
-  #
-  # `:-` and not `:?`, so that Compose parses the file even when TUNNEL_TOKEN is
-  # omitted, allowing you to use the stack without a tunnel by binding ports manually.
+  # The production entrypoint is always Cloudflare Tunnel. Fail during Compose
+  # parsing when the token is absent instead of restarting an unusable tunnel.
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: qs-cloudflared-tunnel
     restart: unless-stopped
     environment:
-      - TUNNEL_TOKEN=${TUNNEL_TOKEN:-}
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN}
     command: tunnel --no-autoupdate run
     depends_on:
       - traefik
@@ -519,9 +536,8 @@ services:
       - qs-network
 
 volumes:
-  # Unchanged names, so a stack that previously ran docker-compose.coolify.yml in
-  # this directory keeps its data: Compose derives the volume key from the
-  # project name, and the project name still comes from the directory.
+  # Keep these names stable across redeploys so PostgreSQL and JetStream retain
+  # their data when the application containers are recreated.
   pgdata:
   natsdata:
 

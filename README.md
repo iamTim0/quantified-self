@@ -36,16 +36,17 @@ checkout, no toolchain. See [Release & Deployment](docs/deployment.md) for the f
 procedure, and for the `ENCRYPTION_KEY` ordering trap.
 
 For Coolify, choose the Docker Compose build pack at repository root and set the
-Compose file to `docker-compose.coolify.yml`; it uses Coolify's managed network
-with its own cloudflared-to-Traefik ingress, without host ports or access to
-unrelated containers on the server.
+Compose file to `docker-compose.prod.yml`. This is intentional: the standard stack
+includes its own Traefik and `cloudflared` services. Configure the Cloudflare Tunnel
+Published Application service as `http://traefik:80`; Coolify's proxy is not part of
+the request path.
 
 ```bash
 curl -fsSL https://github.com/iamTim0/quantified-self/releases/download/v1.0.0/quantified-self-1.0.0-deploy.tar.gz | tar -xz
 cd quantified-self-1.0.0
 
-# Fill in PUBLIC_HOST and the three secrets — compose refuses to start without
-# them — and POSTGRES_PASSWORD, which is only choosable before the first start.
+# Fill in PUBLIC_HOST, TUNNEL_TOKEN and the three secrets — compose refuses to
+# start without them — and POSTGRES_PASSWORD, which is only choosable before the first start.
 $EDITOR .env
 
 docker compose -f docker-compose.prod.yml config >/dev/null   # names any missing variable
@@ -215,7 +216,6 @@ quantified-self/
 ├── .agents/scripts/       # Lifecycle hooks and spec tooling, shared by all agents
 ├── tools/build_images.py  # The published image list; the release workflow reads it
 ├── docker-compose.prod.yml # Production stack from published images. No build:
-├── docker-compose.coolify.yml # Coolify stack with private tunnel ingress
 ├── Taskfile.yml
 ├── README.md
 └── AGENTS.md
@@ -401,8 +401,7 @@ API importers are stateless workers fetching data and pushing it into NATS JetSt
 4. **Transformer**: Implement `transformer.py` to map external JSON to standard platform `DataPoint` records.
 5. **NATS Subject**: Configure publishing to `qs.ingest.<name>`.
 6. **Docker**: Add the service to `infra/docker-compose.yml` (dev, builds from
-   source), to `docker-compose.prod.yml` (standalone production), to
-   `docker-compose.coolify.yml` (Coolify production), and to the image manifest in
+   source), to `docker-compose.prod.yml` (production and Coolify), and to the image manifest in
    `tools/build_images.py` — CI fails if a Dockerfile is in neither list there,
    because an unpublished image cannot be deployed.
 7. **Tests**: Add unit and integration tests.

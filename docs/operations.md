@@ -237,12 +237,12 @@ configuration. A correctly set up production deployment reports nothing there.
     `/docs/` also fails when Traefik and the docs container are not running: the dashboard answers
     there instead.
 
-### Network boundaries (standalone Compose)
+### Network boundaries (production Compose)
 
-This section describes the standalone `docker-compose.prod.yml` topology. For Coolify, use the
-[Coolify networking procedure](deployment.md#coolify-networking): the application network contains its own
-cloudflared-to-Traefik ingress without host ports. Coolify's global proxy can continue serving unrelated
-applications but is not in this stack's request path.
+This section describes the `docker-compose.prod.yml` topology, which is also the topology used when Coolify
+starts the stack. The application network contains its own cloudflared-to-Traefik ingress. Coolify's global
+proxy can continue serving unrelated applications but is not in this stack's request path. See the
+[Cloudflare networking procedure](deployment.md#cloudflare-networking-in-coolify).
 
 Only Traefik belongs on the outside, and through it the Gateway, the dashboard and the docs. **Core must
 not be publicly reachable** — it serves decrypted connector credentials over `/api/v1/internal/*`. Core

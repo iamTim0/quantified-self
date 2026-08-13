@@ -2,11 +2,11 @@
 
 This is the test for a failure that happened rather than one that might. Applying
 migrations was a *step in the instructions* — `run --rm core alembic upgrade head`
-after `up -d` — and an instruction is not a mechanism: the Coolify topology deploys
-by starting the Compose stack, so there was nowhere to type it, and the development
-stack's `up` never ran it either. A migration adding `sync_runs.points_expected` sat
-committed for weeks while the database it belonged to did not have the column, and
-every import run answered 500 from a schema that was simply behind.
+after `up -d` — and an instruction is not a mechanism: a deployment that starts the
+Compose stack has nowhere to type it, and the development stack's `up` never ran it
+either. A migration adding `sync_runs.points_expected` sat committed for weeks while
+the database it belonged to did not have the column, and every import run answered
+500 from a schema that was simply behind.
 
 So each deployment file gets a one-shot `core-migrate` service and Core waits for it
 to exit successfully. What this file checks is that the next topology cannot be added
@@ -106,6 +106,36 @@ def test_the_migration_waits_for_a_database_that_accepts_connections(topology):
     assert any(line.startswith("healthcheck:") for line in services["postgres"]), (
         f"{topology}: postgres needs a healthcheck for that condition to mean anything"
     )
+
+
+@pytest.mark.parametrize("topology", TOPOLOGIES)
+def test_timescale_data_volume_matches_pgdata_and_is_initialized(topology):
+    """Prevents the HA image from storing data in the disposable container layer."""
+    services = service_blocks(REPO_ROOT / topology)
+    postgres = " ".join(services["postgres"])
+    volume_init = " ".join(services["postgres-volume-init"])
+
+    assert "PGDATA: /var/lib/postgresql/data" in postgres, (
+        f"{topology}: the Timescale HA data directory must be explicit"
+    )
+    assert _depends_on(services["postgres"]).get("postgres-volume-init") == "service_completed_successfully", (
+        f"{topology}: postgres must wait for volume ownership initialization"
+    )
+    assert "chown -R 1000:1000 /var/lib/postgresql/data" in volume_init, (
+        f"{topology}: the HA volume must be writable by the postgres UID"
+    )
+
+
+def test_production_routes_public_traffic_through_cloudflare_and_traefik():
+    """Keeps Coolify as the deployment controller, not a second ingress path."""
+    services = service_blocks(REPO_ROOT / "docker-compose.prod.yml")
+    traefik = " ".join(services["traefik"])
+    cloudflared = " ".join(services["cloudflared"])
+
+    assert "TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN}" in cloudflared
+    assert "command: tunnel --no-autoupdate run" in cloudflared
+    assert "  - qs-network" in traefik and "  - qs-network" in cloudflared
+    assert "${QS_BIND_IP:-127.0.0.1}:${QS_HTTP_PORT:-80}:80" in traefik
 
 
 def _depends_on(block: list[str]) -> dict[str, str]:
