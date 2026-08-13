@@ -72,6 +72,8 @@
   - Open-Meteo / Weather API importer bringing historical and real-time local weather metrics (temperature, barometric pressure, precipitation, UV index) to correlate weather patterns with mood, HRV, and physical performance.
 - [x] **📅 Kalender Importer (Calendar Data)**:
   - iCal / Google Calendar / Outlook integration importing daily schedules, meeting durations, and busy hours to analyze cognitive stress, routine consistency, and sleep impact.
+- [ ] **🐙 GitHub Statistics Importer**:
+  - Optional, tenant-scoped GitHub integration for importing user-authorized contribution statistics such as commits, pull requests, issues, reviews, and repository activity, with incremental synchronization, rate-limit handling, canonical metric registration, and provenance metadata.
 - [ ] **⌚ Additional Health Wearables**:
   - Whoop, Apple Health, Garmin, Strava, and Oura ETL microservices.
 
