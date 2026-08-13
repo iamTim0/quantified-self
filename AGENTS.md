@@ -66,6 +66,8 @@ These rules are non-negotiable. Breaking them will result in immediate rejection
 
     **Whole raw payloads are deliberately not stored.** Not for storage cost — because this platform deliberately does not store special-category data (ECG traces, cycle tracking, medications, State of Mind), and a stored raw payload would keep all of it anyway, invisibly, in a column nothing declares. Whether that data is held is the operator's decision and it changes what the privacy policy must say; it is not something an importer does as a side effect of being careful. Per-value provenance, yes, always. Per-payload archives, no.
 
+20. **Health Checks Are Part of Every First-Party Runtime Service**: Every long-running first-party service image MUST declare a Docker `HEALTHCHECK`, and every long-running first-party service in `docker-compose.prod.yml` plus the public Traefik ingress MUST have a healthcheck that Coolify can observe. HTTP services expose an unauthenticated, cheap local liveness endpoint (`/health` for APIs/importers, or the service's documented local endpoint); the check MUST NOT require tenant credentials, provider credentials, or a live external provider. NATS-only workers check the configured broker connection and remain healthy when no connector is configured. Third-party infrastructure is covered by a native or Compose healthcheck when supported. One-shot jobs such as migrations and volume initializers are explicitly exempt and MUST NOT be made unhealthy merely because they exit successfully. New importers MUST follow this contract in both their Dockerfile and production Compose entry.
+
 ---
 
 ## Code Conventions
@@ -113,8 +115,9 @@ If the user asks to add an integration for a new data source:
 6. Ensure the `idempotency_key` is generated correctly in the transformer, from the
    *canonical* metric name.
 7. Add a `Dockerfile` for the new service and add it to **three** places: `infra/docker-compose.yml` (development, builds from source), `docker-compose.prod.yml` (production, pulls the published image) and the `IMAGES` manifest in `tools/build_images.py`. The manifest is what the release workflow builds; a Dockerfile missing from it is an image that is simply never published, which is why CI fails on it rather than letting it pass silently. Build from the **repository root**, because the path dependency on `packages/shared-schemas` cannot resolve from a narrower context.
-8. Write a Fizzbee spec extension ONLY IF new distributed patterns are introduced.
-9. Add comprehensive test coverage.
+8. Add a Docker `HEALTHCHECK` to the new image and a matching `healthcheck:` block to its production Compose service. Use the local `/health` endpoint for HTTP importers; use a broker-connectivity check for NATS-only workers. Do not make health depend on credentials or provider availability.
+9. Write a Fizzbee spec extension ONLY IF new distributed patterns are introduced.
+10. Add comprehensive test coverage, including the healthcheck contract.
 
 ---
 
@@ -171,6 +174,7 @@ If you see these patterns, you MUST fix them or refuse to write them:
 - ❌ A derived value that does not say it was derived (`derived_from`, `derived_by`, `sample_count`), or one that overwrites a figure the provider stated outright.
 - ❌ Per-sample values written into a `SUM` metric whose daily total the provider already sends — that is double counting, and it is worse than the gap it fills.
 - ❌ A data point without `metadata.provider_value` and `metadata.units`, or an importer that stores whole raw payloads instead (rule 19).
+- ❌ A long-running service or new importer without a Dockerfile `HEALTHCHECK` and a production Compose `healthcheck:` (rule 20), or a healthcheck that requires secrets, tenant state, or provider availability.
 
 ## Documentation Requirements for New Features
 

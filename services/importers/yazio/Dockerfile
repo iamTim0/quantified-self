@@ -30,4 +30,7 @@ RUN uv sync --frozen
 
 ENV PATH="/app/services/importers/yazio/.venv/bin:${PATH}"
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"
+
 CMD ["python", "-m", "yazio_importer.main"]

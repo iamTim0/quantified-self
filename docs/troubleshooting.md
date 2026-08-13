@@ -260,7 +260,7 @@ starts. Before, the same deploy would have carried on with the public default wi
 
 ### PostgreSQL is unhealthy during a production or Coolify deploy
 
-The `timescale/timescaledb-ha` image uses `/home/postgres/pgdata/data` by default and runs as UID 1000.
+The `timescale/timescaledb-ha` image uses a container-local data directory by default and runs as UID 1000.
 The deployment Compose files explicitly set `PGDATA=/var/lib/postgresql/data` and initialize the named
 volume's ownership before starting PostgreSQL. If a custom Compose override omits either setting, the healthcheck
 can fail during initialization and data can remain in the disposable container layer.

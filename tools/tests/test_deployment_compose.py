@@ -20,6 +20,8 @@ from pathlib import Path
 
 import pytest
 
+from tools.build_images import IMAGES
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Every Compose file that starts Core. The development stack is in here for the same
@@ -136,6 +138,40 @@ def test_production_routes_public_traffic_through_cloudflare_and_traefik():
     assert "command: tunnel --no-autoupdate run" in cloudflared
     assert "  - qs-network" in traefik and "  - qs-network" in cloudflared
     assert "${QS_BIND_IP:-127.0.0.1}:${QS_HTTP_PORT:-80}:80" in traefik
+
+
+def test_production_traefik_has_a_private_container_healthcheck():
+    """Keeps Coolify's health signal on the stack's actual public entrypoint."""
+    services = service_blocks(REPO_ROOT / "docker-compose.prod.yml")
+    traefik = " ".join(services["traefik"])
+
+    assert "--ping=true" in traefik
+    assert "healthcheck:" in traefik
+    assert 'test: ["CMD", "traefik", "healthcheck", "--ping"]' in traefik
+    assert "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080" in traefik
+
+
+def test_every_published_runtime_image_declares_a_docker_healthcheck():
+    """Keeps the image contract enforceable for existing and future importers."""
+    for image in IMAGES:
+        if image.name == "core-migrate":
+            # A successful exit is the healthy outcome for this one-shot image.
+            continue
+        dockerfile = REPO_ROOT / image.dockerfile
+        assert "HEALTHCHECK" in dockerfile.read_text(encoding="utf-8"), image.name
+
+
+def test_every_published_production_service_declares_a_healthcheck():
+    """Keeps Coolify's service-level health signal aligned with published images."""
+    services = service_blocks(REPO_ROOT / "docker-compose.prod.yml")
+    published = {
+        name
+        for name, block in services.items()
+        if any(line.startswith("image: ${QS_IMAGE_PREFIX") for line in block)
+    }
+
+    for name in published - {"core-migrate"}:
+        assert any(line.startswith("healthcheck:") for line in services[name]), name
 
 
 def _depends_on(block: list[str]) -> dict[str, str]:
