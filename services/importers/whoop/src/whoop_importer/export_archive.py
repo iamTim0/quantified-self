@@ -70,6 +70,30 @@ CSV_KINDS: dict[str, tuple[str, ...]] = {
 #: documented header names. A spelling that turns out to be wrong costs nothing but the
 #: column it fails to match, which the field report then names.
 COLUMN_FIELDS: dict[str, str] = {
+    # Context fields. They are carried as metadata on the related point rather than
+    # discarded as strings. The normalised names are shared with the API adapter.
+    "cycle start time": "cycle_start_time",
+    "start time": "cycle_start_time",
+    "cycle end time": "cycle_end_time",
+    "timezone of cycle": "cycle_timezone",
+    "cycle timezone": "cycle_timezone",
+    "sleep onset": "sleep_start_time",
+    "sleep start time": "sleep_start_time",
+    "wake onset": "wake_start_time",
+    "wake start time": "wake_start_time",
+    "workout start time": "workout_start_time",
+    "workout end time": "workout_end_time",
+    "gps enabled": "gps_enabled",
+    "activity name": "activity_name",
+    "hr zone 1 %": "heart_rate_zone_1",
+    "hr zone 2 %": "heart_rate_zone_2",
+    "hr zone 3 %": "heart_rate_zone_3",
+    "hr zone 4 %": "heart_rate_zone_4",
+    "hr zone 5 %": "heart_rate_zone_5",
+    "sleep need (min)": "sleep_need_minutes",
+    "sleep consistency %": "sleep_consistency_percentage",
+    "sleep debt (min)": "sleep_debt_minutes",
+    "naps": "sleep_nap_count",
     "day strain": "day_strain",
     "energy burned (cal)": "energy_kcal",
     "average hr (bpm)": "average_heart_rate",
@@ -77,6 +101,7 @@ COLUMN_FIELDS: dict[str, str] = {
     "recovery score %": "recovery_score",
     "resting heart rate (bpm)": "resting_heart_rate",
     "heart rate variability (ms)": "hrv_rmssd_milli",
+    "hrv rmssd (ms)": "hrv_rmssd_milli",
     "blood oxygen %": "spo2_percentage",
     "skin temp (celsius)": "skin_temp_celsius",
     "sleep performance %": "sleep_performance_percentage",
@@ -88,12 +113,42 @@ COLUMN_FIELDS: dict[str, str] = {
     # Sleep, which the export states in full and this table read none of: the registry
     # has held every one of these stages all along.
     "asleep duration (min)": "sleep_duration_minutes",
+    "sleep duration (min)": "sleep_duration_minutes",
+    "sleep duration (min.)": "sleep_duration_minutes",
     "in bed duration (min)": "sleep_in_bed_minutes",
+    "sleep in bed (min)": "sleep_in_bed_minutes",
+    "sleep in bed (min.)": "sleep_in_bed_minutes",
     "light sleep duration (min)": "sleep_light_minutes",
+    "sleep light (min)": "sleep_light_minutes",
+    "sleep light (min.)": "sleep_light_minutes",
     "deep (sws) duration (min)": "sleep_deep_minutes",
+    "sleep deep (min)": "sleep_deep_minutes",
+    "sleep deep (min.)": "sleep_deep_minutes",
     "rem duration (min)": "sleep_rem_minutes",
+    "sleep rem (min)": "sleep_rem_minutes",
+    "sleep rem (min.)": "sleep_rem_minutes",
     "awake duration (min)": "sleep_awake_minutes",
+    "sleep awake (min)": "sleep_awake_minutes",
+    "sleep awake (min.)": "sleep_awake_minutes",
     # German
+    "startzeit des zyklus": "cycle_start_time",
+    "endzeit des zyklus": "cycle_end_time",
+    "zeitzone des zyklus": "cycle_timezone",
+    "beginn des schlafs": "sleep_start_time",
+    "beginn des aufwachens": "wake_start_time",
+    "startzeit des trainings": "workout_start_time",
+    "endzeit des trainings": "workout_end_time",
+    "gps aktiviert": "gps_enabled",
+    "name der aktivität": "activity_name",
+    "hf-zone 1 %": "heart_rate_zone_1",
+    "hf-zone 2 %": "heart_rate_zone_2",
+    "hf-zone 3 %": "heart_rate_zone_3",
+    "hf-zone 4 %": "heart_rate_zone_4",
+    "hf-zone 5 %": "heart_rate_zone_5",
+    "schlafbedarf (min.)": "sleep_need_minutes",
+    "schlafbeständigkeit %": "sleep_consistency_percentage",
+    "schlafdefizit (min.)": "sleep_debt_minutes",
+    "nickerchen": "sleep_nap_count",
     "tagesbelastung": "day_strain",
     "verbrannte energie (cal)": "energy_kcal",
     "durchschnittliche hf (schläge pro minute)": "average_heart_rate",
@@ -128,13 +183,25 @@ EXPORT_METRICS: dict[str, tuple[_Mapping, ...]] = {
         _Mapping("whoop_strain", "", "day_strain"),
         _Mapping("energy_total", "", "energy_kcal"),
         _Mapping("heart_rate_average", "", "average_heart_rate"),
+        _Mapping("heart_rate_max", "", "max_heart_rate"),
+        _Mapping("whoop_recovery_score", "", "recovery_score"),
+        _Mapping("hrv_rmssd", "", "hrv_rmssd_milli"),
+        _Mapping("heart_rate_resting", "", "resting_heart_rate"),
+        _Mapping("blood_oxygen", "", "spo2_percentage"),
+        _Mapping("respiratory_rate", "", "respiratory_rate"),
+        _Mapping("skin_temperature", "", "skin_temp_celsius"),
     ),
     "recovery": (
+        _Mapping("heart_rate_average", "", "average_heart_rate"),
         _Mapping("whoop_recovery_score", "", "recovery_score"),
         _Mapping("heart_rate_resting", "", "resting_heart_rate"),
         _Mapping("hrv_rmssd", "", "hrv_rmssd_milli"),
         _Mapping("blood_oxygen", "", "spo2_percentage"),
         _Mapping("skin_temperature", "", "skin_temp_celsius"),
+        _Mapping("heart_rate_max", "", "max_heart_rate"),
+        _Mapping("whoop_strain", "", "day_strain"),
+        _Mapping("energy_total", "", "energy_kcal"),
+        _Mapping("respiratory_rate", "", "respiratory_rate"),
     ),
     "sleep": (
         _Mapping("whoop_sleep_performance", "", "sleep_performance_percentage"),
@@ -150,6 +217,10 @@ EXPORT_METRICS: dict[str, tuple[_Mapping, ...]] = {
         _Mapping("sleep_duration_deep", "", "sleep_deep_minutes"),
         _Mapping("sleep_duration_rem", "", "sleep_rem_minutes"),
         _Mapping("sleep_duration_awake", "", "sleep_awake_minutes"),
+        _Mapping("whoop_sleep_need", "", "sleep_need_minutes"),
+        _Mapping("whoop_sleep_consistency", "", "sleep_consistency_percentage"),
+        _Mapping("whoop_sleep_debt", "", "sleep_debt_minutes"),
+        _Mapping("sleep_nap_count", "", "sleep_nap_count"),
     ),
     "workout": (
         _Mapping("whoop_workout_strain", "", "activity_strain"),
@@ -158,6 +229,11 @@ EXPORT_METRICS: dict[str, tuple[_Mapping, ...]] = {
         _Mapping("workout_heart_rate_max", "", "max_heart_rate"),
         _Mapping("workout_duration", "", "workout_duration_minutes"),
         _Mapping("workout_distance", "", "distance_meter", MetricUnit.METER),
+        _Mapping("workout_heart_rate_zone_1", "", "heart_rate_zone_1"),
+        _Mapping("workout_heart_rate_zone_2", "", "heart_rate_zone_2"),
+        _Mapping("workout_heart_rate_zone_3", "", "heart_rate_zone_3"),
+        _Mapping("workout_heart_rate_zone_4", "", "heart_rate_zone_4"),
+        _Mapping("workout_heart_rate_zone_5", "", "heart_rate_zone_5"),
     ),
 }
 
@@ -216,6 +292,16 @@ def _number(raw: str) -> float | None:
         return float(text)
     except ValueError:
         return None
+
+
+def _boolean(raw: str) -> bool | None:
+    """Parse the provider's common yes/no spellings without localising output."""
+    value = raw.strip().lower()
+    if value in {"true", "yes", "ja", "1"}:
+        return True
+    if value in {"false", "no", "nein", "0"}:
+        return False
+    return None
 
 
 def read_export(data: bytes) -> Iterator[tuple[str, dict[str, Any]]]:
@@ -295,4 +381,11 @@ def _to_record(row: dict[str, str], kind: str) -> dict[str, Any] | None:
         number = _number(value)
         if number is not None:
             record[field] = number
+        elif field == "gps_enabled":
+            parsed = _boolean(value)
+            record[field] = parsed if parsed is not None else value
+        else:
+            # Context fields such as activity names and timestamps are intentionally
+            # retained as strings; the transformer carries them as point metadata.
+            record[field] = value
     return record

@@ -27,7 +27,7 @@
       "format": "json",
       "source_of_truth": {
         "kind": "external_documentation",
-        "reference": "https://www.healthyapps.dev/"
+        "reference": "https://help.healthyapps.dev/en/health-auto-export/export-format/workouts"
       }
     },
     {
@@ -65,11 +65,23 @@
     "stand_duration",
     "steps",
     "vo2_max",
+    "workout_cadence",
+    "workout_cycling_cadence",
+    "workout_cycling_power",
     "workout_distance",
     "workout_duration",
+    "workout_elevation_gain",
+    "workout_elevation_loss",
     "workout_energy",
     "workout_heart_rate_average",
-    "workout_heart_rate_max"
+    "workout_heart_rate_max",
+    "workout_intensity",
+    "workout_lap_length",
+    "workout_speed_average",
+    "workout_speed_max",
+    "workout_steps",
+    "workout_swim_cadence",
+    "workout_swimming_strokes"
   ],
   "dynamic_namespaces": ["apple_health_"],
   "capabilities": {

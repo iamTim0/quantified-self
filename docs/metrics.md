@@ -121,6 +121,7 @@ dashboard picks whichever matches the reader's language.
 | `blood_pressure_diastolic` | Blood pressure, diastolic | `mmHg` | `average` | apple_health | `diastolic` |
 | `heart_rate` | Heart rate | `bpm` | `average` | apple_health | — |
 | `heart_rate_average` | Average heart rate (day) | `bpm` | `average` | whoop | `cycle_average_heart_rate` |
+| `heart_rate_max` | Maximum heart rate (day) | `bpm` | `max` | whoop | `max_heart_rate` |
 | `heart_rate_resting` | Resting heart rate | `bpm` | `average` | apple_health, whoop | `resting_heart_rate`, `resting_hr`, `resting_heart_rate_bpm` |
 | `heart_rate_walking_average` | Walking heart rate average | `bpm` | `average` | apple_health | `walking_heart_rate_average` |
 | `hrv_rmssd` | HRV (RMSSD) | `ms` | `average` | whoop | `hrv_rmssd_milli` |
@@ -132,13 +133,17 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `sleep_duration` | Sleep duration | `min` | `sum` | apple_health | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
-| `sleep_duration_deep` | Deep sleep | `min` | `sum` | apple_health | `sleep_deep_duration` |
-| `sleep_duration_rem` | REM sleep | `min` | `sum` | apple_health | `sleep_rem_duration` |
-| `sleep_duration_light` | Light sleep | `min` | `sum` | apple_health | `sleep_core_duration`, `sleep_light_duration` |
-| `sleep_duration_awake` | Awake time | `min` | `sum` | apple_health | `sleep_awake_duration` |
-| `sleep_duration_in_bed` | Time in bed | `min` | `sum` | apple_health | `sleep_inbed_duration`, `sleep_in_bed_duration` |
+| `sleep_duration` | Sleep duration | `min` | `sum` | apple_health, whoop | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
+| `sleep_duration_deep` | Deep sleep | `min` | `sum` | apple_health, whoop | `sleep_deep_duration` |
+| `sleep_duration_rem` | REM sleep | `min` | `sum` | apple_health, whoop | `sleep_rem_duration` |
+| `sleep_duration_light` | Light sleep | `min` | `sum` | apple_health, whoop | `sleep_core_duration`, `sleep_light_duration` |
+| `sleep_duration_awake` | Awake time | `min` | `sum` | apple_health, whoop | `sleep_awake_duration` |
+| `sleep_duration_in_bed` | Time in bed | `min` | `sum` | apple_health, whoop | `sleep_inbed_duration`, `sleep_in_bed_duration` |
 | `sleep_efficiency` | Sleep efficiency | `%` | `average` | whoop | `sleep_efficiency_percentage` |
+| `whoop_sleep_need` | WHOOP sleep need | `min` | `average` | whoop | `sleep_need_minutes` |
+| `whoop_sleep_debt` | WHOOP sleep debt | `min` | `average` | whoop | `sleep_debt_minutes` |
+| `whoop_sleep_consistency` | WHOOP sleep consistency | `%` | `average` | whoop | `sleep_consistency_percentage` |
+| `sleep_nap_count` | Naps | `count` | `sum` | whoop | `naps` |
 | `whoop_sleep_performance` | Whoop sleep performance | `%` | `average` | whoop | `sleep_performance_percentage`, `whoop_sleep_performance_percent` |
 | `whoop_recovery_score` | Whoop recovery | `%` | `average` | whoop | `recovery_score` |
 | `oura_sleep_score` | Oura sleep score | `index` | `average` | oura | `sleep_score` |
@@ -171,16 +176,27 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `workout_duration` | Workout duration | `min` | `sum` | apple_health | `whoop_workout_duration_minutes` |
+| `workout_duration` | Workout duration | `min` | `sum` | apple_health, whoop | `whoop_workout_duration_minutes` |
 | `workout_distance` | Workout distance | `km` | `sum` | apple_health, whoop | `workout_distance_meter` |
 | `workout_energy` | Workout energy | `kcal` | `sum` | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
 | `workout_heart_rate_average` | Workout heart rate (average) | `bpm` | `average` | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
-| `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health | `workout_max_heart_rate` |
+| `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health, whoop | `workout_max_heart_rate` |
+| `workout_heart_rate_zone_1` | Workout heart-rate zone 1 | `%` | `average` | whoop | `heart_rate_zone_1` |
+| `workout_heart_rate_zone_2` | Workout heart-rate zone 2 | `%` | `average` | whoop | `heart_rate_zone_2` |
+| `workout_heart_rate_zone_3` | Workout heart-rate zone 3 | `%` | `average` | whoop | `heart_rate_zone_3` |
+| `workout_heart_rate_zone_4` | Workout heart-rate zone 4 | `%` | `average` | whoop | `heart_rate_zone_4` |
+| `workout_heart_rate_zone_5` | Workout heart-rate zone 5 | `%` | `average` | whoop | `heart_rate_zone_5` |
 | `workout_steps` | Steps (workout) | `count` | `sum` | apple_health | — |
 | `workout_speed_average` | Speed (average) | `km/h` | `average` | apple_health | — |
 | `workout_speed_max` | Speed (max) | `km/h` | `max` | apple_health | — |
 | `workout_cadence` | Cadence | `spm` | `average` | apple_health | — |
+| `workout_cycling_cadence` | Cycling cadence | `rpm` | `average` | apple_health | — |
+| `workout_cycling_power` | Cycling power | `W` | `average` | apple_health | — |
 | `workout_elevation_gain` | Elevation gain | `m` | `sum` | apple_health | — |
+| `workout_elevation_loss` | Elevation loss | `m` | `sum` | apple_health | — |
+| `workout_lap_length` | Lap length | `m` | `last` | apple_health | — |
+| `workout_swim_cadence` | Swim cadence | `spm` | `average` | apple_health | — |
+| `workout_swimming_strokes` | Swimming strokes | `count` | `sum` | apple_health | — |
 | `workout_intensity` | Intensity | `MET` | `average` | apple_health | — |
 | `whoop_workout_strain` | Whoop strain (workout) | `index` | `max` | whoop | `workout_strain` |
 

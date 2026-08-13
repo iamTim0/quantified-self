@@ -78,6 +78,9 @@ deduplicates on the `idempotency_key`. Every import stays attached to the config
 | `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | sleep stages | `min` |
 | `body_weight` | body weight | `kg` |
 | `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | workout sessions | `min`, `km`, `kcal`, `bpm` |
+| `workout_speed_average`, `workout_speed_max`, `workout_cadence`, `workout_cycling_cadence`, `workout_cycling_power` | workout speed, cadence and cycling power | `km/h`, `spm`, `rpm`, `W` |
+| `workout_elevation_gain`, `workout_elevation_loss`, `workout_lap_length` | ascent, descent and swimming lap length | `m` |
+| `workout_swim_cadence`, `workout_swimming_strokes`, `workout_steps`, `workout_intensity` | swimming cadence, stroke count, workout steps and intensity | `spm`, `count`, `MET` |
 | `blood_pressure_systolic`, `blood_pressure_diastolic` | blood pressure | `mmHg` |
 | `location_point` | one point per GPS fix in a workout route | — |
 
@@ -106,6 +109,8 @@ share an `idempotency_key` and the second would be discarded by Core anyway.
 | `totalSleep`, or the older `asleep`, or the entry's own `qty` | `sleep_duration` |
 | `sleepStart`, `sleepEnd`, `inBedStart`, `inBedEnd` | metadata on that night's readings, normalised to UTC — which night a reading belongs to, a single timestamp cannot say |
 | `isIndoor`, `location`, `metadata` | metadata on the session's readings |
+| `temperature`, `humidity` | ambient conditions in the session metadata |
+| `elevationDown`, `lapLength`, `swimCadence`, `totalSwimmingStrokeCount` | scalar workout metrics after unit conversion |
 
 ### Time series inside a workout
 
@@ -116,6 +121,11 @@ reason to lose them: collapsed, a series states the same thing the scalar field 
 | --- | --- | --- |
 | `activeEnergy` **+** `basalEnergy` | sum of both — they are the two halves of the total | `workout_energy` |
 | `walkingAndRunningDistance`, `cyclingDistance` | sum | `workout_distance` |
+| `swimDistance` | sum | `workout_distance` |
+| `cyclingCadence` | mean | `workout_cycling_cadence` |
+| `cyclingPower` | mean | `workout_cycling_power` |
+| `cyclingSpeed` | mean | `workout_speed_average` |
+| `swimStroke` | sum | `workout_swimming_strokes` |
 | `heartRateData` | mean of the samples' averages, and the greatest of their maxima | `workout_heart_rate_average`, `workout_heart_rate_max` |
 
 A figure stated outright always wins: these are read only when the session sent no scalar for that
@@ -127,13 +137,12 @@ What such a series must **not** become is one data point per sample under the da
 `steps` and `distance` aggregate by sum over a day, and the day's own total already arrives from
 the phone; adding a workout's per-minute samples on top would make that day read roughly a third
 too high everywhere it is shown. Per-sample resolution needs a metric of its own before it can be
-stored — which is why `stepCount` is still only reported and not kept.
+stored. A provider-stated workout total always takes precedence over a derived series.
 
-Still unstored, for want of a registry metric rather than on purpose: `stepCount`, a workout's speed
-(`avgSpeed`, `maxSpeed`, `speed`), `stepCadence`, `elevationUp`, `flightsClimbed`, `intensity`, and
-the ambient `temperature` and `humidity` it records. Each is named in the
-[Data Quality Center](../features/data-quality.md) rather than dropped quietly, so a decision to
-store one starts from a name and a count. Adding any of them means adding the metric to the registry
+The remaining workout fields without a canonical metric are still named in the
+[Data Quality Center](../features/data-quality.md) rather than dropped quietly. This currently
+includes recovery time-series data and swimming descriptors such as `heartRateRecovery`,
+`strokeStyle`, `swolfScore` and `salinity`. Adding one means adding the metric to the registry
 first — one metric, one name, one unit; see [Metrics](../metrics.md).
 
 ## Retrieving the data

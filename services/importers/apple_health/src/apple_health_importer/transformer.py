@@ -157,6 +157,13 @@ WORKOUT_FIELD_MAP: tuple[tuple[str, str, MetricUnit | None], ...] = (
     ("maxSpeed", "workout_speed_max", None),
     ("stepCadence", "workout_cadence", None),
     ("elevationUp", "workout_elevation_gain", None),
+    # Health Auto Export keeps these workout-specific quantities in objects with a
+    # `qty`/`units` pair. They are still scalar session values, so they belong in the
+    # registry rather than in a provider-metadata blob.
+    ("elevationDown", "workout_elevation_loss", None),
+    ("lapLength", "workout_lap_length", None),
+    ("swimCadence", "workout_swim_cadence", None),
+    ("totalSwimmingStrokeCount", "workout_swimming_strokes", None),
     ("flightsClimbed", "flights_climbed", None),
     ("intensity", "workout_intensity", None),
 )
@@ -202,6 +209,11 @@ WORKOUT_SERIES_MAP: tuple[tuple[str, str, str], ...] = (
     ("basalEnergy", "workout_energy", "sum"),
     ("walkingAndRunningDistance", "workout_distance", "sum"),
     ("cyclingDistance", "workout_distance", "sum"),
+    ("cyclingCadence", "workout_cycling_cadence", "average"),
+    ("cyclingPower", "workout_cycling_power", "average"),
+    ("cyclingSpeed", "workout_speed_average", "average"),
+    ("swimDistance", "workout_distance", "sum"),
+    ("swimStroke", "workout_swimming_strokes", "sum"),
     ("heartRateData", "workout_heart_rate_average", "average"),
     ("heartRateData", "workout_heart_rate_max", "max"),
     # Its own metric rather than `steps`, which the day's own total already fills.
@@ -310,6 +322,8 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "hours": MetricUnit.HOUR,
     "m": MetricUnit.METER,
     "ft": MetricUnit.FOOT,
+    "yd": MetricUnit.YARD,
+    "yard": MetricUnit.YARD,
     "km": MetricUnit.KILOMETER,
     "mi": MetricUnit.MILE,
     # Health Auto Export spells speed with `hr`, not `h`, and follows the phone's locale.
@@ -317,6 +331,8 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "km/h": MetricUnit.KILOMETER_PER_HOUR,
     "mi/hr": MetricUnit.MILE_PER_HOUR,
     "mph": MetricUnit.MILE_PER_HOUR,
+    "w": MetricUnit.WATT,
+    "rpm": MetricUnit.REVOLUTIONS_PER_MINUTE,
     "spm": MetricUnit.STEPS_PER_MINUTE,
     "steps/min": MetricUnit.STEPS_PER_MINUTE,
     "met": MetricUnit.MET,
@@ -448,9 +464,12 @@ def _extract_numeric_value(val: Any) -> float | None:
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
     if isinstance(val, dict):
-        q = val.get("qty") or val.get("value") or val.get("avg")
-        if isinstance(q, (int, float)) and not isinstance(q, bool):
-            return float(q)
+        # Membership matters here: zero is a valid lap length, stroke count, or
+        # elevation value, and `or` used to turn it into a missing field.
+        for key in ("qty", "value", "avg"):
+            q = val.get(key)
+            if isinstance(q, (int, float)) and not isinstance(q, bool):
+                return float(q)
     return None
 
 
@@ -677,6 +696,7 @@ def transform_health_auto_export_json(
             # present wins, so a payload carrying v1 and v2 names does not emit two
             # points with one idempotency key.
             if w_metric_type in emitted_metrics:
+                report.mapped(f"workouts.{field_key}", raw_field, w_metric_type)
                 continue
             emitted_metrics.add(w_metric_type)
 
@@ -725,7 +745,10 @@ def transform_health_auto_export_json(
 
             for member, w_metric_type in members.items():
                 val = _extract_numeric_value(_member_value(container, member))
-                if val is None or w_metric_type in emitted_metrics:
+                if val is None:
+                    continue
+                if w_metric_type in emitted_metrics:
+                    report.mapped(f"workouts.{field_key}.{member}", val, w_metric_type)
                     continue
                 emitted_metrics.add(w_metric_type)
                 data_points.append(
@@ -754,13 +777,18 @@ def transform_health_auto_export_json(
         collected: dict[str, dict[str, Any]] = {}
         for field_key, w_metric_type, how in WORKOUT_SERIES_MAP:
             samples = workout.get(field_key)
-            if not isinstance(samples, list) or not samples:
+            if not isinstance(samples, list):
                 continue
             handled_workout_keys.add(field_key)
             if w_metric_type in emitted_metrics:
+                report.mapped(f"workouts.{field_key}", samples, w_metric_type)
+                continue
+            if not samples:
+                report.unmapped(f"workouts.{field_key}", samples)
                 continue
             figure, field_units, count = _series_figure(samples, how)
             if figure is None:
+                report.unmapped(f"workouts.{field_key}", samples)
                 continue
             into = collected.setdefault(
                 w_metric_type,

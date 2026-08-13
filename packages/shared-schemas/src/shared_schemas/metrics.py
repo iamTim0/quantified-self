@@ -63,14 +63,15 @@ class MetricUnit(StrEnum):
     """Units a value can carry.
 
     Members that no catalog entry uses as its canonical unit (``KILOJOULE``,
-    ``SECOND``, ``HOUR``, ``MILE``, ``POUND``, ``FOOT``, ``MILE_PER_HOUR``) exist
-    because a *provider* reports in them and an importer has to name what it is
+    ``SECOND``, ``HOUR``, ``MILE``, ``POUND``, ``FOOT``, ``YARD``, ``MILE_PER_HOUR``)
+    exist because a *provider* reports in them and an importer has to name what it is
     converting from. Health Auto
     Export, for one, follows the phone's locale, so the same Apple Health metric arrives
     in miles or kilometres depending on whose phone it came from.
     """
 
     COUNT = "count"
+    WATT = "W"
     KCAL = "kcal"
     KILOJOULE = "kJ"
     GRAM = "g"
@@ -85,6 +86,7 @@ class MetricUnit(StrEnum):
     HOUR = "h"
     METER = "m"
     FOOT = "ft"
+    YARD = "yd"
     KILOMETER = "km"
     MILE = "mi"
     CELSIUS = "°C"
@@ -93,6 +95,7 @@ class MetricUnit(StrEnum):
     MILLIMETER = "mm"
     KILOMETER_PER_HOUR = "km/h"
     MILE_PER_HOUR = "mph"
+    REVOLUTIONS_PER_MINUTE = "rpm"
     DEGREE = "°"
     ML_PER_KG_PER_MIN = "mL/kg/min"
     #: Steps per minute. Distinct from ``BPM`` on purpose: both are "per minute" and
@@ -256,6 +259,12 @@ _CONVERSIONS: dict[tuple[MetricUnit, MetricUnit], float] = {
     (MetricUnit.KILOGRAM, MetricUnit.GRAM): 1e3,
     (MetricUnit.MILE, MetricUnit.KILOMETER): 1.609344,
     (MetricUnit.KILOMETER, MetricUnit.MILE): 1.0 / 1.609344,
+    (MetricUnit.MILE, MetricUnit.METER): 1609.344,
+    (MetricUnit.METER, MetricUnit.MILE): 1.0 / 1609.344,
+    (MetricUnit.YARD, MetricUnit.KILOMETER): 0.0009144,
+    (MetricUnit.KILOMETER, MetricUnit.YARD): 1.0 / 0.0009144,
+    (MetricUnit.YARD, MetricUnit.METER): 0.9144,
+    (MetricUnit.METER, MetricUnit.YARD): 1.0 / 0.9144,
     (MetricUnit.POUND, MetricUnit.KILOGRAM): 0.45359237,
     (MetricUnit.KILOGRAM, MetricUnit.POUND): 1.0 / 0.45359237,
     # Speed and elevation follow the phone's locale exactly as distance does, and
@@ -473,6 +482,20 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         cadence=Cadence.DAILY,
     ),
     MetricDefinition(
+        key="heart_rate_max",
+        unit=MetricUnit.BPM,
+        aggregation=Aggregation.MAX,
+        category=MetricCategory.HEART,
+        label_de="Maximalpuls (Tag)",
+        label_en="Maximum heart rate (day)",
+        sources=("whoop",),
+        aliases=("max_heart_rate",),
+        plausible_min=20,
+        plausible_max=250,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
         key="heart_rate_resting",
         unit=MetricUnit.BPM,
         aggregation=Aggregation.AVERAGE,
@@ -565,7 +588,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.SLEEP,
         label_de="Schlafdauer",
         label_en="Sleep duration",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_analysis", "sleep", "sleep_duration_hours", "sleep_asleep_duration"),
         plausible_min=0,
         plausible_max=1_440,
@@ -579,7 +602,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.SLEEP,
         label_de="Tiefschlaf",
         label_en="Deep sleep",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_deep_duration",),
         plausible_min=0,
         plausible_max=1_440,
@@ -593,7 +616,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.SLEEP,
         label_de="REM-Schlaf",
         label_en="REM sleep",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_rem_duration",),
         plausible_min=0,
         plausible_max=1_440,
@@ -608,7 +631,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         # Apple calls this stage "Core"; every other vendor calls it light sleep.
         label_de="Leichtschlaf",
         label_en="Light sleep",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_core_duration", "sleep_light_duration"),
         plausible_min=0,
         plausible_max=1_440,
@@ -622,7 +645,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.SLEEP,
         label_de="Wachzeit",
         label_en="Awake time",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_awake_duration",),
         plausible_min=0,
         plausible_max=1_440,
@@ -636,7 +659,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.SLEEP,
         label_de="Zeit im Bett",
         label_en="Time in bed",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("sleep_inbed_duration", "sleep_in_bed_duration"),
         plausible_min=0,
         plausible_max=1_440,
@@ -655,6 +678,64 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_min=0,
         plausible_max=100,
         precision=1,
+        cadence=Cadence.DAILY,
+    ),
+    # These are WHOOP's own sleep-planning figures. They are useful as series, but
+    # are not interchangeable with a sleep duration or a vendor-independent score.
+    MetricDefinition(
+        key="whoop_sleep_need",
+        unit=MetricUnit.MINUTE,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.SLEEP,
+        label_de="Whoop-Schlafbedarf",
+        label_en="WHOOP sleep need",
+        sources=("whoop",),
+        aliases=("sleep_need_minutes",),
+        plausible_min=0,
+        plausible_max=1_440,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="whoop_sleep_debt",
+        unit=MetricUnit.MINUTE,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.SLEEP,
+        label_de="Whoop-Schlafdefizit",
+        label_en="WHOOP sleep debt",
+        sources=("whoop",),
+        aliases=("sleep_debt_minutes",),
+        plausible_min=0,
+        plausible_max=1_440,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="whoop_sleep_consistency",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.SLEEP,
+        label_de="Whoop-Schlafbeständigkeit",
+        label_en="WHOOP sleep consistency",
+        sources=("whoop",),
+        aliases=("sleep_consistency_percentage",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="sleep_nap_count",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.SLEEP,
+        label_de="Nickerchen",
+        label_en="Naps",
+        sources=("whoop",),
+        aliases=("naps",),
+        plausible_min=0,
+        plausible_max=50,
+        precision=0,
         cadence=Cadence.DAILY,
     ),
     MetricDefinition(
@@ -928,7 +1009,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.WORKOUT,
         label_de="Trainingsdauer",
         label_en="Workout duration",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("whoop_workout_duration_minutes",),
         plausible_min=0,
         plausible_max=1_440,
@@ -980,11 +1061,76 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.WORKOUT,
         label_de="Trainingspuls (Maximum)",
         label_en="Workout heart rate (max)",
-        sources=("apple_health",),
+        sources=("apple_health", "whoop"),
         aliases=("workout_max_heart_rate",),
         plausible_min=40,
         plausible_max=240,
         precision=0,
+    ),
+    MetricDefinition(
+        key="workout_heart_rate_zone_1",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls Zone 1",
+        label_en="Workout heart-rate zone 1",
+        sources=("whoop",),
+        aliases=("heart_rate_zone_1",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_heart_rate_zone_2",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls Zone 2",
+        label_en="Workout heart-rate zone 2",
+        sources=("whoop",),
+        aliases=("heart_rate_zone_2",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_heart_rate_zone_3",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls Zone 3",
+        label_en="Workout heart-rate zone 3",
+        sources=("whoop",),
+        aliases=("heart_rate_zone_3",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_heart_rate_zone_4",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls Zone 4",
+        label_en="Workout heart-rate zone 4",
+        sources=("whoop",),
+        aliases=("heart_rate_zone_4",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_heart_rate_zone_5",
+        unit=MetricUnit.PERCENT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls Zone 5",
+        label_en="Workout heart-rate zone 5",
+        sources=("whoop",),
+        aliases=("heart_rate_zone_5",),
+        plausible_min=0,
+        plausible_max=100,
+        precision=1,
     ),
     # Quantities a workout states about itself that the daily metrics do not hold. Each
     # is a session aggregate, keyed apart from its daily counterpart on purpose: a
@@ -1038,6 +1184,30 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         precision=0,
     ),
     MetricDefinition(
+        key="workout_cycling_cadence",
+        unit=MetricUnit.REVOLUTIONS_PER_MINUTE,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trittfrequenz (Radfahren)",
+        label_en="Cycling cadence",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=250,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_cycling_power",
+        unit=MetricUnit.WATT,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Leistung (Radfahren)",
+        label_en="Cycling power",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=2_000,
+        precision=0,
+    ),
+    MetricDefinition(
         key="workout_elevation_gain",
         unit=MetricUnit.METER,
         aggregation=Aggregation.SUM,
@@ -1047,6 +1217,54 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         sources=("apple_health",),
         plausible_min=0,
         plausible_max=15_000,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_elevation_loss",
+        unit=MetricUnit.METER,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.WORKOUT,
+        label_de="Höhenmeter (Abstieg)",
+        label_en="Elevation loss",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=15_000,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_lap_length",
+        unit=MetricUnit.METER,
+        aggregation=Aggregation.LAST,
+        category=MetricCategory.WORKOUT,
+        label_de="Bahnlänge",
+        label_en="Lap length",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=10_000,
+        precision=1,
+    ),
+    MetricDefinition(
+        key="workout_swim_cadence",
+        unit=MetricUnit.STEPS_PER_MINUTE,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Schlagfrequenz (Schwimmen)",
+        label_en="Swim cadence",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=200,
+        precision=0,
+    ),
+    MetricDefinition(
+        key="workout_swimming_strokes",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.WORKOUT,
+        label_de="Schwimmzüge",
+        label_en="Swimming strokes",
+        sources=("apple_health",),
+        plausible_min=0,
+        plausible_max=100_000,
         precision=0,
     ),
     MetricDefinition(
