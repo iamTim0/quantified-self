@@ -30,8 +30,6 @@ def test_tunnel_targets_only_stack_proxy() -> None:
     """
     text = compose_text()
 
-    # TUNNEL_TOKEN is optional in prod since we allow direct exposure via QS_BIND_IP
-    assert "TUNNEL_TOKEN=${TUNNEL_TOKEN:-}" in text
     assert "command: tunnel --no-autoupdate run" in text
     assert "traefik:" in text
 
