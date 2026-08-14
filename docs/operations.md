@@ -278,10 +278,12 @@ A production deployment should show nothing here. If it does, at least one of th
 - **Health checks**: every service offers `GET /health`; the docs additionally `/healthz`.
 - **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
   the data point that was written.
-- **Import history**: open a configured connector's **Runs** detail page, or call
-  `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the trigger, status, duration,
-  request id, expected/received/accepted/duplicate point counts and the final message per run —
-  the most reliable answer to "why is data missing". The history includes failed planning,
+- **Import history**: open the **All import runs** overview on the Connectors page for a tenant-wide
+  view, open a configured connector's **Runs** detail page for its complete history, or call
+  `GET /api/v1/data/sync-runs` and `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the
+  trigger, lifecycle status, duration, request id, expected/received/processed/accepted/duplicate
+  point counts and the final message per run — the most reliable answer to "why is data missing".
+  The history includes failed planning,
   upload, webhook and importer runs; an unknown or missing API key cannot be assigned to a tenant
   safely and is therefore not shown in a tenant's connector history.
 
@@ -305,8 +307,10 @@ the connector credentials is worthless.
 
 - Importers are stateless and run in NATS queue groups; several replicas share the load automatically.
 - Core's ingest consumer uses a queue group too.
+- Core's sync-run ledger counts each broker event once, including after JetStream redelivery; it
+  stores only the broker identity, not the imported value.
 - Duplicate runs are prevented by **Core**, not by the importer: a connector with a `SyncRun` already
-  queued or running is not scheduled again. The `active_syncs` set in the importers is now only a local
+  queued, running or loading is not scheduled again. The `active_syncs` set in the importers is now only a local
   buffer against a redelivered message — it was never a distributed lock, and with several replicas it
   would have prevented nothing.
 - The scheduler is single-flight through a transaction-scoped Postgres advisory lock. Several Core

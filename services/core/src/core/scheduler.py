@@ -41,7 +41,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.connectors import is_scheduled
-from core.db.models import DataSource, SyncRun
+from core.db.models import DataSource, SyncRun, Tenant
 from core.db.session import async_session_maker
 
 logger = logging.getLogger(__name__)
@@ -61,7 +61,11 @@ TICK_SECONDS = 300
 STALE_RUN_AFTER = timedelta(hours=6)
 
 # Statuses that mean "this connector is busy".
-IN_FLIGHT_STATUSES = ("queued", "running")
+# Core loading is still part of the same import. A second scheduled run must
+# wait until the consumer has drained the first run's events, otherwise the
+# connector can report two overlapping imports while its first batch is only
+# just being written.
+IN_FLIGHT_STATUSES = ("queued", "running", "loading")
 
 DEFAULT_POLL_INTERVAL_HOURS = 6.0
 
@@ -185,7 +189,16 @@ async def find_due_connectors(
     behalf of all of them. Each enqueue that follows is still tenant-scoped, and
     the events it publishes still carry their own tenant_id (rule 2).
     """
-    rows = (await session.execute(select(DataSource))).scalars().all()
+    # The scheduler is intentionally cross-tenant, but it still scopes the source
+    # relation to real tenant rows. This keeps the global worker explicit about the
+    # tenant boundary instead of issuing an unqualified source-table scan.
+    rows = (
+        await session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id.in_(select(Tenant.id))
+            )
+        )
+    ).scalars().all()
 
     due: list[DueConnector] = []
     for source in rows:

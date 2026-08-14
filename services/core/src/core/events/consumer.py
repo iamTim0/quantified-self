@@ -19,6 +19,7 @@ HTTP path did not apply here at all.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -30,7 +31,7 @@ import nats
 from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, case, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +44,7 @@ from core.db.models import (
     QuarantinedDataPoint,
     QuarantineRefusal,
     SyncRun,
+    SyncRunEvent,
 )
 from core.db.session import async_session_maker
 from core.metric_mapping import ValidatedMapping, replay_value, validate_mapping
@@ -56,6 +58,23 @@ MAX_QUARANTINE_REFUSALS = 10_000
 DEFAULT_QUARANTINE_RETENTION_DAYS = 30
 MAX_INGEST_EVENT_BYTES = 256 * 1024
 MAX_POINT_METADATA_BYTES = 32 * 1024
+
+
+def _processing_event_key(msg) -> str:
+    """Return a stable, bounded identity for one broker delivery.
+
+    JetStream stream sequence numbers are stable across redelivery. Plain NATS
+    fallback subscriptions do not expose them, so a payload fingerprint is the
+    safe fallback. The key is only a progress-ledger identity; provider values
+    never enter the ledger.
+    """
+    try:
+        metadata = msg.metadata
+        stream = str(metadata.stream)
+        sequence = str(metadata.sequence.stream)
+        return "js:" + hashlib.sha256(f"{stream}:{sequence}".encode()).hexdigest()
+    except Exception:  # noqa: BLE001 - non-JetStream messages have no metadata
+        return "payload:" + hashlib.sha256(msg.data).hexdigest()
 
 
 def bounded_point_metadata(
@@ -313,6 +332,7 @@ async def process_message(msg):
     # was; a rejection that does not say whose data it dropped is hard to act on.
     tenant_id: str | None = None
     source_id: str | None = None
+    event_key = _processing_event_key(msg)
     try:
         if len(msg.data) > MAX_INGEST_EVENT_BYTES:
             logger.error("Rejected oversized ingest event. Acking to prevent redelivery.")
@@ -549,6 +569,15 @@ async def process_message(msg):
                             raw_metric_type,
                             refusal,
                         )
+                    if sync_run_id:
+                        await _tally(
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -560,6 +589,15 @@ async def process_message(msg):
                         raw_metric_type=raw_metric_type,
                         reason="discarded_by_rule",
                     )
+                    if sync_run_id:
+                        await _tally(
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -580,6 +618,15 @@ async def process_message(msg):
                         raw_metric_type,
                         exc,
                     )
+                    if sync_run_id:
+                        await _tally(
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
+                        )
                     await session.commit()
                     await msg.ack()
                     return
@@ -598,6 +645,16 @@ async def process_message(msg):
                     raw_metric_type,
                     metric_type,
                 )
+                if sync_run_id:
+                    await _tally(
+                        session,
+                        tenant_id,
+                        sync_run_id,
+                        source_id=source.id,
+                        event_key=event_key,
+                        inserted=None,
+                    )
+                    await session.commit()
                 await msg.ack()
                 return
 
@@ -632,7 +689,14 @@ async def process_message(msg):
                 # reported "done" while the other 49,999 were still queued — and
                 # every message rewrote the same row, which serialised the whole
                 # import behind one row lock for nothing.
-                await _tally(session, tenant_id, sync_run_id, inserted=inserted)
+                await _tally(
+                    session,
+                    tenant_id,
+                    sync_run_id,
+                    source_id=source.id,
+                    event_key=event_key,
+                    inserted=inserted,
+                )
             else:
                 await _mark_source_seen(session, tenant_id, data)
 
@@ -742,18 +806,103 @@ async def _mark_source_seen(session, tenant_id: str, data: dict) -> None:
         ds.config = cfg
 
 
-async def _tally(session, tenant_id: str, sync_run_id: str, *, inserted: bool) -> None:
-    """Accumulate accepted/duplicate counts on the run that requested this data.
+async def _tally(
+    session: AsyncSession,
+    tenant_id: str,
+    sync_run_id: str,
+    *,
+    source_id: str | None = None,
+    event_key: str,
+    inserted: bool | None,
+) -> None:
+    """Accumulate Core processing counts and close a drained import run.
 
-    Tenant-scoped on purpose: a forged ``sync_run_id`` from another tenant must not
-    let an event touch that tenant's audit record.
+    Tenant- and connector-scoped on purpose: a forged ``sync_run_id`` from another
+    tenant or connector must not let an event touch that audit record.
+
+    ``points_received`` is the importer's publish count. ``points_processed`` is
+    advanced here, after Core has stored, deduplicated or quarantined the event.
+    The distinction prevents the importer from reporting success while NATS still
+    holds events that Core has not loaded. The ledger insert is in the same
+    transaction as the counter update, so a JetStream redelivery cannot count twice.
     """
-    column = SyncRun.points_accepted if inserted else SyncRun.points_duplicate
-    await session.execute(
-        update(SyncRun)
-        .where(SyncRun.id == sync_run_id, SyncRun.tenant_id == tenant_id)
-        .values({column: column + 1})
+    ledger = insert(SyncRunEvent).values(
+        tenant_id=tenant_id,
+        sync_run_id=sync_run_id,
+        event_key=event_key[:128],
     )
+    ledger = ledger.on_conflict_do_nothing(
+        index_elements=["tenant_id", "sync_run_id", "event_key"],
+    )
+    ledger_result = await session.execute(ledger)
+    if (ledger_result.rowcount or 0) == 0:
+        return
+
+    processed = SyncRun.points_processed + 1
+    values = {SyncRun.points_processed: processed}
+    if inserted is not None:
+        column = SyncRun.points_accepted if inserted else SyncRun.points_duplicate
+        values[column] = column + 1
+
+    drained = and_(
+        SyncRun.status == "loading",
+        SyncRun.finished_at.is_(None),
+        SyncRun.points_expected.is_not(None),
+        processed >= SyncRun.points_expected,
+    )
+    now = datetime.now(timezone.utc)
+    values.update(
+        {
+            SyncRun.status: case((drained, "success"), else_=SyncRun.status),
+            SyncRun.finished_at: case((drained, now), else_=SyncRun.finished_at),
+            SyncRun.message: case(
+                (drained, "Core loaded all published data points."),
+                else_=SyncRun.message,
+            ),
+            SyncRun.message_code: case(
+                (drained, "core_loaded"),
+                else_=SyncRun.message_code,
+            ),
+            SyncRun.message_params: case(
+                (drained, {}),
+                else_=SyncRun.message_params,
+            ),
+        }
+    )
+
+    run_query = update(SyncRun).where(
+        SyncRun.id == sync_run_id,
+        SyncRun.tenant_id == tenant_id,
+    )
+    if source_id is not None:
+        run_query = run_query.where(SyncRun.source_id == source_id)
+    result = await session.execute(
+        run_query.values(values).returning(
+            SyncRun.source_id, SyncRun.status, SyncRun.points_processed
+        )
+    )
+    completed = result.first()
+    if not completed or completed.status != "success":
+        return
+
+    # The connector badge follows the same authoritative transition as the run.
+    # It must not return to idle when the importer merely finished publishing.
+    source_id = completed.source_id
+    if not source_id:
+        return
+    source_result = await session.execute(
+        select(DataSource).where(
+            DataSource.tenant_id == tenant_id,
+            DataSource.id == source_id,
+        )
+    )
+    source = source_result.scalars().first()
+    if source is not None:
+        config = dict(source.config or {})
+        config["sync_status"] = "idle"
+        config["last_sync_at"] = now.isoformat()
+        config["last_sync_message"] = "Core loaded all published data points."
+        source.config = config
 
 
 # One connection attempt fails fast rather than burning the library's default

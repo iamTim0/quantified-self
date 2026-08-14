@@ -17,7 +17,7 @@ was introduced:
 
 from typing import Any, NamedTuple
 
-from shared_schemas import FieldReportCollector, idempotency_key
+from shared_schemas import FieldReportCollector, idempotency_key, provenance
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -44,6 +44,14 @@ class _Mapping(NamedTuple):
     provider_unit: MetricUnit | None = None
 
 
+class _MetadataMapping(NamedTuple):
+    """A provider field carried as context on the related metric point."""
+
+    field: str
+    metadata_key: str
+    section: str = ""
+
+
 #: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
 #: in `shared_schemas`. An alias rather than a wrapper: a wrapper would be a fifth
 #: identical docstring to keep in step, and its `timestamp: str` annotation would hide
@@ -56,6 +64,7 @@ METRICS: dict[str, tuple[_Mapping, ...]] = {
         _Mapping("whoop_strain", "score", "strain"),
         _Mapping("energy_total", "score", "kilojoule", MetricUnit.KILOJOULE),
         _Mapping("heart_rate_average", "score", "average_heart_rate"),
+        _Mapping("heart_rate_max", "score", "max_heart_rate"),
     ),
     "recovery": (
         _Mapping("whoop_recovery_score", "score", "recovery_score"),
@@ -76,6 +85,98 @@ METRICS: dict[str, tuple[_Mapping, ...]] = {
         _Mapping("workout_distance", "score", "distance_meter", MetricUnit.METER),
     ),
 }
+
+
+# The export contains useful context that is not itself a time series: activity
+# names, timestamps, the cycle timezone and whether GPS was enabled. Keeping those
+# values on each related point makes them available to consumers without inventing a
+# metric whose aggregation would be meaningless. The API uses the same concepts under
+# its own field names, so both input paths are listed here.
+_REPEATED_SLEEP_FIELDS: tuple[_MetadataMapping, ...] = (
+    _MetadataMapping("sleep_duration_minutes", "sleep_duration"),
+    _MetadataMapping("sleep_in_bed_minutes", "sleep_duration_in_bed"),
+    _MetadataMapping("sleep_light_minutes", "sleep_duration_light"),
+    _MetadataMapping("sleep_deep_minutes", "sleep_duration_deep"),
+    _MetadataMapping("sleep_rem_minutes", "sleep_duration_rem"),
+    _MetadataMapping("sleep_awake_minutes", "sleep_duration_awake"),
+    _MetadataMapping("sleep_efficiency_percentage", "sleep_efficiency"),
+    _MetadataMapping("sleep_performance_percentage", "whoop_sleep_performance"),
+    _MetadataMapping("sleep_need_minutes", "whoop_sleep_need"),
+    _MetadataMapping("sleep_consistency_percentage", "whoop_sleep_consistency"),
+    _MetadataMapping("sleep_debt_minutes", "whoop_sleep_debt"),
+)
+_SLEEP_NAP_FIELD = "sleep_nap_count"
+
+
+METADATA_FIELDS: dict[str, tuple[_MetadataMapping, ...]] = {
+    "cycle": (
+        _MetadataMapping("cycle_start_time", "cycle_start_time"),
+        _MetadataMapping("start", "cycle_start_time"),
+        _MetadataMapping("cycle_end_time", "cycle_end_time"),
+        _MetadataMapping("end", "cycle_end_time"),
+        _MetadataMapping("cycle_timezone", "cycle_timezone"),
+        _MetadataMapping("timezone_offset", "cycle_timezone"),
+        _MetadataMapping("sleep_start_time", "sleep_start_time"),
+        _MetadataMapping("sleep_onset", "sleep_start_time"),
+        _MetadataMapping("wake_start_time", "wake_start_time"),
+        _MetadataMapping("sleep_wake_start", "wake_start_time"),
+        *_REPEATED_SLEEP_FIELDS,
+    ),
+    "recovery": (
+        _MetadataMapping("cycle_start_time", "cycle_start_time"),
+        _MetadataMapping("start", "cycle_start_time"),
+        _MetadataMapping("cycle_end_time", "cycle_end_time"),
+        _MetadataMapping("end", "cycle_end_time"),
+        _MetadataMapping("cycle_timezone", "cycle_timezone"),
+        _MetadataMapping("timezone_offset", "cycle_timezone"),
+        _MetadataMapping("sleep_start_time", "sleep_start_time"),
+        _MetadataMapping("sleep_onset", "sleep_start_time"),
+        _MetadataMapping("wake_start_time", "wake_start_time"),
+        _MetadataMapping("sleep_wake_start", "wake_start_time"),
+        *_REPEATED_SLEEP_FIELDS,
+    ),
+    "sleep": (
+        _MetadataMapping("sleep_start_time", "sleep_start_time"),
+        _MetadataMapping("start", "sleep_start_time"),
+        _MetadataMapping("sleep_end_time", "sleep_end_time"),
+        _MetadataMapping("end", "sleep_end_time"),
+        _MetadataMapping("cycle_start_time", "cycle_start_time"),
+        _MetadataMapping("cycle_end_time", "cycle_end_time"),
+        _MetadataMapping("cycle_timezone", "cycle_timezone"),
+        _MetadataMapping("timezone_offset", "cycle_timezone"),
+        # Some export locales spell the nap value as a label rather than a number;
+        # the metric mapping handles numeric values and this keeps other spellings.
+        _MetadataMapping(_SLEEP_NAP_FIELD, "sleep_nap_count"),
+        _MetadataMapping("sleep_nap_flag", "sleep_nap_flag"),
+    ),
+    "workout": (
+        _MetadataMapping("workout_start_time", "workout_start_time"),
+        _MetadataMapping("start", "workout_start_time"),
+        _MetadataMapping("workout_end_time", "workout_end_time"),
+        _MetadataMapping("end", "workout_end_time"),
+        _MetadataMapping("cycle_start_time", "cycle_start_time"),
+        _MetadataMapping("cycle_end_time", "cycle_end_time"),
+        _MetadataMapping("cycle_timezone", "cycle_timezone"),
+        _MetadataMapping("timezone_offset", "cycle_timezone"),
+        _MetadataMapping("activity_name", "activity_name"),
+        _MetadataMapping("sport_name", "activity_name"),
+        _MetadataMapping("gps_enabled", "gps_enabled"),
+    ),
+}
+
+
+def _metadata_for_record(record: dict[str, Any], kind: str) -> tuple[dict[str, Any], set[str]]:
+    """Return selected context fields and the source keys they consumed."""
+    metadata: dict[str, Any] = {}
+    consumed: set[str] = set()
+    for mapping in METADATA_FIELDS.get(kind, ()):
+        container = (record.get(mapping.section) or {}) if mapping.section else record
+        value = container.get(mapping.field)
+        if value is None or value == "":
+            continue
+        metadata.setdefault(mapping.metadata_key, value)
+        consumed.add(mapping.section or mapping.field)
+    return metadata, consumed
 
 
 def transform_whoop_records(
@@ -120,13 +221,17 @@ def transform_whoop_records(
             continue
 
         whoop_id = str(record.get("id") or record.get("cycle_id") or "")
+        record_metadata, metadata_fields = _metadata_for_record(record, kind)
         metadata = {
             "source_type": "whoop",
             "whoop_id": whoop_id,
             "kind": kind,
+            **record_metadata,
         }
 
         consumed: set[str] = {"score_state", "start", "created_at", "id", "cycle_id"}
+        consumed.update(metadata_fields)
+        mapped_metric_types: list[str] = []
         for mapping in (mappings or METRICS).get(kind, ()):
             metric_type = canonical_metric_type(mapping.metric_type)
             container = (record.get(mapping.section) or {}) if mapping.section else record
@@ -143,17 +248,20 @@ def transform_whoop_records(
                     METRIC_CATALOG[metric_type].unit,
                 )
 
-            point_metadata = dict(metadata)
-            if mapping.provider_unit is not None:
-                # Keep the raw reading: a conversion factor is a lossy edit to somebody's
-                # data, and the original is what a support question is about.
-                point_metadata["provider_value"] = float(val)
-                point_metadata["provider_unit"] = mapping.provider_unit.value
+            point_metadata = {
+                **metadata,
+                **provenance(
+                    metric_type,
+                    float(val),
+                    mapping.provider_unit.value if mapping.provider_unit is not None else None,
+                ),
+            }
 
             data_points.append(
                 {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
+                    "source_type": "whoop",
                     "metric_type": metric_type,
                     "timestamp": ts,
                     "value": value,
@@ -164,6 +272,27 @@ def transform_whoop_records(
                 }
             )
             report.mapped(f"{kind}.{mapping.field}", val, metric_type)
+            mapped_metric_types.append(metric_type)
+
+        # A metadata field is reported once per input record, rather than once per
+        # metric point. The first mapped metric is the point that makes the context
+        # usable; the context itself is also copied onto the other points above.
+        if mapped_metric_types:
+            for mapping in METADATA_FIELDS.get(kind, ()):
+                container = (record.get(mapping.section) or {}) if mapping.section else record
+                value = container.get(mapping.field)
+                if value is not None and value != "" and mapping.metadata_key in record_metadata:
+                    report.mapped(
+                        f"{kind}.{mapping.field}", value, mapped_metric_types[0]
+                    )
+        else:
+            # A context-only row has no point on which it can travel. Name it in the
+            # shape report instead of allowing a recognised field to disappear.
+            for mapping in METADATA_FIELDS.get(kind, ()):
+                container = (record.get(mapping.section) or {}) if mapping.section else record
+                value = container.get(mapping.field)
+                if value is not None and value != "" and mapping.metadata_key in record_metadata:
+                    report.unmapped(f"{kind}.{mapping.field}", value)
 
         for key, value in record.items():
             if key in consumed:

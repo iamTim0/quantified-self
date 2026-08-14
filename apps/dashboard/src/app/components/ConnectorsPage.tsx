@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
+import ImportRunsOverview from "./ImportRunsOverview";
 import ImporterDetailPage from "./ImporterDetailPage";
 import { plural, useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
 import {
@@ -335,6 +336,11 @@ export default function ConnectorsPage({
 
       {activeTab === "current" ? (
         <>
+          <ImportRunsOverview
+            apiBase={apiBase}
+            tenantId={tenantId}
+            refreshTrigger={refreshTrigger}
+          />
           {/* Main Connected Sources & Queue Status Table */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
             <div className="flex justify-between items-center">
@@ -376,6 +382,9 @@ export default function ConnectorsPage({
                   <tbody className="divide-y divide-slate-100">
                     {connectors.map((c) => {
                       const rowFileOnly = c.import_mode === "file";
+                      const rowIsBusy = ["queued", "running", "loading"].includes(
+                        c.sync_status ?? "",
+                      );
                       const rowIsPassive =
                         getConnectorDirection(c.source_type) === "passive" || rowFileOnly;
                       /*
@@ -445,7 +454,7 @@ export default function ConnectorsPage({
                             <div className="space-y-1">
                               <span
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border inline-flex items-center gap-1.5 ${
-                                  c.sync_status === "queued"
+                                  rowIsBusy
                                     ? "bg-amber-50 text-amber-800 border-amber-300 animate-pulse"
                                     : c.sync_status === "error"
                                       ? "bg-rose-50 text-rose-800 border-rose-300"
@@ -454,7 +463,7 @@ export default function ConnectorsPage({
                               >
                                 <Radio
                                   className={`w-3 h-3 ${
-                                    c.sync_status === "queued"
+                                    rowIsBusy
                                       ? "text-amber-600 animate-spin"
                                       : c.sync_status === "error"
                                         ? "text-rose-600"
@@ -462,8 +471,10 @@ export default function ConnectorsPage({
                                   }`}
                                 />
                                 <span>
-                                  {c.sync_status === "queued"
-                                    ? t("connectors.processing")
+                                  {c.sync_status === "loading"
+                                    ? t("connectors.loadingCore")
+                                    : rowIsBusy
+                                      ? t("connectors.processing")
                                     : c.sync_status === "error"
                                       ? t("connectors.syncFailed")
                                       : t("connectors.readyActive")}
@@ -515,15 +526,17 @@ export default function ConnectorsPage({
                                       fileImport: Boolean(c.supports_file_import),
                                     })
                                   }
-                                  disabled={c.sync_status === "queued"}
+                                  disabled={rowIsBusy}
                                   className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
                                 >
                                   <RefreshCw
-                                    className={`w-3 h-3 ${c.sync_status === "queued" ? "animate-spin" : ""}`}
+                                    className={`w-3 h-3 ${rowIsBusy ? "animate-spin" : ""}`}
                                   />
                                   <span>
-                                    {c.sync_status === "queued"
-                                      ? t("connectors.queued")
+                                    {c.sync_status === "loading"
+                                      ? t("connectors.loadingCore")
+                                      : rowIsBusy
+                                        ? t("connectors.queued")
                                       : rowUploadOnly
                                         ? t("connectors.upload")
                                         : t("connectors.import")}

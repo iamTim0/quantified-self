@@ -45,7 +45,7 @@ from shared_schemas.metrics import (
     canonical_metric_type,
     describe,
 )
-from sqlalchemy import delete, distinct, func, or_, select
+from sqlalchemy import and_, delete, distinct, func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -327,7 +327,14 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
     token = _current_tenant_id.set(connector.tenant_id)
     try:
         async with async_session_maker() as session:
-            source = await session.get(DataSource, connector.source_id)
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == connector.source_id,
+                        DataSource.tenant_id == connector.tenant_id,
+                    )
+                )
+            ).scalars().first()
             if source is None:
                 return
             await plan_and_enqueue_sync(
@@ -2146,6 +2153,35 @@ def _run_duration_seconds(run: SyncRun, *, now: datetime | None = None) -> float
     return round((finished_at - started_at).total_seconds(), 1)
 
 
+def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dict[str, Any]:
+    """Serialize the shared run shape used by connector and global history views."""
+    return {
+        "id": run.id,
+        "request_id": run.request_id,
+        "source_id": run.source_id,
+        "source_type": run.source_type,
+        "connector_name": connector_name,
+        "mode": run.mode,
+        "trigger": run.trigger,
+        "status": run.status,
+        "window_start": run.window_start.isoformat() if run.window_start else None,
+        "window_end": run.window_end.isoformat() if run.window_end else None,
+        "window_reason": run.window_reason,
+        "points_expected": run.points_expected,
+        "points_received": run.points_received,
+        "points_processed": run.points_processed,
+        "points_accepted": run.points_accepted,
+        "points_duplicate": run.points_duplicate,
+        "skipped_ranges": run.skipped_ranges,
+        "message": run.message,
+        "message_code": run.message_code,
+        "message_params": run.message_params or {},
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "duration_seconds": _run_duration_seconds(run),
+    }
+
+
 def _looks_like_uuid(value: str) -> bool:
     try:
         uuid.UUID(value)
@@ -2378,28 +2414,48 @@ async def list_sync_runs(
         "offset": offset,
         "limit": limit,
         "has_more": len(runs) == limit,
-        "runs": [
-            {
-                "id": run.id,
-                "request_id": run.request_id,
-                "mode": run.mode,
-                "trigger": run.trigger,
-                "status": run.status,
-                "window_start": run.window_start.isoformat() if run.window_start else None,
-                "window_end": run.window_end.isoformat() if run.window_end else None,
-                "window_reason": run.window_reason,
-                "points_expected": run.points_expected,
-                "points_received": run.points_received,
-                "points_accepted": run.points_accepted,
-                "points_duplicate": run.points_duplicate,
-                "skipped_ranges": run.skipped_ranges,
-                "message": run.message,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
-                "duration_seconds": _run_duration_seconds(run),
-            }
-            for run in runs
-        ],
+        "runs": [_sync_run_payload(run, connector_name=source.display_name) for run in runs],
+    }
+
+
+@app.get("/api/v1/data/sync-runs")
+async def list_all_sync_runs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
+    status: str | None = Query(None, min_length=1, max_length=32),
+    source_type: str | None = Query(None, min_length=1, max_length=64),
+    session: AsyncSession = Depends(get_session),
+):
+    """List the tenant's import runs across all connector instances."""
+    tenant_id = get_current_tenant_id()
+    query = (
+        select(SyncRun, DataSource.display_name)
+        .outerjoin(
+            DataSource,
+            and_(
+                DataSource.id == SyncRun.source_id,
+                DataSource.tenant_id == tenant_id,
+            ),
+        )
+        .where(SyncRun.tenant_id == tenant_id)
+    )
+    if status:
+        query = query.where(SyncRun.status == status)
+    if source_type:
+        query = query.where(SyncRun.source_type == source_type)
+    query = query.order_by(SyncRun.started_at.desc()).offset(offset).limit(limit)
+
+    rows = (await session.execute(query)).all()
+    runs = [
+        _sync_run_payload(run, connector_name=connector_name)
+        for run, connector_name in rows
+    ]
+    return {
+        "tenant_id": tenant_id,
+        "offset": offset,
+        "limit": limit,
+        "has_more": len(runs) == limit,
+        "runs": runs,
     }
 
 
@@ -2869,6 +2925,8 @@ async def _record_failed_sync_request(
     mode: Literal["smart", "force"],
     trigger: str,
     message: str,
+    message_code: str = "sync_failed",
+    message_params: dict[str, Any] | None = None,
     update_connector: bool = True,
 ) -> SyncRun:
     """Persist a failed import request after its connector was resolved.
@@ -2887,6 +2945,8 @@ async def _record_failed_sync_request(
         trigger=trigger,
         status="error",
         message=message[:512],
+        message_code=message_code,
+        message_params=message_params or {},
         started_at=now,
         finished_at=now,
     )
@@ -2940,6 +3000,7 @@ async def plan_and_enqueue_sync(
                 "This connector does not support scheduled imports; use its webhook "
                 "or upload flow."
             ),
+            message_code="sync_not_scheduled",
         )
         return {
             "status": "error",
@@ -2972,6 +3033,7 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message="The connector already has an import in flight.",
+            message_code="sync_in_flight",
             update_connector=False,
         )
         return {
@@ -3006,6 +3068,7 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message=str(exc.detail),
+            message_code="sync_plan_failed",
         )
         raise
     except Exception as exc:
@@ -3017,6 +3080,7 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message=f"Import planning failed: {type(exc).__name__}.",
+            message_code="sync_plan_failed",
         )
         raise
 
@@ -3036,6 +3100,8 @@ async def plan_and_enqueue_sync(
         status="skipped" if nothing_to_do else "queued",
         skipped_ranges=[r.to_dict() for r in plan.covered],
         message=plan.reason[:512],
+        message_code="sync_skipped" if nothing_to_do else "sync_queued",
+        message_params={},
         finished_at=now if nothing_to_do else None,
     )
     session.add(run)
@@ -3107,6 +3173,8 @@ async def plan_and_enqueue_sync(
         )
         run.status = "error"
         run.message = message[:512]
+        run.message_code = "sync_queue_failed"
+        run.message_params = {}
         run.finished_at = datetime.now(timezone.utc)
         source_config = dict(source.config or {})
         source_config["sync_status"] = "error"
@@ -3122,6 +3190,32 @@ async def plan_and_enqueue_sync(
             "sync_run_id": run.id,
             "message": run.message,
         }
+
+    # The importer can call back immediately after NATS accepts the task. Move
+    # the run to the importer phase only if it is still queued; a conditional
+    # update prevents this request from overwriting a faster `loading` or
+    # `success` transition made by the importer/consumer.
+    importer_message = "Import task queued for the importer."
+    transition = await session.execute(
+        sa_update(SyncRun)
+        .where(
+            SyncRun.id == run.id,
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.status == "queued",
+        )
+        .values(
+            status="running",
+            message=importer_message,
+            message_code="sync_queued",
+            message_params={},
+        )
+    )
+    if transition.rowcount:
+        source_config = dict(source.config or {})
+        source_config["sync_status"] = "running"
+        source_config["last_sync_message"] = importer_message
+        source.config = source_config
+    await session.commit()
 
     return {
         "status": "sync_queued",
@@ -3195,6 +3289,7 @@ async def list_connectors(
 
         connectors.append({
             "id": s.id,
+            "source_id": s.id,
             "tenant_id": s.tenant_id,
             "source_type": s.source_type,
             "display_name": s.display_name,
@@ -3782,6 +3877,8 @@ class UpdateConnectorStatusRequest(BaseModel):
     last_sync_message: str
     sync_run_id: str | None = Field(None, description="Run to close out, if known")
     points_received: int | None = Field(None, ge=0)
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 class FieldReportPayload(FieldReport):
@@ -4443,6 +4540,8 @@ class OpenSyncRunRequest(BaseModel):
     # unknown the interface counts rather than showing an invented percentage.
     points_expected: int | None = Field(None, ge=0)
     message: str | None = Field(None, max_length=512)
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 class UpdateSyncRunProgressRequest(BaseModel):
@@ -4451,6 +4550,8 @@ class UpdateSyncRunProgressRequest(BaseModel):
     points_expected: int | None = Field(None, ge=0)
     points_received: int | None = Field(None, ge=0)
     message: str | None = Field(None, max_length=512)
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 @app.post("/api/v1/internal/data/sources/{source_ref}/sync-runs", status_code=201)
@@ -4486,12 +4587,14 @@ async def open_sync_run_internal(
         points_expected=req.points_expected,
         points_received=0,
         message=(req.message or "")[:512] or None,
+        message_code=req.code or "sync_running",
+        message_params=req.params,
         started_at=now,
     )
     session.add(run)
 
     config = dict(source.config or {})
-    config["sync_status"] = "queued"
+    config["sync_status"] = "running"
     config["last_sync_message"] = req.message or "Import running."
     source.config = config
 
@@ -4535,8 +4638,16 @@ async def update_sync_run_progress_internal(
         run.points_expected = req.points_expected
     if req.points_received is not None:
         run.points_received = req.points_received
+    if run.status == "queued":
+        run.status = "running"
+        config = dict(source.config or {})
+        config["sync_status"] = "running"
+        source.config = config
     if req.message:
         run.message = req.message[:512]
+    if req.code:
+        run.message_code = req.code
+        run.message_params = req.params
     await session.commit()
     return {"status": "ok", "sync_run_id": run.id}
 
@@ -4558,27 +4669,68 @@ async def update_connector_status_internal(
     held two connectors of one type.
     """
     ds = await _resolve_source_ref(session, tenant_id, source_ref)
-    if ds:
-        cfg = dict(ds.config or {})
-        cfg["sync_status"] = req.sync_status
-        cfg["last_sync_message"] = req.last_sync_message
-        ds.config = cfg
+    if not ds:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    cfg = dict(ds.config or {})
+    cfg["sync_status"] = req.sync_status
+    cfg["last_sync_message"] = req.last_sync_message
+    ds.config = cfg
 
     if req.sync_run_id:
-        run_res = await session.execute(
-            select(SyncRun).where(
-                SyncRun.id == req.sync_run_id, SyncRun.tenant_id == tenant_id
-            )
+        run_query = select(SyncRun).where(
+            SyncRun.id == req.sync_run_id,
+            SyncRun.tenant_id == tenant_id,
         )
+        run_query = run_query.where(SyncRun.source_id == ds.id)
+        run_res = await session.execute(run_query)
         run = run_res.scalars().first()
         if run:
-            run.status = (
-                "success" if req.sync_status in {"idle", "success", "ok"} else req.sync_status
-            )
-            run.message = req.last_sync_message[:512]
-            run.finished_at = datetime.now(timezone.utc)
             if req.points_received is not None:
                 run.points_received = req.points_received
+                if run.points_expected is None and req.sync_status in {"idle", "success", "ok"}:
+                    run.points_expected = req.points_received
+
+            now = datetime.now(timezone.utc)
+            if req.sync_status in {"idle", "success", "ok"}:
+                run.message = (
+                    f"{req.last_sync_message[:450]} Core is loading the published data."
+                )[:512]
+                run.status = "loading"
+                run.message_code = req.code or "sync_loading"
+                run.message_params = req.params
+                run.finished_at = None
+                if (
+                    run.points_expected is not None
+                    and run.points_processed >= run.points_expected
+                ):
+                    run.status = "success"
+                    run.finished_at = now
+                    run.message = "Core loaded all published data points."
+                    run.message_code = "core_loaded"
+                    run.message_params = {}
+                    cfg = dict(ds.config or {})
+                    cfg["sync_status"] = "idle"
+                    cfg["last_sync_at"] = now.isoformat()
+                    cfg["last_sync_message"] = run.message
+                    ds.config = cfg
+                else:
+                    cfg = dict(ds.config or {})
+                    cfg["sync_status"] = "loading"
+                    cfg["last_sync_message"] = run.message
+                    ds.config = cfg
+            elif req.sync_status in {"queued", "running", "loading"}:
+                run.status = req.sync_status
+                run.message = req.last_sync_message[:512]
+                run.message_code = req.code or "sync_queued"
+                run.message_params = req.params
+                run.finished_at = None
+            else:
+                run.status = req.sync_status
+                run.message = req.last_sync_message[:512]
+                run.message_code = req.code or "sync_failed"
+                run.message_params = req.params
+                run.finished_at = now
 
     await session.commit()
     return {"status": "ok"}

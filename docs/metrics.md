@@ -103,15 +103,52 @@ dashboard picks whichever matches the reader's language.
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
 | `steps` | Steps | `count` | `sum` | apple_health | `step_count`, `steps_count` |
-| `distance` | Distance travelled | `km` | `sum` | apple_health | `distance_walking_running`, `walking_running_distance` |
+| `distance` | Distance travelled | `km` | `sum` | apple_health | `distance_walking_running`, `walking_running_distance`, `distance_cycling`, `distance_swimming`, `distance_downhill_snow_sports` |
 | `energy_active` | Active energy | `kcal` | `sum` | apple_health | `active_energy`, `active_energy_burned` |
 | `energy_resting` | Resting energy | `kcal` | `sum` | apple_health | `resting_energy`, `basal_energy_burned` |
 | `energy_total` | Total energy burned | `kcal` | `sum` | whoop | `cycle_kilojoule` |
 | `exercise_duration` | Exercise time | `min` | `sum` | apple_health | `apple_exercise_time` |
 | `stand_duration` | Stand time | `min` | `sum` | apple_health | `apple_stand_time` |
 | `flights_climbed` | Flights climbed | `count` | `sum` | apple_health | — |
+| `physical_effort` | Physical effort | `MET` | `average` | apple_health | `physical_effort_mets` |
+| `standing_events` | Stand hours | `count` | `sum` | apple_health | `apple_stand_hour`, `stand_hours` |
+| `daylight_duration` | Time in daylight | `min` | `sum` | apple_health | `time_in_daylight` |
+| `running_power` | Running power | `W` | `average` | apple_health | `running_power_watts` |
+| `running_speed` | Running speed | `km/h` | `average` | apple_health | `running_speed_kmh` |
+| `running_stride_length` | Running stride length | `m` | `average` | apple_health | — |
+| `running_vertical_oscillation` | Running vertical oscillation | `mm` | `average` | apple_health | `running_vertical_oscillation_mm` |
+| `running_ground_contact_time` | Running ground contact time | `ms` | `average` | apple_health | `running_ground_contact_time_ms` |
+| `walking_step_length` | Walking step length | `m` | `average` | apple_health | `walking_step_length_m` |
+| `walking_speed` | Walking speed | `km/h` | `average` | apple_health | `walking_speed_kmh` |
+| `walking_double_support` | Walking double support | `%` | `average` | apple_health | `walking_double_support_percentage` |
+| `walking_asymmetry` | Walking asymmetry | `%` | `average` | apple_health | `walking_asymmetry_percentage` |
+| `walking_steadiness` | Walking steadiness | `%` | `last` | apple_health | `apple_walking_steadiness` |
+| `stair_ascent_speed` | Stair ascent speed | `km/h` | `average` | apple_health | `stair_ascent_speed_kmh` |
+| `stair_descent_speed` | Stair descent speed | `km/h` | `average` | apple_health | `stair_descent_speed_kmh` |
+| `six_minute_walk_distance` | Six-minute walk distance | `m` | `last` | apple_health | `six_minute_walk_test_distance` |
+| `swimming_strokes` | Swimming strokes | `count` | `sum` | apple_health | `swimming_stroke_count` |
+| `handwashing_events` | Handwashing events | `count` | `sum` | apple_health | `handwashing_event` |
+| `mindful_session_duration` | Mindful session duration | `min` | `sum` | apple_health | `mindful_session` |
+| `toothbrushing_events` | Toothbrushing events | `count` | `sum` | apple_health | `toothbrushing_event` |
 | `whoop_strain` | Whoop strain (day) | `index` | `max` | whoop | `strain` |
 | `oura_activity_score` | Oura activity score | `index` | `average` | oura | `activity_score` |
+
+### Environment
+
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
+| --- | --- | --- | --- | --- | --- |
+| `audio_exposure_events` | Audio exposure events | `count` | `sum` | apple_health | `audio_exposure_event`, `headphone_audio_exposure_event` |
+| `audio_exposure_environmental` | Environmental audio exposure | `dB` | `average` | apple_health | `environmental_audio_exposure` |
+| `audio_exposure_headphone` | Headphone audio exposure | `dB` | `average` | apple_health | `headphone_audio_exposure` |
+| `audio_exposure_reduction` | Environmental sound reduction | `dB` | `average` | apple_health | `environmental_sound_reduction` |
+| `weather_temperature` | Outdoor temperature | `°C` | `average` | weather | `weather_temperature_c` |
+| `weather_temperature_apparent` | Apparent temperature | `°C` | `average` | weather | `weather_apparent_temperature_c` |
+| `weather_humidity` | Humidity | `%` | `average` | weather | `weather_humidity_pct` |
+| `weather_precipitation` | Precipitation | `mm` | `sum` | weather | `weather_precipitation_mm` |
+| `weather_pressure` | Air pressure | `hPa` | `average` | weather | `weather_pressure_hpa` |
+| `weather_wind_speed` | Wind speed | `km/h` | `average` | weather | `weather_wind_speed_kmh` |
+| `weather_cloud_cover` | Cloud cover | `%` | `average` | weather | `weather_cloud_cover_pct` |
+| `weather_uv_index` | UV index | `index` | `max` | weather | — |
 
 ### Heart and circulation
 
@@ -121,8 +158,10 @@ dashboard picks whichever matches the reader's language.
 | `blood_pressure_diastolic` | Blood pressure, diastolic | `mmHg` | `average` | apple_health | `diastolic` |
 | `heart_rate` | Heart rate | `bpm` | `average` | apple_health | — |
 | `heart_rate_average` | Average heart rate (day) | `bpm` | `average` | whoop | `cycle_average_heart_rate` |
+| `heart_rate_max` | Maximum heart rate (day) | `bpm` | `max` | whoop | `max_heart_rate` |
 | `heart_rate_resting` | Resting heart rate | `bpm` | `average` | apple_health, whoop | `resting_heart_rate`, `resting_hr`, `resting_heart_rate_bpm` |
 | `heart_rate_walking_average` | Walking heart rate average | `bpm` | `average` | apple_health | `walking_heart_rate_average` |
+| `heart_rate_recovery` | Heart-rate recovery | `bpm` | `average` | apple_health | `heart_rate_recovery_one_minute` |
 | `hrv_rmssd` | HRV (RMSSD) | `ms` | `average` | whoop | `hrv_rmssd_milli` |
 | `hrv_sdnn` | HRV (SDNN) | `ms` | `average` | apple_health | `heart_rate_variability_sdnn`, `hrv` |
 | `blood_oxygen` | Blood oxygen | `%` | `average` | apple_health, whoop | `spo2_percentage`, `spo2`, `oxygen_saturation` |
@@ -132,13 +171,17 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `sleep_duration` | Sleep duration | `min` | `sum` | apple_health | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
-| `sleep_duration_deep` | Deep sleep | `min` | `sum` | apple_health | `sleep_deep_duration` |
-| `sleep_duration_rem` | REM sleep | `min` | `sum` | apple_health | `sleep_rem_duration` |
-| `sleep_duration_light` | Light sleep | `min` | `sum` | apple_health | `sleep_core_duration`, `sleep_light_duration` |
-| `sleep_duration_awake` | Awake time | `min` | `sum` | apple_health | `sleep_awake_duration` |
-| `sleep_duration_in_bed` | Time in bed | `min` | `sum` | apple_health | `sleep_inbed_duration`, `sleep_in_bed_duration` |
+| `sleep_duration` | Sleep duration | `min` | `sum` | apple_health, whoop | `sleep_analysis`, `sleep`, `sleep_duration_hours`, `sleep_asleep_duration` |
+| `sleep_duration_deep` | Deep sleep | `min` | `sum` | apple_health, whoop | `sleep_deep_duration` |
+| `sleep_duration_rem` | REM sleep | `min` | `sum` | apple_health, whoop | `sleep_rem_duration` |
+| `sleep_duration_light` | Light sleep | `min` | `sum` | apple_health, whoop | `sleep_core_duration`, `sleep_light_duration` |
+| `sleep_duration_awake` | Awake time | `min` | `sum` | apple_health, whoop | `sleep_awake_duration` |
+| `sleep_duration_in_bed` | Time in bed | `min` | `sum` | apple_health, whoop | `sleep_inbed_duration`, `sleep_in_bed_duration` |
 | `sleep_efficiency` | Sleep efficiency | `%` | `average` | whoop | `sleep_efficiency_percentage` |
+| `whoop_sleep_need` | WHOOP sleep need | `min` | `average` | whoop | `sleep_need_minutes` |
+| `whoop_sleep_debt` | WHOOP sleep debt | `min` | `average` | whoop | `sleep_debt_minutes` |
+| `whoop_sleep_consistency` | WHOOP sleep consistency | `%` | `average` | whoop | `sleep_consistency_percentage` |
+| `sleep_nap_count` | Naps | `count` | `sum` | whoop | `naps` |
 | `whoop_sleep_performance` | Whoop sleep performance | `%` | `average` | whoop | `sleep_performance_percentage`, `whoop_sleep_performance_percent` |
 | `whoop_recovery_score` | Whoop recovery | `%` | `average` | whoop | `recovery_score` |
 | `oura_sleep_score` | Oura sleep score | `index` | `average` | oura | `sleep_score` |
@@ -150,6 +193,9 @@ dashboard picks whichever matches the reader's language.
 | --- | --- | --- | --- | --- | --- |
 | `body_weight` | Body weight | `kg` | `last` | apple_health | `body_mass`, `weight` |
 | `body_fat` | Body fat | `%` | `last` | apple_health | `body_fat_percentage` |
+| `body_height` | Body height | `m` | `last` | apple_health | `height` |
+| `body_mass_index` | Body mass index | `index` | `last` | apple_health | `bmi` |
+| `lean_body_mass` | Lean body mass | `kg` | `last` | apple_health | `lean_body_mass_kg` |
 | `vo2_max` | VO2 max | `mL/kg/min` | `last` | apple_health | — |
 | `skin_temperature` | Skin temperature | `°C` | `average` | whoop | `skin_temp_celsius` |
 
@@ -158,10 +204,22 @@ dashboard picks whichever matches the reader's language.
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
 | `nutrition_energy` | Calories | `kcal` | `sum` | yazio, apple_health | `calories`, `yazio_calories`, `calories_consumed`, `dietary_energy_consumed`, `nutrition_calories_kcal` |
-| `nutrition_protein` | Protein | `g` | `sum` | yazio | `protein`, `yazio_protein`, `nutrition_protein_g` |
-| `nutrition_carbohydrates` | Carbohydrates | `g` | `sum` | yazio | `carbohydrates`, `carbs`, `yazio_carbs`, `nutrition_carbs_g` |
-| `nutrition_fat` | Fat | `g` | `sum` | yazio | `fat`, `yazio_fat`, `nutrition_fat_g` |
-| `nutrition_fiber` | Fibre | `g` | `sum` | yazio | `fiber`, `yazio_fiber`, `nutrition_fiber_g` |
+| `nutrition_protein` | Protein | `g` | `sum` | yazio, apple_health | `protein`, `yazio_protein`, `nutrition_protein_g`, `dietary_protein` |
+| `nutrition_carbohydrates` | Carbohydrates | `g` | `sum` | yazio, apple_health | `carbohydrates`, `carbs`, `yazio_carbs`, `nutrition_carbs_g`, `dietary_carbohydrates` |
+| `nutrition_fat` | Fat | `g` | `sum` | yazio, apple_health | `fat`, `yazio_fat`, `nutrition_fat_g`, `dietary_fat_total` |
+| `nutrition_fiber` | Fibre | `g` | `sum` | yazio, apple_health | `fiber`, `yazio_fiber`, `nutrition_fiber_g`, `dietary_fiber` |
+| `nutrition_sugar` | Sugar | `g` | `sum` | apple_health | `dietary_sugar` |
+| `nutrition_sodium` | Sodium | `mg` | `sum` | apple_health | `dietary_sodium` |
+| `nutrition_fat_saturated` | Saturated fat | `g` | `sum` | apple_health | `dietary_fat_saturated` |
+| `nutrition_fat_monounsaturated` | Monounsaturated fat | `g` | `sum` | apple_health | `dietary_fat_monounsaturated` |
+| `nutrition_fat_polyunsaturated` | Polyunsaturated fat | `g` | `sum` | apple_health | `dietary_fat_polyunsaturated` |
+| `nutrition_potassium` | Potassium | `mg` | `sum` | apple_health | `dietary_potassium` |
+| `nutrition_cholesterol` | Cholesterol | `mg` | `sum` | apple_health | `dietary_cholesterol` |
+| `nutrition_calcium` | Calcium | `mg` | `sum` | apple_health | `dietary_calcium` |
+| `nutrition_vitamin_c_intake` | Vitamin C | `mg` | `sum` | apple_health | `dietary_vitamin_c` |
+| `nutrition_iron` | Iron | `mg` | `sum` | apple_health | `dietary_iron` |
+| `nutrition_caffeine` | Caffeine | `mg` | `sum` | apple_health | `dietary_caffeine` |
+| `water_intake` | Water intake | `mL` | `sum` | apple_health | `dietary_water`, `water_consumed` |
 | `nutrition_meal_energy` | Calories per meal | `kcal` | `sum` | yazio | — |
 | `nutrition_item_energy` | Calories per item | `kcal` | `sum` | yazio | `consumed_item_calories` |
 | `nutrition_item_amount` | Amount per item | `g` | `sum` | yazio | `consumed_product` |
@@ -171,16 +229,28 @@ dashboard picks whichever matches the reader's language.
 
 | `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
 | --- | --- | --- | --- | --- | --- |
-| `workout_duration` | Workout duration | `min` | `sum` | apple_health | `whoop_workout_duration_minutes` |
+| `workout_duration` | Workout duration | `min` | `sum` | apple_health, whoop | `whoop_workout_duration_minutes` |
 | `workout_distance` | Workout distance | `km` | `sum` | apple_health, whoop | `workout_distance_meter` |
 | `workout_energy` | Workout energy | `kcal` | `sum` | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
+| `workout_energy_resting` | Workout resting energy | `kcal` | `sum` | apple_health | `workout_basal_energy_burned` |
 | `workout_heart_rate_average` | Workout heart rate (average) | `bpm` | `average` | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
-| `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health | `workout_max_heart_rate` |
+| `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health, whoop | `workout_max_heart_rate` |
+| `workout_heart_rate_zone_1` | Workout heart-rate zone 1 | `%` | `average` | whoop | `heart_rate_zone_1` |
+| `workout_heart_rate_zone_2` | Workout heart-rate zone 2 | `%` | `average` | whoop | `heart_rate_zone_2` |
+| `workout_heart_rate_zone_3` | Workout heart-rate zone 3 | `%` | `average` | whoop | `heart_rate_zone_3` |
+| `workout_heart_rate_zone_4` | Workout heart-rate zone 4 | `%` | `average` | whoop | `heart_rate_zone_4` |
+| `workout_heart_rate_zone_5` | Workout heart-rate zone 5 | `%` | `average` | whoop | `heart_rate_zone_5` |
 | `workout_steps` | Steps (workout) | `count` | `sum` | apple_health | — |
 | `workout_speed_average` | Speed (average) | `km/h` | `average` | apple_health | — |
 | `workout_speed_max` | Speed (max) | `km/h` | `max` | apple_health | — |
 | `workout_cadence` | Cadence | `spm` | `average` | apple_health | — |
+| `workout_cycling_cadence` | Cycling cadence | `rpm` | `average` | apple_health | — |
+| `workout_cycling_power` | Cycling power | `W` | `average` | apple_health | — |
 | `workout_elevation_gain` | Elevation gain | `m` | `sum` | apple_health | — |
+| `workout_elevation_loss` | Elevation loss | `m` | `sum` | apple_health | — |
+| `workout_lap_length` | Lap length | `m` | `last` | apple_health | — |
+| `workout_swim_cadence` | Swim cadence | `spm` | `average` | apple_health | — |
+| `workout_swimming_strokes` | Swimming strokes | `count` | `sum` | apple_health | — |
 | `workout_intensity` | Intensity | `MET` | `average` | apple_health | — |
 | `whoop_workout_strain` | Whoop strain (workout) | `index` | `max` | whoop | `workout_strain` |
 
@@ -210,19 +280,6 @@ dashboard picks whichever matches the reader's language.
 | `calendar_event_count` | Calendar events | `count` | `sum` | calendar | — |
 | `calendar_busy_duration` | Busy time | `min` | `sum` | calendar | `calendar_busy_minutes` |
 | `calendar_meeting_duration` | Meeting duration | `min` | `sum` | calendar | `calendar_meeting_duration_minutes` |
-
-### Environment
-
-| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
-| --- | --- | --- | --- | --- | --- |
-| `weather_temperature` | Outdoor temperature | `°C` | `average` | weather | `weather_temperature_c` |
-| `weather_temperature_apparent` | Apparent temperature | `°C` | `average` | weather | `weather_apparent_temperature_c` |
-| `weather_humidity` | Humidity | `%` | `average` | weather | `weather_humidity_pct` |
-| `weather_precipitation` | Precipitation | `mm` | `sum` | weather | `weather_precipitation_mm` |
-| `weather_pressure` | Air pressure | `hPa` | `average` | weather | `weather_pressure_hpa` |
-| `weather_wind_speed` | Wind speed | `km/h` | `average` | weather | `weather_wind_speed_kmh` |
-| `weather_cloud_cover` | Cloud cover | `%` | `average` | weather | `weather_cloud_cover_pct` |
-| `weather_uv_index` | UV index | `index` | `max` | weather | — |
 
 ### Dynamic namespaces
 

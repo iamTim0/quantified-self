@@ -127,4 +127,7 @@ COPY --from=builder /app/THIRD-PARTY-NOTICES.txt ./THIRD-PARTY-NOTICES.txt
 
 EXPOSE 3000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD bun -e "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+
 CMD ["bun", "server.js"]

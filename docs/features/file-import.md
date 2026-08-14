@@ -92,10 +92,13 @@ The progress total is therefore unknown briefly for a large archive and becomes 
 has finished. A failed upload is still recorded against the connector, including failures before
 the archive could be parsed.
 
-The history is connector-specific and tenant-protected. It includes the trigger (`upload`), status,
-request id, start and finish times, duration, expected points, accepted points, duplicates and the
-last message. An importer crash is eventually marked as an error by Core after the six-hour stale
-run timeout; it does not leave the connector permanently busy.
+The history is connector-specific and tenant-protected, and the Connectors page also offers a
+tenant-wide **All import runs** view. It includes the trigger (`upload`), status, request id, start
+and finish times, duration, expected/published/processed points, accepted points, duplicates and the
+last message. An upload moves from `running` to `loading` after the importer has published its
+events; Core marks it `success` only after those events have been consumed. An importer crash is
+eventually marked as an error by Core after the six-hour stale-run timeout; it does not leave the
+connector permanently busy.
 
 The file itself is written to the importer's disk while it is being read and deleted afterwards,
 whether the import succeeded or failed. Nothing is kept.

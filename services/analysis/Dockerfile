@@ -40,4 +40,7 @@ ENV PATH="/app/services/analysis/.venv/bin:${PATH}"
 
 EXPOSE 8010
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3)"
+
 CMD ["uvicorn", "analysis.main:app", "--host", "0.0.0.0", "--port", "8010"]

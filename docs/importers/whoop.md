@@ -68,6 +68,18 @@ states more than the API's score objects do: a night's duration, its time in bed
 stages, and a workout's duration and maximum heart rate. Those are the same registry metrics the
 rest of the platform uses, not export-only names.
 
+The English export is matched by WHOOP's actual headers, including `deep sleep / SWS duration
+(min)`, `GPS enabled flag` and `nap flag`; these are not translated aliases. The public field
+list used to verify those spellings is [Bevel's WHOOP CSV import request](https://feedback.bevel.health/feature-requests/p/whoop-csv-data-import).
+The nap flag is kept
+as Boolean context on the sleep point, while numeric `naps` values remain the registered nap
+count. The `physiological_cycles.csv` row is processed once, even though it contains recovery
+columns too, so the same metric is not published twice.
+
+`journal_entries.csv` is read only for the shape report. Its question text, answers and notes are
+never stored or sent as values; the Data Quality Center can still show that those fields arrived
+and were deliberately not retained.
+
 ## Data flow
 
 ```text
@@ -79,6 +91,11 @@ external source -> importer -> qs.ingest.whoop -> Core -> data_points
 - `whoop_recovery_score`
 - `whoop_sleep_performance`
 - `whoop_strain`
+- `whoop_sleep_need`
+- `whoop_sleep_debt`
+- `whoop_sleep_consistency`
+- `sleep_nap_count`
+- `heart_rate_max`
 - `workout_duration`
 
 ## Retrieving the data
@@ -101,6 +118,7 @@ Filter by further `metric_type` values as needed:
 | `sleep_efficiency` | sleep efficiency | `%` |
 | `heart_rate_resting` | resting heart rate | `bpm` |
 | `heart_rate_average` | average heart rate for the day | `bpm` |
+| `heart_rate_max` | maximum heart rate for the day | `bpm` |
 | `hrv_rmssd` | heart-rate variability (RMSSD) | `ms` |
 | `blood_oxygen` | blood oxygen | `%` |
 | `respiratory_rate` | respiratory rate | `br/min` |
@@ -109,11 +127,32 @@ Filter by further `metric_type` values as needed:
 | `workout_energy` | energy of one session | `kcal` |
 | `workout_distance` | distance of one session | `km` |
 | `workout_heart_rate_average` | average heart rate of one session | `bpm` |
+| `workout_heart_rate_max` | maximum heart rate of one session | `bpm` |
+| `workout_heart_rate_zone_1` … `workout_heart_rate_zone_5` | share of a session in each heart-rate zone | `%` |
+| `sleep_duration` | sleep duration | `min` |
+| `sleep_duration_deep`, `sleep_duration_light`, `sleep_duration_rem`, `sleep_duration_awake` | sleep-stage duration | `min` |
+| `sleep_duration_in_bed` | time in bed | `min` |
+| `sleep_efficiency` | sleep efficiency | `%` |
+| `whoop_sleep_need` | WHOOP sleep need | `min` |
+| `whoop_sleep_debt` | WHOOP sleep debt | `min` |
+| `whoop_sleep_consistency` | WHOOP sleep consistency | `%` |
+| `sleep_nap_count` | number of naps | `count` |
 
 WHOOP reports energy in **kilojoules** and distances in **metres**. The importer converts both
 into the registry's units (kcal and km respectively), so that the same quantity from Apple
-Health and from WHOOP is comparable. The raw value stays in `metadata.provider_value`, its
-source unit in `metadata.provider_unit`.
+Health and from WHOOP is comparable. Every point keeps the provider's original value in
+`metadata.provider_value` and its original unit in `metadata.units`.
+
+The export also contains context rather than measurements: activity name, GPS enabled,
+workout and cycle boundaries, and the cycle timezone. Those values are carried on the
+related point as metadata (`activity_name`, `gps_enabled`, `workout_start_time`, and so on),
+so they remain available without pretending that a label or timestamp is an aggregatable
+metric. The field report therefore lists them as mapped rather than unsupported.
+
+WHOOP repeats sleep summaries in the physiological-cycle row as well as in the sleep row. The
+repeated values are kept as metadata on the cycle point; only the sleep row emits the
+sleep-duration and sleep-score series. This keeps `sum` metrics such as sleep duration from being
+counted twice.
 
 `whoop_recovery_score`, `whoop_strain` and `whoop_sleep_performance` keep their vendor prefix:
 they are WHOOP's own figures, with no equivalent at any other source.

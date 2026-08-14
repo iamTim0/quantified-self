@@ -7,6 +7,8 @@ Maps to System Invariants:
 
 import hashlib
 
+import pytest
+
 from apple_health_importer.transformer import (
     generate_idempotency_key,
     transform_health_auto_export_json,
@@ -496,6 +498,94 @@ def test_a_distance_series_becomes_the_sessions_distance():
     assert distance["metadata"]["provider_value"] == 1.0
 
 
+def test_new_workout_series_and_swimming_objects_become_usable_metrics():
+    """Verifies Rule 19: new Apple Health workout quantities are stored or derived."""
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    payload = {
+        "data": {
+            "workouts": [
+                {
+                    "id": "w1",
+                    "name": "Swim",
+                    "start": "2026-08-05 07:00:00 +0000",
+                    "cyclingCadence": [
+                        {"date": "2026-08-05 07:01:00 +0000", "qty": 90, "units": "rpm"},
+                        {"date": "2026-08-05 07:02:00 +0000", "qty": 100, "units": "rpm"},
+                    ],
+                    "cyclingPower": [
+                        {"date": "2026-08-05 07:01:00 +0000", "qty": 200, "units": "W"},
+                        {"date": "2026-08-05 07:02:00 +0000", "qty": 220, "units": "W"},
+                    ],
+                    "cyclingSpeed": [
+                        {"date": "2026-08-05 07:01:00 +0000", "qty": 18, "units": "mph"},
+                        {"date": "2026-08-05 07:02:00 +0000", "qty": 20, "units": "mph"},
+                    ],
+                    "elevationDown": {"qty": 100, "units": "ft"},
+                    "lapLength": {"qty": 25, "units": "yd"},
+                    "swimCadence": {"qty": 30, "units": "spm"},
+                    "swimDistance": [
+                        {"date": "2026-08-05 07:01:00 +0000", "qty": 25, "units": "yd"},
+                        {"date": "2026-08-05 07:02:00 +0000", "qty": 25, "units": "yd"},
+                    ],
+                    "swimStroke": [
+                        {"date": "2026-08-05 07:01:00 +0000", "qty": 20, "units": "count"},
+                        {"date": "2026-08-05 07:02:00 +0000", "qty": 30, "units": "count"},
+                    ],
+                }
+            ]
+        }
+    }
+    points = transform_health_auto_export_json(payload, TENANT, SOURCE, report=report)
+    by_metric = {point["metric_type"]: point for point in points}
+
+    assert by_metric["workout_cycling_cadence"]["value"] == 95
+    assert by_metric["workout_cycling_power"]["value"] == 210
+    assert by_metric["workout_speed_average"]["value"] == pytest.approx(30.577536)
+    assert by_metric["workout_elevation_loss"]["value"] == pytest.approx(30.48)
+    assert by_metric["workout_lap_length"]["value"] == pytest.approx(22.86)
+    assert by_metric["workout_swim_cadence"]["value"] == 30
+    assert by_metric["workout_distance"]["value"] == pytest.approx(0.04572)
+    assert by_metric["workout_swimming_strokes"]["value"] == 50
+
+    power = by_metric["workout_cycling_power"]
+    assert power["metadata"]["units"] == "W"
+    assert power["metadata"]["derived_from"] == ["cyclingPower"]
+    assert power["metadata"]["derived_by"] == "average"
+    assert power["metadata"]["sample_count"] == 2
+
+    mapped = {sighting.path for sighting in report.build().mapped}
+    assert {
+        "workouts.cyclingCadence",
+        "workouts.cyclingPower",
+        "workouts.cyclingSpeed",
+        "workouts.elevationDown",
+        "workouts.lapLength",
+        "workouts.swimCadence",
+        "workouts.swimDistance",
+        "workouts.swimStroke",
+    } <= mapped
+
+
+def test_a_stated_swimming_stroke_total_beats_the_series():
+    """The provider's total is authoritative and prevents counting strokes twice."""
+    points = _workout(
+        {
+            "totalSwimmingStrokeCount": {"qty": 1200, "units": "count"},
+            "swimStroke": [
+                {"date": "2026-08-05 07:01:00 +0000", "qty": 20, "units": "count"},
+                {"date": "2026-08-05 07:02:00 +0000", "qty": 30, "units": "count"},
+            ],
+        }
+    )
+    strokes = [point for point in points if point["metric_type"] == "workout_swimming_strokes"]
+
+    assert len(strokes) == 1
+    assert strokes[0]["value"] == 1200
+    assert "derived_from" not in strokes[0]["metadata"]
+
+
 def test_a_workouts_context_fields_travel_with_its_points():
     """Neither a boolean nor a place name is a measurement, and neither is lost.
 
@@ -688,3 +778,42 @@ def test_the_field_report_names_what_was_not_stored():
     for sighting in (*built.mapped, *built.unmapped):
         assert sighting.kind in {"number", "string", "bool", "array", "object", "null"}
         assert not hasattr(sighting, "value")
+
+
+def test_category_health_export_entries_become_counts_or_durations():
+    """Verifies AGENTS.md Rule 19 for push-shaped Apple Health category entries."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "mindful_session",
+                        "units": "",
+                        "data": [
+                            {
+                                "startDate": "2026-08-05 07:00:00 +0000",
+                                "endDate": "2026-08-05 07:20:00 +0000",
+                                "value": "Mindfulness",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "handwashing_event",
+                        "units": "",
+                        "data": [
+                            {
+                                "date": "2026-08-05 08:00:00 +0000",
+                                "value": "Handwashing",
+                            }
+                        ],
+                    },
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+
+    values = {point["metric_type"]: point["value"] for point in points}
+    assert values["mindful_session_duration"] == 20
+    assert values["handwashing_events"] == 1

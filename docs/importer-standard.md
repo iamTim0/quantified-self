@@ -55,14 +55,17 @@ process-local and therefore also covers a task replayed by JetStream.
 Every import attempt must be attributable to the configured connector instance. Core owns the
 tenant-scoped `SyncRun` record; importers never write a database. Scheduled and manual task
 imports receive a `sync_run_id` in the NATS task, pass it through every `qs.ingest.<source_type>`
-event, and close it through the internal Core status endpoint with `success` or `error`. Push and
-file importers open a run before parsing, report a known `points_expected` total after parsing,
+event, and report the importer outcome through the internal Core status endpoint. Core exposes the
+phases `queued`, `running`, `loading`, `success`, `error` and `skipped`; an importer reporting that
+it has published its events moves the run to `loading`, not directly to `success`. Push and file
+importers open a run before parsing, report a known `points_expected` total after parsing,
 and close the run even when the request is malformed, the broker is unavailable or publishing
 fails. Core records the request id, trigger, timestamps, duration, counts and message. Runs that
 stop reporting for six hours are marked `error` by Core so a crashed importer cannot block its
 connector forever.
 
-The dashboard exposes this history at `/connectors/<connector-id>`. The API is tenant-scoped and
+The dashboard exposes this history at `/connectors/<connector-id>` and as a tenant-wide **All import
+runs** list on the Connectors page. The API is tenant-scoped and
 uses the connector id rather than only the provider type, so two instances of one importer never
 share a progress display or audit trail. Rejected API-key requests are attributed only when the
 stored key hash identifies a connector; raw keys are never sent to Core or stored in a run.

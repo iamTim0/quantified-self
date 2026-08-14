@@ -109,6 +109,8 @@ async def open_sync_run(
     trigger: str = "upload",
     points_expected: int | None = None,
     message: str | None = None,
+    code: str | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
 ) -> str | None:
     """Open a run so an upload is visible while it is being published.
 
@@ -122,6 +124,10 @@ async def open_sync_run(
         payload["points_expected"] = points_expected
     if message:
         payload["message"] = message
+    if code:
+        payload["code"] = code
+    if params:
+        payload["params"] = params
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -143,6 +149,8 @@ async def close_sync_run(
     status: str,
     message: str,
     points_received: int | None = None,
+    code: str | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
 ) -> None:
     """Close the run out so the history shows what happened."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_id}/status"
@@ -153,6 +161,10 @@ async def close_sync_run(
     }
     if points_received is not None:
         payload["points_received"] = points_received
+    if code:
+        payload["code"] = code
+    if params:
+        payload["params"] = params
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -170,6 +182,8 @@ async def report_sync_progress(
     points_expected: int | None = None,
     points_received: int | None = None,
     message: str | None = None,
+    code: str | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
 ) -> None:
     """Tell Core a known total without closing the still-running import."""
     if not sync_run_id:
@@ -185,6 +199,10 @@ async def report_sync_progress(
         payload["points_received"] = points_received
     if message:
         payload["message"] = message[:512]
+    if code:
+        payload["code"] = code
+    if params:
+        payload["params"] = params
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
