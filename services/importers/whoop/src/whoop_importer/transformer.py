@@ -147,6 +147,7 @@ METADATA_FIELDS: dict[str, tuple[_MetadataMapping, ...]] = {
         # Some export locales spell the nap value as a label rather than a number;
         # the metric mapping handles numeric values and this keeps other spellings.
         _MetadataMapping(_SLEEP_NAP_FIELD, "sleep_nap_count"),
+        _MetadataMapping("sleep_nap_flag", "sleep_nap_flag"),
     ),
     "workout": (
         _MetadataMapping("workout_start_time", "workout_start_time"),
@@ -260,6 +261,7 @@ def transform_whoop_records(
                 {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
+                    "source_type": "whoop",
                     "metric_type": metric_type,
                     "timestamp": ts,
                     "value": value,

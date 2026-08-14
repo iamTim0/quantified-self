@@ -13,10 +13,19 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
-import { useI18n, type MessageKey } from "../lib/i18n/provider";
+import { useI18n } from "../lib/i18n/provider";
 import { getConnectorDirection } from "./ConnectorModal";
-import ImportDialog, { type SyncRun } from "./ImportDialog";
+import ImportDialog from "./ImportDialog";
 import type { ConnectorItem } from "./ConnectorsPage";
+import {
+  durationLabel,
+  messageForRun,
+  modeKey,
+  statusClass,
+  statusKey,
+  triggerKey,
+  type SyncRun,
+} from "./import-run";
 
 interface ImporterDetailPageProps {
   apiBase: string;
@@ -27,52 +36,6 @@ interface ImporterDetailPageProps {
 }
 
 const RUN_REFRESH_MS = 5_000;
-
-function statusKey(status: string): MessageKey {
-  if (status === "success") return "importerDetail.statusSuccess";
-  if (status === "error") return "importerDetail.statusError";
-  if (status === "skipped") return "importerDetail.statusSkipped";
-  if (status === "queued") return "importerDetail.statusQueued";
-  if (status === "running") return "importerDetail.statusRunning";
-  if (status === "loading") return "importerDetail.statusLoading";
-  return "importerDetail.statusUnknown";
-}
-
-function triggerKey(trigger: string): MessageKey {
-  if (trigger === "scheduled") return "importerDetail.triggerScheduled";
-  if (trigger === "manual") return "importerDetail.triggerManual";
-  if (trigger === "push") return "importerDetail.triggerPush";
-  if (trigger === "upload") return "importerDetail.triggerUpload";
-  return "importerDetail.triggerOther";
-}
-
-function modeKey(mode: string): MessageKey {
-  if (mode === "smart") return "importerDetail.modeSmart";
-  if (mode === "force") return "importerDetail.modeForce";
-  return "importerDetail.modeOther";
-}
-
-function durationLabel(
-  t: (key: MessageKey, vars?: Record<string, string | number>) => string,
-  formatNumber: (value: number) => string,
-  seconds: number | null,
-): string {
-  if (seconds === null || seconds < 0) return t("importerDetail.noDuration");
-  if (seconds < 90) {
-    return t("importerDetail.durationSeconds", {
-      count: formatNumber(Math.max(1, Math.round(seconds))),
-    });
-  }
-  return t("importerDetail.durationMinutes", { count: formatNumber(Math.round(seconds / 60)) });
-}
-
-function statusClass(status: string): string {
-  if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-800";
-  if (status === "loading") return "border-sky-200 bg-sky-50 text-sky-800";
-  if (status === "skipped") return "border-slate-200 bg-slate-100 text-slate-700";
-  return "border-amber-200 bg-amber-50 text-amber-800";
-}
 
 export default function ImporterDetailPage({
   apiBase,
@@ -256,9 +219,9 @@ export default function ImporterDetailPage({
               value={durationLabel(t, formatNumber, latest.duration_seconds)}
             />
           </div>
-          {latest.message && (
+          {messageForRun(t, latest) && (
             <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-              {latest.message}
+              {messageForRun(t, latest)}
             </p>
           )}
         </section>
@@ -343,9 +306,9 @@ export default function ImporterDetailPage({
                     />
                   </div>
                 </div>
-                {run.message && (
+                {messageForRun(t, run) && (
                   <p className="mt-3 break-words border-t border-slate-200 pt-3 text-xs text-slate-600">
-                    {run.message}
+                    {messageForRun(t, run)}
                   </p>
                 )}
               </article>

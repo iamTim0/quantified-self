@@ -24,6 +24,7 @@ through `defusedxml`, because an export is a file somebody else's software wrote
 from __future__ import annotations
 
 import logging
+import re
 import zipfile
 from collections.abc import Iterator
 from datetime import datetime
@@ -31,9 +32,10 @@ from typing import IO, Any
 
 from defusedxml.ElementTree import iterparse
 from shared_schemas import FieldReportCollector
-from shared_schemas.metrics import METRIC_CATALOG
+from shared_schemas.metrics import METRIC_CATALOG, MetricUnit
 
 from apple_health_importer.transformer import (
+    CATEGORY_RECORD_METRICS,
     SLEEP_STAGE_MAP,
     canonical_name,
     generate_idempotency_key,
@@ -85,14 +87,58 @@ SLEEP_VALUE_STAGES: dict[str, str] = {
 #: the workout nor anywhere else unless this is read.
 WORKOUT_STATISTICS: dict[str, tuple[str, str]] = {
     "HKQuantityTypeIdentifierActiveEnergyBurned": ("workout_energy", "sum"),
+    "HKQuantityTypeIdentifierBasalEnergyBurned": ("workout_energy_resting", "sum"),
     "HKQuantityTypeIdentifierDistanceWalkingRunning": ("workout_distance", "sum"),
     "HKQuantityTypeIdentifierDistanceCycling": ("workout_distance", "sum"),
     "HKQuantityTypeIdentifierDistanceSwimming": ("workout_distance", "sum"),
     "HKQuantityTypeIdentifierHeartRate": ("workout_heart_rate_average", "average"),
+    "HKQuantityTypeIdentifierDistanceDownhillSnowSports": ("workout_distance", "sum"),
+    "HKQuantityTypeIdentifierRunningPower": ("running_power", "average"),
+    "HKQuantityTypeIdentifierRunningSpeed": ("running_speed", "average"),
+    "HKQuantityTypeIdentifierRunningStrideLength": ("running_stride_length", "average"),
+    "HKQuantityTypeIdentifierRunningVerticalOscillation": (
+        "running_vertical_oscillation",
+        "average",
+    ),
+    "HKQuantityTypeIdentifierRunningGroundContactTime": (
+        "running_ground_contact_time",
+        "average",
+    ),
+    "HKQuantityTypeIdentifierSwimmingStrokeCount": ("workout_swimming_strokes", "sum"),
+    "HKQuantityTypeIdentifierStepCount": ("workout_steps", "sum"),
+    "HKQuantityTypeIdentifierWalkingSpeed": ("walking_speed", "average"),
+    "HKQuantityTypeIdentifierStairAscentSpeed": ("stair_ascent_speed", "average"),
+    "HKQuantityTypeIdentifierStairDescentSpeed": ("stair_descent_speed", "average"),
 }
 
 #: The same statistics element also carries the maximum, which is a second metric.
 _HEART_RATE_MAX = ("HKQuantityTypeIdentifierHeartRate", "maximum", "workout_heart_rate_max")
+
+#: Workout metadata is not a free-form blob. These fields are named individually so
+#: useful context survives without retaining the complete raw workout payload.
+WORKOUT_METADATA_FIELDS: dict[str, str] = {
+    "HKIndoorWorkout": "is_indoor",
+    "HKTimeZone": "timezone",
+    "HKWeatherHumidity": "ambient_humidity",
+    "HKWeatherTemperature": "ambient_temperature",
+    "HKWasUserEntered": "is_user_entered",
+    "HKMetadataKeySyncIdentifier": "sync_identifier",
+    "HKMetadataKeySyncVersion": "sync_version",
+    "HKExternalUUID": "external_uuid",
+    "HKSwimmingLocationType": "swimming_location_type",
+    "HKMetadataKeyAppleFitnessPlusSession": "fitness_plus_session",
+}
+
+#: Numeric metadata that is actually a measurement. It gets a normal point of its own
+#: so it remains queryable and keeps the same registry/unit rules as Record values.
+WORKOUT_METADATA_METRICS: dict[str, tuple[str, MetricUnit]] = {
+    "HKAverageMETs": ("physical_effort", MetricUnit.MET),
+    "HKElevationAscended": ("workout_elevation_gain", MetricUnit.METER),
+    "HKElevationDescended": ("workout_elevation_loss", MetricUnit.METER),
+    "HKMaximumSpeed": ("workout_speed_max", MetricUnit.METER_PER_SECOND),
+    "HKLapLength": ("workout_lap_length", MetricUnit.METER),
+    "WHOOP Strain": ("whoop_workout_strain", MetricUnit.INDEX),
+}
 
 
 class ArchiveTooLarge(RuntimeError):
@@ -153,7 +199,27 @@ def _number(raw: str | None) -> float | None:
     try:
         return float(raw.strip())
     except (ValueError, AttributeError):
-        return None
+        match = re.match(r"^\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+))", str(raw))
+        return float(match.group(1)) if match else None
+
+
+def _metadata_units(raw: str, fallback: MetricUnit) -> str:
+    """Read an optional unit suffix from a numeric workout metadata value."""
+    lowered = raw.strip().lower()
+    for unit in ("km/h", "m/s", "mph", "kcal", "met", "ft", "yd", "m"):
+        if lowered.endswith(unit):
+            return unit
+    return fallback.value
+
+
+def _metadata_boolean(raw: str) -> bool | str:
+    """Convert Apple’s numeric boolean metadata while preserving other strings."""
+    lowered = raw.strip().lower()
+    if lowered in {"0", "false", "no"}:
+        return False
+    if lowered in {"1", "true", "yes"}:
+        return True
+    return raw
 
 
 def _minutes_between(start: str, end: str) -> float | None:
@@ -182,6 +248,7 @@ def _point(
         "value": value,
         "metadata": metadata,
         "idempotency_key": generate_idempotency_key(tenant_id, source_id, metric_type, timestamp),
+        "source_type": "apple_health",
     }
 
 
@@ -322,6 +389,43 @@ def _record_points(
         return
 
     metric_type = canonical_name(raw_name)
+    category_metric = CATEGORY_RECORD_METRICS.get(raw_name)
+    if category_metric is not None:
+        ts = parse_timestamp(start)
+        if ts is None:
+            report.unmapped(f"export.Record.{raw_name}", elem.attrib.get("value", ""))
+            return
+
+        end = elem.attrib.get("endDate", "")
+        if raw_name == "mindful_session":
+            value = _minutes_between(start, end)
+            if value is None:
+                report.unmapped(f"export.Record.{raw_name}", elem.attrib.get("value", ""))
+                return
+            metadata = {
+                **metadata_base,
+                "units": "min",
+                "provider_value": value,
+                "provider_category": elem.attrib.get("value", ""),
+                "derived_from": ["startDate", "endDate"],
+                "derived_by": "difference",
+            }
+        else:
+            value = 1.0
+            metadata = {
+                **metadata_base,
+                "units": "count",
+                "provider_value": value,
+                "provider_category": elem.attrib.get("value", ""),
+                "derived_from": ["record"],
+                "derived_by": "count",
+                "sample_count": 1,
+            }
+
+        report.mapped(f"export.Record.{raw_name}", elem.attrib.get("value", ""), category_metric)
+        yield _point(tenant_id, source_id, category_metric, ts, value, metadata)
+        return
+
     if not _is_catalogued(metric_type):
         # Deliberate: see the scope note at the top. An archive holds categories
         # nobody opted into sending, so an uncatalogued type is reported rather than
@@ -367,6 +471,45 @@ def _workout_points(
     if elem.attrib.get("sourceName"):
         metadata_base["device_source"] = elem.attrib["sourceName"]
 
+    statistics: list[Any] = []
+    metadata_metrics: list[tuple[str, float, str, str]] = []
+    for child in elem:
+        if child.tag == "WorkoutStatistics":
+            statistics.append(child)
+        elif child.tag == "MetadataEntry":
+            key = child.attrib.get("key", "")
+            raw_value = child.attrib.get("value", "")
+            if not key:
+                continue
+            metadata_field = WORKOUT_METADATA_FIELDS.get(key)
+            if metadata_field is not None:
+                metadata_base[metadata_field] = (
+                    _metadata_boolean(raw_value)
+                    if key in {"HKIndoorWorkout", "HKWasUserEntered"}
+                    else raw_value
+                )
+                report.mapped(f"export.Workout.metadata.{key}", raw_value, metadata_field)
+                continue
+
+            metric_mapping = WORKOUT_METADATA_METRICS.get(key)
+            if metric_mapping is None:
+                report.unmapped(f"export.Workout.metadata.{key}", raw_value)
+                continue
+            metric_type, fallback_unit = metric_mapping
+            value = _number(raw_value)
+            if value is None:
+                report.unmapped(f"export.Workout.metadata.{key}", raw_value)
+                continue
+            metadata_metrics.append(
+                (metric_type, value, _metadata_units(raw_value, fallback_unit), key)
+            )
+        elif child.tag == "WorkoutRoute":
+            for reference in child:
+                path = reference.attrib.get("path", "")
+                if path:
+                    routes[path.rsplit("/", 1)[-1]] = (workout_id, activity)
+
+    emitted_metrics: set[str] = set()
     for attribute, unit_attribute, metric_type in (
         ("duration", "durationUnit", "workout_duration"),
         ("totalDistance", "totalDistanceUnit", "workout_distance"),
@@ -375,6 +518,7 @@ def _workout_points(
         value = _number(elem.attrib.get(attribute))
         if value is None:
             continue
+        emitted_metrics.add(metric_type)
         units = elem.attrib.get(unit_attribute, "")
         report.mapped(f"export.Workout.{attribute}", value, metric_type)
         yield _point(
@@ -386,40 +530,12 @@ def _workout_points(
             {**metadata_base, "units": units, "provider_value": value},
         )
 
-    for child in elem:
-        if child.tag == "WorkoutStatistics":
-            yield from _statistics_points(child, tenant_id, source_id, ts, metadata_base, report)
-        elif child.tag == "MetadataEntry":
-            key = child.attrib.get("key", "")
-            if key:
-                report.unmapped(f"export.Workout.metadata.{key}", child.attrib.get("value"))
-        elif child.tag == "WorkoutRoute":
-            for reference in child:
-                path = reference.attrib.get("path", "")
-                if path:
-                    routes[path.rsplit("/", 1)[-1]] = (workout_id, activity)
-
-
-def _statistics_points(
-    child: Any,
-    tenant_id: str,
-    source_id: str,
-    ts: str,
-    metadata_base: dict[str, Any],
-    report: FieldReportCollector,
-) -> Iterator[dict[str, Any]]:
-    hk_type = child.attrib.get("type", "")
-    units = child.attrib.get("unit", "")
-
-    mapping = WORKOUT_STATISTICS.get(hk_type)
-    if mapping is None:
-        report.unmapped(f"export.Workout.statistics.{provider_name(hk_type)}", child.attrib.get("sum"))
-        return
-
-    metric_type, attribute = mapping
-    value = _number(child.attrib.get(attribute))
-    if value is not None:
-        report.mapped(f"export.Workout.statistics.{attribute}", value, metric_type)
+    for metric_type, value, units, field_key in metadata_metrics:
+        if metric_type in emitted_metrics:
+            report.mapped(f"export.Workout.metadata.{field_key}", value, metric_type)
+            continue
+        emitted_metrics.add(metric_type)
+        report.mapped(f"export.Workout.metadata.{field_key}", value, metric_type)
         yield _point(
             tenant_id,
             source_id,
@@ -429,11 +545,75 @@ def _statistics_points(
             {**metadata_base, "units": units, "provider_value": value},
         )
 
+    for child in statistics:
+        yield from _statistics_points(
+            child,
+            tenant_id,
+            source_id,
+            ts,
+            metadata_base,
+            report,
+            emitted_metrics,
+        )
+
+
+def _statistics_points(
+    child: Any,
+    tenant_id: str,
+    source_id: str,
+    ts: str,
+    metadata_base: dict[str, Any],
+    report: FieldReportCollector,
+    emitted_metrics: set[str],
+) -> Iterator[dict[str, Any]]:
+    hk_type = child.attrib.get("type", "")
+    units = child.attrib.get("unit", "")
+
+    mapping = WORKOUT_STATISTICS.get(hk_type)
+    if mapping is None:
+        report.unmapped(
+            f"export.Workout.statistics.{provider_name(hk_type)}", child.attrib.get("sum")
+        )
+        return
+
+    metric_type, attribute = mapping
+    value = _number(child.attrib.get(attribute))
+    field_path = provider_name(hk_type)
+    if metric_type in emitted_metrics:
+        if value is None:
+            report.unmapped(f"export.Workout.statistics.{field_path}", None)
+        else:
+            report.mapped(
+                f"export.Workout.statistics.{field_path}",
+                value,
+                metric_type,
+            )
+    elif value is not None:
+        emitted_metrics.add(metric_type)
+        report.mapped(f"export.Workout.statistics.{field_path}", value, metric_type)
+        yield _point(
+            tenant_id,
+            source_id,
+            metric_type,
+            ts,
+            normalise_value(value, units, metric_type),
+            {**metadata_base, "units": units, "provider_value": value},
+        )
+    else:
+        report.unmapped(f"export.Workout.statistics.{field_path}", None)
+
     stat_type, stat_attribute, stat_metric = _HEART_RATE_MAX
     if hk_type == stat_type:
         maximum = _number(child.attrib.get(stat_attribute))
         if maximum is not None:
-            report.mapped(f"export.Workout.statistics.{stat_attribute}", maximum, stat_metric)
+            if stat_metric in emitted_metrics:
+                return
+            emitted_metrics.add(stat_metric)
+            report.mapped(
+                f"export.Workout.statistics.{field_path}.maximum",
+                maximum,
+                stat_metric,
+            )
             yield _point(
                 tenant_id,
                 source_id,

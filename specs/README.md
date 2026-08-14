@@ -75,6 +75,7 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `DataIntegrity` | `test_concurrent_duplicate_messages` | Core Data Service |
 | `EventualConsistency` | `test_network_partition_recovery` | NATS / Importers |
 | `ImportCompletionAfterCoreProcessing` | `test_importer_completion_waits_for_core_to_drain_events` | Core Data Service / NATS |
+| `SyncRunProgressAtMostOnce` | `test_core_marks_run_success_only_on_the_last_processed_event` | Core Data Service / NATS |
 | `NoUnauthorizedAccess` | `test_query_returns_only_own_data` | Core Data Service (Queries) |
 | `ShareRevocationImmediate` | `test_share_revocation_blocks_access` | Core Data Service (Queries) |
 | `IdempotencyKeyDeterministic` | `test_oura_idempotency_key_deterministic` | Oura Importer |

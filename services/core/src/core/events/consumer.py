@@ -19,6 +19,7 @@ HTTP path did not apply here at all.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -43,6 +44,7 @@ from core.db.models import (
     QuarantinedDataPoint,
     QuarantineRefusal,
     SyncRun,
+    SyncRunEvent,
 )
 from core.db.session import async_session_maker
 from core.metric_mapping import ValidatedMapping, replay_value, validate_mapping
@@ -56,6 +58,23 @@ MAX_QUARANTINE_REFUSALS = 10_000
 DEFAULT_QUARANTINE_RETENTION_DAYS = 30
 MAX_INGEST_EVENT_BYTES = 256 * 1024
 MAX_POINT_METADATA_BYTES = 32 * 1024
+
+
+def _processing_event_key(msg) -> str:
+    """Return a stable, bounded identity for one broker delivery.
+
+    JetStream stream sequence numbers are stable across redelivery. Plain NATS
+    fallback subscriptions do not expose them, so a payload fingerprint is the
+    safe fallback. The key is only a progress-ledger identity; provider values
+    never enter the ledger.
+    """
+    try:
+        metadata = msg.metadata
+        stream = str(metadata.stream)
+        sequence = str(metadata.sequence.stream)
+        return "js:" + hashlib.sha256(f"{stream}:{sequence}".encode()).hexdigest()
+    except Exception:  # noqa: BLE001 - non-JetStream messages have no metadata
+        return "payload:" + hashlib.sha256(msg.data).hexdigest()
 
 
 def bounded_point_metadata(
@@ -313,6 +332,7 @@ async def process_message(msg):
     # was; a rejection that does not say whose data it dropped is hard to act on.
     tenant_id: str | None = None
     source_id: str | None = None
+    event_key = _processing_event_key(msg)
     try:
         if len(msg.data) > MAX_INGEST_EVENT_BYTES:
             logger.error("Rejected oversized ingest event. Acking to prevent redelivery.")
@@ -551,7 +571,12 @@ async def process_message(msg):
                         )
                     if sync_run_id:
                         await _tally(
-                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
                         )
                     await session.commit()
                     await msg.ack()
@@ -566,7 +591,12 @@ async def process_message(msg):
                     )
                     if sync_run_id:
                         await _tally(
-                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
                         )
                     await session.commit()
                     await msg.ack()
@@ -590,7 +620,12 @@ async def process_message(msg):
                     )
                     if sync_run_id:
                         await _tally(
-                            session, tenant_id, sync_run_id, source_id=source.id, inserted=None
+                            session,
+                            tenant_id,
+                            sync_run_id,
+                            source_id=source.id,
+                            event_key=event_key,
+                            inserted=None,
                         )
                     await session.commit()
                     await msg.ack()
@@ -610,6 +645,16 @@ async def process_message(msg):
                     raw_metric_type,
                     metric_type,
                 )
+                if sync_run_id:
+                    await _tally(
+                        session,
+                        tenant_id,
+                        sync_run_id,
+                        source_id=source.id,
+                        event_key=event_key,
+                        inserted=None,
+                    )
+                    await session.commit()
                 await msg.ack()
                 return
 
@@ -649,6 +694,7 @@ async def process_message(msg):
                     tenant_id,
                     sync_run_id,
                     source_id=source.id,
+                    event_key=event_key,
                     inserted=inserted,
                 )
             else:
@@ -766,6 +812,7 @@ async def _tally(
     sync_run_id: str,
     *,
     source_id: str | None = None,
+    event_key: str,
     inserted: bool | None,
 ) -> None:
     """Accumulate Core processing counts and close a drained import run.
@@ -776,8 +823,21 @@ async def _tally(
     ``points_received`` is the importer's publish count. ``points_processed`` is
     advanced here, after Core has stored, deduplicated or quarantined the event.
     The distinction prevents the importer from reporting success while NATS still
-    holds events that Core has not loaded.
+    holds events that Core has not loaded. The ledger insert is in the same
+    transaction as the counter update, so a JetStream redelivery cannot count twice.
     """
+    ledger = insert(SyncRunEvent).values(
+        tenant_id=tenant_id,
+        sync_run_id=sync_run_id,
+        event_key=event_key[:128],
+    )
+    ledger = ledger.on_conflict_do_nothing(
+        index_elements=["tenant_id", "sync_run_id", "event_key"],
+    )
+    ledger_result = await session.execute(ledger)
+    if (ledger_result.rowcount or 0) == 0:
+        return
+
     processed = SyncRun.points_processed + 1
     values = {SyncRun.points_processed: processed}
     if inserted is not None:
@@ -798,6 +858,14 @@ async def _tally(
             SyncRun.message: case(
                 (drained, "Core loaded all published data points."),
                 else_=SyncRun.message,
+            ),
+            SyncRun.message_code: case(
+                (drained, "core_loaded"),
+                else_=SyncRun.message_code,
+            ),
+            SyncRun.message_params: case(
+                (drained, {}),
+                else_=SyncRun.message_params,
             ),
         }
     )

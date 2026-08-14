@@ -18,7 +18,7 @@ import { CANONICAL_KEYS } from "../lib/metrics/catalog";
 // prop is kept only for call-site compatibility with the other tabs.
 type Props = { apiBase: string; tenantId?: string };
 type Gap = { metric_type: string; missing_dates: string[] };
-type Connector = { source_type: string; lookback_days: number };
+type Connector = { source_id: string; source_type: string; display_name?: string; lookback_days: number };
 
 /**
  * An interruption in a metric sampled faster than daily.
@@ -136,7 +136,11 @@ export default function DataQualityTab({ apiBase }: Props) {
   const [savingMapping, setSavingMapping] = useState<string | null>(null);
   const [cadenceGaps, setCadenceGaps] = useState<CadenceGap[]>([]);
   const [copied, setCopied] = useState(false);
-  const [backfill, setBackfill] = useState<{ sourceType: string } | null>(null);
+  const [backfill, setBackfill] = useState<{
+    sourceId: string;
+    sourceType: string;
+    sourceName: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -750,8 +754,14 @@ export default function DataQualityTab({ apiBase }: Props) {
               <div className="flex flex-wrap gap-2">
                 {connectors.map((c) => (
                   <button
-                    key={c.source_type}
-                    onClick={() => setBackfill({ sourceType: c.source_type })}
+                    key={c.source_id}
+                    onClick={() =>
+                      setBackfill({
+                        sourceId: c.source_id,
+                        sourceType: c.source_type,
+                        sourceName: c.display_name || c.source_type,
+                      })
+                    }
                     className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
                   >
                     {t("quality.backfillSource", { source: c.source_type })}
@@ -777,10 +787,12 @@ export default function DataQualityTab({ apiBase }: Props) {
 
       {backfill && (
         <ImportDialog
-          key={backfill.sourceType}
+          key={backfill.sourceId}
           apiBase={apiBase}
-          sourceType={backfill.sourceType}
-          sourceName={backfill.sourceType}
+          sourceType={backfill.sourceId}
+          sourceName={backfill.sourceName}
+          providerType={backfill.sourceType}
+          fileImport={backfill.sourceType === "apple_health" || backfill.sourceType === "whoop"}
           isOpen={true}
           onClose={() => setBackfill(null)}
           onQueued={load}

@@ -40,11 +40,11 @@ MAX_EXTRACTED_BYTES = 2 * 1024 * 1024 * 1024
 #: Rows read from one archive. A ceiling on work, not on legitimate history.
 MAX_ROWS = 2_000_000
 
-#: Which CSV feeds which record kinds. A file can feed several: Whoop's cycle
-#: export carries the recovery columns too — recovery score, resting heart rate,
-#: HRV, SpO2, skin temperature — and yielding that row under `cycle` alone dropped
-#: all five without a word. The file names Whoop uses have varied, so each entry
-#: lists the spellings seen.
+#: Which CSV feeds which record kind. The physiological-cycle export carries
+#: recovery columns too, so those columns are mapped by the single `cycle` record
+#: rather than yielding the same row again as `recovery`. One provider row must
+#: produce one event per metric, otherwise the database deduplicates only after
+#: NATS and the sync counters have already seen the duplicate.
 #:
 #: Whoop localises the export to the account's language: an archive from a German
 #: account holds `physiologische_zyklen.csv`, `Schlaf.csv` and `Trainings.csv`, with
@@ -53,14 +53,16 @@ MAX_ROWS = 2_000_000
 #: the spellings belong here beside the English ones. An account's language is not
 #: something a user should have to change to get their own data in.
 CSV_KINDS: dict[str, tuple[str, ...]] = {
-    "physiological_cycles": ("cycle", "recovery"),
-    "cycles": ("cycle", "recovery"),
+    "physiological_cycles": ("cycle",),
+    "cycles": ("cycle",),
     "sleeps": ("sleep",),
     "sleep": ("sleep",),
     "workouts": ("workout",),
     "workout": ("workout",),
+    "journal_entries": ("journal",),
+    "journal_entry": ("journal",),
     # German
-    "physiologische_zyklen": ("cycle", "recovery"),
+    "physiologische_zyklen": ("cycle",),
     "schlaf": ("sleep",),
     "trainings": ("workout",),
 }
@@ -84,6 +86,7 @@ COLUMN_FIELDS: dict[str, str] = {
     "workout start time": "workout_start_time",
     "workout end time": "workout_end_time",
     "gps enabled": "gps_enabled",
+    "gps enabled flag": "gps_enabled",
     "activity name": "activity_name",
     "hr zone 1 %": "heart_rate_zone_1",
     "hr zone 2 %": "heart_rate_zone_2",
@@ -94,6 +97,7 @@ COLUMN_FIELDS: dict[str, str] = {
     "sleep consistency %": "sleep_consistency_percentage",
     "sleep debt (min)": "sleep_debt_minutes",
     "naps": "sleep_nap_count",
+    "nap flag": "sleep_nap_flag",
     "day strain": "day_strain",
     "energy burned (cal)": "energy_kcal",
     "average hr (bpm)": "average_heart_rate",
@@ -122,6 +126,7 @@ COLUMN_FIELDS: dict[str, str] = {
     "sleep light (min)": "sleep_light_minutes",
     "sleep light (min.)": "sleep_light_minutes",
     "deep (sws) duration (min)": "sleep_deep_minutes",
+    "deep sleep / sws duration (min)": "sleep_deep_minutes",
     "sleep deep (min)": "sleep_deep_minutes",
     "sleep deep (min.)": "sleep_deep_minutes",
     "rem duration (min)": "sleep_rem_minutes",
@@ -264,7 +269,13 @@ TIMESTAMP_COLUMNS: dict[str, tuple[str, ...]] = {
         "startzeit des zyklus",
         "start time",
     ),
+    "journal": ("cycle start time", "startzeit des zyklus", "start time"),
 }
+
+# Boolean context fields are carried as metadata, never invented as numeric
+# measurements. Keeping this set data-driven makes new provider flags follow the
+# same parsing path without another field-specific branch.
+BOOLEAN_FIELDS = {"gps_enabled", "sleep_nap_flag"}
 
 
 class ArchiveTooLarge(RuntimeError):
@@ -381,7 +392,7 @@ def _to_record(row: dict[str, str], kind: str) -> dict[str, Any] | None:
         number = _number(value)
         if number is not None:
             record[field] = number
-        elif field == "gps_enabled":
+        elif field in BOOLEAN_FIELDS:
             parsed = _boolean(value)
             record[field] = parsed if parsed is not None else value
         else:

@@ -67,6 +67,8 @@ async def report_sync_result_to_core(
     status: str,
     message: str,
     points_received: int | None = None,
+    code: str | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
 ):
     """Close out the sync run in Core.
 
@@ -85,6 +87,10 @@ async def report_sync_result_to_core(
     }
     if points_received is not None:
         payload["points_received"] = points_received
+    if code:
+        payload["code"] = code
+    if params:
+        payload["params"] = params
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -188,15 +194,21 @@ async def fetch_and_publish(
             status="idle",
             message=f"{published_count} data point(s) published from WHOOP.",
             points_received=published_count,
+            code="sync_loading",
         )
     except WhoopUnauthorizedError:
         err_msg = "HTTP 401 Unauthorized: Stored WHOOP OAuth Token is invalid or expired."
         logger.error("[req_id=%s] WHOOP API 401 for tenant %s.", task.request_id, tenant_id)
-        await report_sync_result_to_core(task, status="error", message=err_msg)
+        await report_sync_result_to_core(
+            task, status="error", message=err_msg, code="importer_failed"
+        )
     except (WhoopRateLimitError, WhoopApiError) as e:
         logger.error("[req_id=%s] Failed to fetch WHOOP metrics: %s", task.request_id, e)
         await report_sync_result_to_core(
-            task, status="error", message=f"WHOOP API error: {e}"[:500]
+            task,
+            status="error",
+            message=f"WHOOP API error: {e}"[:500],
+            code="importer_failed",
         )
 
 
@@ -227,6 +239,13 @@ async def process_task_message(msg, nc: nats.NATS):
                 logger.info(
                     f"No active WHOOP connector configured in Dashboard UI for tenant '{tenant_id}'. "
                     "Waiting for OAuth Token configuration via Dashboard UI..."
+                )
+                await report_sync_result_to_core(
+                    task,
+                    status="skipped",
+                    message="No active connector credentials configured.",
+                    points_received=0,
+                    code="credentials_missing",
                 )
                 return
 

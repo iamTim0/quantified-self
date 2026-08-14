@@ -234,6 +234,18 @@ async def _accept_export(
             raise HTTPException(status_code=400, detail="The upload was empty.")
         events, report = await asyncio.to_thread(_parse_export, data, tenant_id, target.source_id)
         if not events:
+            # Journal-only exports intentionally produce no data points. Still send
+            # the schema report so privacy-preserving field visibility is not lost
+            # merely because the archive contained no storable measurements.
+            report_payload = report.build()
+            if report_payload.mapped or report_payload.unmapped:
+                await send_field_report(
+                    tenant_id,
+                    target.source_id,
+                    report_payload,
+                    req_id=x_request_id,
+                    sync_run_id=sync_run_id,
+                )
             raise HTTPException(
                 status_code=400,
                 detail="The archive was read but held no measurements this platform stores.",

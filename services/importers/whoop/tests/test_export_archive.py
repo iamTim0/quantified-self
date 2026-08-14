@@ -232,6 +232,88 @@ def test_recovery_columns_in_the_cycle_file_are_not_lost():
     assert values["hrv_rmssd"] == 88
 
 
+def test_a_physiological_cycle_row_emits_each_metric_once():
+    """Verifies Fizzbee Invariant: NoDuplicateRecords.
+
+    Recovery columns are part of the physiological-cycle row. They must be mapped
+    by the cycle mapping once, rather than causing the same CSV row to be replayed
+    through a second recovery mapping.
+    """
+    body = (
+        "Cycle start time,Recovery score %,Heart rate variability (ms)\n"
+        "2026-08-05 06:00:00,71,88\n"
+    )
+    points = _points(_archive({"physiological_cycles.csv": body}))
+
+    assert len(points) == 2
+    assert len({point["idempotency_key"] for point in points}) == 2
+
+
+def test_real_english_export_headers_are_supported():
+    """Actual WHOOP English headers become metrics or metadata without translation."""
+    from shared_schemas import FieldReportCollector
+
+    body = (
+        "cycle start time,sleep onset,deep sleep / SWS duration (min),nap flag,"
+        "sleep performance %\n"
+        "2026-08-05 06:00:00,2026-08-05 23:00:00,95,True,78\n"
+    )
+    report = FieldReportCollector()
+    points: list[dict] = []
+    for kind, record in read_export(_archive({"sleeps.csv": body})):
+        points.extend(
+            transform_whoop_records(
+                kind,
+                [record],
+                TENANT,
+                SOURCE,
+                require_scored=False,
+                mappings=EXPORT_METRICS,
+                report=report,
+            )
+        )
+
+    values = {point["metric_type"]: point for point in points}
+    assert values["sleep_duration_deep"]["value"] == 95
+    assert values["whoop_sleep_performance"]["value"] == 78
+    assert values["sleep_duration_deep"]["metadata"]["sleep_nap_flag"] is True
+    assert report.build().unmapped == []
+
+
+def test_journal_entries_are_reported_without_storing_their_contents():
+    """Verifies Fizzbee Invariant: ArchiveIsNotRetained."""
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    records = list(
+        read_export(
+            _archive(
+                {
+                    "journal_entries.csv": (
+                        "cycle start time,question text,answered yes,notes\n"
+                        "2026-08-05 06:00:00,Did you sleep well?,True,private note\n"
+                    )
+                }
+            )
+        )
+    )
+    assert [kind for kind, _ in records] == ["journal"]
+
+    transform_whoop_records(
+        "journal",
+        [records[0][1]],
+        TENANT,
+        SOURCE,
+        require_scored=False,
+        mappings=EXPORT_METRICS,
+        report=report,
+    )
+    paths = {s.path for s in report.build().unmapped}
+    assert "journal.question text" in paths
+    assert "journal.answered yes" in paths
+    assert "journal.notes" in paths
+
+
 def test_repeated_sleep_columns_are_carried_without_double_counting():
     """A repeated sleep summary is metadata on the cycle point, not a second total."""
     from shared_schemas import FieldReportCollector
@@ -249,7 +331,6 @@ def test_repeated_sleep_columns_are_carried_without_double_counting():
     assert strain["metadata"]["whoop_sleep_debt"] == 35
     paths = {s.path for s in report.build().mapped}
     assert "cycle.sleep_debt_minutes" in paths
-    assert "recovery.sleep_debt_minutes" in paths
     assert report.build().unmapped == []
 
 

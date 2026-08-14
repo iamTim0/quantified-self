@@ -523,7 +523,7 @@ async def test_importer_completion_waits_for_core_to_drain_events():
 
 @pytest.mark.asyncio
 async def test_core_marks_run_success_only_on_the_last_processed_event():
-    """Verifies Fizzbee Invariant: ImportCompletionAfterCoreProcessing."""
+    """Verifies Fizzbee Invariants: ImportCompletionAfterCoreProcessing and SyncRunProgressAtMostOnce."""
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id, "whoop")
@@ -546,7 +546,14 @@ async def test_core_marks_run_success_only_on_the_last_processed_event():
             )
             await session.commit()
 
-            await _tally(session, tenant_id, run_id, source_id=source_id, inserted=True)
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-1",
+                inserted=True,
+            )
             await session.commit()
             first = (
                 await session.execute(select(SyncRun).where(SyncRun.id == run_id))
@@ -554,7 +561,14 @@ async def test_core_marks_run_success_only_on_the_last_processed_event():
             assert first.status == "loading"
             assert first.points_processed == 1
 
-            await _tally(session, tenant_id, run_id, source_id=source_id, inserted=False)
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-2",
+                inserted=False,
+            )
             await session.commit()
             last = (
                 await session.execute(select(SyncRun).where(SyncRun.id == run_id))
@@ -564,6 +578,21 @@ async def test_core_marks_run_success_only_on_the_last_processed_event():
             assert last.points_accepted == 1
             assert last.points_duplicate == 1
             assert last.finished_at is not None
+
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-2",
+                inserted=False,
+            )
+            await session.commit()
+            redelivered = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert redelivered.points_processed == 2
+            assert redelivered.points_duplicate == 1
     finally:
         await cleanup_test_tenant(tenant_id)
 

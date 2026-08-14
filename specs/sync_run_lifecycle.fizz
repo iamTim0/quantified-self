@@ -9,31 +9,41 @@ MAX_POINTS = 2
 
 action Init:
     run_status = "running"
-    published_points = 0
+    published_event_keys = []
+    processed_event_keys = []
     processed_points = 0
 
 
 atomic action ImporterPublish:
     require run_status == "running"
-    require published_points < MAX_POINTS
-    published_points = published_points + 1
-    if published_points == MAX_POINTS:
+    require len(published_event_keys) < MAX_POINTS
+    event_key = "event_" + str(len(published_event_keys) + 1)
+    published_event_keys.append(event_key)
+    if len(published_event_keys) == MAX_POINTS:
         run_status = "loading"
 
 
 atomic action CoreProcess:
     require run_status == "loading"
-    require processed_points < published_points
-    processed_points = processed_points + 1
-    if processed_points == published_points:
+    event_key = oneof(published_event_keys)
+    if event_key not in processed_event_keys:
+        processed_event_keys.append(event_key)
+        processed_points = processed_points + 1
+    if processed_points == len(published_event_keys):
         run_status = "success"
 
 
 always assertion ImportCompletionAfterCoreProcessing:
     # Success is only reachable after Core has drained the published events.
-    return run_status != "success" or processed_points == published_points
+    return run_status != "success" or processed_points == len(published_event_keys)
+
+
+always assertion SyncRunProgressAtMostOnce:
+    # A redelivered broker event may be observed again, but it cannot advance the
+    # durable processed count a second time.
+    return processed_points == len(processed_event_keys)
 
 
 always assertion LoadingPhaseIsVisible:
     # A full publish with work still outstanding must remain visibly in loading.
-    return run_status != "loading" or published_points == MAX_POINTS
+    return run_status != "loading" or len(published_event_keys) == MAX_POINTS

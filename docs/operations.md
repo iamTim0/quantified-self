@@ -307,6 +307,8 @@ the connector credentials is worthless.
 
 - Importers are stateless and run in NATS queue groups; several replicas share the load automatically.
 - Core's ingest consumer uses a queue group too.
+- Core's sync-run ledger counts each broker event once, including after JetStream redelivery; it
+  stores only the broker identity, not the imported value.
 - Duplicate runs are prevented by **Core**, not by the importer: a connector with a `SyncRun` already
   queued, running or loading is not scheduled again. The `active_syncs` set in the importers is now only a local
   buffer against a redelivered message — it was never a distributed lock, and with several replicas it

@@ -83,15 +83,22 @@ deduplicates on the `idempotency_key`. Every import stays attached to the config
 | `workout_swim_cadence`, `workout_swimming_strokes`, `workout_steps`, `workout_intensity` | swimming cadence, stroke count, workout steps and intensity | `spm`, `count`, `MET` |
 | `blood_pressure_systolic`, `blood_pressure_diastolic` | blood pressure | `mmHg` |
 | `location_point` | one point per GPS fix in a workout route | — |
+| `physical_effort`, `running_power`, `running_speed`, `running_stride_length`, `running_vertical_oscillation`, `running_ground_contact_time` | physical effort and running dynamics | `MET`, `W`, `km/h`, `m`, `mm`, `ms` |
+| `walking_step_length`, `walking_speed`, `walking_double_support`, `walking_asymmetry`, `walking_steadiness` | walking mobility measurements | `m`, `km/h`, `%`, `%`, `%` |
+| `stair_ascent_speed`, `stair_descent_speed`, `six_minute_walk_distance`, `daylight_duration`, `standing_events` | stair, mobility-test, daylight and standing measurements | `km/h`, `km/h`, `m`, `min`, `count` |
+| `audio_exposure_environmental`, `audio_exposure_headphone`, `audio_exposure_reduction`, `audio_exposure_events` | hearing exposure and exposure events | `dB`, `dB`, `dB`, `count` |
+| `nutrition_sugar`, `nutrition_sodium`, `nutrition_fat_saturated`, `nutrition_fat_monounsaturated`, `nutrition_fat_polyunsaturated`, `nutrition_potassium`, `nutrition_cholesterol`, `nutrition_calcium`, `nutrition_vitamin_c_intake`, `nutrition_iron`, `nutrition_caffeine`, `water_intake` | dietary details and water intake | `g`, `mg`, `g`, `g`, `g`, `mg`, `mg`, `mg`, `mg`, `mg`, `mg`, `mL` |
+| `body_height`, `body_mass_index`, `lean_body_mass`, `heart_rate_recovery` | body composition and recovery | `m`, `index`, `kg`, `bpm` |
+| `swimming_strokes`, `handwashing_events`, `mindful_session_duration`, `toothbrushing_events` | daily activity and wellbeing events | `count`, `count`, `min`, `count` |
 
 Health Auto Export sends the unit along with each metric, and that unit follows the phone's
 locale — miles or kilometres, hours or minutes. The importer reads it and converts to the
 registry's unit; the original value stays in `metadata.provider_value`, the reported unit in
 `metadata.units`.
 
-HealthKit types the catalog does not know land under the prefix `apple_health_` (for example
-`apple_health_dietary_water`). They are not lost, but they do not occupy a canonical name
-either.
+HealthKit types the catalog does not know land under the prefix `apple_health_`. They are not
+lost, but they do not occupy a canonical name either. The fields listed above are catalogued,
+so their canonical names are the ones to query.
 
 Queries always use the exact `metric_type` value.
 
@@ -111,6 +118,13 @@ share an `idempotency_key` and the second would be discarded by Core anyway.
 | `isIndoor`, `location`, `metadata` | metadata on the session's readings |
 | `temperature`, `humidity` | ambient conditions in the session metadata |
 | `elevationDown`, `lapLength`, `swimCadence`, `totalSwimmingStrokeCount` | scalar workout metrics after unit conversion |
+
+Apple archive metadata is retained field by field rather than as a raw payload. Indoor/user
+entered flags, timezone, weather context, sync identifiers, external UUID, swimming location
+and Fitness+ session markers travel with the workout points. Numeric metadata such as average
+METs, elevation, maximum speed, lap length and WHOOP strain becomes a normal metric point.
+Workout statistics for running dynamics, steps and swimming strokes follow the same registry
+and unit conversion rules.
 
 ### Time series inside a workout
 

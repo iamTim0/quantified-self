@@ -68,6 +68,18 @@ states more than the API's score objects do: a night's duration, its time in bed
 stages, and a workout's duration and maximum heart rate. Those are the same registry metrics the
 rest of the platform uses, not export-only names.
 
+The English export is matched by WHOOP's actual headers, including `deep sleep / SWS duration
+(min)`, `GPS enabled flag` and `nap flag`; these are not translated aliases. The public field
+list used to verify those spellings is [Bevel's WHOOP CSV import request](https://feedback.bevel.health/feature-requests/p/whoop-csv-data-import).
+The nap flag is kept
+as Boolean context on the sleep point, while numeric `naps` values remain the registered nap
+count. The `physiological_cycles.csv` row is processed once, even though it contains recovery
+columns too, so the same metric is not published twice.
+
+`journal_entries.csv` is read only for the shape report. Its question text, answers and notes are
+never stored or sent as values; the Data Quality Center can still show that those fields arrived
+and were deliberately not retained.
+
 ## Data flow
 
 ```text
@@ -137,10 +149,10 @@ related point as metadata (`activity_name`, `gps_enabled`, `workout_start_time`,
 so they remain available without pretending that a label or timestamp is an aggregatable
 metric. The field report therefore lists them as mapped rather than unsupported.
 
-WHOOP repeats sleep summaries in cycle and recovery rows as well as in the sleep row. The
-repeated values are kept as metadata on the cycle/recovery point; only the sleep row emits
-the sleep-duration and sleep-score series. This keeps `sum` metrics such as sleep duration
-from being counted two or three times.
+WHOOP repeats sleep summaries in the physiological-cycle row as well as in the sleep row. The
+repeated values are kept as metadata on the cycle point; only the sleep row emits the
+sleep-duration and sleep-score series. This keeps `sum` metrics such as sleep duration from being
+counted twice.
 
 `whoop_recovery_score`, `whoop_strain` and `whoop_sleep_performance` keep their vendor prefix:
 they are WHOOP's own figures, with no equivalent at any other source.

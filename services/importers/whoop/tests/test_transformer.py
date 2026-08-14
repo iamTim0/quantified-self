@@ -39,6 +39,7 @@ class TestWhoopTransformer(unittest.TestCase):
 
         rec_dp = next(dp for dp in dps if dp["metric_type"] == "whoop_recovery_score")
         self.assertEqual(rec_dp["tenant_id"], "tenant-456")
+        self.assertEqual(rec_dp["source_type"], "whoop")
         self.assertEqual(rec_dp["value"], 88.0)
         self.assertEqual(rec_dp["metadata"]["source_type"], "whoop")
         self.assertEqual(rec_dp["metadata"]["whoop_id"], "rec-101")

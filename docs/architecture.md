@@ -99,6 +99,10 @@ still consuming them, `success` means Core has processed the complete published 
 or `skipped` are terminal outcomes. `points_received` is the number published by the importer;
 `points_processed` is the number Core has stored, deduplicated or quarantined.
 
+Core also records a bounded broker-event identity in `sync_run_events`. This tenant-scoped ledger
+contains no provider values and makes the counter idempotent when JetStream redelivers a message
+after the database commit but before the acknowledgement.
+
 An importer can report a known total while it is still running through Core's internal
 `.../sync-runs/<sync-run-id>/progress` endpoint. `points_expected` may remain unknown for a
 streaming API import and becomes known after a file importer has parsed its archive. Core remains

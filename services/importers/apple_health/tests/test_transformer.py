@@ -778,3 +778,42 @@ def test_the_field_report_names_what_was_not_stored():
     for sighting in (*built.mapped, *built.unmapped):
         assert sighting.kind in {"number", "string", "bool", "array", "object", "null"}
         assert not hasattr(sighting, "value")
+
+
+def test_category_health_export_entries_become_counts_or_durations():
+    """Verifies AGENTS.md Rule 19 for push-shaped Apple Health category entries."""
+    points = transform_health_auto_export_json(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "mindful_session",
+                        "units": "",
+                        "data": [
+                            {
+                                "startDate": "2026-08-05 07:00:00 +0000",
+                                "endDate": "2026-08-05 07:20:00 +0000",
+                                "value": "Mindfulness",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "handwashing_event",
+                        "units": "",
+                        "data": [
+                            {
+                                "date": "2026-08-05 08:00:00 +0000",
+                                "value": "Handwashing",
+                            }
+                        ],
+                    },
+                ]
+            }
+        },
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+
+    values = {point["metric_type"]: point["value"] for point in points}
+    assert values["mindful_session_duration"] == 20
+    assert values["handwashing_events"] == 1

@@ -3,41 +3,20 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { useI18n, type MessageKey } from "../lib/i18n/provider";
-import type { SyncRun } from "./ImportDialog";
+import { useI18n } from "../lib/i18n/provider";
+import {
+  ACTIVE_STATUSES,
+  messageForRun,
+  statusClass,
+  statusKey,
+  triggerKey,
+  type SyncRun,
+} from "./import-run";
 
 interface ImportRunsOverviewProps {
   apiBase: string;
   tenantId: string;
   refreshTrigger: number;
-}
-
-const ACTIVE_STATUSES = new Set(["queued", "running", "loading"]);
-
-function statusKey(status: string): MessageKey {
-  if (status === "success") return "importerDetail.statusSuccess";
-  if (status === "error") return "importerDetail.statusError";
-  if (status === "skipped") return "importerDetail.statusSkipped";
-  if (status === "queued") return "importerDetail.statusQueued";
-  if (status === "running") return "importerDetail.statusRunning";
-  if (status === "loading") return "importerDetail.statusLoading";
-  return "importerDetail.statusUnknown";
-}
-
-function triggerKey(trigger: string): MessageKey {
-  if (trigger === "scheduled") return "importerDetail.triggerScheduled";
-  if (trigger === "manual") return "importerDetail.triggerManual";
-  if (trigger === "push") return "importerDetail.triggerPush";
-  if (trigger === "upload") return "importerDetail.triggerUpload";
-  return "importerDetail.triggerOther";
-}
-
-function statusClass(status: string): string {
-  if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-800";
-  if (status === "loading") return "border-sky-200 bg-sky-50 text-sky-800";
-  if (status === "skipped") return "border-slate-200 bg-slate-100 text-slate-700";
-  return "border-amber-200 bg-amber-50 text-amber-800";
 }
 
 export default function ImportRunsOverview({
@@ -190,7 +169,11 @@ export default function ImportRunsOverview({
                     <div className="h-full rounded-full bg-[#0d5c3a] transition-all" style={{ width: `${progress}%` }} />
                   </div>
                 )}
-                {run.message && <p className="mt-2 break-words text-[11px] text-slate-500">{run.message}</p>}
+                {messageForRun(t, run) && (
+                  <p className="mt-2 break-words text-[11px] text-slate-500">
+                    {messageForRun(t, run)}
+                  </p>
+                )}
               </article>
             );
           })}

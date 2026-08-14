@@ -303,10 +303,49 @@ class SyncRun(Base):
     points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped_ranges: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Stable client-facing status; `message` remains an English operator fallback
+    # for clients that do not know a code yet.
+    message_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SyncRunEvent(Base):
+    """Durable once-only ledger for events counted against an import run.
+
+    JetStream delivers at least once. The data-point unique key protects storage,
+    but it cannot protect the progress counters: a redelivered duplicate must not
+    advance a run twice. The ledger stores only the broker identity (or a bounded
+    payload fingerprint for non-JetStream delivery), never the provider payload.
+    """
+
+    __tablename__ = "sync_run_events"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sync_run_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("sync_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    event_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    counted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "sync_run_id",
+            "event_key",
+            name="uq_sync_run_events_tenant_run_key",
+        ),
+    )
 
 
 class IngestFieldReport(Base):
