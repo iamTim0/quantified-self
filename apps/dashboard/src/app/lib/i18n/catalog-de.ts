@@ -622,7 +622,7 @@ export const de: Record<MessageKey, string> = {
   // ── Data explorer ───────────────────────────────────────────────────────
   "explorer.title": "Rohdaten-Explorer",
   "explorer.subtitle":
-    "Direkter Zugriff auf alle Rohdatenpunkte dieses Workspace. Gespeicherte Ansichten liegen in PostgreSQL.",
+    "Erkunde serverseitig aggregierte Metrikreihen und die neuesten Rohdatenpunkte dieses Workspace. Gespeicherte Ansichten liegen in PostgreSQL.",
   "explorer.refresh": "Daten aktualisieren",
   "explorer.savedViews": "Gespeicherte Ansichten",
   "explorer.saveCurrent": "Aktuelle Ansicht speichern",
@@ -641,10 +641,6 @@ export const de: Record<MessageKey, string> = {
   "explorer.resolutionHour": "Stunde",
   "explorer.resolutionDay": "Tag",
   "explorer.period": "Zeitraum:",
-  "explorer.aggregation": "Aggregat:",
-  "explorer.dailySum": "Tages-Summe",
-  "explorer.dailyAverage": "Tages-Durchschnitt",
-  "explorer.dailyMax": "Tages-Maximum",
   "explorer.selectAll": "Alle auswählen",
   "explorer.searchPlaceholder":
     "Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata…)",
@@ -672,11 +668,17 @@ export const de: Record<MessageKey, string> = {
   "explorer.rawCount_other": "{count} Treffer",
   "explorer.rawTruncated": "Angezeigt werden die neuesten {shown} von {total} Treffern.",
   "explorer.liveQuery": "Live-TimescaleDB-Abfrage",
-  "explorer.sampleNote":
-    "Der Server hat für diesen Zeitraum bis zu {count} Punkte geliefert. Längere Zeiträume werden als Minuten-, Stunden- oder Tageswerte geladen.",
+  "explorer.seriesQueryNote":
+    "Jede ausgewählte Metrik wird separat als aktuelle serverseitige Reihe geladen. Die API wendet die metrikgerechte Aggregation an; fehlende Zeitabschnitte bleiben leer.",
+  "explorer.rawSeriesQueryNote":
+    "Jede ausgewählte Metrik wird separat geladen, die neuesten Werte zuerst. Wenn verfügbar, werden Connector-IDs verwendet; für die Browserleistung ist die Tabelle pro ausgewählter Metrik begrenzt.",
+  "explorer.seriesMetricLabel": "{metric} · {aggregation}",
+  "explorer.seriesMetricSourceLabel": "{metric} · {source} · {aggregation}",
   "explorer.scopeActive": "Einzeln geladen: {metric}",
   "explorer.scopeClear": "Zurück zu allen Metriken",
   "explorer.colTimestamp": "Zeitstempel",
+  "explorer.colId": "ID",
+  "explorer.colIdempotencyKey": "Idempotenzschlüssel",
   "explorer.colMetric": "Metrik",
   "explorer.colMetadata": "Metadaten (JSON)",
   "explorer.colDetails": "Details",
@@ -686,7 +688,7 @@ export const de: Record<MessageKey, string> = {
 
   // ── Data explorer: metric overview ──────────────────────────────────────
   "explorer.overviewHint":
-    "Jeder Metriktyp dieses Workspace, gezählt über die gesamte Historie und nicht über die geladene Stichprobe. Öffne einen, um seine Rohdatenpunkte zu lesen.",
+    "Jeder Metriktyp dieses Workspace, gezählt über die gesamte Historie. Öffne einen, um seine neuesten Rohdatenpunkte zu lesen.",
   "explorer.overviewEmpty":
     "Noch keine Metriken gespeichert, also gibt es nichts zusammenzufassen.",
   "explorer.overviewFailed": "Die Metrikübersicht konnte nicht geladen werden.",
@@ -863,11 +865,15 @@ export const de: Record<MessageKey, string> = {
   "analysis.disclaimer":
     "Jedes Ergebnis beschreibt einen statistischen Zusammenhang, keine Ursache und Wirkung. Nichts davon ist eine medizinische Empfehlung.",
   "analysis.minStrength": "Mindeststärke",
+  "analysis.source": "Quelle",
+  "analysis.allSources": "Alle Quellen",
   "analysis.all": "alle",
   "analysis.howToRead": "Wie diese Analysen zu lesen sind",
   "analysis.noData":
     "Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und importiere Daten für mindestens zwei Wochen.",
   "analysis.excludedForQuality": "{count} wegen zu dünner Datenlage ausgeblendet",
+  "analysis.ambiguousSources":
+    "{count} Metrik(en) kommen aus mehreren Connectoren. Sie bleiben ausgeblendet, bis eine Quelle ausgewählt ist, damit Werte nicht doppelt gezählt werden.",
   "analysis.allMetricsQualify": "alle Metriken erfüllen die Mindestanforderungen",
   "analysis.significantRelationships": "Signifikante Zusammenhänge",
   "analysis.ofPairsChecked": "von {count} geprüften Paaren",

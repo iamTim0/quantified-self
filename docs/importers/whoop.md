@@ -41,6 +41,20 @@ connector again. Returning an already-expired token would only defer the error.
 The importer only ever receives the short-lived access token. The refresh token and the client
 secret do not cross the service boundary.
 
+### Large export behavior
+
+An uploaded archive is spooled to a temporary file and parsed incrementally. CSV rows are converted
+and published in bounded NATS envelopes rather than collected as one in-memory history. Each
+envelope contains at most 1,000 events and 512 KiB; Core handles one envelope in a bounded database
+transaction and acknowledges it only after all child events have been durably handled. The upload
+endpoint returns immediately with a `SyncRun`, and the
+dashboard can follow published, processed, duplicate and rejected counts while the archive drains.
+
+This protects the importer from a multi-year export and gives the broker backpressure a place to
+work. A process restart may replay the last envelope, but deterministic idempotency keys make the
+replay safe. The temporary spool is removed after parsing, including the error path; whole raw
+provider payloads are not stored in the database.
+
 ## Setup
 
 1. Open the data source under **Connectors** in the dashboard.

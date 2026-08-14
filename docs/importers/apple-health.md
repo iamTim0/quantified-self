@@ -62,6 +62,13 @@ The importer does not write to the database. The Core service is the database's 
 deduplicates on the `idempotency_key`. Every import stays attached to the configured
 `tenant_id`.
 
+Archive and push events are sent in bounded version-2 NATS envelopes of at most 1,000 points and
+512 KiB. Core processes each envelope in one bounded database transaction and acknowledges it only
+after its children have been stored, deduplicated or recorded as rejected. If a broker
+acknowledgement is lost, the envelope may be retried; its deterministic child keys make that replay
+safe. This keeps a multi-year archive from creating one broker round trip and one in-memory task
+per point.
+
 ## Resolution and completeness
 
 Before publishing, the importer asks Core for the tenant's effective metric policies. Continuous

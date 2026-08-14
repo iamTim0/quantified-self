@@ -1,0 +1,92 @@
+# Fizzbee specification for bounded, transactional ingest batches.
+#
+# The envelope is a throughput optimisation, not a replacement for per-point
+# idempotency. A batch may contain invalid siblings, but Core only acknowledges
+# the envelope after its transaction commits.
+
+TENANTS = ["tenant_a", "tenant_b"]
+MAX_BATCH = 3
+MAX_BATCHES = 2
+
+action Init:
+    broker_queue = []
+    storage = {}
+    acknowledged_batches = []
+    rejected_events = 0
+    next_batch_id = 1
+    next_event_id = 1
+
+atomic action PublishBatch:
+    require len(broker_queue) < 2
+    require next_batch_id <= MAX_BATCHES
+    tenant_id = oneof(TENANTS)
+    batch_id = "batch-" + str(next_batch_id)
+    next_batch_id = next_batch_id + 1
+    events = []
+
+    for index in [0, 1, 2]:
+        if index < MAX_BATCH:
+            key = "event-" + str(next_event_id)
+            next_event_id = next_event_id + 1
+            valid = oneof([True, False])
+            event = {
+                "tenant_id": tenant_id,
+                "idempotency_key": key,
+                "valid": valid,
+            }
+            events.append(event)
+
+    broker_queue.append({
+        "batch_id": batch_id,
+        "tenant_id": tenant_id,
+        "events": events,
+    })
+
+atomic action ProcessBatch:
+    require len(broker_queue) > 0
+    batch = broker_queue[0]
+    commit = oneof([True, False])
+
+    # A failed transaction changes nothing and therefore leaves the batch for
+    # JetStream redelivery. The model represents the database rollback by the
+    # absence of all writes in this branch.
+    if commit:
+        for event in batch["events"]:
+            if event["valid"]:
+                storage[event["idempotency_key"]] = event
+            else:
+                rejected_events = rejected_events + 1
+        broker_queue.pop(0)
+        acknowledged_batches.append(batch["batch_id"])
+
+always assertion BatchSizeBounded:
+    for batch in broker_queue:
+        if len(batch["events"]) > MAX_BATCH:
+            return False
+    return True
+
+always assertion TenantHomogeneousBatch:
+    for batch in broker_queue:
+        for event in batch["events"]:
+            if event["tenant_id"] != batch["tenant_id"]:
+                return False
+    return True
+
+always assertion AckAfterBatchCommit:
+    for batch_id in acknowledged_batches:
+        for batch in broker_queue:
+            if batch["batch_id"] == batch_id:
+                return False
+    return True
+
+always assertion PointIdempotencyPreserved:
+    for key in storage:
+        if storage[key]["idempotency_key"] != key:
+            return False
+    return True
+
+always assertion ValidSiblingSurvivesInvalidPoint:
+    for event_key in storage:
+        if storage[event_key]["valid"] != True:
+            return False
+    return True

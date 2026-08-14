@@ -5,6 +5,7 @@ Submits transformed IngestEvents to NATS subject 'qs.ingest.apple_health'.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import tempfile
@@ -80,7 +81,8 @@ PUBLISH_ATTEMPTS = 5
 #: retries. Long enough to outlast a busy broker, short enough that a genuinely broken one
 #: still fails the import rather than stalling it for hours.
 PUBLISH_RETRY_DELAY = 0.1
-PUBLISH_CONCURRENCY = 32
+PUBLISH_BATCH_SIZE = 1_000
+PUBLISH_BATCH_BYTES = 512 * 1024
 
 #: How often the spool is checked for uploads nobody came back to finish.
 _SWEEP_INTERVAL_SECONDS = 300
@@ -431,20 +433,62 @@ async def _publish_events(
     req_id: str,
     sync_run_id: str | None,
 ) -> int:
-    """Publish a bounded batch concurrently while retaining broker backpressure."""
+    """Publish bounded versioned envelopes while retaining broker backpressure."""
+    if not events:
+        return 0
+
+    for event in events:
+        event["request_id"] = req_id
+        if sync_run_id:
+            event["sync_run_id"] = sync_run_id
+
+    first = events[0]
+    identity = (first.get("tenant_id"), first.get("source_id"), first.get("source_type"))
+    if any(
+        (event.get("tenant_id"), event.get("source_id"), event.get("source_type"))
+        != identity
+        for event in events
+    ):
+        raise ValueError("An Apple Health ingest batch must contain one tenant and connector")
+
+    def encode_batch(batch: list[dict[str, Any]]) -> bytes:
+        batch_id = hashlib.sha256(
+            "|".join(str(event.get("idempotency_key", "")) for event in batch).encode()
+        ).hexdigest()
+        return json.dumps(
+            {
+                "schema_version": 2,
+                "batch_id": batch_id,
+                "tenant_id": identity[0],
+                "source_id": identity[1],
+                "source_type": identity[2],
+                "request_id": req_id,
+                "sync_run_id": sync_run_id,
+                "events": batch,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
     published = 0
-    for offset in range(0, len(events), PUBLISH_CONCURRENCY):
-        batch = events[offset : offset + PUBLISH_CONCURRENCY]
-        tasks = []
-        for event in batch:
-            event["request_id"] = req_id
-            if sync_run_id:
-                event["sync_run_id"] = sync_run_id
-            tasks.append(
-                _publish_with_retry(js, json.dumps(event).encode("utf-8"), req_id)
-            )
-        await asyncio.gather(*tasks)
-        published += len(batch)
+    current: list[dict[str, Any]] = []
+    for event in events:
+        candidate = [*current, event]
+        encoded = encode_batch(candidate)
+        if len(encoded) > PUBLISH_BATCH_BYTES and current:
+            await _publish_with_retry(js, encode_batch(current), req_id)
+            published += len(current)
+            current = [event]
+            encoded = encode_batch(current)
+        if len(encoded) > PUBLISH_BATCH_BYTES:
+            raise ValueError("An Apple Health event exceeds the bounded NATS batch size")
+        current.append(event)
+        if len(current) >= PUBLISH_BATCH_SIZE:
+            await _publish_with_retry(js, encode_batch(current), req_id)
+            published += len(current)
+            current = []
+    if current:
+        await _publish_with_retry(js, encode_batch(current), req_id)
+        published += len(current)
     return published
 
 

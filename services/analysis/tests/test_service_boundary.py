@@ -22,9 +22,15 @@ from pathlib import Path
 
 import jwt
 import pytest
+from analysis import main as analysis_main
 from analysis.config import settings
-from analysis.core_client import MetricPoint
-from analysis.main import app, build_daily_series, resolve_tenant
+from analysis.core_client import (
+    CoreClient,
+    MetricSeriesBucket,
+    MetricSeriesIssue,
+    MetricSeriesResponse,
+)
+from analysis.main import app, build_daily_series, get_insights, resolve_tenant
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -175,21 +181,178 @@ def test_expired_token_is_rejected():
     assert excinfo.value.status_code == 401
 
 
-def test_build_daily_series_keeps_the_latest_value_per_day():
-    """A re-imported day must not double-count.
-
-    The metrics involved are daily summaries, so two points on one day mean the
-    day was imported twice, not that the data is finer-grained.
-    """
+def test_build_daily_series_preserves_server_aggregates_and_gaps():
+    """Analysis consumes Core's registry-aware buckets without inventing zeros."""
     day = datetime(2026, 3, 1, tzinfo=timezone.utc)
-    points = [
-        MetricPoint("sleep_score", day.replace(hour=2), 70.0),
-        MetricPoint("sleep_score", day.replace(hour=9), 85.0),
-        MetricPoint("steps", day.replace(hour=9), 1000.0),
+    buckets = [
+        MetricSeriesBucket("sleep_score", day, 85.0, 1),
+        MetricSeriesBucket("steps", day, 2500.0, 2),
+        MetricSeriesBucket("steps", day + timedelta(days=1), None, 0),
     ]
-    series = build_daily_series(points)
+    series = build_daily_series(buckets)
     assert series["sleep_score"]["2026-03-01"] == 85.0
-    assert series["steps"]["2026-03-01"] == 1000.0
+    assert series["steps"]["2026-03-01"] == 2500.0
+    assert "2026-03-02" not in series["steps"]
+
+
+@pytest.mark.asyncio
+async def test_core_client_reads_metric_series_and_preserves_null_values(monkeypatch):
+    """The Analysis client sends the new request and decodes protobuf presence."""
+    from analysis import core_client as core_client_module
+    from google.protobuf.timestamp_pb2 import Timestamp
+    from quantified_self.v1 import core_service_pb2 as pb
+
+    captured: dict[str, object] = {}
+
+    class _Channel:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _Stub:
+        async def QueryMetricSeries(self, query, metadata):
+            captured["query"] = query
+            captured["metadata"] = metadata
+            value = pb.MetricSeriesBucket(
+                metric_type="steps",
+                source_id="11111111-1111-1111-1111-111111111111",
+                sample_count=2,
+                value=350.0,
+            )
+            gap = pb.MetricSeriesBucket(
+                metric_type="steps",
+                source_id="11111111-1111-1111-1111-111111111111",
+                sample_count=0,
+            )
+            for bucket in (value, gap):
+                timestamp = Timestamp()
+                timestamp.FromDatetime(datetime(2026, 3, 1, tzinfo=timezone.utc))
+                bucket.bucket_start.CopyFrom(timestamp)
+            return pb.QueryMetricSeriesResponse(buckets=[value, gap])
+
+    monkeypatch.setattr(
+        core_client_module.grpc.aio,
+        "insecure_channel",
+        lambda _target: _Channel(),
+    )
+    monkeypatch.setattr(
+        core_client_module.pb_grpc,
+        "CoreDataServiceStub",
+        lambda _channel: _Stub(),
+    )
+
+    client = CoreClient(target="core:50051")
+    result = await client.fetch_metric_series(
+        "22222222-2222-2222-2222-222222222222",
+        start=datetime(2026, 3, 1, tzinfo=timezone.utc),
+        end=datetime(2026, 3, 2, tzinfo=timezone.utc),
+        request_id="req_series_test",
+        metric_types=["steps"],
+    )
+
+    query = captured["query"]
+    assert isinstance(query, pb.QueryMetricSeriesRequest)
+    assert query.tenant_id == "22222222-2222-2222-2222-222222222222"
+    assert list(query.metric_types) == ["steps"]
+    assert query.resolution == pb.METRIC_SERIES_RESOLUTION_DAY
+    assert result.buckets[0].value == 350.0
+    assert result.buckets[0].sample_count == 2
+    assert result.buckets[0].source_id == "11111111-1111-1111-1111-111111111111"
+    assert result.buckets[1].value is None
+    assert result.buckets[1].sample_count == 0
+    assert result.issues == []
+
+
+@pytest.mark.asyncio
+async def test_insights_use_metric_series_instead_of_raw_points(monkeypatch):
+    """Daily insight calculation does not request the unbounded raw-point API."""
+
+    class _FakeCoreClient:
+        raw_called = False
+        series_called = False
+
+        async def fetch_points(self, **_kwargs):
+            self.raw_called = True
+            raise AssertionError("daily insights must not fetch raw points")
+
+        async def fetch_metric_series(self, *_args, **_kwargs):
+            self.series_called = True
+            now = datetime.now(timezone.utc)
+            return MetricSeriesResponse(
+                buckets=[
+                    MetricSeriesBucket(
+                        "steps",
+                        now - timedelta(days=13 - index),
+                        float(index),
+                        1,
+                        "source-1",
+                    )
+                    for index in range(14)
+                ]
+            )
+
+        async def fetch_source_map(self, *_args, **_kwargs):
+            return {"source-1": "oura"}
+
+    fake = _FakeCoreClient()
+    monkeypatch.setattr(analysis_main, "core_client", fake)
+    result = await get_insights(
+        request=_request({"X-Request-ID": "req_insights_test"}),
+        days=14,
+        metric_type="steps",
+        min_strength=0.0,
+        compare_to_previous=False,
+        tenant_id="22222222-2222-2222-2222-222222222222",
+    )
+
+    assert fake.series_called is True
+    assert fake.raw_called is False
+    assert result["metrics_analysed"] == ["steps"]
+
+
+@pytest.mark.asyncio
+async def test_insights_do_not_merge_ambiguous_metric_sources(monkeypatch):
+    """Analysis excludes a metric when Core reports multiple source instances."""
+
+    class _FakeCoreClient:
+        async def fetch_metric_series(self, *_args, **_kwargs):
+            now = datetime.now(timezone.utc)
+            return MetricSeriesResponse(
+                buckets=[
+                    MetricSeriesBucket("steps", now, 350.0, 1, "source-a"),
+                    MetricSeriesBucket("steps", now, 1000.0, 1, "source-b"),
+                ],
+                issues=[
+                    MetricSeriesIssue(
+                        code="AMBIGUOUS_METRIC_SOURCE",
+                        metric_type="steps",
+                        source_ids=["source-a", "source-b"],
+                    )
+                ],
+            )
+
+        async def fetch_source_map(self, *_args, **_kwargs):
+            return {"source-a": "oura", "source-b": "apple_health"}
+
+    monkeypatch.setattr(analysis_main, "core_client", _FakeCoreClient())
+    result = await get_insights(
+        request=_request({"X-Request-ID": "req_ambiguous_sources"}),
+        days=14,
+        metric_type="steps",
+        tenant_id="22222222-2222-2222-2222-222222222222",
+    )
+
+    assert result["metrics_analysed"] == []
+    assert result["metrics_excluded_for_quality"] == ["steps"]
+    assert result["source_issues"] == [
+        {
+            "code": "AMBIGUOUS_METRIC_SOURCE",
+            "metric_type": "steps",
+            "source_ids": ["source-a", "source-b"],
+        }
+    ]
 
 
 def test_health_endpoint_needs_no_credential():

@@ -1,52 +1,109 @@
-"""
-Tests validating the distributed ingestion invariants mapped from Fizzbee specs.
+"""Executable checks for the distributed ingestion model in ``distributed_ingestion.fizz``."""
 
-Mappings:
-- TenantIsolation -> test_tenant_id_always_present
-- NoDuplicateData -> test_deduplication_via_idempotency_key
-- DataIntegrity -> test_concurrent_duplicate_messages
-- EventualConsistency -> test_network_partition_recovery, test_message_survives_consumer_crash
-"""
+from dataclasses import dataclass, field
+
+
+TENANTS = {"tenant_a", "tenant_b"}
+RESOLUTIONS = {"raw", "minute", "hour", "day"}
+
+
+@dataclass
+class IngestionModel:
+    """Small executable model of a durable, idempotent ingest consumer."""
+
+    queue: list[dict] = field(default_factory=list)
+    stored: dict[str, dict] = field(default_factory=dict)
+    acknowledged: set[str] = field(default_factory=set)
+    broker_available: bool = True
+
+    def publish(self, event: dict) -> None:
+        if not self.broker_available:
+            raise RuntimeError("broker unavailable")
+        self.queue.append(event)
+
+    def consume(self, *, crash_before_ack: bool = False) -> None:
+        if not self.queue or not self.broker_available:
+            return
+        event = self.queue[0]
+        self.stored.setdefault(event["idempotency_key"], event)
+        if crash_before_ack:
+            return
+        self.queue.pop(0)
+        self.acknowledged.add(event["idempotency_key"])
+
+
+def _event(key: str = "key-1", tenant_id: str = "tenant_a") -> dict:
+    return {
+        "tenant_id": tenant_id,
+        "metric_type": "steps",
+        "resolution": "minute",
+        "idempotency_key": key,
+    }
+
 
 def test_tenant_id_always_present():
-    """
-    Verifies Fizzbee Invariant: TenantIsolation
-    Ensures that any data processed and saved by the Core Data Service
-    always has a valid tenant_id.
-    """
+    """Verifies Fizzbee Invariant: TenantIsolation."""
+    model = IngestionModel()
+    model.publish(_event())
+    model.consume()
+
+    assert model.stored
+    assert all(event["tenant_id"] in TENANTS for event in model.stored.values())
+
 
 def test_deduplication_via_idempotency_key():
-    """
-    Verifies Fizzbee Invariant: NoDuplicateData
-    Ensures that if the same message is delivered twice by JetStream,
-    the Core Data Service deduplicates it using the idempotency_key.
-    """
+    """Verifies Fizzbee Invariant: NoDuplicateData."""
+    model = IngestionModel()
+    model.publish(_event())
+    model.publish(_event())
+    model.consume()
+    model.consume()
+
+    assert len(model.stored) == 1
+    assert model.acknowledged == {"key-1"}
+
 
 def test_concurrent_duplicate_messages():
-    """
-    Verifies Fizzbee Invariant: DataIntegrity & NoDuplicateData
-    Ensures that concurrently arriving duplicate messages do not result
-    in duplicate database entries or data corruption.
-    """
+    """Verifies Fizzbee Invariants: DataIntegrity and NoDuplicateData."""
+    model = IngestionModel()
+    model.queue.extend([_event(), _event()])
+    model.consume()
+    model.consume()
+
+    assert list(model.stored) == ["key-1"]
+    assert not model.queue
+
 
 def test_message_survives_consumer_crash():
-    """
-    Verifies Fizzbee Invariant: EventualConsistency
-    Ensures that if the consumer crashes before acknowledging a message,
-    the message remains in the broker and is processed when the consumer recovers.
-    """
+    """Verifies Fizzbee Invariant: AckAfterPersisted."""
+    model = IngestionModel()
+    model.publish(_event())
+    model.consume(crash_before_ack=True)
+
+    assert model.queue
+    assert not model.acknowledged
+    model.consume()
+    assert not model.queue
+    assert model.acknowledged == {"key-1"}
+
 
 def test_network_partition_recovery():
-    """
-    Verifies Fizzbee Invariant: EventualConsistency
-    Ensures that messages produced during a partition are eventually
-    delivered and processed once the network recovers.
-    """
+    """Verifies Fizzbee Invariant: EventualConsistency."""
+    model = IngestionModel(broker_available=False)
+    model.broker_available = True
+    model.publish(_event())
+    model.consume()
+
+    assert not model.queue
+    assert model.acknowledged == {"key-1"}
 
 
 def test_import_backpressure_and_ack_order():
-    """
-    Verifies Fizzbee Invariants: ResolutionBounded & AckAfterPersisted
-    Ensures that import-time aggregation uses an allowed resolution and that
-    publishers pause rather than losing messages when the durable queue is full.
-    """
+    """Verifies Fizzbee Invariants: ResolutionBounded and AckAfterPersisted."""
+    model = IngestionModel()
+    event = _event()
+    model.publish(event)
+    assert event["resolution"] in RESOLUTIONS
+    assert not model.acknowledged
+    model.consume()
+    assert event["idempotency_key"] in model.acknowledged

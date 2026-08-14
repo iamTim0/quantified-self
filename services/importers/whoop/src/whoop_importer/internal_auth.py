@@ -33,6 +33,7 @@ def internal_headers(req_id: str, tenant_id: str | None = None) -> dict[str, str
     headers = {
         "Authorization": f"Bearer {internal_service_credential()}",
         "X-Request-ID": req_id,
+        "X-Service-Name": settings.SERVICE_NAME,
     }
     if tenant_id:
         headers["X-Tenant-ID"] = tenant_id

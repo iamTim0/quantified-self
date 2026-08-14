@@ -50,8 +50,7 @@ async def rebuild(tenant_id: str) -> None:
                         source_id,
                         metric_type,
                         bucket_start,
-                        bool_or(is_provider_total AND metric_type IN ({sum_keys}))
-                            AS has_provider_total
+                        bool_or(is_provider_total) AS has_provider_total
                     FROM source_points
                     GROUP BY tenant_id, source_id, metric_type, bucket_start
                 )
@@ -69,7 +68,8 @@ async def rebuild(tenant_id: str) -> None:
                     points.bucket_start,
                     CASE
                         WHEN grouped.has_provider_total THEN
-                            sum(points.value) FILTER (WHERE points.is_provider_total)
+                            (array_agg(points.value ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         WHEN points.metric_type IN ({sum_keys}) THEN sum(points.value)
                         WHEN points.metric_type IN ({max_keys}) THEN max(points.value)
                         WHEN points.metric_type IN ({last_keys})
@@ -78,27 +78,30 @@ async def rebuild(tenant_id: str) -> None:
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN count(*) FILTER (WHERE points.is_provider_total)::integer
+                            THEN 1::integer
                         ELSE count(*)::integer
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN sum(points.value) FILTER (WHERE points.is_provider_total)
+                            THEN (array_agg(points.value ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         ELSE sum(points.value)
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN min(points.value) FILTER (WHERE points.is_provider_total)
+                            THEN (array_agg(points.value ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         ELSE min(points.value)
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN max(points.value) FILTER (WHERE points.is_provider_total)
+                            THEN (array_agg(points.value ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         ELSE max(points.value)
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN (array_agg(points.value ORDER BY points.timestamp ASC)
+                            THEN (array_agg(points.value ORDER BY points.timestamp DESC)
                                 FILTER (WHERE points.is_provider_total))[1]
                         ELSE (array_agg(points.value ORDER BY points.timestamp ASC))[1]
                     END,
@@ -110,12 +113,14 @@ async def rebuild(tenant_id: str) -> None:
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN min(points.timestamp) FILTER (WHERE points.is_provider_total)
+                            THEN (array_agg(points.timestamp ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         ELSE min(points.timestamp)
                     END,
                     CASE
                         WHEN grouped.has_provider_total
-                            THEN max(points.timestamp) FILTER (WHERE points.is_provider_total)
+                            THEN (array_agg(points.timestamp ORDER BY points.timestamp DESC)
+                                FILTER (WHERE points.is_provider_total))[1]
                         ELSE max(points.timestamp)
                     END,
                     jsonb_build_object(
@@ -124,7 +129,7 @@ async def rebuild(tenant_id: str) -> None:
                         'rollup_resolution', :resolution,
                         'sample_count', CASE
                             WHEN grouped.has_provider_total
-                                THEN count(*) FILTER (WHERE points.is_provider_total)
+                                THEN 1
                             ELSE count(*)
                         END,
                         'provider_total', grouped.has_provider_total

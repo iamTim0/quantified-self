@@ -24,6 +24,8 @@ import json
 import logging
 import math
 import uuid
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -59,6 +61,8 @@ MAX_QUARANTINE_REFUSALS = 10_000
 DEFAULT_QUARANTINE_RETENTION_DAYS = 30
 MAX_INGEST_EVENT_BYTES = 256 * 1024
 MAX_POINT_METADATA_BYTES = 32 * 1024
+MAX_BATCH_EVENTS = 1000
+MAX_BATCH_BYTES = 512 * 1024
 
 
 def _processing_event_key(msg) -> str:
@@ -69,6 +73,8 @@ def _processing_event_key(msg) -> str:
     safe fallback. The key is only a progress-ledger identity; provider values
     never enter the ledger.
     """
+    if (event_key := getattr(msg, "event_key", None)):
+        return str(event_key)[:128]
     try:
         metadata = msg.metadata
         stream = str(metadata.stream)
@@ -380,13 +386,136 @@ async def _tally_rejected_event(
         await rejection_session.commit()
 
 
-async def process_message(msg):
+class _SyntheticPointMessage:
+    """A no-ack view of one point inside a versioned batch envelope."""
+
+    def __init__(self, data: bytes, *, event_key: str | None = None) -> None:
+        self.data = data
+        self.metadata = None
+        self.failed = False
+        self.event_key = event_key or "payload:" + hashlib.sha256(data).hexdigest()
+
+    async def ack(self) -> None:
+        """Keep the envelope pending until every child has completed."""
+
+    async def term(self) -> None:
+        """A child rejection is already recorded; the envelope remains retryable."""
+
+
+async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
+    """Process a bounded envelope while preserving single-point semantics.
+
+    The child path retains the existing validation, idempotency and run-ledger
+    behavior. All child writes share one database transaction, so the envelope is
+    acknowledged only after every child has either been durably stored, deduplicated
+    or permanently rejected. A transient child failure rolls the transaction back
+    and leaves the whole envelope for redelivery.
+    """
+    events = envelope.get("events")
+    if not isinstance(events, list) or not events or len(events) > MAX_BATCH_EVENTS:
+        logger.error("Rejected ingest batch: event count exceeds the bounded contract")
+        await msg.ack()
+        return
+    if len(msg.data) > MAX_BATCH_BYTES:
+        logger.error("Rejected oversized ingest batch. Acking to prevent redelivery.")
+        await msg.ack()
+        return
+
+    inherited_keys = (
+        "tenant_id",
+        "source_id",
+        "source_type",
+        "request_id",
+        "sync_run_id",
+    )
+    batch_id = str(envelope.get("batch_id") or hashlib.sha256(msg.data).hexdigest())
+
+    async with async_session_maker() as session:
+        known_source: DataSource | None = None
+        tenant_value = envelope.get("tenant_id")
+        source_value = envelope.get("source_id")
+        try:
+            uuid.UUID(str(tenant_value))
+            uuid.UUID(str(source_value))
+        except (ValueError, AttributeError, TypeError):
+            pass
+        else:
+            source_result = await session.execute(
+                select(DataSource).where(
+                    DataSource.tenant_id == tenant_value,
+                    DataSource.id == source_value,
+                )
+            )
+            known_source = source_result.scalars().first()
+
+        failed = False
+        for index, raw_child in enumerate(events):
+            child = dict(raw_child) if isinstance(raw_child, dict) else {}
+            mismatch = any(
+                key in child
+                and key in envelope
+                and child[key] != envelope[key]
+                for key in inherited_keys
+            )
+            if mismatch:
+                logger.error("Rejected ingest batch child with mismatched envelope identity")
+                child = {}
+            for key in inherited_keys:
+                if key in envelope:
+                    child.setdefault(key, envelope[key])
+            if "metric_type" not in child:
+                child["metric_type"] = None
+
+            child_key = hashlib.sha256(f"{batch_id}:{index}".encode()).hexdigest()
+            synthetic = _SyntheticPointMessage(
+                json.dumps(child).encode("utf-8"), event_key=f"batch:{child_key}"
+            )
+            await process_message(
+                synthetic,
+                db_session=session,
+                known_source=known_source,
+            )
+            if synthetic.failed:
+                failed = True
+                break
+
+        if failed:
+            await session.rollback()
+        else:
+            await session.commit()
+
+    if failed:
+        await _retry_or_give_up(msg)
+        return
+    await msg.ack()
+
+
+@asynccontextmanager
+async def _session_scope(
+    existing: AsyncSession | None,
+) -> AsyncIterator[AsyncSession]:
+    """Use a caller-owned session or create the single-event session."""
+    if existing is not None:
+        yield existing
+        return
+    async with async_session_maker() as session:
+        yield session
+
+
+async def process_message(
+    msg: Any,
+    *,
+    db_session: AsyncSession | None = None,
+    known_source: DataSource | None = None,
+) -> None:
     # Bound before the try so the failure handlers can name the tenant whose event it
     # was; a rejection that does not say whose data it dropped is hard to act on.
     tenant_id: str | None = None
     source_id: str | None = None
     sync_run_id: str | None = None
     event_key = _processing_event_key(msg)
+    active_session = db_session
+    owns_session = db_session is None
 
     async def _ack_rejected(session: AsyncSession | None = None) -> None:
         """Acknowledge a permanent rejection after recording run progress."""
@@ -395,12 +524,12 @@ async def process_message(msg):
             source_id=source_id,
             sync_run_id=sync_run_id,
             event_key=event_key,
-            session=session,
+            session=session if session is not None else active_session,
         )
         await msg.ack()
 
     try:
-        if len(msg.data) > MAX_INGEST_EVENT_BYTES:
+        if len(msg.data) > MAX_BATCH_BYTES:
             logger.error("Rejected oversized ingest event. Acking to prevent redelivery.")
             await _ack_rejected()
             return
@@ -412,6 +541,14 @@ async def process_message(msg):
             return
         if not isinstance(data, dict):
             logger.error("Rejected non-object ingest event. Acking to prevent redelivery.")
+            await _ack_rejected()
+            return
+
+        if data.get("schema_version") == 2 and "events" in data:
+            await _process_batch_message(msg, data)
+            return
+        if len(msg.data) > MAX_INGEST_EVENT_BYTES:
+            logger.error("Rejected oversized ingest event. Acking to prevent redelivery.")
             await _ack_rejected()
             return
 
@@ -562,14 +699,17 @@ async def process_message(msg):
 
         metadata = bounded_point_metadata(metadata, numeric_value)
 
-        async with async_session_maker() as session:
-            source_result = await session.execute(
-                select(DataSource).where(
-                    DataSource.tenant_id == tenant_id,
-                    DataSource.id == source_id,
+        async with _session_scope(db_session) as session:
+            active_session = session
+            source = known_source
+            if source is None:
+                source_result = await session.execute(
+                    select(DataSource).where(
+                        DataSource.tenant_id == tenant_id,
+                        DataSource.id == source_id,
+                    )
                 )
-            )
-            source = source_result.scalars().first()
+                source = source_result.scalars().first()
             if source is None:
                 logger.error(
                     "Rejected event for tenant=%s source=%s: connector is unknown.",
@@ -577,7 +717,8 @@ async def process_message(msg):
                     source_id,
                 )
                 await _ack_rejected(session)
-                await session.commit()
+                if owns_session:
+                    await session.commit()
                 return
             if event_source_type is not None and event_source_type != source.source_type:
                 logger.error(
@@ -587,7 +728,8 @@ async def process_message(msg):
                     source.id,
                 )
                 await _ack_rejected(session)
-                await session.commit()
+                if owns_session:
+                    await session.commit()
                 return
             if idempotency_source_id != source.id and not idempotency_source_id.startswith(
                 f"{source.id}_"
@@ -599,7 +741,8 @@ async def process_message(msg):
                     source.id,
                 )
                 await _ack_rejected(session)
-                await session.commit()
+                if owns_session:
+                    await session.commit()
                 return
 
             if unknown_error is not None:
@@ -648,7 +791,8 @@ async def process_message(msg):
                             inserted=None,
                             rejected=True,
                         )
-                    await session.commit()
+                    if owns_session:
+                        await session.commit()
                     await msg.ack()
                     return
                 if rule.action == "discard":
@@ -669,7 +813,8 @@ async def process_message(msg):
                             inserted=None,
                             rejected=True,
                         )
-                    await session.commit()
+                    if owns_session:
+                        await session.commit()
                     await msg.ack()
                     return
                 try:
@@ -699,7 +844,8 @@ async def process_message(msg):
                             inserted=None,
                             rejected=True,
                         )
-                    await session.commit()
+                    if owns_session:
+                        await session.commit()
                     await msg.ack()
                     return
                 metric_type = mapping.target_metric_type
@@ -727,7 +873,8 @@ async def process_message(msg):
                         inserted=None,
                         rejected=True,
                     )
-                    await session.commit()
+                    if owns_session:
+                        await session.commit()
                 await msg.ack()
                 return
 
@@ -784,7 +931,8 @@ async def process_message(msg):
             else:
                 await _mark_source_seen(session, tenant_id, data)
 
-            await session.commit()
+            if owns_session:
+                await session.commit()
 
         await msg.ack()
     except IntegrityError:
@@ -802,8 +950,16 @@ async def process_message(msg):
             tenant_id,
             source_id,
         )
+        if isinstance(msg, _SyntheticPointMessage) and db_session is not None:
+            # The batch owner rolls back the shared transaction and redelivers the
+            # envelope. A constraint failure cannot safely be acknowledged from a
+            # transaction whose state is already failed.
+            msg.failed = True
+            return
         await _ack_rejected()
     except Exception as exc:  # noqa: BLE001 - transient failures need redelivery
+        if isinstance(msg, _SyntheticPointMessage):
+            msg.failed = True
         logger.error(
             "Error processing ingest event for tenant=%s source=%s (%s)",
             tenant_id,
@@ -1014,8 +1170,22 @@ STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 STREAM_MAX_BYTES = 4 * 1024 * 1024 * 1024
 
 
-async def start_consumer():
-    """Connect to NATS and subscribe. Raises promptly if the broker is unreachable."""
+async def start_consumer(
+    connection_lost: asyncio.Event | None = None,
+) -> Any:
+    """Connect to NATS and subscribe. Raises promptly if the broker is unreachable.
+
+    ``connection_lost`` is owned by the supervisor. Both the disconnect and close
+    callbacks set it because this client deliberately disables nats-py's internal
+    reconnect loop; the supervisor must create a new client and re-bind the durable
+    subscription instead.
+    """
+    if connection_lost is None:
+        connection_lost = asyncio.Event()
+
+    async def mark_connection_lost() -> None:
+        connection_lost.set()
+
     nc = await nats.connect(
         settings.NATS_URL,
         connect_timeout=CONNECT_TIMEOUT_SECONDS,
@@ -1025,68 +1195,91 @@ async def start_consumer():
         # HTTP API has no business being unavailable because the broker is down.
         max_reconnect_attempts=0,
         allow_reconnect=False,
+        disconnected_cb=mark_connection_lost,
+        closed_cb=mark_connection_lost,
     )
-    js = nc.jetstream()
-
-    stream = StreamConfig(
-        name="ingestion",
-        subjects=["qs.ingest.>"],
-        max_age=STREAM_MAX_AGE_SECONDS,
-        max_bytes=STREAM_MAX_BYTES,
-        # Ingestion is a delivery buffer, not a lossy cache. A full stream must
-        # apply publisher backpressure so the importer can pause and resume rather
-        # than silently discarding unacknowledged medical data.
-        discard=DiscardPolicy.NEW,
-    )
+    ready = False
     try:
-        await js.add_stream(stream)
-    except Exception:  # noqa: BLE001 - the stream already exists, which is the normal case
-        # Its limits are brought up to date rather than left as whatever the first Core
-        # to start ever created. An unbounded stream is the state this exists to correct,
-        # so finding one is expected, not exceptional.
+        js = nc.jetstream()
+
+        stream = StreamConfig(
+            name="ingestion",
+            subjects=["qs.ingest.>"],
+            max_age=STREAM_MAX_AGE_SECONDS,
+            max_bytes=STREAM_MAX_BYTES,
+            # Ingestion is a delivery buffer, not a lossy cache. A full stream must
+            # apply publisher backpressure so the importer can pause and resume rather
+            # than silently discarding unacknowledged medical data.
+            discard=DiscardPolicy.NEW,
+        )
         try:
-            await js.update_stream(stream)
-        except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
+            await js.add_stream(stream)
+        except Exception:  # noqa: BLE001 - the stream already exists, which is the normal case
+            # Its limits are brought up to date rather than left as whatever the first Core
+            # to start ever created. An unbounded stream is the state this exists to correct,
+            # so finding one is expected, not exceptional.
+            try:
+                await js.update_stream(stream)
+            except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
+                logger.warning(
+                    "Could not apply the ingestion stream's limits (%s)",
+                    type(exc).__name__,
+                )
+
+        consumer = ConsumerConfig(
+            max_deliver=MAX_DELIVERY_ATTEMPTS,
+            ack_wait=ACK_WAIT_SECONDS,
+            max_ack_pending=1000,
+        )
+        try:
+            await js.subscribe(
+                "qs.ingest.>",
+                "core_data_service_group",
+                cb=process_message,
+                config=consumer,
+            )
+        except Exception as exc:  # noqa: BLE001 - an existing consumer may refuse the change
             logger.warning(
-                "Could not apply the ingestion stream's limits (%s)",
+                "Could not apply the consumer's delivery limit (%s); subscribing without it. "
+                "`_retry_or_give_up` still terminates an event that cannot be stored.",
                 type(exc).__name__,
             )
-
-    consumer = ConsumerConfig(
-        max_deliver=MAX_DELIVERY_ATTEMPTS,
-        ack_wait=ACK_WAIT_SECONDS,
-        max_ack_pending=1000,
-    )
-    try:
-        await js.subscribe(
-            "qs.ingest.>", "core_data_service_group", cb=process_message, config=consumer
-        )
-    except Exception as exc:  # noqa: BLE001 - an existing consumer may refuse the change
-        logger.warning(
-            "Could not apply the consumer's delivery limit (%s); subscribing without it. "
-            "`_retry_or_give_up` still terminates an event that cannot be stored.",
-            type(exc).__name__,
-        )
-        await js.subscribe("qs.ingest.>", "core_data_service_group", cb=process_message)
-    logger.info("Started consuming from qs.ingest.>")
-    return nc
+            await js.subscribe(
+                "qs.ingest.>",
+                "core_data_service_group",
+                cb=process_message,
+            )
+        logger.info("Started consuming from qs.ingest.>")
+        ready = True
+        return nc
+    finally:
+        if not ready:
+            with suppress(Exception):
+                await nc.close()
 
 
-async def run_consumer_forever(on_connected=None) -> None:
-    """Keep trying to establish the subscription, backing off between attempts.
+async def run_consumer_forever(
+    on_connected: Callable[[Any], None] | None = None,
+) -> None:
+    """Supervise the subscription and reconnect after a connection loss.
 
     Meant to run as a background task so that Core serves HTTP and gRPC whether
     or not the broker is up. Ingestion is degraded while NATS is unreachable;
     queries, authentication and the dashboard are not, and conflating the two
     turns a broker outage into a full outage.
 
-    Backs off exponentially to 30s. A tight retry loop against a broker that is
-    restarting is its own kind of denial of service.
+    The first connection attempt fails fast. Failed attempts then back off
+    exponentially up to 30s. An established connection signals both disconnect
+    and close through its event; the next loop iteration creates a new client and
+    rebinds the durable subscription with the same ``process_message`` callback.
+    A tight retry loop against a broker that is restarting is its own kind of
+    denial of service.
     """
     delay = RECONNECT_INITIAL_DELAY
     while True:
+        connection_lost = asyncio.Event()
         try:
-            nc = await start_consumer()
+            nc = await start_consumer(connection_lost=connection_lost)
         except Exception as exc:  # noqa: BLE001 - any failure means "not connected yet"
             logger.warning(
                 "NATS unavailable (%s); ingestion is paused, retrying in %.0fs",
@@ -1097,7 +1290,23 @@ async def run_consumer_forever(on_connected=None) -> None:
             delay = min(delay * 2, RECONNECT_MAX_DELAY)
             continue
 
+        delay = RECONNECT_INITIAL_DELAY
         logger.info("NATS consumer established")
         if on_connected is not None:
             on_connected(nc)
-        return
+
+        try:
+            await connection_lost.wait()
+        except asyncio.CancelledError:
+            with suppress(Exception):
+                await nc.close()
+            raise
+
+        logger.warning("NATS consumer connection lost; restarting the subscription")
+        with suppress(Exception):
+            await nc.close()
+        # A broker that accepts and immediately drops connections must not cause
+        # a tight reconnect loop. Continue the same bounded backoff sequence used
+        # for failed connection attempts.
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, RECONNECT_MAX_DELAY)

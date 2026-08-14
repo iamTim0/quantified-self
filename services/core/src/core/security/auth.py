@@ -139,9 +139,13 @@ async def _revocation_reason(claims: dict) -> str | None:
     from core.db.session import async_session_maker
 
     jti = claims["jti"]
+    tenant_id = claims["tenant_id"]
     async with async_session_maker() as session:
         revoked = await session.execute(
-            select(RevokedAccessToken.jti).where(RevokedAccessToken.jti == jti)
+            select(RevokedAccessToken.jti).where(
+                RevokedAccessToken.tenant_id == tenant_id,
+                RevokedAccessToken.jti == jti,
+            )
         )
         if revoked.scalar_one_or_none() is not None:
             return "Token has been revoked"
@@ -150,18 +154,17 @@ async def _revocation_reason(claims: dict) -> str | None:
         if issued_at is None:
             return None
 
-        cutoff = (
+        user_row = (
             await session.execute(
                 select(User.sessions_valid_from).where(
                     User.id == claims["user_id"],
-                    User.tenant_id == claims["tenant_id"],
+                    User.tenant_id == tenant_id,
                 )
             )
-        ).scalar_one_or_none()
-        # No row means no cutoff to apply. Deliberately not "reject": tokens are
-        # minted for users that no test necessarily materialises, and turning a
-        # missing row into a 401 here would be a much larger behaviour change than
-        # this column is for. /auth/me already refuses a deleted account.
+        ).first()
+        if user_row is None:
+            return "User session is no longer valid"
+        cutoff = user_row[0]
         if cutoff is None:
             return None
 
@@ -243,7 +246,12 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         try:
             principal = (
-                self._authenticate_service(raw_credential, header_tenant, needs_tenant)
+                self._authenticate_service(
+                    raw_credential,
+                    header_tenant,
+                    needs_tenant,
+                    request.headers.get("X-Service-Name"),
+                )
                 if is_internal
                 else await self._authenticate_user(raw_credential, header_tenant)
             )
@@ -265,16 +273,24 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
     @staticmethod
     def _authenticate_service(
-        raw_credential: str, header_tenant: str | None, needs_tenant: bool
+        raw_credential: str,
+        header_tenant: str | None,
+        needs_tenant: bool,
+        service_name: str | None = None,
     ) -> Principal:
-        verify_service_credential(raw_credential)
+        claims = verify_service_credential(raw_credential, service_name=service_name)
         if not needs_tenant:
             return Principal(kind="service", tenant_id="", role="service")
         if not header_tenant:
             raise TokenError(
                 "Internal requests must name the delegated tenant via X-Tenant-ID"
             )
-        return Principal(kind="service", tenant_id=header_tenant, role="service")
+        return Principal(
+            kind="service",
+            tenant_id=header_tenant,
+            role="service",
+            email=claims.get("sub"),
+        )
 
     @staticmethod
     async def _authenticate_user(raw_credential: str, header_tenant: str | None) -> Principal:

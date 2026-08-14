@@ -18,7 +18,7 @@ import pytest
 from core.db.models import ApiKey, DataPoint, DataSource, SyncRun
 from core.db.session import async_session_maker
 from core.events.consumer import _tally, _tally_rejected_event
-from core.main import app
+from core.main import _coverage_marker, _source_coverage_contract, app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -42,6 +42,31 @@ class MockNATSClient:
         self.published.append((subject, payload))
 
 
+def test_static_source_uses_registry_manifest_when_config_is_legacy():
+    """Verifies Fizzbee Invariant: UnknownCoverageImports."""
+    source = DataSource(
+        id=str(uuid.uuid4()),
+        source_type="whoop",
+        config={},
+    )
+
+    contract = _source_coverage_contract(source)
+
+    assert contract is not None
+    assert "whoop_recovery_score" in contract[0]
+
+
+def test_dynamic_source_without_manifest_remains_conservative():
+    """Verifies Fizzbee Invariant: UnknownCoverageImports."""
+    source = DataSource(
+        id=str(uuid.uuid4()),
+        source_type="home_assistant",
+        config={},
+    )
+
+    assert _source_coverage_contract(source) is None
+
+
 @pytest.fixture
 def mock_nats():
     nc = MockNATSClient()
@@ -52,8 +77,14 @@ def mock_nats():
 async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> str:
     source_id = str(uuid.uuid4())
     display_name = config.pop("display_name", source_type)
-    cfg = {"status": "active", "encrypted_token": "x", "poll_interval_hours": 6,
-           "lookback_days": 30}
+    cfg = {
+        "status": "active",
+        "encrypted_token": "x",
+        "poll_interval_hours": 6,
+        "lookback_days": 30,
+        "supported_metrics": ["whoop_recovery_score"],
+        "transform_version": "test-v1",
+    }
     cfg.update(config)
     async with async_session_maker() as session:
         session.add(
@@ -69,7 +100,13 @@ async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> 
     return source_id
 
 
-async def _seed_hourly_days(tenant_id: str, source_id: str, days: range) -> None:
+async def _seed_hourly_days(
+    tenant_id: str,
+    source_id: str,
+    days: range,
+    *,
+    metric_type: str = "whoop_recovery_score",
+) -> None:
     """One point per hour for each named day offset from BASE."""
     async with async_session_maker() as session:
         for day in days:
@@ -80,7 +117,7 @@ async def _seed_hourly_days(tenant_id: str, source_id: str, days: range) -> None
                         id=str(uuid.uuid4()),
                         tenant_id=tenant_id,
                         source_id=source_id,
-                        metric_type="recovery_score",
+                        metric_type=metric_type,
                         timestamp=ts,
                         value=float(hour),
                         idempotency_key=f"seed-{day}-{hour}-{uuid.uuid4().hex[:6]}",
@@ -179,6 +216,48 @@ async def test_import_plan_narrows_to_the_missing_tail():
         recommended_start = datetime.fromisoformat(plan["recommended_range"]["start"])
         assert recommended_start >= BASE + timedelta(days=4)
         assert plan["skipped_ranges"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_import_plan_requires_each_manifest_metric():
+    """Verifies Fizzbee Invariant: NeverSkipIncompleteMetric."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(
+            tenant_id,
+            "whoop",
+            supported_metrics=["recovery_score", "steps"],
+        )
+        await _seed_hourly_days(tenant_id, source_id, range(5))
+        await _seed_hourly_days(
+            tenant_id,
+            source_id,
+            range(3),
+            metric_type="steps",
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/whoop/import-plan",
+                json={
+                    "start": BASE.isoformat(),
+                    "end": (BASE + timedelta(days=5)).isoformat(),
+                    "mode": "smart",
+                },
+                headers=auth_headers(tenant_id),
+            )
+
+        assert res.status_code == 200, res.text
+        plan = res.json()
+        assert plan["coverage_scope"] == "metric_set"
+        assert plan["coverage_metrics"] == ["steps", "whoop_recovery_score"]
+        recommended = plan["recommended_range"]
+        assert recommended is not None
+        assert datetime.fromisoformat(recommended["start"]) >= BASE + timedelta(days=3)
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -633,6 +712,68 @@ async def test_core_marks_run_success_only_on_the_last_processed_event():
 
 
 @pytest.mark.asyncio
+async def test_transform_contract_change_forces_conservative_replan():
+    """Verifies Fizzbee Invariant: RevisionChangeInvalidatesCoverage."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop", transform_version="v1")
+        await _seed_hourly_days(tenant_id, source_id, range(5))
+
+        async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == source_id,
+                        DataSource.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one()
+            old_contract = _source_coverage_contract(source)
+            assert old_contract is not None
+            source.config = {**(source.config or {}), "transform_version": "v2"}
+            session.add(
+                SyncRun(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-old-contract",
+                    mode="smart",
+                    trigger="manual",
+                    window_start=BASE,
+                    window_end=BASE + timedelta(days=5),
+                    provider_window_start=BASE,
+                    provider_window_end=BASE + timedelta(days=5),
+                    window_reason=_coverage_marker(old_contract[1]),
+                    status="success",
+                    started_at=BASE,
+                    finished_at=BASE + timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.post(
+                "/api/v1/data/sources/whoop/import-plan",
+                json={
+                    "start": BASE.isoformat(),
+                    "end": (BASE + timedelta(days=5)).isoformat(),
+                    "mode": "smart",
+                },
+                headers=auth_headers(tenant_id),
+            )
+
+        assert response.status_code == 200, response.text
+        plan = response.json()
+        assert plan["coverage_scope"] == "unknown"
+        assert plan["recommended_range"] == plan["requested"]
+        assert "contract changed" in plan["reason"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_a_permanent_rejection_drains_a_run_counter():
     """Verifies Fizzbee Invariant: ImportCompletionAfterCoreProcessing."""
     tenant_id = await create_test_tenant()
@@ -729,13 +870,23 @@ async def test_rejected_known_api_key_is_attributed_to_its_connector():
 
 @pytest.mark.asyncio
 async def test_adaptive_window_resumes_from_the_last_successful_run(mock_nats):
-    """A completed run moves the resume point; the next window starts near it."""
+    """Verifies Fizzbee Invariant: NeverSkipIncompleteData."""
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id, "whoop", poll_interval_hours=1)
         last_end = datetime.now(timezone.utc) - timedelta(hours=3)
 
         async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == source_id,
+                        DataSource.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one()
+            contract = _source_coverage_contract(source)
+            assert contract is not None
             session.add(
                 SyncRun(
                     tenant_id=tenant_id,
@@ -745,7 +896,12 @@ async def test_adaptive_window_resumes_from_the_last_successful_run(mock_nats):
                     mode="smart",
                     trigger="manual",
                     window_start=last_end - timedelta(hours=6),
-                    window_end=last_end,
+                    # The provider returned less than the requested window. The
+                    # next run must resume from provider_window_end, not window_end.
+                    window_end=last_end + timedelta(hours=3),
+                    provider_window_start=last_end - timedelta(hours=6),
+                    provider_window_end=last_end,
+                    window_reason=_coverage_marker(contract[1]),
                     status="success",
                 )
             )

@@ -615,7 +615,7 @@ export const en = {
   // ── Data explorer ───────────────────────────────────────────────────────
   "explorer.title": "Raw data explorer",
   "explorer.subtitle":
-    "Direct access to every raw data point stored for this workspace. Saved views live in PostgreSQL.",
+    "Explore server-aggregated metric series and the newest raw data points stored for this workspace. Saved views live in PostgreSQL.",
   "explorer.refresh": "Refresh the data",
   "explorer.savedViews": "Saved views",
   "explorer.saveCurrent": "Save the current view",
@@ -634,10 +634,6 @@ export const en = {
   "explorer.resolutionHour": "Hour",
   "explorer.resolutionDay": "Day",
   "explorer.period": "Period:",
-  "explorer.aggregation": "Aggregate:",
-  "explorer.dailySum": "Daily total",
-  "explorer.dailyAverage": "Daily average",
-  "explorer.dailyMax": "Daily maximum",
   "explorer.selectAll": "Select all",
   "explorer.searchPlaceholder":
     "Full-text search across the raw data (food name, category, metric name or JSON metadata…)",
@@ -665,11 +661,17 @@ export const en = {
   "explorer.rawCount_other": "{count} matches",
   "explorer.rawTruncated": "Showing the newest {shown} of {total} matches.",
   "explorer.liveQuery": "Live TimescaleDB query",
-  "explorer.sampleNote":
-    "The server returned up to {count} points for this time window. Longer histories are served as minute, hour or day rollups.",
+  "explorer.seriesQueryNote":
+    "Each selected metric is loaded separately as a recent server-side series. Metric-aware aggregation is applied by the API; missing buckets remain empty.",
+  "explorer.rawSeriesQueryNote":
+    "Each selected metric is queried separately, newest first. Connector instance IDs are used when available, and the table is limited per selected metric for browser performance.",
+  "explorer.seriesMetricLabel": "{metric} · {aggregation}",
+  "explorer.seriesMetricSourceLabel": "{metric} · {source} · {aggregation}",
   "explorer.scopeActive": "Loaded on its own: {metric}",
   "explorer.scopeClear": "Back to all metrics",
   "explorer.colTimestamp": "Timestamp",
+  "explorer.colId": "ID",
+  "explorer.colIdempotencyKey": "Idempotency key",
   "explorer.colMetric": "Metric",
   "explorer.colMetadata": "Metadata (JSON)",
   "explorer.colDetails": "Details",
@@ -679,7 +681,7 @@ export const en = {
 
   // ── Data explorer: metric overview ──────────────────────────────────────
   "explorer.overviewHint":
-    "Every metric type this workspace holds, counted over the whole history rather than over the loaded sample. Open one to read its raw data points.",
+    "Every metric type this workspace holds, counted over the whole history. Open one to read its newest raw data points.",
   "explorer.overviewEmpty": "No metrics stored yet, so there is nothing to summarise.",
   "explorer.overviewFailed": "The metric overview could not be loaded.",
   "explorer.colUnit": "Unit",
@@ -852,11 +854,15 @@ export const en = {
   "analysis.disclaimer":
     "Every result describes a statistical relationship, not cause and effect. None of it is medical advice.",
   "analysis.minStrength": "Minimum strength",
+  "analysis.source": "Source",
+  "analysis.allSources": "All sources",
   "analysis.all": "all",
   "analysis.howToRead": "How to read these analyses",
   "analysis.noData":
     "There is no data to analyse yet. Set up a connector and import at least two weeks.",
   "analysis.excludedForQuality": "{count} hidden because the data is too thin",
+  "analysis.ambiguousSources":
+    "{count} metric(s) use more than one connector. They were left out until one source is selected, so values are not counted twice.",
   "analysis.allMetricsQualify": "every metric meets the minimum requirements",
   "analysis.significantRelationships": "Significant relationships",
   "analysis.ofPairsChecked": "of {count} pairs checked",

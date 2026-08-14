@@ -22,7 +22,13 @@ from datetime import datetime, timedelta, timezone
 import grpc
 import pytest
 import pytest_asyncio
-from core.db.models import DataPoint, DataSource, RevokedAccessToken, User
+from core.db.models import (
+    DataPoint,
+    DataSource,
+    MetricRollup,
+    RevokedAccessToken,
+    User,
+)
 from core.db.session import async_session_maker
 from core.grpc.server import serve_grpc
 from core.security.tokens import (
@@ -291,6 +297,257 @@ async def test_pagination_walks_the_whole_window_exactly_once(grpc_channel):
         assert len(set(seen)) == 7, "a point was returned on more than one page"
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_metric_series_uses_registry_aggregation_and_emits_gaps(grpc_channel):
+    """The series RPC is tenant-scoped, metric-aware, and explicit about gaps."""
+    tenant_id = await create_test_tenant()
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    source_id = str(uuid.uuid4())
+    rollup_source_id = str(uuid.uuid4())
+    try:
+        async with async_session_maker() as session:
+            session.add_all(
+                [
+                    DataSource(
+                        id=source_id,
+                        tenant_id=tenant_id,
+                        source_type="oura",
+                        display_name="Oura",
+                    ),
+                    DataSource(
+                        id=rollup_source_id,
+                        tenant_id=tenant_id,
+                        source_type="apple_health",
+                        display_name="Apple Health",
+                    ),
+                ]
+            )
+            await session.flush()
+            session.add_all(
+                [
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        timestamp=start + timedelta(hours=1),
+                        value=100.0,
+                        idempotency_key=f"series-steps-1-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        timestamp=start + timedelta(hours=2),
+                        value=250.0,
+                        idempotency_key=f"series-steps-2-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="heart_rate",
+                        timestamp=start + timedelta(hours=3),
+                        value=60.0,
+                        idempotency_key=f"series-heart-1-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="heart_rate",
+                        timestamp=start + timedelta(hours=4),
+                        value=80.0,
+                        idempotency_key=f"series-heart-2-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="body_weight",
+                        timestamp=start + timedelta(hours=5),
+                        value=70.0,
+                        idempotency_key=f"series-weight-1-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="body_weight",
+                        timestamp=start + timedelta(hours=6),
+                        value=72.0,
+                        idempotency_key=f"series-weight-2-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="heart_rate_max",
+                        timestamp=start + timedelta(hours=5),
+                        value=90.0,
+                        idempotency_key=f"series-max-1-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="heart_rate_max",
+                        timestamp=start + timedelta(hours=6),
+                        value=100.0,
+                        idempotency_key=f"series-max-2-{uuid.uuid4().hex}",
+                    ),
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        timestamp=start + timedelta(days=2, hours=1),
+                        value=40.0,
+                        idempotency_key=f"series-steps-3-{uuid.uuid4().hex}",
+                    ),
+                    MetricRollup(
+                        tenant_id=tenant_id,
+                        source_id=rollup_source_id,
+                        metric_type="steps",
+                        resolution="day",
+                        bucket_start=start,
+                        value=1000.0,
+                        sample_count=2,
+                        sum_value=1000.0,
+                        min_value=400.0,
+                        max_value=600.0,
+                        first_value=400.0,
+                        last_value=600.0,
+                        first_timestamp=start + timedelta(hours=7),
+                        last_timestamp=start + timedelta(hours=8),
+                        metadata_={"derived_by": "sum"},
+                        is_provider_total=False,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        start_stamp = Timestamp()
+        start_stamp.FromDatetime(start)
+        end_stamp = Timestamp()
+        end_stamp.FromDatetime(start + timedelta(days=3))
+        response = await stub.QueryMetricSeries(
+            pb.QueryMetricSeriesRequest(
+                tenant_id=tenant_id,
+                metric_types=[
+                    "steps",
+                    "heart_rate",
+                    "body_weight",
+                    "heart_rate_max",
+                ],
+                start_time=start_stamp,
+                end_time=end_stamp,
+                resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+            ),
+            metadata=_auth(),
+        )
+
+        buckets = {
+            (
+                bucket.metric_type,
+                bucket.source_id,
+                bucket.bucket_start.ToDatetime().date(),
+            ): bucket
+            for bucket in response.buckets
+        }
+        assert len(response.buckets) == 15
+        assert {
+            source_id
+            for (metric_type, source_id, _), bucket in buckets.items()
+            if metric_type == "steps" and bucket.sample_count
+        } == {source_id, rollup_source_id}
+        assert response.issues[0].code == "AMBIGUOUS_METRIC_SOURCE"
+        assert response.issues[0].metric_type == "steps"
+        assert set(response.issues[0].source_ids) == {source_id, rollup_source_id}
+        assert buckets[("steps", source_id, start.date())].value == pytest.approx(350.0)
+        assert buckets[("steps", source_id, start.date())].sample_count == 2
+        assert buckets[("steps", rollup_source_id, start.date())].value == pytest.approx(
+            1000.0
+        )
+        assert buckets[("steps", rollup_source_id, start.date())].sample_count == 2
+        assert buckets[("heart_rate", source_id, start.date())].value == pytest.approx(
+            70.0
+        )
+        assert buckets[("heart_rate", source_id, start.date())].sample_count == 2
+        assert buckets[("body_weight", source_id, start.date())].value == pytest.approx(
+            72.0
+        )
+        assert buckets[("body_weight", source_id, start.date())].sample_count == 2
+        assert buckets[("heart_rate_max", source_id, start.date())].value == pytest.approx(
+            100.0
+        )
+        assert buckets[("heart_rate_max", source_id, start.date())].sample_count == 2
+        assert buckets[("steps", source_id, (start + timedelta(days=1)).date())].sample_count == 0
+        assert not buckets[
+            ("steps", source_id, (start + timedelta(days=1)).date())
+        ].HasField("value")
+        assert buckets[
+            ("steps", source_id, (start + timedelta(days=2)).date())
+        ].value == pytest.approx(40.0)
+        assert buckets[
+            ("steps", source_id, (start + timedelta(days=2)).date())
+        ].sample_count == 1
+
+        selected = await stub.QueryMetricSeries(
+            pb.QueryMetricSeriesRequest(
+                tenant_id=tenant_id,
+                metric_types=["steps"],
+                source_id=source_id,
+                start_time=start_stamp,
+                end_time=end_stamp,
+                resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+            ),
+            metadata=_auth(),
+        )
+        assert not selected.issues
+        assert {bucket.source_id for bucket in selected.buckets} == {source_id}
+        assert selected.buckets[0].value == pytest.approx(350.0)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_metric_series_rejects_a_cross_tenant_source_id(grpc_channel):
+    """A source selector cannot be used as a cross-tenant existence oracle.
+
+    Verifies Fizzbee Invariant: TenantIsolation
+    """
+    tenant_a = await create_test_tenant()
+    tenant_b = await create_test_tenant()
+    source_b = await _seed(tenant_b, metric="steps", count=1)
+    try:
+        start = datetime.now(timezone.utc) - timedelta(days=1)
+        end = datetime.now(timezone.utc) + timedelta(days=1)
+        start_stamp = Timestamp()
+        start_stamp.FromDatetime(start)
+        end_stamp = Timestamp()
+        end_stamp.FromDatetime(end)
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+            await stub.QueryMetricSeries(
+                pb.QueryMetricSeriesRequest(
+                    tenant_id=tenant_a,
+                    metric_types=["steps"],
+                    source_id=source_b,
+                    start_time=start_stamp,
+                    end_time=end_stamp,
+                    resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+                ),
+                metadata=_auth(),
+            )
+        assert excinfo.value.code() == grpc.StatusCode.NOT_FOUND
+    finally:
+        await cleanup_test_tenant(tenant_a)
+        await cleanup_test_tenant(tenant_b)
 
 
 @pytest.mark.asyncio

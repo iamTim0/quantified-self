@@ -1,0 +1,51 @@
+# Fizzbee specification for metric-scoped import coverage.
+#
+# Connector-wide density is not sufficient: a dense steps stream must not make a
+# missing sleep stream appear complete. A transformation revision change also
+# invalidates historical coverage until it has been revalidated.
+
+METRICS = ["steps", "sleep"]
+
+action Init:
+    coverage_revision = "v1"
+    current_revision = "v1"
+    complete_steps = False
+    complete_sleep = False
+    planned_import = False
+    skipped = False
+
+atomic action SeedCoverage:
+    require not planned_import
+    complete_steps = oneof([True, False])
+    complete_sleep = oneof([True, False])
+
+atomic action ChangeRevision:
+    require not planned_import
+    current_revision = oneof(["v1", "v2"])
+
+atomic action Plan:
+    require not planned_import
+    planned_import = True
+    all_metrics_complete = complete_steps and complete_sleep
+    revision_current = current_revision == coverage_revision
+    if all_metrics_complete and revision_current:
+        skipped = True
+
+always assertion NeverSkipIncompleteMetric:
+    if not planned_import:
+        return True
+    if not complete_steps or not complete_sleep:
+        return not skipped
+    return True
+
+always assertion RevisionChangeInvalidatesCoverage:
+    if not planned_import:
+        return True
+    if current_revision != coverage_revision:
+        return not skipped
+    return True
+
+always assertion UnknownCoverageImports:
+    if not planned_import:
+        return True
+    return (not skipped) or (complete_steps and complete_sleep and current_revision == coverage_revision)

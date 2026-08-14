@@ -355,7 +355,7 @@ slowly doubles.
 
 ## Licence
 
-AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Timo Hoffschröer. Every
+AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Quantified Self contributors. Every
 package manifest declares it, every image carries it as an OCI label, and each
 release bundle ships the file.
 

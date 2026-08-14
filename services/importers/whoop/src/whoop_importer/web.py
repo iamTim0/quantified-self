@@ -14,9 +14,11 @@ halves that each hold their own.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import tempfile
+from collections.abc import Callable, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,7 @@ from shared_schemas import (
     OffsetMismatch,
     SpoolTooLarge,
     UnknownUpload,
+    UploadSession,
     UploadSpool,
 )
 
@@ -101,6 +104,15 @@ app = FastAPI(title="WHOOP Importer Service", version="0.1.0", lifespan=lifespan
 #: they are added: an unreferenced task can be collected while it runs.
 _running_imports: set[asyncio.Task] = set()
 
+# A batch is the largest collection of transformed events this process retains. The
+# archive reader and transformer are both lazy, so increasing the archive size does
+# not increase the importer's resident set beyond this bound and one CSV row.
+PUBLISH_BATCH_SIZE = 1_000
+PUBLISH_BATCH_BYTES = 512 * 1024
+PUBLISH_ATTEMPTS = 5
+PUBLISH_RETRY_DELAY = 0.1
+PROGRESS_INTERVAL_POINTS = 10_000
+
 
 @app.get("/health")
 async def health_check():
@@ -112,52 +124,181 @@ async def health_check():
     }
 
 
-async def _read_capped_body(request: Request, limit: int) -> bytes:
-    """The request body, refused as soon as it exceeds ``limit``.
+async def _spool_request(
+    request: Request, tenant_id: str, source_id: str
+) -> UploadSession:
+    """Stream one request body into the same private spool used by chunked uploads."""
+    session = _uploads.begin(tenant_id, source_id)
+    try:
+        session = await _uploads.append(
+            session.id,
+            tenant_id,
+            offset=0,
+            chunks=request.stream(),
+        )
+        if session.received == 0:
+            raise HTTPException(status_code=400, detail="The upload was empty.")
+        return _uploads.finish(session.id, tenant_id)
+    except BaseException:
+        try:
+            _uploads.abort(session.id, tenant_id)
+        except UnknownUpload:
+            pass
+        raise
 
-    Counted while it arrives rather than checked afterwards: `Content-Length` is a
-    claim by the sender, and reading the whole thing to find out it was too big is
-    the cost the limit exists to avoid.
-    """
-    chunks: list[bytes] = []
-    total = 0
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > limit:
-            raise HTTPException(
-                status_code=413,
-                detail=f"The upload is larger than {limit // (1024 * 1024)} MB.",
-            )
-        chunks.append(chunk)
-    return b"".join(chunks)
+
+def _drain(points: Iterator[dict[str, Any]], size: int) -> list[dict[str, Any]]:
+    """Read at most ``size`` transformed points from the lazy archive iterator."""
+    batch: list[dict[str, Any]] = []
+    for _ in range(size):
+        try:
+            batch.append(next(points))
+        except StopIteration:
+            break
+    return batch
 
 
-def _parse_export(data: bytes, tenant_id: str, source_id: str) -> tuple[list[dict[str, Any]], FieldReportCollector]:
-    """Every data point in an export archive, plus what its columns turned into.
+async def _drain_batch(
+    points: Iterator[dict[str, Any]],
+    size: int,
+    on_cancel: Callable[[], None],
+) -> list[dict[str, Any]]:
+    """Drain in a worker and let that worker finish before a cancelled import closes it."""
+    worker = asyncio.create_task(asyncio.to_thread(_drain, points, size))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        # The executor thread cannot be interrupted safely while csv.DictReader is
+        # inside the ZIP generator. Cleanup is therefore attached to its completion;
+        # closing ``points`` in this task would race the worker and corrupt cleanup.
+        worker.add_done_callback(lambda _done: on_cancel())
+        raise
 
-    Synchronous on purpose — it is CPU work over a decompressing stream, and the
-    caller runs it in a worker thread so a large archive does not stall the event
-    loop for every other request.
-    """
-    grouped: dict[str, list[dict[str, Any]]] = {}
-    for kind, record in read_export(data):
-        grouped.setdefault(kind, []).append(record)
 
-    report = FieldReportCollector()
-    events: list[dict[str, Any]] = []
-    for kind, records in grouped.items():
-        events.extend(
-            transform_whoop_records(
+def _transformed_events(
+    path: str | Path,
+    tenant_id: str,
+    source_id: str,
+    report: FieldReportCollector,
+) -> Iterator[dict[str, Any]]:
+    """Transform one CSV row at a time without retaining the archive's events."""
+    records = read_export(path)
+    try:
+        for kind, record in records:
+            # A single WHOOP row produces a bounded number of metric points. Passing
+            # one row at a time avoids the transformer's list becoming archive-sized.
+            yield from transform_whoop_records(
                 kind,
-                records,
+                [record],
                 tenant_id,
                 source_id,
                 require_scored=False,
                 mappings=EXPORT_METRICS,
                 report=report,
             )
-        )
-    return events, report
+    finally:
+        close = getattr(records, "close", None)
+        if close is not None:
+            close()
+
+
+class _PublishFailure(RuntimeError):
+    """A bounded publish batch failed after some events were accepted."""
+
+    def __init__(self, published: int, cause: BaseException) -> None:
+        super().__init__(str(cause))
+        self.published = published
+        self.cause = cause
+
+
+async def _publish_with_retry(js: Any, payload: bytes, req_id: str) -> None:
+    """Publish one event and retry lost acknowledgements safely."""
+    delay = PUBLISH_RETRY_DELAY
+    for attempt in range(1, PUBLISH_ATTEMPTS + 1):
+        try:
+            await js.publish("qs.ingest.whoop", payload)
+            return
+        except TimeoutError:
+            if attempt == PUBLISH_ATTEMPTS:
+                raise
+            logger.warning(
+                "[req_id=%s] No acknowledgement from the broker (attempt %d/%d); retrying in %.1fs",
+                req_id,
+                attempt,
+                PUBLISH_ATTEMPTS,
+                delay,
+            )
+            await asyncio.sleep(delay)
+            delay *= 2
+
+
+async def _publish_events(
+    js: Any,
+    events: list[dict[str, Any]],
+    *,
+    req_id: str,
+    sync_run_id: str | None,
+) -> int:
+    """Publish bounded versioned envelopes after all child fields are attached."""
+    if not events:
+        return 0
+
+    for event in events:
+        event["request_id"] = req_id
+        if sync_run_id:
+            event["sync_run_id"] = sync_run_id
+
+    first = events[0]
+    identity = (first.get("tenant_id"), first.get("source_id"), first.get("source_type"))
+    if any(
+        (event.get("tenant_id"), event.get("source_id"), event.get("source_type"))
+        != identity
+        for event in events
+    ):
+        raise ValueError("A WHOOP ingest batch must contain one tenant and connector")
+
+    def encode_batch(batch: list[dict[str, Any]]) -> bytes:
+        batch_id = hashlib.sha256(
+            "|".join(str(event.get("idempotency_key", "")) for event in batch).encode()
+        ).hexdigest()
+        return json.dumps(
+            {
+                "schema_version": 2,
+                "batch_id": batch_id,
+                "tenant_id": identity[0],
+                "source_id": identity[1],
+                "source_type": identity[2],
+                "request_id": req_id,
+                "sync_run_id": sync_run_id,
+                "events": batch,
+            },
+            separators=(",", ":"),
+        ).encode("utf-8")
+
+    published = 0
+    current: list[dict[str, Any]] = []
+    try:
+        for event in events:
+            candidate = [*current, event]
+            encoded = encode_batch(candidate)
+            if len(encoded) > PUBLISH_BATCH_BYTES and current:
+                await _publish_with_retry(js, encode_batch(current), req_id)
+                published += len(current)
+                current = [event]
+                encoded = encode_batch(current)
+            if len(encoded) > PUBLISH_BATCH_BYTES:
+                raise ValueError("A WHOOP event exceeds the bounded NATS batch size")
+            current.append(event)
+            if len(current) >= PUBLISH_BATCH_SIZE:
+                await _publish_with_retry(js, encode_batch(current), req_id)
+                published += len(current)
+                current = []
+        if current:
+            await _publish_with_retry(js, encode_batch(current), req_id)
+            published += len(current)
+    except BaseException as exc:
+        raise _PublishFailure(published, exc) from exc
+    return published
 
 
 async def _publish(
@@ -170,191 +311,290 @@ async def _publish(
     req_id: str,
     report: FieldReportCollector,
 ) -> None:
-    """Hand the points to NATS and close the run out.
-
-    Runs after the response, because publishing tens of thousands of points takes
-    longer than a browser should be asked to hold a connection open. The run is what
-    the dashboard watches instead: it was opened before the response went out, so
-    there is no window in which the upload has been accepted and nothing says so.
-    """
+    """Publish an already bounded batch for callers that use the old helper."""
     published = 0
     try:
-        js = nc.jetstream()
-        for event in events:
-            event["request_id"] = req_id
-            if sync_run_id:
-                event["sync_run_id"] = sync_run_id
-            await js.publish("qs.ingest.whoop", json.dumps(event).encode("utf-8"))
-            published += 1
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[req_id=%s] Publishing the export failed after %d points: %s", req_id, published, exc)
+        published = await _publish_events(
+            nc.jetstream(), events, req_id=req_id, sync_run_id=sync_run_id
+        )
+    except _PublishFailure as exc:
+        published = exc.published
+        logger.error(
+            "[req_id=%s] Publishing the WHOOP export failed after %d point(s): %s",
+            req_id,
+            published,
+            exc.cause,
+        )
         await close_sync_run(
             tenant_id,
             source_id,
             sync_run_id,
             req_id=req_id,
             status="error",
-            message=f"Publishing the export failed after {published} data point(s): {exc}",
+            message=f"Publishing the export failed after {published} data point(s).",
+            points_received=published,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[req_id=%s] Publishing the WHOOP export failed after %d point(s): %s",
+            req_id,
+            published,
+            exc,
+        )
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=req_id,
+            status="error",
+            message=f"Publishing the export failed after {published} data point(s).",
             points_received=published,
         )
         return
 
-    await send_field_report(tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id)
+    await send_field_report(
+        tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id
+    )
     await close_sync_run(
         tenant_id,
         source_id,
         sync_run_id,
         req_id=req_id,
         status="idle",
-        message=f"Export read: {published} data point(s) published.",
+        message=f"WHOOP archive read: {published} data point(s) published.",
         points_received=published,
     )
-    logger.info("[req_id=%s] Export upload finished: %d data point(s) published.", req_id, published)
+
+
+async def _import_archive(
+    path: str | Path,
+    *,
+    nc: Any | None,
+    testing: bool = False,
+    tenant_id: str,
+    source_id: str,
+    sync_run_id: str | None,
+    req_id: str,
+) -> None:
+    """Read, transform and publish a spooled archive with bounded memory."""
+    report = FieldReportCollector()
+    points = _transformed_events(path, tenant_id, source_id, report)
+    published = 0
+    saw_event = False
+    last_reported = 0
+    cleanup_deferred = False
+
+    def cleanup_archive() -> None:
+        close = getattr(points, "close", None)
+        if close is not None:
+            try:
+                close()
+            except ValueError:
+                # The executor may still be unwinding the generator when the event
+                # loop cancels its wrapper task. The worker owns the final close;
+                # removing the path here still prevents a private archive from
+                # surviving the request.
+                pass
+        Path(path).unlink(missing_ok=True)
+
+    try:
+        if nc is None or not nc.is_connected:
+            if not testing:
+                raise RuntimeError("NATS event broker unavailable while importing the archive.")
+            js = None
+        else:
+            js = nc.jetstream()
+        while True:
+            try:
+                batch = await _drain_batch(
+                    points, PUBLISH_BATCH_SIZE, on_cancel=cleanup_archive
+                )
+            except asyncio.CancelledError:
+                cleanup_deferred = True
+                raise
+            if not batch:
+                break
+            saw_event = True
+            try:
+                sent = (
+                    await _publish_events(
+                        js,
+                        batch,
+                        req_id=req_id,
+                        sync_run_id=sync_run_id,
+                    )
+                    if js is not None
+                    else len(batch)
+                )
+            except _PublishFailure as exc:
+                published += exc.published
+                raise
+            published += sent
+
+            if published - last_reported >= PROGRESS_INTERVAL_POINTS:
+                await report_sync_progress(
+                    tenant_id,
+                    source_id,
+                    sync_run_id,
+                    req_id=req_id,
+                    points_received=published,
+                    message=f"WHOOP archive publishing: {published} data point(s) sent.",
+                )
+                last_reported = published
+    except _PublishFailure as exc:
+        logger.error(
+            "[req_id=%s] Publishing the WHOOP export failed after %d point(s): %s",
+            req_id,
+            published,
+            exc.cause,
+        )
+        await send_field_report(
+            tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id
+        )
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=req_id,
+            status="error",
+            message=f"Publishing the export failed after {published} data point(s).",
+            points_received=published,
+        )
+        return
+    except (ArchiveTooLarge, ArchiveUnreadable) as exc:
+        logger.warning(
+            "[req_id=%s] WHOOP archive refused after %d point(s): %s",
+            req_id,
+            published,
+            exc,
+        )
+        await send_field_report(
+            tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id
+        )
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=req_id,
+            status="error",
+            message=str(exc),
+            points_received=published,
+        )
+        return
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[req_id=%s] Reading the WHOOP archive failed after %d point(s): %s",
+            req_id,
+            published,
+            exc,
+        )
+        await send_field_report(
+            tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id
+        )
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=req_id,
+            status="error",
+            message=f"Reading the archive failed after {published} data point(s).",
+            points_received=published,
+        )
+        return
+    finally:
+        if not cleanup_deferred:
+            cleanup_archive()
+
+    await report_sync_progress(
+        tenant_id,
+        source_id,
+        sync_run_id,
+        req_id=req_id,
+        points_received=published,
+        message=f"WHOOP archive publishing: {published} data point(s) sent.",
+    )
+    await send_field_report(
+        tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id
+    )
+    if not saw_event:
+        await close_sync_run(
+            tenant_id,
+            source_id,
+            sync_run_id,
+            req_id=req_id,
+            status="error",
+            message="The archive held no measurements this platform stores.",
+            points_received=0,
+        )
+        return
+
+    await close_sync_run(
+        tenant_id,
+        source_id,
+        sync_run_id,
+        req_id=req_id,
+        status="idle",
+        message=f"WHOOP archive read: {published} data point(s) published.",
+        points_received=published,
+    )
+    logger.info(
+        "[req_id=%s] WHOOP archive upload finished: %d data point(s) published.",
+        req_id,
+        published,
+    )
 
 
 async def _accept_export(
-    data: bytes,
+    path: str | Path,
     *,
     state: Any,
+    received: int,
     tenant_id: str,
     target: UploadTarget,
     sync_run_id: str | None,
     x_request_id: str,
 ) -> JSONResponse:
-    """Parse an export archive, start publishing it, and answer the caller.
-
-    Shared by the two ways an archive reaches this service — one request, or a session
-    of parts (the upload session routes at the bottom of this module) — because
-    everything from "the bytes are all here" onwards is the same work, down to which
-    failure closes the run out with which message. ``x_request_id`` keeps the header's
-    name because that is what it is.
-    """
-    try:
-        if not data:
-            raise HTTPException(status_code=400, detail="The upload was empty.")
-        events, report = await asyncio.to_thread(_parse_export, data, tenant_id, target.source_id)
-        if not events:
-            # Journal-only exports intentionally produce no data points. Still send
-            # the schema report so privacy-preserving field visibility is not lost
-            # merely because the archive contained no storable measurements.
-            report_payload = report.build()
-            if report_payload.mapped or report_payload.unmapped:
-                await send_field_report(
-                    tenant_id,
-                    target.source_id,
-                    report_payload,
-                    req_id=x_request_id,
-                    sync_run_id=sync_run_id,
-                )
-            raise HTTPException(
-                status_code=400,
-                detail="The archive was read but held no measurements this platform stores.",
-            )
-    except ArchiveTooLarge as exc:
-        await close_sync_run(
-            tenant_id,
-            target.source_id,
-            sync_run_id,
-            req_id=x_request_id,
-            status="error",
-            message=str(exc),
-        )
-        raise HTTPException(status_code=413, detail=str(exc)) from None
-    except ArchiveUnreadable as exc:
-        await close_sync_run(
-            tenant_id,
-            target.source_id,
-            sync_run_id,
-            req_id=x_request_id,
-            status="error",
-            message=str(exc),
-        )
-        raise HTTPException(status_code=400, detail=str(exc)) from None
-    except HTTPException as exc:
-        await close_sync_run(
-            tenant_id,
-            target.source_id,
-            sync_run_id,
-            req_id=x_request_id,
-            status="error",
-            message=str(exc.detail),
-        )
-        raise
-    except Exception as exc:  # noqa: BLE001
-        await close_sync_run(
-            tenant_id,
-            target.source_id,
-            sync_run_id,
-            req_id=x_request_id,
-            status="error",
-            message=f"Could not read the archive: {type(exc).__name__}: {exc}",
-        )
-        raise HTTPException(status_code=400, detail="Could not read the archive.") from None
-
-    await report_sync_progress(
-        tenant_id,
-        target.source_id,
-        sync_run_id,
-        req_id=x_request_id,
-        points_expected=len(events),
-        message=f"WHOOP archive contains {len(events)} data point(s) to publish.",
-    )
-
+    """Start a background import that owns and deletes the spooled archive."""
     nc = getattr(state, "nats_client", None)
-    if nc is None or not nc.is_connected:  # noqa: SIM102
-        if not getattr(state, "testing", False):
-            await close_sync_run(
-                tenant_id,
-                target.source_id,
-                sync_run_id,
-                req_id=x_request_id,
-                status="error",
-                message="NATS event broker unavailable; the upload was rejected.",
-            )
-            raise HTTPException(
-                status_code=503,
-                detail="NATS event broker unavailable. Please retry later.",
-            )
+    if (nc is None or not nc.is_connected) and not getattr(state, "testing", False):
+        Path(path).unlink(missing_ok=True)
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message="NATS event broker unavailable; the upload was rejected.",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="NATS event broker unavailable. Please retry later.",
+        )
 
-    # The exact count is now known, but the run is already open so every earlier
-    # failure has a durable history row. The current count is reported in the
-    # response and final status as the importer publishes.
-
-    if nc is not None and nc.is_connected:
-        # Held in a set until it finishes: the event loop keeps only a weak
-        # reference to a task, so one that nothing else names can be collected
-        # mid-publish — and the import would then simply stop, with the run left
-        # open and no error anywhere.
+    try:
         task = asyncio.create_task(
-            _publish(
-                events,
+            _import_archive(
+                path,
                 nc=nc,
+                testing=getattr(state, "testing", False),
                 tenant_id=tenant_id,
                 source_id=target.source_id,
                 sync_run_id=sync_run_id,
                 req_id=x_request_id,
-                report=report,
             )
         )
-        _running_imports.add(task)
-        task.add_done_callback(_running_imports.discard)
-    else:
-        # Test/dry-run mode has no broker task to finish the run, so close it here.
-        await close_sync_run(
-            tenant_id,
-            target.source_id,
-            sync_run_id,
-            req_id=x_request_id,
-            status="success",
-            message=f"Export parsed: {len(events)} data point(s) ready.",
-            points_received=len(events),
-        )
+    except BaseException:
+        Path(path).unlink(missing_ok=True)
+        raise
 
+    _running_imports.add(task)
+    task.add_done_callback(_running_imports.discard)
     logger.info(
-        "[req_id=%s] Tenant %s: accepted a WHOOP export with %d data point(s) for connector %s.",
+        "[req_id=%s] Tenant %s: accepted a %d byte WHOOP export for connector %s.",
         x_request_id,
         tenant_id,
-        len(events),
+        received,
         target.source_id,
     )
 
@@ -365,7 +605,8 @@ async def _accept_export(
             "sync_run_id": sync_run_id,
             "source_id": target.source_id,
             "source_type": target.source_type,
-            "points_expected": len(events),
+            "received": received,
+            "points_expected": None,
         },
     )
 
@@ -403,7 +644,17 @@ async def upload_export(
     )
 
     try:
-        data = await _read_capped_body(request, MAX_ARCHIVE_BYTES)
+        session = await _spool_request(request, tenant_id, target.source_id)
+    except SpoolTooLarge as exc:
+        await close_sync_run(
+            tenant_id,
+            target.source_id,
+            sync_run_id,
+            req_id=x_request_id,
+            status="error",
+            message=str(exc),
+        )
+        raise HTTPException(status_code=413, detail=str(exc)) from None
     except HTTPException as exc:
         await close_sync_run(
             tenant_id,
@@ -426,8 +677,9 @@ async def upload_export(
         raise HTTPException(status_code=400, detail="Could not receive the archive.") from None
 
     return await _accept_export(
-        data,
+        session.path,
         state=request.app.state,
+        received=session.received,
         tenant_id=tenant_id,
         target=target,
         sync_run_id=sync_run_id,
@@ -562,36 +814,30 @@ async def complete_chunked_upload(
         return _upload_failure(exc)
 
     received = session.received
+    archive_path = session.path
     try:
-        # Resolve the connector before reading, but keep cleanup around both
-        # operations. ``finish`` removes the session from the registry, so a target
-        # lookup failure otherwise left the archive invisible to the spool sweeper.
         target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
-        # In a worker thread: the archive is read from disk in one go because that is
-        # what this importer's parser takes, and reading it on the event loop would
-        # stall every other request for as long as it takes.
-        data = await asyncio.to_thread(session.path.read_bytes)
-    finally:
-        # The export is somebody's history. It exists on this disk only for as long as
-        # it takes to read, whatever the outcome.
-        session.path.unlink(missing_ok=True)
-
-    sync_run_id = await open_sync_run(
-        tenant_id,
-        target.source_id,
-        req_id=x_request_id,
-        points_expected=None,
-        message=f"WHOOP archive received ({received} byte(s)).",
-    )
-
-    return await _accept_export(
-        data,
-        state=request.app.state,
-        tenant_id=tenant_id,
-        target=target,
-        sync_run_id=sync_run_id,
-        x_request_id=x_request_id,
-    )
+        sync_run_id = await open_sync_run(
+            tenant_id,
+            target.source_id,
+            req_id=x_request_id,
+            points_expected=None,
+            message=f"WHOOP archive received ({received} byte(s)).",
+        )
+        return await _accept_export(
+            archive_path,
+            state=request.app.state,
+            received=received,
+            tenant_id=tenant_id,
+            target=target,
+            sync_run_id=sync_run_id,
+            x_request_id=x_request_id,
+        )
+    except BaseException:
+        # ``_accept_export`` transfers ownership only after its task is created. All
+        # earlier failures must remove the assembled archive here.
+        archive_path.unlink(missing_ok=True)
+        raise
 
 
 @app.post("/upload/abort")

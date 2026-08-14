@@ -77,6 +77,22 @@ The response sets `contains_legacy_raw=true`, and each compatibility point carri
 the fallback bounded by the same limit while preventing the client from presenting
 a newest-1,000-point sample as the complete history.
 
+Analysis uses Core's internal `QueryMetricSeries` gRPC method for daily and hourly work. The method
+returns one explicit bucket per `(metric_type, source_id, interval)`, with `sample_count` and an
+absent value for gaps. It reads the matching rollup resolution first and aggregates only raw points
+not already covered by a rollup. When several connector instances report the same canonical metric,
+Core returns separate source series and an `AMBIGUOUS_METRIC_SOURCE` issue; it never adds them
+together. Analysis excludes that metric until a source is selected. This keeps large analyses
+bounded without silently treating a missing day as zero or a second connector as extra activity.
+
+The Explorer requests each selected metric and connector instance separately. It keeps the raw
+table query independent from the chart query, so a chart is not truncated by the table's page size
+and a second source cannot overwrite the first source's series. The selected range is sent to Core
+as an explicit start/end window; it is not hardcoded to a week.
+The Analysis view offers the same connector-instance selection and sends its `source_id` to the
+Analysis service. Leaving the selector on all sources is intentionally conservative: ambiguous
+metrics are reported as unavailable instead of being guessed or combined.
+
 `/api/v1/data/metrics/summary` combines day-rollup aggregates with uncovered legacy
 points when both exist and reports `contains_legacy_raw=true`. Data imported before
 rollups were introduced remains queryable through this compatibility fallback until
@@ -111,7 +127,7 @@ per tenant through the operator's job runner after reviewing the dry-run count.
 - Minute aggregation reduces storage and query cost; it cannot restore information
   that the provider did not export.
 - Historical data retains the resolution at which it was imported.
-- Day rollups prefer a provider-stated total over interval samples for the same metric and day;
+- Day rollups prefer the newest provider-stated total over interval samples for the same metric and day;
   raw inspection can still show both provenance paths.
 - A provider export that ends before the requested period is shown as incomplete;
   a successful upload does not imply complete provider coverage.

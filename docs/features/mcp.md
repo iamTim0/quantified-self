@@ -49,6 +49,11 @@ All tools advertise `readOnlyHint=true`, `destructiveHint=false`,
 `idempotentHint=true`, and `openWorldHint=false`. Aggregated values follow the central
 metric registry: accumulating metrics are summed, momentary measurements averaged,
 standing values take the latest point, and peaks retain the maximum.
+The `query_metric_series` and `analyze_metrics` tools accept an optional `source_id`. If a metric has points from more
+than one connector instance and no source is selected, the tool returns the stable
+`AMBIGUOUS_METRIC_SOURCE` error instead of combining potentially overlapping values. Core's gRPC
+series response likewise keeps each `(metric_type, source_id)` series separate and reports the
+candidate source IDs.
 For daily summaries, repeated values inside one day collapse to the newest value
 before longer periods are aggregated, preventing overlapping imports from counting a
 day twice. Namespaced dynamic metrics have runtime-defined units and aggregation, so

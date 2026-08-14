@@ -27,33 +27,43 @@ from quantified_self.v1 import data_point_pb2 as quantified__self_dot_v1_dot_dat
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%quantified_self/v1/core_service.proto\x12\x12quantified_self.v1\x1a\x1fquantified_self/v1/common.proto\x1a#quantified_self/v1/data_point.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x02\n\x16QueryDataPointsRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x18\n\x0bmetric_type\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x16\n\tsource_id\x18\x03 \x01(\tH\x01\x88\x01\x01\x12.\n\nstart_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12,\n\x08\x65nd_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x39\n\npagination\x18\x06 \x01(\x0b\x32%.quantified_self.v1.PaginationRequestB\x0e\n\x0c_metric_typeB\x0c\n\n_source_id\"\x89\x01\n\x17QueryDataPointsResponse\x12\x32\n\x0b\x64\x61ta_points\x18\x01 \x03(\x0b\x32\x1d.quantified_self.v1.DataPoint\x12:\n\npagination\x18\x02 \x01(\x0b\x32&.quantified_self.v1.PaginationResponse\"?\n\x13GetDataPointRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x15\n\rdata_point_id\x18\x02 \x01(\t\"+\n\x16ListMetricTypesRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\"/\n\x17ListMetricTypesResponse\x12\x14\n\x0cmetric_types\x18\x01 \x03(\t\"+\n\x16ListDataSourcesRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\"J\n\x11\x44\x61taSourceSummary\x12\n\n\x02id\x18\x01 \x01(\t\x12\x13\n\x0bsource_type\x18\x02 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x03 \x01(\t\"Q\n\x17ListDataSourcesResponse\x12\x36\n\x07sources\x18\x01 \x03(\x0b\x32%.quantified_self.v1.DataSourceSummary\"|\n\x1aValidateUserSessionRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x0b\n\x03jti\x18\x03 \x01(\t\x12-\n\tissued_at\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\":\n\x1bValidateUserSessionResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12\x0c\n\x04\x63ode\x18\x02 \x01(\t2\xa5\x04\n\x0f\x43oreDataService\x12j\n\x0fQueryDataPoints\x12*.quantified_self.v1.QueryDataPointsRequest\x1a+.quantified_self.v1.QueryDataPointsResponse\x12V\n\x0cGetDataPoint\x12\'.quantified_self.v1.GetDataPointRequest\x1a\x1d.quantified_self.v1.DataPoint\x12j\n\x0fListMetricTypes\x12*.quantified_self.v1.ListMetricTypesRequest\x1a+.quantified_self.v1.ListMetricTypesResponse\x12j\n\x0fListDataSources\x12*.quantified_self.v1.ListDataSourcesRequest\x1a+.quantified_self.v1.ListDataSourcesResponse\x12v\n\x13ValidateUserSession\x12..quantified_self.v1.ValidateUserSessionRequest\x1a/.quantified_self.v1.ValidateUserSessionResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n%quantified_self/v1/core_service.proto\x12\x12quantified_self.v1\x1a\x1fquantified_self/v1/common.proto\x1a#quantified_self/v1/data_point.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x94\x02\n\x16QueryDataPointsRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x18\n\x0bmetric_type\x18\x02 \x01(\tH\x00\x88\x01\x01\x12\x16\n\tsource_id\x18\x03 \x01(\tH\x01\x88\x01\x01\x12.\n\nstart_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12,\n\x08\x65nd_time\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x39\n\npagination\x18\x06 \x01(\x0b\x32%.quantified_self.v1.PaginationRequestB\x0e\n\x0c_metric_typeB\x0c\n\n_source_id\"\x89\x01\n\x17QueryDataPointsResponse\x12\x32\n\x0b\x64\x61ta_points\x18\x01 \x03(\x0b\x32\x1d.quantified_self.v1.DataPoint\x12:\n\npagination\x18\x02 \x01(\x0b\x32&.quantified_self.v1.PaginationResponse\"\x87\x02\n\x18QueryMetricSeriesRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x14\n\x0cmetric_types\x18\x02 \x03(\t\x12.\n\nstart_time\x18\x03 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12,\n\x08\x65nd_time\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12>\n\nresolution\x18\x05 \x01(\x0e\x32*.quantified_self.v1.MetricSeriesResolution\x12\x16\n\tsource_id\x18\x06 \x01(\tH\x00\x88\x01\x01\x42\x0c\n\n_source_id\"\xa2\x01\n\x12MetricSeriesBucket\x12\x13\n\x0bmetric_type\x18\x01 \x01(\t\x12\x30\n\x0c\x62ucket_start\x18\x02 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\x12\x12\n\x05value\x18\x03 \x01(\x01H\x00\x88\x01\x01\x12\x14\n\x0csample_count\x18\x04 \x01(\x04\x12\x11\n\tsource_id\x18\x05 \x01(\tB\x08\n\x06_value\"J\n\x11MetricSeriesIssue\x12\x0c\n\x04\x63ode\x18\x01 \x01(\t\x12\x13\n\x0bmetric_type\x18\x02 \x01(\t\x12\x12\n\nsource_ids\x18\x03 \x03(\t\"\x8b\x01\n\x19QueryMetricSeriesResponse\x12\x37\n\x07\x62uckets\x18\x01 \x03(\x0b\x32&.quantified_self.v1.MetricSeriesBucket\x12\x35\n\x06issues\x18\x02 \x03(\x0b\x32%.quantified_self.v1.MetricSeriesIssue\"?\n\x13GetDataPointRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x15\n\rdata_point_id\x18\x02 \x01(\t\"+\n\x16ListMetricTypesRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\"/\n\x17ListMetricTypesResponse\x12\x14\n\x0cmetric_types\x18\x01 \x03(\t\"+\n\x16ListDataSourcesRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\"J\n\x11\x44\x61taSourceSummary\x12\n\n\x02id\x18\x01 \x01(\t\x12\x13\n\x0bsource_type\x18\x02 \x01(\t\x12\x14\n\x0c\x64isplay_name\x18\x03 \x01(\t\"Q\n\x17ListDataSourcesResponse\x12\x36\n\x07sources\x18\x01 \x03(\x0b\x32%.quantified_self.v1.DataSourceSummary\"|\n\x1aValidateUserSessionRequest\x12\x11\n\ttenant_id\x18\x01 \x01(\t\x12\x0f\n\x07user_id\x18\x02 \x01(\t\x12\x0b\n\x03jti\x18\x03 \x01(\t\x12-\n\tissued_at\x18\x04 \x01(\x0b\x32\x1a.google.protobuf.Timestamp\":\n\x1bValidateUserSessionResponse\x12\r\n\x05valid\x18\x01 \x01(\x08\x12\x0c\n\x04\x63ode\x18\x02 \x01(\t*\x87\x01\n\x16MetricSeriesResolution\x12(\n$METRIC_SERIES_RESOLUTION_UNSPECIFIED\x10\x00\x12!\n\x1dMETRIC_SERIES_RESOLUTION_HOUR\x10\x01\x12 \n\x1cMETRIC_SERIES_RESOLUTION_DAY\x10\x02\x32\x97\x05\n\x0f\x43oreDataService\x12j\n\x0fQueryDataPoints\x12*.quantified_self.v1.QueryDataPointsRequest\x1a+.quantified_self.v1.QueryDataPointsResponse\x12p\n\x11QueryMetricSeries\x12,.quantified_self.v1.QueryMetricSeriesRequest\x1a-.quantified_self.v1.QueryMetricSeriesResponse\x12V\n\x0cGetDataPoint\x12\'.quantified_self.v1.GetDataPointRequest\x1a\x1d.quantified_self.v1.DataPoint\x12j\n\x0fListMetricTypes\x12*.quantified_self.v1.ListMetricTypesRequest\x1a+.quantified_self.v1.ListMetricTypesResponse\x12j\n\x0fListDataSources\x12*.quantified_self.v1.ListDataSourcesRequest\x1a+.quantified_self.v1.ListDataSourcesResponse\x12v\n\x13ValidateUserSession\x12..quantified_self.v1.ValidateUserSessionRequest\x1a/.quantified_self.v1.ValidateUserSessionResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
 _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'quantified_self.v1.core_service_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   DESCRIPTOR._loaded_options = None
+  _globals['_METRICSERIESRESOLUTION']._serialized_start=1782
+  _globals['_METRICSERIESRESOLUTION']._serialized_end=1917
   _globals['_QUERYDATAPOINTSREQUEST']._serialized_start=165
   _globals['_QUERYDATAPOINTSREQUEST']._serialized_end=441
   _globals['_QUERYDATAPOINTSRESPONSE']._serialized_start=444
   _globals['_QUERYDATAPOINTSRESPONSE']._serialized_end=581
-  _globals['_GETDATAPOINTREQUEST']._serialized_start=583
-  _globals['_GETDATAPOINTREQUEST']._serialized_end=646
-  _globals['_LISTMETRICTYPESREQUEST']._serialized_start=648
-  _globals['_LISTMETRICTYPESREQUEST']._serialized_end=691
-  _globals['_LISTMETRICTYPESRESPONSE']._serialized_start=693
-  _globals['_LISTMETRICTYPESRESPONSE']._serialized_end=740
-  _globals['_LISTDATASOURCESREQUEST']._serialized_start=742
-  _globals['_LISTDATASOURCESREQUEST']._serialized_end=785
-  _globals['_DATASOURCESUMMARY']._serialized_start=787
-  _globals['_DATASOURCESUMMARY']._serialized_end=861
-  _globals['_LISTDATASOURCESRESPONSE']._serialized_start=863
-  _globals['_LISTDATASOURCESRESPONSE']._serialized_end=944
-  _globals['_VALIDATEUSERSESSIONREQUEST']._serialized_start=946
-  _globals['_VALIDATEUSERSESSIONREQUEST']._serialized_end=1070
-  _globals['_VALIDATEUSERSESSIONRESPONSE']._serialized_start=1072
-  _globals['_VALIDATEUSERSESSIONRESPONSE']._serialized_end=1130
-  _globals['_COREDATASERVICE']._serialized_start=1133
-  _globals['_COREDATASERVICE']._serialized_end=1682
+  _globals['_QUERYMETRICSERIESREQUEST']._serialized_start=584
+  _globals['_QUERYMETRICSERIESREQUEST']._serialized_end=847
+  _globals['_METRICSERIESBUCKET']._serialized_start=850
+  _globals['_METRICSERIESBUCKET']._serialized_end=1012
+  _globals['_METRICSERIESISSUE']._serialized_start=1014
+  _globals['_METRICSERIESISSUE']._serialized_end=1088
+  _globals['_QUERYMETRICSERIESRESPONSE']._serialized_start=1091
+  _globals['_QUERYMETRICSERIESRESPONSE']._serialized_end=1230
+  _globals['_GETDATAPOINTREQUEST']._serialized_start=1232
+  _globals['_GETDATAPOINTREQUEST']._serialized_end=1295
+  _globals['_LISTMETRICTYPESREQUEST']._serialized_start=1297
+  _globals['_LISTMETRICTYPESREQUEST']._serialized_end=1340
+  _globals['_LISTMETRICTYPESRESPONSE']._serialized_start=1342
+  _globals['_LISTMETRICTYPESRESPONSE']._serialized_end=1389
+  _globals['_LISTDATASOURCESREQUEST']._serialized_start=1391
+  _globals['_LISTDATASOURCESREQUEST']._serialized_end=1434
+  _globals['_DATASOURCESUMMARY']._serialized_start=1436
+  _globals['_DATASOURCESUMMARY']._serialized_end=1510
+  _globals['_LISTDATASOURCESRESPONSE']._serialized_start=1512
+  _globals['_LISTDATASOURCESRESPONSE']._serialized_end=1593
+  _globals['_VALIDATEUSERSESSIONREQUEST']._serialized_start=1595
+  _globals['_VALIDATEUSERSESSIONREQUEST']._serialized_end=1719
+  _globals['_VALIDATEUSERSESSIONRESPONSE']._serialized_start=1721
+  _globals['_VALIDATEUSERSESSIONRESPONSE']._serialized_end=1779
+  _globals['_COREDATASERVICE']._serialized_start=1920
+  _globals['_COREDATASERVICE']._serialized_end=2583
 # @@protoc_insertion_point(module_scope)

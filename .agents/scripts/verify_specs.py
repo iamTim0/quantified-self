@@ -18,6 +18,7 @@ Exit code is non-zero if any spec fails to compile or violates an invariant.
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,10 @@ IMAGE = "qs-fizzbee:v0.5.2"
 # which took the developer's Postgres and NATS containers down with it. Capping
 # the container makes a runaway spec fail as itself instead.
 CONTAINER_MEMORY = "3g"
+# Fizzbee publishes an x86 Linux binary. Docker Desktop can run it through its
+# amd64 emulation on Apple Silicon; making that platform explicit prevents an
+# architecture-dependent "exec format error" during the image build/run.
+DOCKER_PLATFORM = os.environ.get("FIZZBEE_DOCKER_PLATFORM", "linux/amd64")
 
 # Per-spec wall-clock ceiling. A spec that needs longer than this is not bounded
 # tightly enough to be worth running on every push; fix the spec, do not raise
@@ -56,6 +61,7 @@ def _build_image() -> bool:
     build = subprocess.run(  # noqa: PLW1510
         [
             "docker", "build",
+            "--platform", DOCKER_PLATFORM,
             "-f", str(REPO_ROOT / "infra" / "fizzbee.Dockerfile"),
             "-t", IMAGE,
             str(REPO_ROOT),
@@ -70,6 +76,7 @@ def _command_for(spec: Path, native: str | None) -> list[str]:
         return [native, relative]
     return [
         "docker", "run", "--rm",
+        "--platform", DOCKER_PLATFORM,
         "--memory", CONTAINER_MEMORY,
         "-v", f"{REPO_ROOT}:/work",
         IMAGE,

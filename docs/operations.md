@@ -81,8 +81,10 @@ task docs:build        # MkDocs --strict
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection | yes |
 | `NATS_URL` | Broker | yes |
+| `CORE_ROLE` | Core runtime role: `all`, `api`, `ingest` or `scheduler` | no (`all` locally) |
 | `JWT_SECRET` | Signature of the user tokens | **yes — the default is unsafe** |
 | `INTERNAL_SERVICE_SECRET` | Secret for internal service calls | **yes** |
+| `INTERNAL_SERVICE_SECRETS` | Optional JSON map of distinct service credentials, keyed by service name | no during rollout |
 | `ENCRYPTION_KEY` | Fernet key for connector credentials | **yes** |
 | `ACCESS_TOKEN_TTL_MINUTES` | Access token lifetime (720 by default) | no |
 | `REFRESH_TOKEN_TTL_DAYS` | Refresh token lifetime (30 by default) | no |
@@ -107,7 +109,13 @@ task docs:build        # MkDocs --strict
     python -c "import secrets; print(secrets.token_urlsafe(48))"
     ```
 
-    `INTERNAL_SERVICE_SECRET` has to be identical on Core **and** on every importer.
+    `INTERNAL_SERVICE_SECRET` has to be identical on Core **and** on every importer while the
+    legacy shared-credential mode is used. For separated credentials, set
+    `INTERNAL_SERVICE_SECRETS` to a deployment secret store value such as
+    `{"analysis":"…","apple_health":"…","whoop":"…"}` and set the matching secret in each
+    service. Importers send their stable service identity with the request; Core rejects a token
+    minted for another identity. The shared value remains a deliberate migration fallback until
+    every service has a dedicated credential.
 
 ### Rotating `ENCRYPTION_KEY`
 
@@ -168,8 +176,9 @@ is then open to anyone who knows the address.
 
 ## Deployment
 
-`docker-compose.prod.yml` describes the production stack: Traefik, Gateway, Core, Analysis, dashboard,
-documentation and the eight importers. It **builds nothing**; it pulls the images the release workflow
+`docker-compose.prod.yml` describes the production stack: Traefik, Gateway, the Core API, ingest and
+scheduler roles, Analysis, dashboard, documentation and the eight importers. It **builds nothing**;
+it pulls the images the release workflow
 published — a deployment is a download and a restart.
 
 The full walkthrough — cutting a release, first install, updating, rolling back, this stack's variables
@@ -191,7 +200,7 @@ docker compose -f docker-compose.prod.yml run --rm core \
 ```
 
 `up` migrates before Core serves: the `core-migrate` service runs `alembic upgrade head` and exits, and
-Core starts only once that has succeeded. A container of its own rather than Core's entrypoint, so that
+the API, ingest and scheduler roles start only once that has succeeded. A container of its own rather than Core's entrypoint, so that
 several replicas coming up at once cannot migrate against each other — and not a step in these
 instructions, because a deploy that only starts the stack has nowhere to type one. Self-registration is
 off, hence the last command — see [Creating the first account](#creating-the-first-account).
@@ -250,7 +259,10 @@ does authenticate those calls itself these days, but the published port remains 
 
 Since `docker-compose.prod.yml` that is no longer a request but the state of things: **Core publishes no
 host ports.** The old production compose file exposed `8001` and `50051`, although Traefik never routed
-them. Inside the compose network Core is reachable at `core:8001` and `core:50051` as before.
+them. Inside the compose network the API role is reachable at `core:8001` and `core:50051` as before.
+The `core-ingest` and `core-scheduler` services expose no host ports and are not request targets.
+Use `/health` for process liveness and `/readyz` to verify the database, NATS and gRPC dependencies
+of the relevant role before routing traffic or declaring ingestion ready.
 
 The Traefik dashboard likewise now listens on `127.0.0.1` instead of on every interface — it runs with
 `--api.insecure=true`, which on a public host made it an unauthenticated admin UI. Reach it through an

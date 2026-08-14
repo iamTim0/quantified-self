@@ -16,6 +16,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     UniqueConstraint,
@@ -118,6 +119,10 @@ class DataSource(Base):
             "display_name",
             name="uq_data_sources_tenant_type_name",
         ),
+        # Child rows carry tenant_id as well as source_id. Keeping the pair
+        # addressable lets PostgreSQL enforce that those two claims describe the
+        # same connector, rather than relying only on every application query.
+        UniqueConstraint("tenant_id", "id", name="uq_data_sources_tenant_id_id"),
     )
 
 
@@ -153,6 +158,11 @@ class DataPoint(Base):
             "idempotency_key",
             "timestamp",
             name="uq_data_points_tenant_idempotency_time",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_data_points_tenant_source",
         ),
     )
 
@@ -224,6 +234,11 @@ class MetricRollup(Base):
             "resolution",
             "bucket_start",
             name="uq_metric_rollups_tenant_source_metric_resolution_bucket",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_metric_rollups_tenant_source",
         ),
     )
 
@@ -390,6 +405,15 @@ class SyncRun(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_sync_runs_tenant_id_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_sync_runs_tenant_source",
+        ),
+    )
+
 
 class SyncRunEvent(Base):
     """Durable once-only ledger for events counted against an import run.
@@ -422,6 +446,11 @@ class SyncRunEvent(Base):
             "sync_run_id",
             "event_key",
             name="uq_sync_run_events_tenant_run_key",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "sync_run_id"],
+            ["sync_runs.tenant_id", "sync_runs.id"],
+            name="fk_sync_run_events_tenant_run",
         ),
     )
 
@@ -474,6 +503,11 @@ class IngestFieldReport(Base):
     __table_args__ = (
         UniqueConstraint(
             "tenant_id", "source_id", "field_path", name="uq_field_reports_tenant_source_path"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_field_reports_tenant_source",
         ),
     )
 
@@ -528,6 +562,11 @@ class QuarantinedDataPoint(Base):
             "timestamp",
             name="uq_quarantine_tenant_source_key_time",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_quarantine_tenant_source",
+        ),
     )
 
 
@@ -574,6 +613,11 @@ class MetricMappingRule(Base):
             "raw_metric_type",
             name="uq_metric_mapping_tenant_source_raw",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_metric_mapping_tenant_source",
+        ),
     )
 
 
@@ -612,6 +656,11 @@ class QuarantineRefusal(Base):
             "raw_metric_type",
             "reason",
             name="uq_quarantine_refusal_tenant_source_raw_reason",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_quarantine_refusal_tenant_source",
         ),
     )
 

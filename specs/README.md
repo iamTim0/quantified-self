@@ -74,6 +74,11 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `NoDuplicateData` | `test_deduplication_via_idempotency_key` | Core Data Service |
 | `DataIntegrity` | `test_concurrent_duplicate_messages` | Core Data Service |
 | `EventualConsistency` | `test_network_partition_recovery` | NATS / Importers |
+| `BatchSizeBounded` | `test_batch_size_and_tenant_homogeneity_are_bounded` | Core Data Service / NATS |
+| `TenantHomogeneousBatch` | `test_batch_size_and_tenant_homogeneity_are_bounded` | Core Data Service / NATS |
+| `AckAfterBatchCommit` | `test_ack_follows_commit_and_rollback_keeps_batch_retryable` | Core Data Service / NATS |
+| `ValidSiblingSurvivesInvalidPoint` | `test_valid_sibling_survives_invalid_point_and_redelivery_is_idempotent` | Core Data Service / NATS |
+| `PointIdempotencyPreserved` | `test_valid_sibling_survives_invalid_point_and_redelivery_is_idempotent` | Core Data Service / NATS |
 | `ImportCompletionAfterCoreProcessing` | `test_importer_completion_waits_for_core_to_drain_events` | Core Data Service / NATS |
 | `SyncRunProgressAtMostOnce` | `test_core_marks_run_success_only_on_the_last_processed_event` | Core Data Service / NATS |
 | `SchedulerSingleFlight` | `test_concurrent_sync_requests_create_only_one_in_flight_run` | Core Data Service |
@@ -104,6 +109,11 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `NoPrivateServicePublicExposure` | `test_no_private_service_public_exposure` | Coolify ingress |
 | `TunnelRequiresHealthyProxy` | `test_tunnel_requires_healthy_proxy` | Coolify ingress |
 | `SpecificRoutesPrecedeDashboard` | `test_specific_routes_precede_dashboard` | Coolify ingress |
+| `CredentialBoundToIdentity` | `test_service_credential_is_bound_to_identity` | Core / internal services |
+| `CrossServiceCredentialRejected` | `test_cross_service_credential_is_rejected` | Core / internal services |
+| `NeverSkipIncompleteMetric` | `test_missing_metric_cannot_be_hidden_by_a_dense_metric` | Core import planner |
+| `RevisionChangeInvalidatesCoverage` | `test_revision_change_invalidates_historical_coverage` | Core import planner |
+| `UnknownCoverageImports` | `test_unknown_coverage_is_imported` | Core import planner |
 
 ## Adding New Specs
 

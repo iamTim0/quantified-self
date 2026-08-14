@@ -8,6 +8,7 @@ Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import math
@@ -47,8 +48,9 @@ from shared_schemas.metrics import (
     UnknownMetricTypeError,
     canonical_metric_type,
     describe,
+    metrics_for_source,
 )
-from sqlalchemy import and_, delete, distinct, exists, func, or_, select
+from sqlalchemy import and_, delete, distinct, exists, func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -103,6 +105,7 @@ from core.ingest_planning import (
     BucketCount,
     TimeRange,
     analyse_coverage,
+    analyse_metric_coverage,
     compute_sync_window,
     plan_import,
 )
@@ -322,20 +325,25 @@ async def lifespan(app: FastAPI):
         service="core",
     )
 
+    role = settings.CORE_ROLE.lower()
+    if role not in {"all", "api", "ingest", "scheduler"}:
+        raise RuntimeError(f"Unsupported CORE_ROLE: {settings.CORE_ROLE}")
+
     # The gRPC server is how the Analysis Service reads data (AGENTS.md rule 3).
     # It starts before the NATS consumer and outside that try block on purpose:
     # the consumer's failure path deliberately still yields so Core serves HTTP
     # without a broker, and folding gRPC into it would have let the read API for
     # another service disappear silently.
     grpc_server = None
-    try:
-        grpc_server = await serve_grpc()
-        app.state.grpc_server = grpc_server
-    except Exception:
-        logger.exception("gRPC server failed to start; Analysis Service reads will fail")
+    if role in {"all", "api"}:
+        try:
+            grpc_server = await serve_grpc()
+            app.state.grpc_server = grpc_server
+        except Exception:
+            logger.exception("gRPC server failed to start; Analysis Service reads will fail")
 
     scheduler_task = None
-    if settings.SCHEDULER_ENABLED:
+    if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
 
     # The NATS subscription is established in the background, never awaited here.
@@ -349,18 +357,34 @@ async def lifespan(app: FastAPI):
     # A broker outage should degrade ingestion. It should not take down queries,
     # authentication or the dashboard.
     app.state.nats_client = None
+    app.state.nats_status = "disconnected"
 
     def _remember(nc):
         app.state.nats_client = nc
+        app.state.nats_status = "connected"
 
-    consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+    consumer_task = None
+    publisher_task = None
+    if role in {"all", "ingest"}:
+        consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+    if role in {"api", "scheduler"}:
+        # API-triggered imports and scheduled imports both publish task messages,
+        # but neither role should consume the ingest stream. Keeping this small
+        # publisher connection in the API role preserves manual syncs when the
+        # production deployment separates the consumer into core-ingest.
+        publisher_task = asyncio.create_task(_run_nats_publisher_forever(app))
 
     try:
         yield
     finally:
-        consumer_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await consumer_task
+        if consumer_task is not None:
+            consumer_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await consumer_task
+        if publisher_task is not None:
+            publisher_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await publisher_task
         if (nc := getattr(app.state, "nats_client", None)) is not None:
             with suppress(Exception):
                 await nc.close()
@@ -370,6 +394,39 @@ async def lifespan(app: FastAPI):
                 await scheduler_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
+
+
+async def _run_nats_publisher_forever(app: FastAPI) -> None:
+    """Keep a NATS connection for task publishing without consuming ingest events."""
+    delay = 1.0
+    while True:
+        try:
+            nc = await nats.connect(
+                settings.NATS_URL,
+                connect_timeout=5,
+                max_reconnect_attempts=0,
+                allow_reconnect=False,
+            )
+            app.state.nats_client = nc
+            app.state.nats_status = "connected"
+            delay = 1.0
+            await nc.closed
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - retry after a broker outage
+            logger.warning(
+                "NATS publisher unavailable (%s); task publishing is paused for %.0fs",
+                type(exc).__name__,
+                delay,
+            )
+        finally:
+            app.state.nats_status = "disconnected"
+            if (current := getattr(app.state, "nats_client", None)) is not None:
+                with suppress(Exception):
+                    await current.close()
+                app.state.nats_client = None
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 30.0)
 
 
 async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
@@ -446,6 +503,45 @@ app.add_middleware(AuthenticationMiddleware)
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": settings.SERVICE_NAME}
+
+
+@app.get("/readyz")
+async def readiness_check():
+    """Report whether Core dependencies can serve traffic safely.
+
+    ``/health`` is deliberately a cheap process liveness probe. This endpoint is
+    the dependency-aware probe for operators and deployment controllers: a live
+    Core with a disconnected broker must not be mistaken for an ingest-ready Core.
+    It never checks tenant state or provider credentials.
+    """
+    role = settings.CORE_ROLE.lower()
+    components: dict[str, str] = {"database": "ok"}
+    if role in {"all", "api", "ingest", "scheduler"}:
+        components["nats"] = "unknown"
+    if role in {"all", "api"}:
+        components["grpc"] = "unknown"
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Core readiness database check failed")
+        components["database"] = "error"
+
+    if "nats" in components:
+        nc = getattr(app.state, "nats_client", None)
+        if nc is not None and getattr(nc, "is_connected", False):
+            components["nats"] = "ok"
+        else:
+            components["nats"] = "disconnected"
+
+    if "grpc" in components:
+        grpc_server = getattr(app.state, "grpc_server", None)
+        components["grpc"] = "ok" if grpc_server is not None else "unavailable"
+    ready = all(value == "ok" for value in components.values())
+    payload = {"status": "ok" if ready else "degraded", "service": settings.SERVICE_NAME, "components": components}
+    if not ready:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 # ─── Auth Endpoints ──────────────────────────────────────────
@@ -2730,7 +2826,7 @@ def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dic
         "status": run.status,
         "window_start": run.window_start.isoformat() if run.window_start else None,
         "window_end": run.window_end.isoformat() if run.window_end else None,
-        "window_reason": run.window_reason,
+        "window_reason": _display_window_reason(run.window_reason),
         "points_expected": run.points_expected,
         "points_received": run.points_received,
         "points_processed": run.points_processed,
@@ -2775,27 +2871,249 @@ async def _resolve_source_ref(
     return await _resolve_source(session, tenant_id, ref)
 
 
-async def _last_successful_sync_end(
-    session: AsyncSession, tenant_id: str, source_id: str
-) -> datetime | None:
-    """When this connector's last successful run ended, for adaptive resumption.
+_COVERAGE_MARKER_PREFIX = "[coverage-contract:"
+_COVERAGE_MARKER_SUFFIX = "]"
 
-    Keyed on the instance, not the type: with two calendars, the type would let
-    one connector's successful window advance the other's resume point, and the
-    second calendar would silently skip everything the first had already fetched.
+
+def _configured_supported_metrics(
+    config: dict[str, Any] | None,
+) -> tuple[str, ...] | None:
+    """Return the canonical metric manifest configured for a connector.
+
+    A missing or malformed manifest is intentionally represented as ``None``. Core
+    must not guess that all metrics are covered from a connector-wide point count.
     """
-    res = await session.execute(
-        select(SyncRun.window_end)
+    config = config or {}
+    values = [
+        config[key]
+        for key in ("supported_metrics", "supported_metric_types")
+        if key in config
+    ]
+    if not values or any(value != values[0] for value in values[1:]):
+        return None
+
+    raw_metrics = values[0]
+    if not isinstance(raw_metrics, (list, tuple, set)) or not raw_metrics:
+        return None
+
+    canonical: set[str] = set()
+    for raw_metric in raw_metrics:
+        if not isinstance(raw_metric, str):
+            return None
+        try:
+            canonical.add(canonical_metric_type(raw_metric))
+        except UnknownMetricTypeError:
+            return None
+    return tuple(sorted(canonical)) or None
+
+
+def _configured_coverage_version(
+    config: dict[str, Any] | None,
+    keys: tuple[str, ...],
+) -> str | None:
+    """Read the first configured schema/transform version as a stable string."""
+    config = config or {}
+    for key in keys:
+        if key not in config:
+            continue
+        value = config[key]
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            return str(value)
+        return None
+    return None
+
+
+def _source_coverage_contract(source: DataSource) -> tuple[tuple[str, ...], str] | None:
+    """Build the source/metric/schema contract used to trust historical coverage."""
+    config = source.config or {}
+    metrics = _configured_supported_metrics(config)
+    manifest_is_configured = any(
+        key in config for key in ("supported_metrics", "supported_metric_types")
+    )
+    if metrics is None and not manifest_is_configured:
+        # Static providers already have an exact metric ownership list in the shared
+        # registry. Using it as the built-in manifest makes the safe planner useful
+        # for existing connectors created before the manifest field was introduced.
+        # Dynamic providers are intentionally excluded: their user's installation
+        # determines which fields exist, so a catalog list cannot prove completeness.
+        has_dynamic_namespace = any(
+            source.source_type in namespace.sources for namespace in DYNAMIC_NAMESPACES
+        )
+        registry_metrics = tuple(sorted(d.key for d in metrics_for_source(source.source_type)))
+        if has_dynamic_namespace or not registry_metrics:
+            return None
+        metrics = registry_metrics
+        manifest_source = "registry"
+    elif metrics is not None:
+        manifest_source = "configured"
+    else:
+        # A malformed explicit manifest must not silently fall back to a broader
+        # registry assumption. Keep the conservative full-window behavior.
+        return None
+
+    contract = {
+        "source_id": source.id,
+        "source_type": source.source_type,
+        "supported_metrics": metrics,
+        "manifest_source": manifest_source,
+        "schema_version": _configured_coverage_version(
+            config, ("schema_version", "provider_schema_version")
+        )
+        or "registry-v1",
+        "transform_version": _configured_coverage_version(
+            config, ("transform_version", "importer_transform_version")
+        ),
+        "contract_version": 1,
+    }
+    encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    return metrics, hashlib.sha256(encoded).hexdigest()
+
+
+def _coverage_marker(signature: str) -> str:
+    """Return the durable machine marker kept at the start of ``window_reason``."""
+    return f"{_COVERAGE_MARKER_PREFIX}{signature}{_COVERAGE_MARKER_SUFFIX}"
+
+
+def _coverage_signature_from_reason(reason: str | None) -> str | None:
+    """Extract a coverage contract marker without relying on human wording."""
+    if not reason or not reason.startswith(_COVERAGE_MARKER_PREFIX):
+        return None
+    end = reason.find(_COVERAGE_MARKER_SUFFIX, len(_COVERAGE_MARKER_PREFIX))
+    if end < 0:
+        return None
+    return reason[len(_COVERAGE_MARKER_PREFIX) : end]
+
+
+def _with_coverage_marker(reason: str, signature: str | None) -> str:
+    """Prefix a run reason with its contract while keeping the existing text."""
+    if not signature:
+        return reason
+    return f"{_coverage_marker(signature)} {reason}".strip()
+
+
+def _display_window_reason(reason: str | None) -> str | None:
+    """Remove the internal contract marker from user-facing sync history."""
+    if reason is None:
+        return None
+    if not reason.startswith(_COVERAGE_MARKER_PREFIX):
+        return reason
+    end = reason.find(_COVERAGE_MARKER_SUFFIX, len(_COVERAGE_MARKER_PREFIX))
+    if end < 0:
+        return reason
+    return reason[end + 1 :].lstrip() or None
+
+
+async def _coverage_contract_is_current(
+    session: AsyncSession,
+    tenant_id: str,
+    source_id: str,
+    signature: str | None,
+) -> bool:
+    """Whether the latest successful run used the current coverage contract.
+
+    A connector with no successful history is allowed to use its configured metric
+    manifest. Once history exists, an unmarked or different contract invalidates
+    smart skipping until a run under the current contract succeeds.
+    """
+    if not signature:
+        return False
+    result = await session.execute(
+        select(SyncRun.id, SyncRun.window_reason)
         .where(
             SyncRun.tenant_id == tenant_id,
             SyncRun.source_id == source_id,
             SyncRun.status == "success",
-            SyncRun.window_end.is_not(None),
         )
-        .order_by(SyncRun.window_end.desc())
+        .order_by(SyncRun.finished_at.desc(), SyncRun.id.desc())
         .limit(1)
     )
-    value = res.scalar_one_or_none()
+    row = result.first()
+    if row is None:
+        return True
+    return _coverage_signature_from_reason(row.window_reason) == signature
+
+
+async def _source_coverage_plan(
+    session: AsyncSession,
+    tenant_id: str,
+    source: DataSource,
+) -> tuple[dict[str, Any], str | None, str, str | None]:
+    """Return metric fetchers, contract signature, scope and an optional reason."""
+    contract = _source_coverage_contract(source)
+    if contract is None:
+        return (
+            {},
+            None,
+            "unknown",
+            (
+                "The connector has no valid canonical metric manifest. The full requested "
+                "period will be imported conservatively."
+            ),
+        )
+
+    metrics, signature = contract
+    fetchers = {
+        metric: _bucket_fetcher(
+            session,
+            tenant_id,
+            source_id=source.id,
+            metric_type=metric,
+        )
+        for metric in metrics
+    }
+    if not await _coverage_contract_is_current(
+        session, tenant_id, source.id, signature
+    ):
+        return (
+            fetchers,
+            signature,
+            "unknown",
+            (
+                "The connector's supported metrics or transformation contract changed. "
+                "The full requested period will be imported to revalidate coverage."
+            ),
+        )
+    return fetchers, signature, "metric_set", None
+
+
+async def _last_successful_sync_end(
+    session: AsyncSession,
+    tenant_id: str,
+    source_id: str,
+    *,
+    coverage_signature: str | None = None,
+    require_coverage_contract: bool = False,
+) -> datetime | None:
+    """Return the last provider-confirmed coverage end for adaptive resumption.
+
+    Keyed on the instance, not the type: with two calendars, the type would let
+    one connector's successful window advance the other's resume point, and the
+    second calendar would silently skip everything the first had already fetched.
+    A requested window end is deliberately not used as a watermark. Providers can
+    return a shorter range than requested, and advancing from the request alone can
+    create a permanent gap after the overlap expires.
+    """
+    if require_coverage_contract and not coverage_signature:
+        return None
+
+    res = await session.execute(
+        select(SyncRun.provider_window_end, SyncRun.window_reason)
+        .where(
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.source_id == source_id,
+            SyncRun.status == "success",
+            SyncRun.provider_window_end.is_not(None),
+        )
+        .order_by(SyncRun.provider_window_end.desc())
+    )
+    value: datetime | None = None
+    for provider_end, window_reason in res.all():
+        if coverage_signature is not None and (
+            _coverage_signature_from_reason(window_reason) != coverage_signature
+        ):
+            continue
+        value = provider_end
+        break
     if value is not None and value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value
@@ -2875,6 +3193,7 @@ async def get_coverage(
     tenant_id = get_current_tenant_id()
     window = _validated_window(start, end)
 
+    source: DataSource | None = None
     source_id = None
     if source_type:
         source = await _resolve_source(session, tenant_id, source_type)
@@ -2882,27 +3201,84 @@ async def get_coverage(
             raise HTTPException(status_code=404, detail="Connector not configured")
         source_id = source.id
 
-    fetch = _bucket_fetcher(
-        session, tenant_id, source_id=source_id, metric_type=metric_type
-    )
-    covered, missing, confidence, expectation, total = await analyse_coverage(fetch, window)
+    canonical_metric = None
+    if metric_type:
+        try:
+            canonical_metric = canonical_metric_type(metric_type)
+        except UnknownMetricTypeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    coverage_reason: str | None = None
+    coverage_metrics: list[str] = []
+    if canonical_metric:
+        fetch = _bucket_fetcher(
+            session,
+            tenant_id,
+            source_id=source_id,
+            metric_type=canonical_metric,
+        )
+        covered, missing, confidence, expectation, total = await analyse_coverage(
+            fetch, window
+        )
+        coverage_scope = "single_metric"
+        coverage_metrics = [canonical_metric]
+    elif source is not None:
+        fetchers, _signature, coverage_scope, coverage_reason = await _source_coverage_plan(
+            session, tenant_id, source
+        )
+        if coverage_scope == "metric_set":
+            covered, missing, confidence, expectation, total = await analyse_metric_coverage(
+                fetchers, window
+            )
+            coverage_metrics = sorted(fetchers)
+        else:
+            covered, missing, confidence, expectation, total = (
+                [],
+                [window],
+                "low",
+                None,
+                0,
+            )
+    else:
+        covered, missing, confidence, expectation, total = (
+            [],
+            [window],
+            "low",
+            None,
+            0,
+        )
+        coverage_scope = "unknown"
+        coverage_reason = (
+            "A source and canonical metric were not specified. Coverage cannot be "
+            "evaluated safely across all connectors."
+        )
 
     return {
         "tenant_id": tenant_id,
         "source_type": source_type,
-        "metric_type": metric_type,
+        "metric_type": canonical_metric,
         "window": window.to_dict(),
         "covered_ranges": [r.to_dict() for r in covered],
         "missing_ranges": [r.to_dict() for r in missing],
         "confidence": confidence,
         "expected_points_per_bucket": expectation or None,
         "total_points": total,
+        "coverage_scope": coverage_scope,
+        "coverage_metrics": coverage_metrics,
+        "coverage_reason": coverage_reason,
     }
 
 
 class ImportPlanRequest(BaseModel):
     start: datetime | None = Field(None, description="Requested window start")
     end: datetime | None = Field(None, description="Requested window end")
+    metric_type: str | None = Field(
+        None,
+        description=(
+            "Canonical metric whose coverage may be used for smart skipping. "
+            "Omit to force a conservative full-window import."
+        ),
+    )
     mode: Literal["smart", "force"] = Field("smart", description="Smart skips known-complete ranges")
 
 
@@ -2925,6 +3301,24 @@ async def get_import_plan(
     config = source.config or {}
     now = datetime.now(timezone.utc)
 
+    canonical_metric = None
+    if req.metric_type:
+        try:
+            canonical_metric = canonical_metric_type(req.metric_type)
+        except UnknownMetricTypeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    (
+        configured_fetchers,
+        configured_signature,
+        configured_scope,
+        configured_reason,
+    ) = await _source_coverage_plan(session, tenant_id, source)
+    # Keep a changed manifest/transform contract visible even when the user asks
+    # for one metric explicitly. A stale provider watermark must not advance the
+    # new contract; the planner will conservatively revalidate it.
+    coverage_signature = configured_signature
+
     if req.start and req.end:
         window = _validated_window(req.start, req.end)
         window_reason = "Period chosen by the user."
@@ -2934,17 +3328,41 @@ async def get_import_plan(
             poll_interval_hours=float(config.get("poll_interval_hours", 6)),
             lookback_days=int(config.get("lookback_days", 7)),
             lookback_hours=_configured_lookback_hours(config),
-            last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
+            last_success_end=await _last_successful_sync_end(
+                session,
+                tenant_id,
+                source.id,
+                coverage_signature=coverage_signature,
+                require_coverage_contract=coverage_signature is not None,
+            ),
         )
 
-    fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
-    plan = await plan_import(fetch, window, mode=req.mode)
+    coverage_scope = "single_metric" if canonical_metric else configured_scope
+    metric_fetchers = None if canonical_metric else configured_fetchers
+    coverage_reason = None if canonical_metric else configured_reason
+    fetch = _bucket_fetcher(
+        session,
+        tenant_id,
+        source_id=source.id,
+        metric_type=canonical_metric,
+    )
+    plan = await plan_import(
+        fetch,
+        window,
+        mode=req.mode,
+        metric_type=canonical_metric,
+        require_metric_scope=False,
+        metric_fetchers=metric_fetchers,
+        coverage_scope=coverage_scope,
+        coverage_reason=coverage_reason,
+    )
 
     payload = plan.to_dict()
     payload["window_reason"] = window_reason
     payload["tenant_id"] = tenant_id
     payload["source_id"] = source.id
     payload["source_type"] = source.source_type
+    payload["metric_type"] = canonical_metric
     payload["docs_url"] = "/docs/features/smart-import/"
     return payload
 
@@ -3651,6 +4069,14 @@ async def plan_and_enqueue_sync(
         }
 
     try:
+        (
+            configured_fetchers,
+            configured_signature,
+            coverage_scope,
+            coverage_reason,
+        ) = await _source_coverage_plan(session, tenant_id, source)
+        coverage_signature = configured_signature
+
         if start and end:
             window = _validated_window(start, end)
             window_reason = "Period chosen by the user."
@@ -3660,11 +4086,24 @@ async def plan_and_enqueue_sync(
                 poll_interval_hours=float(config.get("poll_interval_hours", 6)),
                 lookback_days=int(config.get("lookback_days", 7)),
                 lookback_hours=_configured_lookback_hours(config),
-                last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
+                last_success_end=await _last_successful_sync_end(
+                    session,
+                    tenant_id,
+                    source.id,
+                    coverage_signature=coverage_signature,
+                    require_coverage_contract=True,
+                ),
             )
 
         fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
-        plan = await plan_import(fetch, window, mode=mode)
+        plan = await plan_import(
+            fetch,
+            window,
+            mode=mode,
+            metric_fetchers=configured_fetchers,
+            coverage_scope=coverage_scope,
+            coverage_reason=coverage_reason,
+        )
     except HTTPException as exc:
         await _record_failed_sync_request(
             session,
@@ -3702,7 +4141,9 @@ async def plan_and_enqueue_sync(
         trigger=trigger,
         window_start=effective.start,
         window_end=effective.end,
-        window_reason=f"{window_reason} {plan.reason}".strip()[:255],
+        window_reason=_with_coverage_marker(
+            f"{window_reason} {plan.reason}".strip(), coverage_signature
+        )[:255],
         status="skipped" if nothing_to_do else "queued",
         skipped_ranges=[r.to_dict() for r in plan.covered],
         message=plan.reason[:512],

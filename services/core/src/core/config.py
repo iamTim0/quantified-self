@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -20,6 +21,9 @@ def _default_jwt_secret() -> str:
 
 class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-core-service"
+    # Runtime role lets the same Core image scale API, ingestion and scheduling
+    # independently. `all` preserves the local-development single-process mode.
+    CORE_ROLE: str = "all"  # all | api | ingest | scheduler
     # Matches the Gateway's convention. "dev" (or anything not in
     # core.security.secret_audit.PRODUCTION_ENVIRONMENTS) means published default
     # secrets are a loud warning; production means Core refuses to start on them.
@@ -50,6 +54,9 @@ class Settings(BaseSettings):
     # JWT_SECRET so a compromised importer cannot mint user tokens. Empty means
     # "derive a deterministic dev value" — see core.security.tokens.
     INTERNAL_SERVICE_SECRET: str = ""
+    # Optional JSON object mapping service names to distinct bearer secrets. The
+    # legacy single secret remains a development/rollout fallback.
+    INTERNAL_SERVICE_SECRETS: str = ""
     ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
     # Off by default: this is a personal analytics platform, and a public
     # deployment with open signup is a decision, not a default. Create the
@@ -93,5 +100,22 @@ class Settings(BaseSettings):
     POST_LOGOUT_REDIRECT_URI: str = "http://127.0.0.1:8000/"
 
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
+
+    @property
+    def internal_service_secrets(self) -> dict[str, str]:
+        """Parse per-service credentials without exposing their values in logs."""
+        if not self.INTERNAL_SERVICE_SECRETS:
+            return {}
+        try:
+            value = json.loads(self.INTERNAL_SERVICE_SECRETS)
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(name): secret
+            for name, secret in value.items()
+            if isinstance(name, str) and isinstance(secret, str) and secret
+        }
 
 settings = Settings()

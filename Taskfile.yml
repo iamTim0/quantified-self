@@ -262,6 +262,7 @@ tasks:
     # exercises the Fernet envelope); everything else they use is stdlib.
     dir: specs
     cmds:
+      - python .agents/scripts/check_invariant_tests.py
       - uv run --with pytest --with cryptography pytest tests
 
   test:service:
@@ -287,6 +288,7 @@ tasks:
     # that runs natively on Windows, where Fizzbee has no binary at all.
     cmds:
       - python .agents/scripts/lint_specs.py
+      - python .agents/scripts/check_invariant_tests.py
 
   fizz:check:
     desc: "Model-check every Fizzbee specification in specs/"

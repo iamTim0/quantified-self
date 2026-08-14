@@ -9,6 +9,7 @@ Maps to Fizzbee Invariants:
 """
 
 import io
+import json
 import tempfile
 import zipfile
 from pathlib import Path
@@ -143,7 +144,10 @@ async def test_the_archive_is_published_then_deleted(mock_close, mock_report):
 
     subjects = {subject for subject, _ in fake.js.published}
     assert subjects == {"qs.ingest.apple_health"}
-    assert len(fake.js.published) == 2
+    assert len(fake.js.published) == 1
+    envelope = json.loads(fake.js.published[0][1])
+    assert envelope["schema_version"] == 2
+    assert len(envelope["events"]) == 2
     assert not Path(path).exists()
 
     mock_close.assert_awaited_once()
@@ -172,8 +176,8 @@ async def test_a_late_ack_does_not_cost_the_import(mock_close, mock_report):
             path, tenant_id=TENANT, source_id=SOURCE, sync_run_id="run-1", req_id="req-1"
         )
 
-    assert len(slow.published) == 2
-    assert slow.attempts == 4  # two refusals, then both points
+    assert len(slow.published) == 1
+    assert slow.attempts == 3  # two refusals, then the bounded envelope
     assert mock_close.await_args.kwargs["status"] == "idle"
 
 

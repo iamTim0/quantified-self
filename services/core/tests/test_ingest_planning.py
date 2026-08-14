@@ -22,6 +22,7 @@ from core.ingest_planning import (
     BucketCount,
     TimeRange,
     analyse_coverage,
+    analyse_metric_coverage,
     choose_bucket_seconds,
     classify_buckets,
     compute_sync_window,
@@ -256,6 +257,57 @@ async def test_interior_gap_is_reported_and_not_skipped():
         r.start == BASE + timedelta(days=3) and r.end == BASE + timedelta(days=6)
         for r in plan.missing
     ), plan.missing
+
+
+@pytest.mark.asyncio
+async def test_metric_coverage_requires_every_supported_metric():
+    """Verifies Fizzbee Invariant: NeverSkipIncompleteMetric.
+
+    A dense metric cannot make a range complete when another supported metric is
+    absent. Completeness is the intersection of canonical metric coverage.
+    """
+    window = TimeRange(BASE, BASE + timedelta(days=5))
+    metric_fetchers = {
+        "steps": _fetcher([t for d in range(5) for t in _hourly(d)]),
+        "energy_active": _fetcher([t for d in range(3) for t in _hourly(d)]),
+    }
+
+    plan = await plan_import(
+        _fetcher([]),
+        window,
+        metric_fetchers=metric_fetchers,
+        coverage_scope="metric_set",
+        coarse_bucket_seconds=DAY,
+    )
+
+    assert plan.covered == [TimeRange(BASE, BASE + timedelta(days=3))]
+    assert plan.recommended == TimeRange(BASE + timedelta(days=3), window.end)
+    assert plan.coverage_metrics == ["energy_active", "steps"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_metric_contract_replans_the_whole_window():
+    """Verifies Fizzbee Invariant: UnknownCoverageImports.
+
+    Without a supported-metric/schema contract, existing aggregate density is not
+    evidence that every metric was imported.
+    """
+    window = TimeRange(BASE, BASE + timedelta(days=2))
+    full_points = [t for d in range(2) for t in _hourly(d)]
+
+    plan = await plan_import(
+        _fetcher(full_points),
+        window,
+        coverage_scope="unknown",
+        coverage_reason="Coverage contract changed; revalidate the window.",
+        coarse_bucket_seconds=DAY,
+    )
+
+    assert plan.covered == []
+    assert plan.missing == [window]
+    assert plan.recommended == window
+    assert plan.confidence == "low"
+    assert plan.reason.startswith("Coverage contract changed")
 
 
 @pytest.mark.asyncio

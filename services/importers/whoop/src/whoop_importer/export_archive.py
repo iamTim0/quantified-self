@@ -23,7 +23,8 @@ import io
 import logging
 import zipfile
 from collections.abc import Iterator
-from typing import Any
+from pathlib import Path
+from typing import IO, Any
 
 from shared_schemas.metrics import MetricUnit
 
@@ -315,55 +316,71 @@ def _boolean(raw: str) -> bool | None:
     return None
 
 
-def read_export(data: bytes) -> Iterator[tuple[str, dict[str, Any]]]:
+def read_export(source: bytes | str | Path | IO[bytes]) -> Iterator[tuple[str, dict[str, Any]]]:
     """Yield ``(kind, record)`` pairs the Whoop transformer can consume.
 
     Records come out flat, with the field names ``EXPORT_METRICS`` expects, and the
-    caller passes that table to `transform_whoop_records`.
+    caller passes that table to `transform_whoop_records`. ``source`` may be the
+    bytes used by small callers and tests, or a path/file object for large uploads.
+    The latter is important: the ZIP reader can seek through a spooled archive
+    without keeping the compressed upload in memory.
     """
-    if len(data) > MAX_ARCHIVE_BYTES:
-        raise ArchiveTooLarge(
-            f"The archive is larger than {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB."
-        )
+    if isinstance(source, bytes):
+        if len(source) > MAX_ARCHIVE_BYTES:
+            raise ArchiveTooLarge(
+                f"The archive is larger than {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB."
+            )
+        archive_source: str | Path | IO[bytes] = io.BytesIO(source)
+    else:
+        archive_source = source
+        if isinstance(source, (str, Path)) and Path(source).stat().st_size > MAX_ARCHIVE_BYTES:
+            raise ArchiveTooLarge(
+                f"The archive is larger than {MAX_ARCHIVE_BYTES // (1024 * 1024)} MB."
+            )
 
     try:
-        archive = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile as exc:
+        archive = zipfile.ZipFile(archive_source)
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
         raise ArchiveUnreadable("That file is not a ZIP archive.") from exc
 
-    members = [
-        info for info in archive.infolist() if not info.is_dir() and _kinds_for(info.filename)
-    ]
-    if not members:
-        raise ArchiveUnreadable(
-            "No recognisable Whoop CSV was found in the archive. "
-            f"Expected one of: {', '.join(sorted(CSV_KINDS))}."
-        )
+    # The generator owns the ZIP handle. A caller that stops after one batch can
+    # close the generator and release the archive before deleting its temporary file.
+    with archive:
+        members = [
+            info
+            for info in archive.infolist()
+            if not info.is_dir() and _kinds_for(info.filename)
+        ]
+        if not members:
+            raise ArchiveUnreadable(
+                "No recognisable Whoop CSV was found in the archive. "
+                f"Expected one of: {', '.join(sorted(CSV_KINDS))}."
+            )
 
-    extracted = 0
-    rows = 0
-    for info in members:
-        kinds = _kinds_for(info.filename)
+        extracted = 0
+        rows = 0
+        for info in members:
+            kinds = _kinds_for(info.filename)
 
-        with archive.open(info) as handle:
-            # Decoded incrementally and counted as it comes: `info.file_size` is a
-            # number the archive claims about itself, and a zip bomb lies about it.
-            text = io.TextIOWrapper(handle, encoding="utf-8-sig", errors="replace")
-            reader = csv.DictReader(text)
-            for row in reader:
-                extracted += sum(len(value or "") for value in row.values())
-                if extracted > MAX_EXTRACTED_BYTES:
-                    raise ArchiveTooLarge("The archive expands to more than we will read.")
-                rows += 1
-                if rows > MAX_ROWS:
-                    raise ArchiveTooLarge(f"The archive holds more than {MAX_ROWS} rows.")
+            with archive.open(info) as handle:
+                # Decoded incrementally and counted as it comes: `info.file_size` is a
+                # number the archive claims about itself, and a zip bomb lies about it.
+                text = io.TextIOWrapper(handle, encoding="utf-8-sig", errors="replace")
+                reader = csv.DictReader(text)
+                for row in reader:
+                    extracted += sum(len(value or "") for value in row.values())
+                    if extracted > MAX_EXTRACTED_BYTES:
+                        raise ArchiveTooLarge("The archive expands to more than we will read.")
+                    rows += 1
+                    if rows > MAX_ROWS:
+                        raise ArchiveTooLarge(f"The archive holds more than {MAX_ROWS} rows.")
 
-                # Per kind: the record differs between them only in which column its
-                # timestamp came from, and that is exactly the part that must differ.
-                for kind in kinds:
-                    record = _to_record(row, kind)
-                    if record is not None:
-                        yield kind, record
+                    # Per kind: the record differs between them only in which column its
+                    # timestamp came from, and that is exactly the part that must differ.
+                    for kind in kinds:
+                        record = _to_record(row, kind)
+                        if record is not None:
+                            yield kind, record
 
 
 def _to_record(row: dict[str, str], kind: str) -> dict[str, Any] | None:

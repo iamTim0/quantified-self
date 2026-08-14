@@ -60,6 +60,34 @@ class MetricPoint:
 
 
 @dataclass(frozen=True)
+class MetricSeriesBucket:
+    """One server-side aggregate bucket; ``None`` represents a gap."""
+
+    metric_type: str
+    bucket_start: datetime
+    value: float | None
+    sample_count: int
+    source_id: str = ""
+
+
+@dataclass(frozen=True)
+class MetricSeriesIssue:
+    """A non-fatal condition attached to a server-side metric series."""
+
+    code: str
+    metric_type: str
+    source_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class MetricSeriesResponse:
+    """Source-scoped buckets plus machine-readable query conditions."""
+
+    buckets: list[MetricSeriesBucket]
+    issues: list[MetricSeriesIssue] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
 class PointBatch:
     """A bounded Core query and whether more matching points existed."""
 
@@ -90,6 +118,7 @@ def _metadata(request_id: str) -> list[tuple[str, str]]:
     return [
         ("authorization", f"Bearer {_service_token()}"),
         ("x-request-id", request_id),
+        ("x-service-name", settings.SERVICE_NAME),
     ]
 
 
@@ -113,6 +142,7 @@ class CoreClient:
         end: datetime,
         request_id: str,
         metric_type: str | None = None,
+        source_id: str | None = None,
     ) -> list[MetricPoint]:
         """Every data point for a tenant in a window, following pagination."""
         return (
@@ -122,6 +152,7 @@ class CoreClient:
                 end=end,
                 request_id=request_id,
                 metric_type=metric_type,
+                source_id=source_id,
                 max_points=None,
             )
         ).points
@@ -134,6 +165,7 @@ class CoreClient:
         end: datetime,
         request_id: str,
         metric_type: str | None = None,
+        source_id: str | None = None,
         max_points: int | None,
     ) -> PointBatch:
         """Read a bounded window without silently presenting a partial result as complete."""
@@ -155,6 +187,8 @@ class CoreClient:
                     )
                     if metric_type is not None:
                         query.metric_type = metric_type
+                    if source_id is not None:
+                        query.source_id = source_id
                     response = await stub.QueryDataPoints(
                         query,
                         metadata=_metadata(request_id),
@@ -186,6 +220,64 @@ class CoreClient:
             raise CoreUnavailable(f"Core gRPC query failed: {exc.code().name}") from exc
 
         return PointBatch(points=points, truncated=False)
+
+    async def fetch_metric_series(
+        self,
+        tenant_id: str,
+        *,
+        start: datetime,
+        end: datetime,
+        request_id: str,
+        metric_types: list[str] | None = None,
+        resolution: int = pb.METRIC_SERIES_RESOLUTION_DAY,
+        source_id: str | None = None,
+    ) -> MetricSeriesResponse:
+        """Read a bounded, registry-aware series from Core without raw points."""
+        query = pb.QueryMetricSeriesRequest(
+            tenant_id=tenant_id,
+            start_time=_timestamp(start),
+            end_time=_timestamp(end),
+            resolution=resolution,
+        )
+        if metric_types:
+            query.metric_types.extend(metric_types)
+        if source_id is not None:
+            query.source_id = source_id
+
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                response = await stub.QueryMetricSeries(
+                    query,
+                    metadata=_metadata(request_id),
+                )
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC metric series query failed: {exc.code().name}"
+            ) from exc
+
+        return MetricSeriesResponse(
+            buckets=[
+                MetricSeriesBucket(
+                    metric_type=bucket.metric_type,
+                    bucket_start=bucket.bucket_start.ToDatetime().replace(
+                        tzinfo=timezone.utc
+                    ),
+                    value=bucket.value if bucket.HasField("value") else None,
+                    sample_count=int(bucket.sample_count),
+                    source_id=bucket.source_id,
+                )
+                for bucket in response.buckets
+            ],
+            issues=[
+                MetricSeriesIssue(
+                    code=issue.code,
+                    metric_type=issue.metric_type,
+                    source_ids=list(issue.source_ids),
+                )
+                for issue in response.issues
+            ],
+        )
 
     async def fetch_metric_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         """Canonical or registered dynamic metric names stored for one tenant."""

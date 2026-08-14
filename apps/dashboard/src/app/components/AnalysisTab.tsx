@@ -135,6 +135,8 @@ interface Insights {
   disclaimer: string;
   metrics_analysed: string[];
   metrics_excluded_for_quality: string[];
+  metric_source_ids?: Record<string, string[]>;
+  source_issues?: { code: string; metric_type: string; source_ids: string[] }[];
   data_quality: Record<string, Quality>;
   correlations: Correlation[];
   lagged_correlations: LaggedCorrelation[];
@@ -143,6 +145,12 @@ interface Insights {
   routines: Record<string, Routine>;
   period_comparisons: Record<string, unknown>;
   docs_url?: string;
+}
+
+interface AnalysisSource {
+  id: string;
+  source_type: string;
+  display_name?: string;
 }
 
 type Section = "overview" | "correlations" | "trends" | "anomalies" | "routines" | "quality";
@@ -158,6 +166,7 @@ const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[]
 
 export default function AnalysisTab({
   apiBase,
+  tenantId,
   refreshTrigger,
 }: {
   apiBase: string;
@@ -174,6 +183,8 @@ export default function AnalysisTab({
   const [minStrength, setMinStrength] = useState(0.2);
   const [onlySignificant, setOnlySignificant] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sources, setSources] = useState<AnalysisSource[]>([]);
+  const [selectedSource, setSelectedSource] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,8 +195,18 @@ export default function AnalysisTab({
         min_strength: String(minStrength),
         compare_to_previous: "true",
       });
-      const res = await apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`);
+      if (selectedSource !== "all") params.set("source_id", selectedSource);
+      const [res, sourceRes] = await Promise.all([
+        apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`),
+        apiFetch(`${apiBase}/api/v1/data/sources`, {
+          headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
+        }),
+      ]);
       if (!res.ok) throw new Error(t("analysis.loadFailed"));
+      if (sourceRes.ok) {
+        const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
+        setSources(sourceData.connectors ?? []);
+      }
       setData(await res.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -194,7 +215,7 @@ export default function AnalysisTab({
     }
     // `t` belongs here: without it the error message keeps the language captured at
     // first render, so switching to German left this one string in English.
-  }, [apiBase, windowDays, minStrength, t]);
+  }, [apiBase, minStrength, selectedSource, t, tenantId, windowDays]);
 
   useEffect(() => {
     let cancelled = false;
@@ -295,6 +316,23 @@ export default function AnalysisTab({
             ))}
           </select>
         </label>
+        {sources.length > 0 && (
+          <label className="text-xs font-semibold text-slate-600">
+            {t("analysis.source")}
+            <select
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            >
+              <option value="all">{t("analysis.allSources")}</option>
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.display_name || source.source_type}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
           <input
             type="checkbox"
@@ -362,6 +400,14 @@ export default function AnalysisTab({
               hint={t("analysis.outsideNormal")}
             />
           </div>
+
+          {(data.source_issues?.length ?? 0) > 0 && (
+            <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
+              {t("analysis.ambiguousSources", {
+                count: data.source_issues?.length ?? 0,
+              })}
+            </p>
+          )}
 
           {/*
             The service still sends `disclaimer`, in English, for consumers that are not
