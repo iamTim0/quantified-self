@@ -10,7 +10,9 @@ Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 import asyncio
 import json
 import logging
+import math
 import os
+import re
 import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager, suppress
@@ -40,6 +42,7 @@ from shared_schemas.metrics import (
     METRIC_ALIASES,
     METRIC_CATALOG,
     Cadence,
+    IngestResolution,
     MetricDefinition,
     UnknownMetricTypeError,
     canonical_metric_type,
@@ -72,7 +75,9 @@ from core.db.models import (
     DataSource,
     ExplorerView,
     IngestFieldReport,
+    MetricIngestPolicy,
     MetricMappingRule,
+    MetricRollup,
     OidcAuthRequest,
     OidcProvider,
     QuarantinedDataPoint,
@@ -115,6 +120,7 @@ from core.oauth_refresh import (
     needs_refresh,
     refresh_credential,
 )
+from core.rollups import update_rollups_for_point
 from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
 from core.security.auth import (
     AuthenticationMiddleware,
@@ -250,6 +256,50 @@ class UserLoginRequest(BaseModel):
     password: str = Field(..., description="User password")
 
 
+_PROFILE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class UpdateProfileRequest(BaseModel):
+    """Self-service account fields and the workspace label."""
+
+    name: str | None = Field(None, min_length=1, max_length=128)
+    email: str | None = Field(None, min_length=3, max_length=320)
+    workspace_name: str | None = Field(None, min_length=1, max_length=128)
+
+    @field_validator("name", "workspace_name", mode="before")
+    @classmethod
+    def trim_display_names(cls, value: Any) -> Any:
+        """Reject whitespace-only labels while preserving omitted fields."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("must be a string")
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("must not be blank")
+        return trimmed
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        """Store sign-in addresses canonically and catch obvious typos."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("must be a string")
+        normalized = value.strip().casefold()
+        if not _PROFILE_EMAIL.fullmatch(normalized):
+            raise ValueError("must be a valid email address")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_one_change(self) -> "UpdateProfileRequest":
+        """Do not accept an empty profile update."""
+        if self.name is None and self.email is None and self.workspace_name is None:
+            raise ValueError("at least one profile field is required")
+        return self
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if getattr(app.state, "testing", False):
@@ -351,6 +401,24 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
 
 setup_tracing_logger("qs-core")
 logger = logging.getLogger(__name__)
+
+DEFAULT_LOOKBACK_HOURS = 7 * 24
+
+
+def _configured_lookback_hours(config: dict[str, Any] | None) -> float:
+    """Read the sub-day lookback while preserving legacy day-only configs."""
+    config = config or {}
+    raw_hours = config.get("lookback_hours")
+    if raw_hours is not None:
+        try:
+            return max(1.0, min(365 * 24, float(raw_hours)))
+        except (TypeError, ValueError):
+            pass
+    try:
+        raw_days = float(config.get("lookback_days", DEFAULT_LOOKBACK_HOURS / 24))
+    except (TypeError, ValueError):
+        raw_days = DEFAULT_LOOKBACK_HOURS / 24
+    return max(24.0, min(365 * 24, raw_days * 24))
 
 app = FastAPI(
     title=settings.SERVICE_NAME,
@@ -518,6 +586,7 @@ async def signup(
         "email": req.email,
         "name": req.name,
         "role": "owner",
+        "workspace_name": tenant.name,
     }
 
 
@@ -533,6 +602,10 @@ async def login(
 
     if not user or not pwd_context.verify(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
 
     tokens = await _issue_session(
         session,
@@ -551,6 +624,7 @@ async def login(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
     }
 
 
@@ -616,10 +690,16 @@ async def refresh_session(
     if expires_at <= now:
         raise HTTPException(status_code=401, detail="Refresh token has expired")
 
-    user_res = await session.execute(select(User).where(User.id == stored.user_id))
+    user_res = await session.execute(
+        select(User).where(User.id == stored.user_id, User.tenant_id == stored.tenant_id)
+    )
     user = user_res.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
 
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
     replacement = RefreshToken(
@@ -662,6 +742,7 @@ async def refresh_session(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
     }
 
 
@@ -828,13 +909,18 @@ async def get_current_user(session: AsyncSession = Depends(get_session)):
     """Return the authenticated identity. Used by the dashboard to validate a session."""
     principal = get_current_principal()
     res = await session.execute(
-        select(User).where(
-            User.id == principal.user_id, User.tenant_id == principal.tenant_id
+        select(User, Tenant)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(
+            User.id == principal.user_id,
+            User.tenant_id == principal.tenant_id,
+            Tenant.id == principal.tenant_id,
         )
     )
-    user = res.scalars().first()
-    if not user:
+    row = res.first()
+    if not row:
         raise HTTPException(status_code=401, detail="Account no longer exists")
+    user, tenant = row
 
     return {
         "user_id": user.id,
@@ -842,6 +928,101 @@ async def get_current_user(session: AsyncSession = Depends(get_session)):
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant.name,
+    }
+
+
+@app.put("/api/v1/auth/me")
+async def update_current_user_profile(
+    req: UpdateProfileRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update the caller's identity and, for admins, the workspace label.
+
+    Email changes revoke every existing session and immediately issue one fresh
+    session for the caller. This keeps the current browser usable while closing
+    any session that may still know the old sign-in address.
+    """
+    principal = get_current_principal()
+    res = await session.execute(
+        select(User, Tenant)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(
+            User.id == principal.user_id,
+            User.tenant_id == principal.tenant_id,
+            Tenant.id == principal.tenant_id,
+        )
+    )
+    row = res.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account no longer exists")
+    user, tenant = row
+
+    if req.workspace_name is not None and user.role not in {"owner", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only owners and administrators can rename the workspace.",
+        )
+
+    email_changed = req.email is not None and req.email != user.email
+    if email_changed:
+        existing = await session.execute(
+            select(User.id).where(
+                User.tenant_id == principal.tenant_id,
+                User.id != user.id,
+                func.lower(User.email) == req.email,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email address already exists.",
+            )
+        user.email = req.email
+    if req.name is not None:
+        user.name = req.name
+    if req.workspace_name is not None:
+        tenant.name = req.workspace_name
+
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email address already exists.",
+        ) from exc
+
+    if email_changed:
+        await _revoke_all_sessions(
+            session,
+            tenant_id=principal.tenant_id,
+            user_id=user.id,
+            reason="email_change",
+        )
+    await session.commit()
+
+    session_tokens: dict[str, Any] = {}
+    if email_changed:
+        session_tokens = await _issue_session(
+            session,
+            response,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            email=user.email,
+            role=user.role,
+        )
+
+    return {
+        **session_tokens,
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "workspace_name": tenant.name,
+        "session_refreshed": email_changed,
     }
 
 
@@ -1384,6 +1565,9 @@ async def _oidc_session_response(
     linked: bool,
 ) -> dict[str, Any]:
     """Issue the same session an email/password login would."""
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
     tokens = await _issue_session(
         session,
         response,
@@ -1407,6 +1591,7 @@ async def _oidc_session_response(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
         "provider": provider_slug,
         "account_created": linked,
     }
@@ -1687,6 +1872,42 @@ def _definition_payload(
         return None
 
 
+def _ingest_policy_payload(
+    metric_type: str,
+    definition: MetricDefinition | None = None,
+    override: MetricIngestPolicy | None = None,
+) -> dict[str, Any]:
+    """Serialize the effective importer policy without exposing tenant internals."""
+    definition = definition or _definition_payload(metric_type)
+    if isinstance(definition, MetricDefinition):
+        default_resolution = definition.default_ingest_resolution.value
+        aggregation = definition.aggregation.value
+        retention = definition.raw_retention_days
+    elif isinstance(definition, dict):
+        default_resolution = definition.get("ingest_resolution")
+        if default_resolution is None:
+            default_resolution = (
+                IngestResolution.MINUTE.value
+                if definition.get("cadence") == Cadence.CONTINUOUS.value
+                else IngestResolution.RAW.value
+            )
+        aggregation = definition.get("aggregation", "average")
+        retention = int(definition.get("raw_retention_days", 90))
+    else:
+        default_resolution = IngestResolution.RAW.value
+        aggregation = "average"
+        retention = 90
+    resolution = override.resolution if override is not None else default_resolution
+    return {
+        "metric_type": metric_type,
+        "resolution": resolution,
+        "default_resolution": default_resolution,
+        "aggregation": aggregation,
+        "raw_retention_days": override.raw_retention_days if override else retention,
+        "effective_from": override.updated_at.isoformat() if override else None,
+    }
+
+
 def _round(value: float | None, digits: int) -> float | None:
     """Round an aggregate to the precision the metric declares."""
     return round(float(value), digits) if value is not None else None
@@ -1698,50 +1919,142 @@ async def query_metrics(
     metric_type: str | None = Query(None, description="Filter by metric type (e.g. sleep_score, steps)"),
     start_time: str | None = Query(None, description="ISO start timestamp"),
     end_time: str | None = Query(None, description="ISO end timestamp"),
-    limit: int = Query(100, ge=1, le=1000, description="Max data points to return"),
+    source_id: str | None = Query(None, description="Filter by connector instance"),
+    source_type: str | None = Query(None, description="Filter by connector type"),
+    resolution: Literal["auto", "raw", "minute", "hour", "day"] = Query(
+        "raw", description="Raw points or a server-side rollup resolution"
+    ),
+    limit: int = Query(100, ge=1, le=10000, description="Max points or buckets to return"),
     sort: Literal["asc", "desc"] = Query("asc", description="Sort by timestamp"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Query time-series metric data points for the authenticated tenant."""
+    """Query raw points or bounded, tenant-scoped rollups."""
     tenant_id = get_current_tenant_id()
-    stmt = select(DataPoint).where(DataPoint.tenant_id == tenant_id)
+    start_dt: datetime | None = None
+    end_dt: datetime | None = None
+    try:
+        if start_time:
+            start_dt = datetime.fromisoformat(start_time)
+        if end_time:
+            end_dt = datetime.fromisoformat(end_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ISO timestamp") from None
+    if start_dt and start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    if end_dt and end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
+    if start_dt and end_dt and end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
+    effective_resolution = resolution
+    if resolution == "auto":
+        if not start_dt or not end_dt:
+            effective_resolution = "raw"
+        else:
+            duration = end_dt - start_dt
+            effective_resolution = (
+                "minute" if duration <= timedelta(hours=24)
+                else "hour" if duration <= timedelta(days=90)
+                else "day"
+            )
+
+    source_filter = []
+    if source_id:
+        source_filter.append(DataSource.id == source_id)
+    if source_type:
+        source_filter.append(DataSource.source_type == source_type)
+
+    if effective_resolution != "raw":
+        stmt = (
+            select(MetricRollup, DataSource.source_type)
+            .join(
+                DataSource,
+                and_(
+                    DataSource.id == MetricRollup.source_id,
+                    DataSource.tenant_id == tenant_id,
+                ),
+            )
+            .where(
+                MetricRollup.tenant_id == tenant_id,
+                MetricRollup.resolution == effective_resolution,
+                *source_filter,
+            )
+        )
+        if metric_type:
+            stmt = stmt.where(MetricRollup.metric_type == metric_type)
+        if start_dt:
+            stmt = stmt.where(MetricRollup.bucket_start >= start_dt)
+        if end_dt:
+            stmt = stmt.where(MetricRollup.bucket_start <= end_dt)
+        stmt = stmt.order_by(
+            MetricRollup.bucket_start.desc()
+            if sort == "desc"
+            else MetricRollup.bucket_start.asc()
+        ).limit(limit)
+        rows = (await session.execute(stmt)).all()
+        if rows:
+            return {
+                "tenant_id": tenant_id,
+                "count": len(rows),
+                "resolution": effective_resolution,
+                "rollup_available": True,
+                "data_points": [
+                    {
+                        "id": rollup.id,
+                        "source_id": rollup.source_id,
+                        "source_type": source,
+                        "metric_type": rollup.metric_type,
+                        "timestamp": rollup.bucket_start.isoformat(),
+                        "value": rollup.value,
+                        "metadata": {
+                            **(rollup.metadata_ or {}),
+                            "sample_count": rollup.sample_count,
+                            "resolution": rollup.resolution,
+                            "derived": not rollup.is_provider_total,
+                        },
+                        "sample_count": rollup.sample_count,
+                        "is_derived": not rollup.is_provider_total,
+                    }
+                    for rollup, source in rows
+                ],
+            }
+
+    stmt = (
+        select(DataPoint, DataSource.source_type)
+        .join(
+            DataSource,
+            and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+        )
+        .where(DataPoint.tenant_id == tenant_id, *source_filter)
+    )
     if metric_type:
         stmt = stmt.where(DataPoint.metric_type == metric_type)
-
-    if start_time:
-        try:
-            start_dt = datetime.fromisoformat(start_time)
-            stmt = stmt.where(DataPoint.timestamp >= start_dt)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_time ISO format") from None
-
-    if end_time:
-        try:
-            end_dt = datetime.fromisoformat(end_time)
-            stmt = stmt.where(DataPoint.timestamp <= end_dt)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_time ISO format") from None
-
+    if start_dt:
+        stmt = stmt.where(DataPoint.timestamp >= start_dt)
+    if end_dt:
+        stmt = stmt.where(DataPoint.timestamp <= end_dt)
     stmt = stmt.order_by(
         DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
     ).limit(limit)
-    res = await session.execute(stmt)
-    points = res.scalars().all()
-
+    rows = (await session.execute(stmt)).all()
     return {
         "tenant_id": tenant_id,
-        "count": len(points),
+        "count": len(rows),
+        "resolution": "raw",
+        "rollup_available": False,
         "data_points": [
             {
-                "id": p.id,
-                "metric_type": p.metric_type,
-                "timestamp": p.timestamp.isoformat(),
-                "value": p.value,
-                "metadata": p.metadata_,
-                "idempotency_key": p.idempotency_key,
+                "id": point.id,
+                "source_id": point.source_id,
+                "source_type": source,
+                "metric_type": point.metric_type,
+                "timestamp": point.timestamp.isoformat(),
+                "value": point.value,
+                "metadata": point.metadata_,
+                "idempotency_key": point.idempotency_key,
+                "is_derived": False,
             }
-            for p in points
+            for point, source in rows
         ],
     }
 
@@ -1763,6 +2076,80 @@ async def get_metric_catalog():
         "metrics": [METRIC_CATALOG[key].model_dump(mode="json") for key in CANONICAL_KEYS],
         "aliases": dict(sorted(METRIC_ALIASES.items())),
         "namespaces": [ns.model_dump(mode="json") for ns in DYNAMIC_NAMESPACES],
+    }
+
+
+class MetricIngestPolicyRequest(BaseModel):
+    """Tenant-owned resolution override used by future imports."""
+
+    resolution: IngestResolution
+    raw_retention_days: int = Field(90, ge=0, le=3650)
+
+
+async def _effective_ingest_policies(
+    session: AsyncSession, tenant_id: str
+) -> dict[str, dict[str, Any]]:
+    """Build the full registry policy map and apply tenant overrides."""
+    result = await session.execute(
+        select(MetricIngestPolicy).where(MetricIngestPolicy.tenant_id == tenant_id)
+    )
+    overrides = {row.metric_type: row for row in result.scalars().all()}
+    return {
+        key: _ingest_policy_payload(key, override=overrides.get(key))
+        for key in CANONICAL_KEYS
+    }
+
+
+@app.get("/api/v1/data/metrics/ingest-policy")
+async def get_ingest_policy(session: AsyncSession = Depends(get_session)):
+    """Return effective metric resolution rules for the authenticated workspace."""
+    tenant_id = get_current_tenant_id()
+    return {
+        "tenant_id": tenant_id,
+        "policies": await _effective_ingest_policies(session, tenant_id),
+        "applies_to": "future_imports",
+    }
+
+
+@app.put("/api/v1/data/metrics/ingest-policy/{metric_type}")
+async def set_ingest_policy(
+    metric_type: str,
+    req: MetricIngestPolicyRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Set one workspace metric resolution for future importer runs."""
+    tenant_id = get_current_tenant_id()
+    try:
+        canonical = canonical_metric_type(metric_type)
+    except UnknownMetricTypeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    if canonical != metric_type:
+        raise HTTPException(status_code=422, detail="metric_type must be canonical")
+
+    definition = describe(canonical)
+    statement = pg_insert(MetricIngestPolicy).values(
+        tenant_id=tenant_id,
+        metric_type=canonical,
+        resolution=req.resolution.value,
+        raw_retention_days=req.raw_retention_days,
+        updated_at=datetime.now(timezone.utc),
+    )
+    statement = statement.on_conflict_do_update(
+        index_elements=["tenant_id", "metric_type"],
+        set_={
+            "resolution": statement.excluded.resolution,
+            "raw_retention_days": statement.excluded.raw_retention_days,
+            "updated_at": statement.excluded.updated_at,
+        },
+    )
+    await session.execute(statement)
+    await session.commit()
+    return {
+        "tenant_id": tenant_id,
+        "policy": _ingest_policy_payload(canonical, definition=definition),
+        "resolution": req.resolution.value,
+        "raw_retention_days": req.raw_retention_days,
+        "applies_to": "future_imports",
     }
 
 
@@ -1807,25 +2194,46 @@ async def list_metric_types(
 async def get_metrics_summary(
     session: AsyncSession = Depends(get_session),
 ):
-    """Get summary statistics (latest, average, min, max) for all metric types of the tenant."""
+    """Get summary statistics from day rollups, with a compatibility fallback."""
     tenant_id = get_current_tenant_id()
-    stmt = (
+    rollup_stmt = (
         select(
-            DataPoint.metric_type,
-            func.count(DataPoint.id).label("count"),
-            func.avg(DataPoint.value).label("avg_value"),
-            func.min(DataPoint.value).label("min_value"),
-            func.max(DataPoint.value).label("max_value"),
-            func.sum(DataPoint.value).label("sum_value"),
-            func.max(DataPoint.timestamp).label("latest_timestamp"),
+            MetricRollup.metric_type,
+            func.sum(MetricRollup.sample_count).label("count"),
+            (
+                func.sum(MetricRollup.sum_value)
+                / func.nullif(func.sum(MetricRollup.sample_count), 0)
+            ).label("avg_value"),
+            func.min(MetricRollup.min_value).label("min_value"),
+            func.max(MetricRollup.max_value).label("max_value"),
+            func.sum(MetricRollup.sum_value).label("sum_value"),
+            func.max(MetricRollup.last_timestamp).label("latest_timestamp"),
         )
-        .where(DataPoint.tenant_id == tenant_id)
-        .group_by(DataPoint.metric_type)
-        .order_by(DataPoint.metric_type.asc())
+        .where(
+            MetricRollup.tenant_id == tenant_id,
+            MetricRollup.resolution == "day",
+        )
+        .group_by(MetricRollup.metric_type)
+        .order_by(MetricRollup.metric_type.asc())
     )
-
-    res = await session.execute(stmt)
-    rows = res.all()
+    rows = (await session.execute(rollup_stmt)).all()
+    rollup_backed = bool(rows)
+    if not rows:
+        stmt = (
+            select(
+                DataPoint.metric_type,
+                func.count(DataPoint.id).label("count"),
+                func.avg(DataPoint.value).label("avg_value"),
+                func.min(DataPoint.value).label("min_value"),
+                func.max(DataPoint.value).label("max_value"),
+                func.sum(DataPoint.value).label("sum_value"),
+                func.max(DataPoint.timestamp).label("latest_timestamp"),
+            )
+            .where(DataPoint.tenant_id == tenant_id)
+            .group_by(DataPoint.metric_type)
+            .order_by(DataPoint.metric_type.asc())
+        )
+        rows = (await session.execute(stmt)).all()
     custom_rules = await session.execute(
         select(MetricMappingRule).where(
             MetricMappingRule.tenant_id == tenant_id,
@@ -1857,6 +2265,8 @@ async def get_metrics_summary(
 
     return {
         "tenant_id": tenant_id,
+        "resolution": "day" if rollup_backed else "raw",
+        "rollup_available": rollup_backed,
         "metrics": summary,
     }
 
@@ -1975,7 +2385,18 @@ async def import_mapped_rows(
             index_elements=["tenant_id", "idempotency_key", "timestamp"]
         )
         result = await session.execute(statement)
-        accepted += result.rowcount or 0
+        inserted = (result.rowcount or 0) > 0
+        if inserted:
+            accepted += 1
+            await update_rollups_for_point(
+                session,
+                tenant_id=tenant_id,
+                source_id=row.source_id,
+                metric_type=row.metric_type,
+                timestamp=normalized_timestamp,
+                value=row.value,
+                metadata=row.metadata,
+            )
     await session.commit()
     return {"tenant_id": tenant_id, "submitted": len(request.rows), "accepted": accepted}
 
@@ -2172,6 +2593,13 @@ def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dic
         "points_processed": run.points_processed,
         "points_accepted": run.points_accepted,
         "points_duplicate": run.points_duplicate,
+        "points_rejected": run.points_rejected,
+        "unsupported_fields": run.unsupported_fields,
+        "provider_window_start": run.provider_window_start.isoformat() if run.provider_window_start else None,
+        "provider_window_end": run.provider_window_end.isoformat() if run.provider_window_end else None,
+        "provider_exported_at": run.provider_exported_at.isoformat() if run.provider_exported_at else None,
+        "backlog_at_start": run.backlog_at_start,
+        "backlog_at_end": run.backlog_at_end,
         "skipped_ranges": run.skipped_ranges,
         "message": run.message,
         "message_code": run.message_code,
@@ -2361,7 +2789,8 @@ async def get_import_plan(
         window, window_reason = compute_sync_window(
             now=now,
             poll_interval_hours=float(config.get("poll_interval_hours", 6)),
-            lookback_days=int(config.get("lookback_days", 30)),
+            lookback_days=int(config.get("lookback_days", 7)),
+            lookback_hours=_configured_lookback_hours(config),
             last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
         )
 
@@ -2614,7 +3043,10 @@ class ConfigureConnectorRequest(BaseModel):
     access_token: str | None = Field(None, description="Raw API access token / credential", max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
     poll_interval_hours: int = Field(6, ge=1, le=168, description="Poll frequency in hours")
-    lookback_days: int = Field(30, ge=1, le=365, description="Lookback window in days")
+    lookback_days: int = Field(7, ge=1, le=365, description="Lookback window in days")
+    lookback_hours: int | None = Field(
+        None, ge=1, le=365 * 24, description="Lookback window in hours; takes precedence over days"
+    )
     config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
 
     # The OAuth refresh grant, for providers whose access token is short-lived.
@@ -2727,7 +3159,10 @@ async def configure_connector(
     config_data: dict[str, Any] = {
         "status": req.status,
         "poll_interval_hours": req.poll_interval_hours,
-        "lookback_days": req.lookback_days,
+        "lookback_days": math.ceil(
+            (req.lookback_hours or req.lookback_days * 24) / 24
+        ),
+        "lookback_hours": req.lookback_hours or req.lookback_days * 24,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -2804,6 +3239,23 @@ async def configure_connector(
             )
         }
         config_data.update(clean_config)
+        if req.lookback_hours is None:
+            configured_hours = clean_config.get("lookback_hours")
+            if configured_hours is None and "lookback_days" in clean_config:
+                try:
+                    configured_hours = math.ceil(float(clean_config["lookback_days"]) * 24)
+                except (TypeError, ValueError):
+                    configured_hours = None
+            if configured_hours is not None:
+                try:
+                    config_data["lookback_hours"] = max(1, math.ceil(float(configured_hours)))
+                except (TypeError, ValueError):
+                    pass
+    if req.lookback_hours is not None:
+        # The typed top-level field is authoritative when both the legacy nested
+        # setting and the new sub-day setting are supplied.
+        config_data["lookback_hours"] = req.lookback_hours
+        config_data["lookback_days"] = math.ceil(req.lookback_hours / 24)
 
     if existing:
         merged_config = dict(existing.config or {})
@@ -2878,7 +3330,8 @@ async def configure_connector(
         "display_name": display_name,
         "masked_token": config_data.get("masked_token", "••••••••"),
         "poll_interval_hours": req.poll_interval_hours,
-        "lookback_days": req.lookback_days,
+        "lookback_days": config_data["lookback_days"],
+        "lookback_hours": config_data["lookback_hours"],
     }
 
 
@@ -2928,6 +3381,7 @@ async def _record_failed_sync_request(
     message_code: str = "sync_failed",
     message_params: dict[str, Any] | None = None,
     update_connector: bool = True,
+    status: Literal["error", "skipped"] = "error",
 ) -> SyncRun:
     """Persist a failed import request after its connector was resolved.
 
@@ -2943,7 +3397,7 @@ async def _record_failed_sync_request(
         request_id=request_id,
         mode=mode,
         trigger=trigger,
-        status="error",
+        status=status,
         message=message[:512],
         message_code=message_code,
         message_params=message_params or {},
@@ -3015,9 +3469,9 @@ async def plan_and_enqueue_sync(
     # importers each kept a process-local `active_syncs` set, which stops nothing
     # once a second replica exists -- both would accept the same task. Refusing to
     # enqueue here means the duplicate never reaches them, whatever they run.
-    # `force` is exempt: an explicit user override should not be blocked by a run
-    # that may itself be stuck.
-    if mode != "force" and await has_in_flight_run(
+    # `force` bypasses coverage skipping, not single-flight execution. Allowing it
+    # through here was the source of two concurrent provider runs for one click.
+    if await has_in_flight_run(
         session, tenant_id, source.id, now=now
     ):
         logger.info(
@@ -3035,9 +3489,10 @@ async def plan_and_enqueue_sync(
             message="The connector already has an import in flight.",
             message_code="sync_in_flight",
             update_connector=False,
+            status="skipped",
         )
         return {
-            "status": "error",
+            "status": "skipped",
             "source_type": source_type,
             "tenant_id": tenant_id,
             "request_id": req_id,
@@ -3053,7 +3508,8 @@ async def plan_and_enqueue_sync(
             window, window_reason = compute_sync_window(
                 now=now,
                 poll_interval_hours=float(config.get("poll_interval_hours", 6)),
-                lookback_days=int(config.get("lookback_days", 30)),
+                lookback_days=int(config.get("lookback_days", 7)),
+                lookback_hours=_configured_lookback_hours(config),
                 last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
             )
 
@@ -3308,7 +3764,10 @@ async def list_connectors(
             "import_mode": config.get("import_mode"),
             "supports_file_import": supports_file_import(s.source_type),
             "poll_interval_hours": config.get("poll_interval_hours", 6),
-            "lookback_days": config.get("lookback_days", 30),
+            "lookback_days": config.get(
+                "lookback_days", math.ceil(_configured_lookback_hours(config) / 24)
+            ),
+            "lookback_hours": _configured_lookback_hours(config),
             "last_sync_at": last_sync_at,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "updated_at": config.get("updated_at"),
@@ -3456,6 +3915,25 @@ async def get_connector_token(
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
+
+
+@app.get("/api/v1/internal/data/sources/{source_ref}/ingest-policy")
+async def get_connector_ingest_policy(
+    source_ref: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Return tenant-scoped ingest policies to a stateless importer."""
+    tenant_id = get_current_tenant_id()
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    return {
+        "tenant_id": tenant_id,
+        "source_id": str(source.id),
+        "source_type": source.source_type,
+        "policies": await _effective_ingest_policies(session, tenant_id),
+        "applies_to": "future_imports",
+    }
 
 
 # ─── Tenant-bound Inbound API Keys ──────────────────────────
@@ -3877,6 +4355,12 @@ class UpdateConnectorStatusRequest(BaseModel):
     last_sync_message: str
     sync_run_id: str | None = Field(None, description="Run to close out, if known")
     points_received: int | None = Field(None, ge=0)
+    points_rejected: int | None = Field(None, ge=0)
+    unsupported_fields: int | None = Field(None, ge=0)
+    backlog: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
     code: str | None = Field(None, max_length=64)
     params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
@@ -4117,6 +4601,15 @@ async def _replay_quarantined_rows(
                 inserted = (await session.execute(statement)).rowcount or 0
                 if inserted:
                     accepted += 1
+                    await update_rollups_for_point(
+                        session,
+                        tenant_id=tenant_id,
+                        source_id=source.id,
+                        metric_type=mapping.target_metric_type,
+                        timestamp=row.timestamp,
+                        value=value,
+                        metadata=metadata,
+                    )
                 else:
                     duplicates += 1
                 row.status = "promoted"
@@ -4539,6 +5032,9 @@ class OpenSyncRunRequest(BaseModel):
     # Known up front for a file upload, unknowable for a webhook. Where it is
     # unknown the interface counts rather than showing an invented percentage.
     points_expected: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
     message: str | None = Field(None, max_length=512)
     code: str | None = Field(None, max_length=64)
     params: dict[str, str | int | float | bool] = Field(default_factory=dict)
@@ -4549,6 +5045,12 @@ class UpdateSyncRunProgressRequest(BaseModel):
 
     points_expected: int | None = Field(None, ge=0)
     points_received: int | None = Field(None, ge=0)
+    points_rejected: int | None = Field(None, ge=0)
+    unsupported_fields: int | None = Field(None, ge=0)
+    backlog: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
     message: str | None = Field(None, max_length=512)
     code: str | None = Field(None, max_length=64)
     params: dict[str, str | int | float | bool] = Field(default_factory=dict)
@@ -4586,6 +5088,9 @@ async def open_sync_run_internal(
         window_end=None,
         points_expected=req.points_expected,
         points_received=0,
+        provider_window_start=req.provider_window_start,
+        provider_window_end=req.provider_window_end,
+        provider_exported_at=req.provider_exported_at,
         message=(req.message or "")[:512] or None,
         message_code=req.code or "sync_running",
         message_params=req.params,
@@ -4638,6 +5143,18 @@ async def update_sync_run_progress_internal(
         run.points_expected = req.points_expected
     if req.points_received is not None:
         run.points_received = req.points_received
+    if req.points_rejected is not None:
+        run.points_rejected = req.points_rejected
+    if req.unsupported_fields is not None:
+        run.unsupported_fields = req.unsupported_fields
+    if req.backlog is not None:
+        run.backlog_at_end = req.backlog
+    if req.provider_window_start is not None:
+        run.provider_window_start = req.provider_window_start
+    if req.provider_window_end is not None:
+        run.provider_window_end = req.provider_window_end
+    if req.provider_exported_at is not None:
+        run.provider_exported_at = req.provider_exported_at
     if run.status == "queued":
         run.status = "running"
         config = dict(source.config or {})
@@ -4690,6 +5207,18 @@ async def update_connector_status_internal(
                 run.points_received = req.points_received
                 if run.points_expected is None and req.sync_status in {"idle", "success", "ok"}:
                     run.points_expected = req.points_received
+            if req.points_rejected is not None:
+                run.points_rejected = req.points_rejected
+            if req.unsupported_fields is not None:
+                run.unsupported_fields = req.unsupported_fields
+            if req.backlog is not None:
+                run.backlog_at_end = req.backlog
+            if req.provider_window_start is not None:
+                run.provider_window_start = req.provider_window_start
+            if req.provider_window_end is not None:
+                run.provider_window_end = req.provider_window_end
+            if req.provider_exported_at is not None:
+                run.provider_exported_at = req.provider_exported_at
 
             now = datetime.now(timezone.utc)
             if req.sync_status in {"idle", "success", "ok"}:

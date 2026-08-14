@@ -8,6 +8,7 @@
  */
 
 export type Aggregation = "average" | "sum" | "last" | "max";
+export type IngestResolution = "raw" | "minute" | "hour" | "day";
 
 export interface MetricDefinition {
   key: string;
@@ -22,6 +23,8 @@ export interface MetricDefinition {
   plausibleMin: number | null;
   plausibleMax: number | null;
   precision: number;
+  ingestResolution: IngestResolution;
+  rawRetentionDays: number;
 }
 
 export interface MetricNamespace {
@@ -44,6 +47,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200000.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "distance": {
     key: "distance",
@@ -57,6 +62,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 2,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "energy_active": {
     key: "energy_active",
@@ -70,6 +77,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 15000.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "energy_resting": {
     key: "energy_resting",
@@ -83,6 +92,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 6000.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "energy_total": {
     key: "energy_total",
@@ -96,6 +107,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "exercise_duration": {
     key: "exercise_duration",
@@ -109,6 +122,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "stand_duration": {
     key: "stand_duration",
@@ -122,6 +137,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "flights_climbed": {
     key: "flights_climbed",
@@ -135,6 +152,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "physical_effort": {
     key: "physical_effort",
@@ -148,6 +167,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 30.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "standing_events": {
     key: "standing_events",
@@ -161,6 +182,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 24.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "daylight_duration": {
     key: "daylight_duration",
@@ -174,6 +197,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "running_power": {
     key: "running_power",
@@ -187,6 +212,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 2000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "running_speed": {
     key: "running_speed",
@@ -200,6 +227,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 60.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "running_stride_length": {
     key: "running_stride_length",
@@ -213,6 +242,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 5.0,
     precision: 2,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "running_vertical_oscillation": {
     key: "running_vertical_oscillation",
@@ -226,6 +257,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "running_ground_contact_time": {
     key: "running_ground_contact_time",
@@ -239,6 +272,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 2000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "walking_step_length": {
     key: "walking_step_length",
@@ -252,6 +287,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 3.0,
     precision: 2,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "walking_speed": {
     key: "walking_speed",
@@ -265,6 +302,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 30.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "walking_double_support": {
     key: "walking_double_support",
@@ -278,6 +317,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "walking_asymmetry": {
     key: "walking_asymmetry",
@@ -291,6 +332,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "walking_steadiness": {
     key: "walking_steadiness",
@@ -304,6 +347,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "stair_ascent_speed": {
     key: "stair_ascent_speed",
@@ -317,6 +362,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "stair_descent_speed": {
     key: "stair_descent_speed",
@@ -330,6 +377,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "six_minute_walk_distance": {
     key: "six_minute_walk_distance",
@@ -343,6 +392,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "swimming_strokes": {
     key: "swimming_strokes",
@@ -356,6 +407,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "handwashing_events": {
     key: "handwashing_events",
@@ -369,6 +422,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "mindful_session_duration": {
     key: "mindful_session_duration",
@@ -382,6 +437,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "toothbrushing_events": {
     key: "toothbrushing_events",
@@ -395,6 +452,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "audio_exposure_events": {
     key: "audio_exposure_events",
@@ -408,6 +467,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "audio_exposure_environmental": {
     key: "audio_exposure_environmental",
@@ -421,6 +482,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 160.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "audio_exposure_headphone": {
     key: "audio_exposure_headphone",
@@ -434,6 +497,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 160.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "audio_exposure_reduction": {
     key: "audio_exposure_reduction",
@@ -447,6 +512,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 160.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_strain": {
     key: "whoop_strain",
@@ -460,6 +527,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 21.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "blood_pressure_systolic": {
     key: "blood_pressure_systolic",
@@ -473,6 +542,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 50.0,
     plausibleMax: 260.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "blood_pressure_diastolic": {
     key: "blood_pressure_diastolic",
@@ -486,6 +557,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 30.0,
     plausibleMax: 180.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "heart_rate": {
     key: "heart_rate",
@@ -499,6 +572,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 250.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "heart_rate_average": {
     key: "heart_rate_average",
@@ -512,6 +587,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "heart_rate_max": {
     key: "heart_rate_max",
@@ -525,6 +602,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 250.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "heart_rate_resting": {
     key: "heart_rate_resting",
@@ -538,6 +617,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 25.0,
     plausibleMax: 120.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "heart_rate_walking_average": {
     key: "heart_rate_walking_average",
@@ -551,6 +632,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 40.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "heart_rate_recovery": {
     key: "heart_rate_recovery",
@@ -564,6 +647,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "hrv_rmssd": {
     key: "hrv_rmssd",
@@ -577,6 +662,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 1.0,
     plausibleMax: 300.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "hrv_sdnn": {
     key: "hrv_sdnn",
@@ -590,6 +677,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 1.0,
     plausibleMax: 300.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "blood_oxygen": {
     key: "blood_oxygen",
@@ -603,6 +692,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 50.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "respiratory_rate": {
     key: "respiratory_rate",
@@ -616,6 +707,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 4.0,
     plausibleMax: 60.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "sleep_duration": {
     key: "sleep_duration",
@@ -629,6 +722,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_duration_deep": {
     key: "sleep_duration_deep",
@@ -642,6 +737,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_duration_rem": {
     key: "sleep_duration_rem",
@@ -655,6 +752,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_duration_light": {
     key: "sleep_duration_light",
@@ -668,6 +767,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_duration_awake": {
     key: "sleep_duration_awake",
@@ -681,6 +782,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_duration_in_bed": {
     key: "sleep_duration_in_bed",
@@ -694,6 +797,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_efficiency": {
     key: "sleep_efficiency",
@@ -707,6 +812,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_sleep_need": {
     key: "whoop_sleep_need",
@@ -720,6 +827,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_sleep_debt": {
     key: "whoop_sleep_debt",
@@ -733,6 +842,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_sleep_consistency": {
     key: "whoop_sleep_consistency",
@@ -746,6 +857,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "sleep_nap_count": {
     key: "sleep_nap_count",
@@ -759,6 +872,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 50.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_sleep_performance": {
     key: "whoop_sleep_performance",
@@ -772,6 +887,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_recovery_score": {
     key: "whoop_recovery_score",
@@ -785,6 +902,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "oura_sleep_score": {
     key: "oura_sleep_score",
@@ -798,6 +917,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "oura_readiness_score": {
     key: "oura_readiness_score",
@@ -811,6 +932,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "oura_activity_score": {
     key: "oura_activity_score",
@@ -824,6 +947,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "body_weight": {
     key: "body_weight",
@@ -837,6 +962,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 400.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "body_fat": {
     key: "body_fat",
@@ -850,6 +977,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 1.0,
     plausibleMax: 70.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "body_height": {
     key: "body_height",
@@ -863,6 +992,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.5,
     plausibleMax: 2.7,
     precision: 2,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "body_mass_index": {
     key: "body_mass_index",
@@ -876,6 +1007,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 5.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "lean_body_mass": {
     key: "lean_body_mass",
@@ -889,6 +1022,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 1.0,
     plausibleMax: 300.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "vo2_max": {
     key: "vo2_max",
@@ -902,6 +1037,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 10.0,
     plausibleMax: 95.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "skin_temperature": {
     key: "skin_temperature",
@@ -915,6 +1052,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 45.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_energy": {
     key: "nutrition_energy",
@@ -928,6 +1067,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_protein": {
     key: "nutrition_protein",
@@ -941,6 +1082,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_carbohydrates": {
     key: "nutrition_carbohydrates",
@@ -954,6 +1097,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 2000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_fat": {
     key: "nutrition_fat",
@@ -967,6 +1112,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_fiber": {
     key: "nutrition_fiber",
@@ -980,6 +1127,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_sugar": {
     key: "nutrition_sugar",
@@ -993,6 +1142,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 2000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_sodium": {
     key: "nutrition_sodium",
@@ -1006,6 +1157,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_fat_saturated": {
     key: "nutrition_fat_saturated",
@@ -1019,6 +1172,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_fat_monounsaturated": {
     key: "nutrition_fat_monounsaturated",
@@ -1032,6 +1187,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_fat_polyunsaturated": {
     key: "nutrition_fat_polyunsaturated",
@@ -1045,6 +1202,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_potassium": {
     key: "nutrition_potassium",
@@ -1058,6 +1217,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_cholesterol": {
     key: "nutrition_cholesterol",
@@ -1071,6 +1232,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_calcium": {
     key: "nutrition_calcium",
@@ -1084,6 +1247,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_vitamin_c_intake": {
     key: "nutrition_vitamin_c_intake",
@@ -1097,6 +1262,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 10000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_iron": {
     key: "nutrition_iron",
@@ -1110,6 +1277,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 10000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_caffeine": {
     key: "nutrition_caffeine",
@@ -1123,6 +1292,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 10000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "water_intake": {
     key: "water_intake",
@@ -1136,6 +1307,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_meal_energy": {
     key: "nutrition_meal_energy",
@@ -1149,6 +1322,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_item_energy": {
     key: "nutrition_item_energy",
@@ -1162,6 +1337,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_item_amount": {
     key: "nutrition_item_amount",
@@ -1175,6 +1352,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "nutrition_recipe_portions": {
     key: "nutrition_recipe_portions",
@@ -1188,6 +1367,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_duration": {
     key: "workout_duration",
@@ -1201,6 +1382,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_distance": {
     key: "workout_distance",
@@ -1214,6 +1397,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 2,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_energy": {
     key: "workout_energy",
@@ -1227,6 +1412,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 15000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_energy_resting": {
     key: "workout_energy_resting",
@@ -1240,6 +1427,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 5000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_average": {
     key: "workout_heart_rate_average",
@@ -1253,6 +1442,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 40.0,
     plausibleMax: 230.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_max": {
     key: "workout_heart_rate_max",
@@ -1266,6 +1457,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 40.0,
     plausibleMax: 240.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_zone_1": {
     key: "workout_heart_rate_zone_1",
@@ -1279,6 +1472,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_zone_2": {
     key: "workout_heart_rate_zone_2",
@@ -1292,6 +1487,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_zone_3": {
     key: "workout_heart_rate_zone_3",
@@ -1305,6 +1502,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_zone_4": {
     key: "workout_heart_rate_zone_4",
@@ -1318,6 +1517,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_heart_rate_zone_5": {
     key: "workout_heart_rate_zone_5",
@@ -1331,6 +1532,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_steps": {
     key: "workout_steps",
@@ -1344,6 +1547,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_speed_average": {
     key: "workout_speed_average",
@@ -1357,6 +1562,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 120.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_speed_max": {
     key: "workout_speed_max",
@@ -1370,6 +1577,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_cadence": {
     key: "workout_cadence",
@@ -1383,6 +1592,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 300.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_cycling_cadence": {
     key: "workout_cycling_cadence",
@@ -1396,6 +1607,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 250.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_cycling_power": {
     key: "workout_cycling_power",
@@ -1409,6 +1622,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 2000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_elevation_gain": {
     key: "workout_elevation_gain",
@@ -1422,6 +1637,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 15000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_elevation_loss": {
     key: "workout_elevation_loss",
@@ -1435,6 +1652,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 15000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_lap_length": {
     key: "workout_lap_length",
@@ -1448,6 +1667,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 10000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_swim_cadence": {
     key: "workout_swim_cadence",
@@ -1461,6 +1682,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_swimming_strokes": {
     key: "workout_swimming_strokes",
@@ -1474,6 +1697,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "workout_intensity": {
     key: "workout_intensity",
@@ -1487,6 +1712,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 30.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "whoop_workout_strain": {
     key: "whoop_workout_strain",
@@ -1500,6 +1727,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 21.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_set_weight": {
     key: "strength_set_weight",
@@ -1513,6 +1742,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_set_reps": {
     key: "strength_set_reps",
@@ -1526,6 +1757,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_set_volume": {
     key: "strength_set_volume",
@@ -1539,6 +1772,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100000.0,
     precision: 1,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_set_heart_rate_max": {
     key: "strength_set_heart_rate_max",
@@ -1552,6 +1787,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 40.0,
     plausibleMax: 240.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_session_volume": {
     key: "strength_session_volume",
@@ -1565,6 +1802,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1000000.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "strength_session_sets": {
     key: "strength_session_sets",
@@ -1578,6 +1817,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "location_point": {
     key: "location_point",
@@ -1591,6 +1832,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "location_latitude": {
     key: "location_latitude",
@@ -1604,6 +1847,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: -90.0,
     plausibleMax: 90.0,
     precision: 6,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "location_longitude": {
     key: "location_longitude",
@@ -1617,6 +1862,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: -180.0,
     plausibleMax: 180.0,
     precision: 6,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "calendar_event_count": {
     key: "calendar_event_count",
@@ -1630,6 +1877,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 200.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "calendar_busy_duration": {
     key: "calendar_busy_duration",
@@ -1643,6 +1892,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "calendar_meeting_duration": {
     key: "calendar_meeting_duration",
@@ -1656,6 +1907,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 1440.0,
     precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
   },
   "weather_temperature": {
     key: "weather_temperature",
@@ -1669,6 +1922,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: -70.0,
     plausibleMax: 60.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_temperature_apparent": {
     key: "weather_temperature_apparent",
@@ -1682,6 +1937,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: -80.0,
     plausibleMax: 70.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_humidity": {
     key: "weather_humidity",
@@ -1695,6 +1952,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_precipitation": {
     key: "weather_precipitation",
@@ -1708,6 +1967,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_pressure": {
     key: "weather_pressure",
@@ -1721,6 +1982,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 800.0,
     plausibleMax: 1100.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_wind_speed": {
     key: "weather_wind_speed",
@@ -1734,6 +1997,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 500.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_cloud_cover": {
     key: "weather_cloud_cover",
@@ -1747,6 +2012,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 100.0,
     precision: 0,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
   "weather_uv_index": {
     key: "weather_uv_index",
@@ -1760,6 +2027,8 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 0.0,
     plausibleMax: 20.0,
     precision: 1,
+    ingestResolution: "minute",
+    rawRetentionDays: 90,
   },
 };
 

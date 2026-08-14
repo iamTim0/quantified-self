@@ -14,16 +14,18 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from core.db.models import DataPoint, DataSource
+from core.db.models import DataPoint, DataSource, MetricRollup
 from core.db.session import async_session_maker
 from core.main import app
+from core.rollups import update_rollups_for_point
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
 
 app.state.testing = True
 
-async def ensure_seeded_data(tenant_id: str):
+async def ensure_seeded_data(tenant_id: str) -> str:
     """Seed test metric data points for query endpoint tests."""
     async with async_session_maker() as session:
         source_id = str(uuid.uuid4())
@@ -52,6 +54,7 @@ async def ensure_seeded_data(tenant_id: str):
         session.add(dp_sleep)
         session.add(dp_steps)
         await session.commit()
+    return source_id
 
 
 @pytest.mark.asyncio
@@ -118,3 +121,118 @@ async def test_metrics_summary_endpoint():
     assert "metrics" in data
     assert "oura_sleep_score" in data["metrics"]
     assert data["metrics"]["oura_sleep_score"]["count"] >= 1
+
+
+@pytest.mark.asyncio
+async def test_query_metrics_returns_tenant_scoped_rollups():
+    """Verifies Fizzbee Invariants: StrictTenantIsolationOnRead & ReturnedDataBelongsToTarget."""
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    try:
+        source_id = await ensure_seeded_data(tenant_id)
+        bucket = datetime.now(timezone.utc).replace(second=0, microsecond=0)
+        async with async_session_maker() as session:
+            session.add(
+                MetricRollup(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    metric_type="steps",
+                    resolution="minute",
+                    bucket_start=bucket,
+                    value=120.0,
+                    sample_count=2,
+                    sum_value=120.0,
+                    min_value=40.0,
+                    max_value=80.0,
+                    first_value=40.0,
+                    last_value=80.0,
+                    first_timestamp=bucket,
+                    last_timestamp=bucket,
+                    metadata_={"derived_by": "sum", "sample_count": 2},
+                )
+            )
+            await session.commit()
+
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get(
+                "/api/v1/data/metrics?metric_type=steps&resolution=minute",
+                headers=headers,
+            )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["resolution"] == "minute"
+    assert data["rollup_available"] is True
+    assert data["data_points"][0]["source_id"] == source_id
+    assert data["data_points"][0]["sample_count"] == 2
+    assert data["data_points"][0]["is_derived"] is True
+
+
+@pytest.mark.asyncio
+async def test_ingest_policy_is_tenant_scoped_and_future_only():
+    """Verifies Fizzbee Invariants: StrictTenantIsolationOnRead & ReturnedDataBelongsToTarget."""
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    try:
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            update = await ac.put(
+                "/api/v1/data/metrics/ingest-policy/steps",
+                headers=headers,
+                json={"resolution": "minute", "raw_retention_days": 30},
+            )
+            policies = await ac.get(
+                "/api/v1/data/metrics/ingest-policy", headers=headers
+            )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+    assert update.status_code == 200
+    assert update.json()["applies_to"] == "future_imports"
+    assert policies.status_code == 200
+    assert policies.json()["tenant_id"] == tenant_id
+    assert policies.json()["policies"]["steps"]["resolution"] == "minute"
+    assert policies.json()["policies"]["steps"]["raw_retention_days"] == 30
+
+
+@pytest.mark.asyncio
+async def test_accepted_point_updates_the_rollup_hierarchy():
+    """Verifies Fizzbee Invariant: AckAfterPersisted."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await ensure_seeded_data(tenant_id)
+        timestamp = datetime.now(timezone.utc).replace(second=17, microsecond=0)
+        async with async_session_maker() as session:
+            await update_rollups_for_point(
+                session,
+                tenant_id=tenant_id,
+                source_id=source_id,
+                metric_type="heart_rate",
+                timestamp=timestamp,
+                value=72.0,
+                metadata={
+                    "provider_value": 72,
+                    "units": "bpm",
+                    "ingest_resolution": "minute",
+                },
+            )
+            await session.commit()
+            rows = (
+                await session.execute(
+                    select(MetricRollup)
+                    .where(
+                        MetricRollup.tenant_id == tenant_id,
+                        MetricRollup.source_id == source_id,
+                        MetricRollup.metric_type == "heart_rate",
+                    )
+                    .order_by(MetricRollup.resolution)
+                )
+            ).scalars().all()
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+    assert {row.resolution for row in rows} == {"minute", "hour", "day"}
+    assert all(row.value == 72.0 and row.sample_count == 1 for row in rows)

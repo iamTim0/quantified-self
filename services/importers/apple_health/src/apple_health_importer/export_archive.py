@@ -26,12 +26,12 @@ from __future__ import annotations
 import logging
 import re
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import datetime
 from typing import IO, Any
 
 from defusedxml.ElementTree import iterparse
-from shared_schemas import FieldReportCollector
+from shared_schemas import FieldReportCollector, aggregate_stream
 from shared_schemas.metrics import METRIC_CATALOG, MetricUnit
 
 from apple_health_importer.transformer import (
@@ -276,6 +276,27 @@ def read_export(
     tenant_id: str,
     source_id: str,
     report: FieldReportCollector | None = None,
+    ingest_policies: Mapping[str, Mapping[str, Any]] | None = None,
+) -> Iterator[dict[str, Any]]:
+    """Read an archive and optionally aggregate high-frequency metrics."""
+    raw_points = _read_export_raw(
+        file,
+        tenant_id=tenant_id,
+        source_id=source_id,
+        report=report,
+    )
+    if ingest_policies is None:
+        yield from raw_points
+    else:
+        yield from aggregate_stream(raw_points, ingest_policies)
+
+
+def _read_export_raw(
+    file: str | IO[bytes],
+    *,
+    tenant_id: str,
+    source_id: str,
+    report: FieldReportCollector | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield every data point an Apple Health archive holds, as it is read.
 
@@ -389,6 +410,14 @@ def _record_points(
         return
 
     metric_type = canonical_name(raw_name)
+    definition = METRIC_CATALOG.get(metric_type)
+    if (
+        definition is not None
+        and definition.aggregation.value == "sum"
+        and definition.cadence.value == "daily"
+        and not elem.attrib.get("endDate")
+    ):
+        metadata_base["provider_total"] = True
     category_metric = CATEGORY_RECORD_METRICS.get(raw_name)
     if category_metric is not None:
         ts = parse_timestamp(start)

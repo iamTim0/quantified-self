@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     PORT: int = 8007
     WHOOP_API_BASE_URL: str = "https://api.prod.whoop.com/developer"
     POLL_INTERVAL_HOURS: int = 24
-    POLL_LOOKBACK_DAYS: int = 30
+    POLL_LOOKBACK_DAYS: int = 7
 
     # Bearer credential presented to Core's internal API. Must match Core's
     # INTERNAL_SERVICE_SECRET; empty derives the shared dev default.

@@ -159,6 +159,14 @@ export default function ImportRunsOverview({
                         })}
                       </span>
                     </div>
+                    {(run.points_rejected > 0 || run.unsupported_fields > 0) && (
+                      <p className="mt-1 text-[11px] text-amber-700">
+                        {t("importOverview.quality", {
+                          rejected: formatNumber(run.points_rejected ?? 0),
+                          unsupported: formatNumber(run.unsupported_fields ?? 0),
+                        })}
+                      </p>
+                    )}
                   </div>
                   {progress !== null && isActive && (
                     <span className="shrink-0 text-[11px] font-semibold text-slate-600">{progress}%</span>

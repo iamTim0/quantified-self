@@ -281,12 +281,29 @@ export default function ImporterDetailPage({
                           processed: formatNumber(run.points_processed),
                           accepted: formatNumber(run.points_accepted),
                           duplicate: formatNumber(run.points_duplicate),
+                          rejected: formatNumber(run.points_rejected ?? 0),
+                          unsupported: formatNumber(run.unsupported_fields ?? 0),
                           expected:
                             run.points_expected === null
                               ? t("importerDetail.unknown")
                               : formatNumber(run.points_expected),
                         })}
                       </p>
+                      {run.provider_window_start && run.provider_window_end && (
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          {t("importerDetail.providerWindow", {
+                            start: formatDateTime(run.provider_window_start),
+                            end: formatDateTime(run.provider_window_end),
+                          })}
+                        </p>
+                      )}
+                      {run.backlog_at_end !== null && run.backlog_at_end !== undefined && (
+                        <p className="mt-1 text-[11px] text-slate-400">
+                          {t("importerDetail.backlog", {
+                            count: formatNumber(run.backlog_at_end),
+                          })}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-slate-500 sm:grid-cols-4 lg:min-w-[430px]">

@@ -116,10 +116,10 @@ async def test_a_second_scheduled_enqueue_is_refused_while_the_first_is_in_fligh
                 )
             ).scalars().all()
 
-        # The duplicate does not enqueue a task, but its failed request is still
+        # The duplicate does not enqueue a task, but its skipped request is still
         # recorded so the connector detail page explains what happened.
         assert len(runs) == 2
-        assert {run.status for run in runs} == {"running", "error"}
+        assert {run.status for run in runs} == {"running", "skipped"}
         assert any(run.message == "The connector already has an import in flight." for run in runs)
     finally:
         await cleanup_test_tenant(tenant_id)

@@ -32,8 +32,7 @@ from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 from sqlalchemy import and_, case, delete, func, literal, select, update
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -49,6 +48,7 @@ from core.db.models import (
 )
 from core.db.session import async_session_maker
 from core.metric_mapping import ValidatedMapping, replay_value, validate_mapping
+from core.rollups import update_rollups_for_point
 from core.tracing import set_current_request_id
 
 logger = logging.getLogger(__name__)
@@ -578,6 +578,7 @@ async def process_message(msg):
                             source_id=source.id,
                             event_key=event_key,
                             inserted=None,
+                            rejected=True,
                         )
                     await session.commit()
                     await msg.ack()
@@ -598,6 +599,7 @@ async def process_message(msg):
                             source_id=source.id,
                             event_key=event_key,
                             inserted=None,
+                            rejected=True,
                         )
                     await session.commit()
                     await msg.ack()
@@ -627,6 +629,7 @@ async def process_message(msg):
                             source_id=source.id,
                             event_key=event_key,
                             inserted=None,
+                            rejected=True,
                         )
                     await session.commit()
                     await msg.ack()
@@ -654,6 +657,7 @@ async def process_message(msg):
                         source_id=source.id,
                         event_key=event_key,
                         inserted=None,
+                        rejected=True,
                     )
                     await session.commit()
                 await msg.ack()
@@ -676,6 +680,17 @@ async def process_message(msg):
             )
             result = await session.execute(stmt)
             inserted = (result.rowcount or 0) > 0
+
+            if inserted:
+                await update_rollups_for_point(
+                    session,
+                    tenant_id=tenant_id,
+                    source_id=source.id,
+                    metric_type=metric_type,
+                    timestamp=ts_val,
+                    value=numeric_value,
+                    metadata=metadata,
+                )
 
             if not inserted:
                 logger.info(
@@ -815,6 +830,7 @@ async def _tally(
     source_id: str | None = None,
     event_key: str,
     inserted: bool | None,
+    rejected: bool = False,
 ) -> None:
     """Accumulate Core processing counts and close a drained import run.
 
@@ -844,6 +860,8 @@ async def _tally(
     if inserted is not None:
         column = SyncRun.points_accepted if inserted else SyncRun.points_duplicate
         values[column] = column + 1
+    if rejected:
+        values[SyncRun.points_rejected] = SyncRun.points_rejected + 1
 
     drained = and_(
         SyncRun.status == "loading",
@@ -947,7 +965,10 @@ async def start_consumer():
         subjects=["qs.ingest.>"],
         max_age=STREAM_MAX_AGE_SECONDS,
         max_bytes=STREAM_MAX_BYTES,
-        discard=DiscardPolicy.OLD,
+        # Ingestion is a delivery buffer, not a lossy cache. A full stream must
+        # apply publisher backpressure so the importer can pause and resume rather
+        # than silently discarding unacknowledged medical data.
+        discard=DiscardPolicy.NEW,
     )
     try:
         await js.add_stream(stream)
@@ -966,6 +987,7 @@ async def start_consumer():
     consumer = ConsumerConfig(
         max_deliver=MAX_DELIVERY_ATTEMPTS,
         ack_wait=ACK_WAIT_SECONDS,
+        max_ack_pending=1000,
     )
     try:
         await js.subscribe(

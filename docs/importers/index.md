@@ -38,7 +38,7 @@ check so Coolify can observe it.
 
 When adding an importer, add the image-level check and the matching production Compose check together,
 then add a contract assertion under `tools/tests/`. The complete implementation checklist is in
-[AGENTS.md](../../AGENTS.md#when-adding-a-new-importer).
+the repository's `AGENTS.md` section "When Adding a New Importer".
 
 *Active* means the platform fetches from the provider; *passive* means the data arrives when
 the provider or the phone sends it. Neither kind keeps a timer: Core's scheduler decides when

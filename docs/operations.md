@@ -286,11 +286,44 @@ A production deployment should show nothing here. If it does, at least one of th
   The history includes failed planning,
   upload, webhook and importer runs; an unknown or missing API key cannot be assigned to a tenant
   safely and is therefore not shown in a tenant's connector history.
+- **Completeness**: inspect `points_rejected`, `unsupported_fields`, `backlog_at_start`,
+  `backlog_at_end`, `provider_window_start`, `provider_window_end` and `provider_exported_at` on
+  the run. A successful importer request means that the importer finished publishing; it does not
+  mean that the provider export covered every requested timestamp.
+- **Resolution**: `GET /api/v1/data/metrics?resolution=auto` selects minute, hour or day buckets from
+  the requested window. The Explorer shows the returned resolution and sample count. A query that
+  falls back to raw points reports `rollup_available=false` so the client can say why the result is
+  limited.
+- **Broker pressure**: the ingestion stream has bounded age and size. When it is full, new
+  publishes are rejected and importers pause/retry; old unacknowledged events are not silently
+  discarded. Investigate the Core consumer and database before increasing the stream limit.
 
 ```bash
 task logs -- --service qs-core --level ERROR
 docker compose -f docker-compose.prod.yml logs -f core
 ```
+
+### Rollup backfill and nightly maintenance
+
+Database schema migrations are automatic: `core-migrate` runs `alembic upgrade head` during
+`docker compose up`, and Core starts only after it succeeds. You do not need to run Alembic by hand
+after a normal deployment. The commands below are data-maintenance jobs, not schema migrations.
+
+Run the historical backfill once after deploying the rollup code if the existing database should have
+minute/hour/day rollups immediately. Then run the retention job nightly from the operator's scheduler,
+not from a web request or service startup:
+
+```bash
+# One-time migration step: rebuild rollups for data imported before incremental rollups existed.
+python -m core.rollup_backfill --tenant-id <tenant-id>
+
+# Nightly: review and then enforce the configured raw-point retention.
+python -m core.retention --tenant-id <tenant-id> --dry-run
+python -m core.retention --tenant-id <tenant-id>
+```
+
+Rollups are retained when raw points are purged. Keep the dry-run output with the maintenance
+record so a user can distinguish intentional retention from an incomplete provider export.
 
 ## Backup
 

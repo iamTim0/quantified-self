@@ -36,7 +36,7 @@ flowchart TB
     importers -->|"3. fetches exactly that window"| providers
     importers -->|"4. qs.ingest.SOURCE&nbsp;&mdash; canonical name, converted unit,<br/>deterministic idempotency_key"| bus
     bus -->|"5. one consumer, queue group"| core
-    core -->|"6. INSERT ... ON CONFLICT DO NOTHING"| db
+    core -->|"6. INSERT ... ON CONFLICT DO NOTHING + rollups"| db
 ```
 
 ## Services
@@ -59,11 +59,11 @@ flowchart TB
 4. The importer fetches its credentials over
    `GET /api/v1/internal/data/sources/<source>/token` — it stores none itself.
 5. The importer calls the provider API for exactly that window.
-6. For every data point a deterministic `idempotency_key` is derived and an event is published on
-   `qs.ingest.<source>`.
-7. Core's consumer writes with `INSERT … ON CONFLICT DO NOTHING` and counts accepted and duplicate
-   points onto the `SyncRun`.
-8. The importer reports the outcome; only a successful run moves the resume point.
+6. The importer resolves the tenant's metric policy, canonicalises the name, converts the unit and
+   aggregates high-frequency samples before publishing on `qs.ingest.<source>`.
+7. Core's consumer writes with `INSERT … ON CONFLICT DO NOTHING`, updates bounded rollups in the
+   same transaction and counts accepted and duplicate points onto the `SyncRun`.
+8. The importer reports provider coverage and the outcome; only a successful run moves the resume point.
 
 For push sources (Apple Health, Streak) steps 1–5 do not apply: the external service sends
 straight to the importer, which resolves the tenant from the API key.
@@ -86,9 +86,10 @@ the same audit trail as successful work.
 
 The tenant-protected endpoint
 `GET /api/v1/data/sources/<connector-id>/sync-runs` returns the newest runs for that connector.
-Each entry includes its status, trigger, request id, import window, accepted and duplicate point
-counts, the importer publish count, the Core processing count, optional expected point count, message
-and duration. The connector id is used deliberately:
+Each entry includes its status, trigger, request id, import window, accepted, duplicate and rejected
+point counts, unsupported-field occurrences, the importer publish count, the Core processing count,
+optional expected point count, provider coverage window, broker backlog, message and duration. The
+connector id is used deliberately:
 two connectors of the same type must never share a history or progress display.
 
 Run status messages also carry a stable `message_code` and an optional `message_params` object. Core
@@ -112,7 +113,7 @@ An importer can report a known total while it is still running through Core's in
 streaming API import and becomes known after a file importer has parsed its archive. Core remains
 the only owner of the run record and the dashboard reads it through the tenant-scoped API. The
 connector detail view at `/connectors/<connector-id>` shows the latest status, progress counts,
-durations and history.
+provider coverage, durations and history.
 
 Core also expires a `queued`, `running` or `loading` run after six hours without completion. It records an
 error and allows the next scheduled attempt to proceed, so a crashed importer cannot block a
@@ -154,6 +155,8 @@ and the importer, and appears in every log as `[req_id=…]`.
 | `tenants`, `users` | Workspace and identities kept separate. `users.sessions_valid_from` is the cut-off from which older access tokens are rejected |
 | `data_sources` | One row per configured connector *instance*. A tenant may hold several of a type — three calendars, two weather locations — told apart by `display_name` and unique on `(tenant_id, source_type, display_name)` |
 | `data_points` | The time series, a TimescaleDB hypertable |
+| `metric_rollups` | Tenant/source-scoped minute, hour and day aggregates |
+| `metric_ingest_policies` | Workspace resolution overrides for future imports |
 | `sync_runs` | Import and audit log, the basis for adaptive windows |
 | `api_keys` | Tenant-bound inbound keys, stored only as a hash |
 | `refresh_tokens`, `revoked_access_tokens` | Sessions and revocation |

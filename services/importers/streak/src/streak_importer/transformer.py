@@ -114,6 +114,7 @@ def transform_streak_export_json(
                 "notes": set_item.get("notes") or workout.get("notes"),
                 "deload": bool(workout.get("deload", False)),
             }
+            idempotency_source_id = f"{source_id}_{set_id}"
 
             # 1. Weight metric (kg)
             if isinstance(weight, (int, float)) and not isinstance(weight, bool):
@@ -130,7 +131,7 @@ def transform_streak_export_json(
                         **provenance(METRIC_SET_WEIGHT, weight_val),
                     },
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"{METRIC_SET_WEIGHT}_{set_id}", set_ts
+                        tenant_id, idempotency_source_id, METRIC_SET_WEIGHT, set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -149,7 +150,7 @@ def transform_streak_export_json(
                     "value": reps_val,
                     "metadata": {**base_metadata, **provenance(METRIC_SET_REPS, reps_val)},
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"{METRIC_SET_REPS}_{set_id}", set_ts
+                        tenant_id, idempotency_source_id, METRIC_SET_REPS, set_ts
                     ),
                     "source_type": "streak",
                 }
@@ -177,7 +178,7 @@ def transform_streak_export_json(
                             "derived_by": "product",
                         },
                         "idempotency_key": generate_idempotency_key(
-                            tenant_id, source_id, f"{METRIC_SET_VOLUME}_{set_id}", set_ts
+                            tenant_id, idempotency_source_id, METRIC_SET_VOLUME, set_ts
                         ),
                         "source_type": "streak",
                     }
@@ -197,7 +198,7 @@ def transform_streak_export_json(
                         **provenance(METRIC_SET_HEART_RATE_MAX, float(max_pulse)),
                     },
                     "idempotency_key": generate_idempotency_key(
-                        tenant_id, source_id, f"{METRIC_SET_HEART_RATE_MAX}_{set_id}", set_ts
+                        tenant_id, idempotency_source_id, METRIC_SET_HEART_RATE_MAX, set_ts
                     ),
                     "source_type": "streak",
                 }

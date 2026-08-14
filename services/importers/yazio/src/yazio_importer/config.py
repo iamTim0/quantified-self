@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # only place that knows it (AGENTS.md rule 2).
     SOURCE_ID: str = "yazio_importer"
     YAZIO_API_BASE_URL: str = "https://yzapi.yazio.com"
-    POLL_LOOKBACK_DAYS: int = 30
+    POLL_LOOKBACK_DAYS: int = 7
 
     # Yazio's own mobile-app OAuth client, not a secret of ours: it is embedded in
     # a shipped app, is what every unofficial Yazio client uses, and we could not

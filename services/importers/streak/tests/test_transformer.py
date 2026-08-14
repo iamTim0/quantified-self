@@ -80,6 +80,12 @@ def test_transform_streak_export_workouts():
     vol_event = next(e for e in events if e["metric_type"] == "strength_set_volume")
     assert vol_event["value"] == 800.0
     assert vol_event["metadata"]["exercise_title"] == "Bench Press"
+    assert vol_event["idempotency_key"] == generate_idempotency_key(
+        tenant_id,
+        f"{source_id}_1001",
+        "strength_set_volume",
+        vol_event["timestamp"],
+    )
 
 
 def test_transform_empty_payload():

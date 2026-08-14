@@ -44,6 +44,7 @@ __all__ = [
     "METRIC_ALIASES",
     "METRIC_CATALOG",
     "Aggregation",
+    "IngestResolution",
     "MetricCategory",
     "MetricDefinition",
     "MetricNamespace",
@@ -131,6 +132,15 @@ class Aggregation(StrEnum):
     MAX = "max"
 
 
+class IngestResolution(StrEnum):
+    """The finest resolution an importer is allowed to persist."""
+
+    RAW = "raw"
+    MINUTE = "minute"
+    HOUR = "hour"
+    DAY = "day"
+
+
 class MetricCategory(StrEnum):
     """Grouping for presentation and for scoping shares (``read_metric:<category>``)."""
 
@@ -198,6 +208,22 @@ class MetricDefinition(BaseModel):
     #: the answer that never invents a problem: a metric nobody has classified
     #: reports no gaps rather than a year of imaginary ones.
     cadence: Cadence = Cadence.EVENT
+    #: Importers use this value before publishing. ``None`` derives a safe default:
+    #: continuous metrics are minute data, event/daily metrics remain raw.
+    ingest_resolution: IngestResolution | None = None
+    #: Only raw points are subject to this retention period. Rollups are retained.
+    raw_retention_days: int = 90
+
+    @property
+    def default_ingest_resolution(self) -> IngestResolution:
+        """Return the registry default used by stateless importers."""
+        if self.ingest_resolution is not None:
+            return self.ingest_resolution
+        return (
+            IngestResolution.MINUTE
+            if self.cadence is Cadence.CONTINUOUS
+            else IngestResolution.RAW
+        )
 
     @property
     def is_dynamic(self) -> bool:
@@ -319,6 +345,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=200_000,
         precision=0,
         cadence=Cadence.DAILY,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     MetricDefinition(
         key="distance",
@@ -339,6 +366,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=500,
         precision=2,
         cadence=Cadence.DAILY,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     MetricDefinition(
         key="energy_active",
@@ -353,6 +381,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=15_000,
         precision=0,
         cadence=Cadence.DAILY,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     MetricDefinition(
         key="energy_resting",
@@ -367,6 +396,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=6_000,
         precision=0,
         cadence=Cadence.DAILY,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     MetricDefinition(
         key="energy_total",
@@ -793,6 +823,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=250,
         precision=0,
         cadence=Cadence.CONTINUOUS,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     MetricDefinition(
         key="heart_rate_average",
@@ -919,6 +950,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=60,
         precision=1,
         cadence=Cadence.DAILY,
+        ingest_resolution=IngestResolution.MINUTE,
     ),
     # ── Sleep ─────────────────────────────────────────────────────────────────
     MetricDefinition(

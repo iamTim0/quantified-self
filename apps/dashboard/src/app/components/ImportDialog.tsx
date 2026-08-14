@@ -754,6 +754,8 @@ export default function ImportDialog({
                       {t("import.runCounts", {
                         accepted: run.points_accepted,
                         duplicate: run.points_duplicate,
+                        rejected: run.points_rejected ?? 0,
+                        unsupported: run.unsupported_fields ?? 0,
                       })}
                     </p>
                     {messageForRun(t, run) && (

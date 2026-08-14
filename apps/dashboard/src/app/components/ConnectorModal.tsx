@@ -222,6 +222,7 @@ interface ConnectorModalProps {
   initialDisplayName?: string;
   initialPollInterval?: number;
   initialLookbackDays?: number;
+  initialLookbackHours?: number;
   /** `"file"` when editing a connector that is fed by uploads alone. */
   initialImportMode?: string | null;
   isEditing?: boolean;
@@ -238,7 +239,8 @@ export default function ConnectorModal({
   initialSourceId,
   initialDisplayName,
   initialPollInterval = 6,
-  initialLookbackDays = 30,
+  initialLookbackDays = 7,
+  initialLookbackHours,
   initialImportMode,
   isEditing = false,
 }: ConnectorModalProps) {
@@ -281,7 +283,9 @@ export default function ConnectorModal({
   const [importMode, setImportMode] = useState<"connect" | "file">("connect");
 
   const [pollIntervalHours, setPollIntervalHours] = useState(initialPollInterval);
-  const [lookbackDays, setLookbackDays] = useState(initialLookbackDays);
+  const [lookbackHours, setLookbackHours] = useState(
+    initialLookbackHours ?? initialLookbackDays * 24,
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -293,7 +297,7 @@ export default function ConnectorModal({
   useEffect(() => {
     if (isOpen) {
       setPollIntervalHours(initialPollInterval);
-      setLookbackDays(initialLookbackDays);
+      setLookbackHours(initialLookbackHours ?? initialLookbackDays * 24);
       setImportMode(initialImportMode === "file" ? "file" : "connect");
       if (initialSourceType) {
         const item = PROVIDER_CATALOG.find((p) => p.id === initialSourceType);
@@ -335,6 +339,7 @@ export default function ConnectorModal({
     initialDisplayName,
     initialPollInterval,
     initialLookbackDays,
+    initialLookbackHours,
   ]);
 
   if (!isOpen) return null;
@@ -547,7 +552,8 @@ export default function ConnectorModal({
           status: "active",
           // The Core contract requires a positive value; passive importers ignore it and wait for webhook events.
           poll_interval_hours: Number(pollIntervalHours),
-          lookback_days: Number(lookbackDays),
+          lookback_days: Math.ceil(Number(lookbackHours) / 24),
+          lookback_hours: Number(lookbackHours),
           config: payloadConfig,
         }),
       });
@@ -1206,24 +1212,27 @@ export default function ConnectorModal({
                       <Calendar className="w-3 h-3 text-emerald-600" /> {t("modal.importPeriod")}
                     </label>
                     <select
-                      value={lookbackDays}
-                      onChange={(e) => setLookbackDays(Number(e.target.value))}
+                      value={lookbackHours}
+                      onChange={(e) => setLookbackHours(Number(e.target.value))}
                       className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
                     >
-                      <option value={7} className="bg-white text-slate-900">
-                        {t("modal.lastNDays", { count: 7 })}
+                      <option value={6} className="bg-white text-slate-900">
+                        {t("modal.lastNHours", { count: 6 })}
                       </option>
-                      <option value={14} className="bg-white text-slate-900">
-                        {t("modal.lastNDays", { count: 14 })}
+                      <option value={12} className="bg-white text-slate-900">
+                        {t("modal.lastNHours", { count: 12 })}
                       </option>
-                      <option value={30} className="bg-white text-slate-900">
-                        {t("modal.lastNDaysDefault", { count: 30 })}
+                      <option value={24} className="bg-white text-slate-900">
+                        {t("modal.lastNHours", { count: 24 })}
                       </option>
-                      <option value={60} className="bg-white text-slate-900">
-                        {t("modal.lastNDays", { count: 60 })}
+                      <option value={168} className="bg-white text-slate-900">
+                        {t("modal.lastNHoursDefault", { count: 168 })}
                       </option>
-                      <option value={90} className="bg-white text-slate-900">
-                        {t("modal.lastNDays", { count: 90 })}
+                      <option value={336} className="bg-white text-slate-900">
+                        {t("modal.lastNHours", { count: 336 })}
+                      </option>
+                      <option value={720} className="bg-white text-slate-900">
+                        {t("modal.lastNHours", { count: 720 })}
                       </option>
                     </select>
                   </div>

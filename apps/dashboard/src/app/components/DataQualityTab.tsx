@@ -18,7 +18,13 @@ import { CANONICAL_KEYS } from "../lib/metrics/catalog";
 // prop is kept only for call-site compatibility with the other tabs.
 type Props = { apiBase: string; tenantId?: string };
 type Gap = { metric_type: string; missing_dates: string[] };
-type Connector = { source_id: string; source_type: string; display_name?: string; lookback_days: number };
+type Connector = {
+  source_id: string;
+  source_type: string;
+  display_name?: string;
+  lookback_days: number;
+  lookback_hours?: number;
+};
 
 /**
  * An interruption in a metric sampled faster than daily.

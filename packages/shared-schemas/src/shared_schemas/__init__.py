@@ -2,6 +2,12 @@
 Shared Python schemas for Quantified Self platform.
 """
 
+from .aggregation import (
+    aggregate_events,
+    aggregate_stream,
+    bucket_timestamp,
+    default_policies,
+)
 from .data_point import provenance
 from .events import IngestEvent, idempotency_key
 from .field_report import (
@@ -17,6 +23,7 @@ from .metrics import (
     METRIC_ALIASES,
     METRIC_CATALOG,
     Aggregation,
+    IngestResolution,
     MetricCategory,
     MetricDefinition,
     MetricNamespace,
@@ -53,6 +60,7 @@ __all__ = [
     "FieldReportCollector",
     "FieldSighting",
     "IngestEvent",
+    "IngestResolution",
     "MetricCategory",
     "MetricDefinition",
     "MetricNamespace",
@@ -65,8 +73,12 @@ __all__ = [
     "UploadSession",
     "UploadSpool",
     "UploadSpoolError",
+    "aggregate_events",
+    "aggregate_stream",
+    "bucket_timestamp",
     "canonical_metric_type",
     "convert",
+    "default_policies",
     "describe",
     "idempotency_key",
     "is_known_metric_type",

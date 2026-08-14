@@ -234,7 +234,7 @@ Only **Traefik** belongs in public (`QS_HTTP_PORT`), and through it the Gateway,
 documentation; the two importers that external devices send to also stay reachable. Two things are
 deliberately different from the old production compose file: Core no longer publishes host ports, and the
 Traefik dashboard listens on loopback. The reasoning and the way in are under
-[Network boundaries](operations.md#network-boundaries-standalone-compose).
+[Network boundaries](operations.md#network-boundaries-production-compose).
 
 ### Where the dashboard looks for its API
 

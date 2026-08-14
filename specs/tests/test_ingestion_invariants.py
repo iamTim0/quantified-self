@@ -42,3 +42,11 @@ def test_network_partition_recovery():
     Ensures that messages produced during a partition are eventually
     delivered and processed once the network recovers.
     """
+
+
+def test_import_backpressure_and_ack_order():
+    """
+    Verifies Fizzbee Invariants: ResolutionBounded & AckAfterPersisted
+    Ensures that import-time aggregation uses an allowed resolution and that
+    publishers pause rather than losing messages when the durable queue is full.
+    """

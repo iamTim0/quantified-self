@@ -29,6 +29,7 @@ export interface SessionUser {
   email: string;
   name: string;
   role: string;
+  workspaceName: string;
 }
 
 /** Read a non-httpOnly cookie. Returns null when absent. */
@@ -49,6 +50,7 @@ interface MeResponse {
   email: string;
   name: string;
   role: string;
+  workspace_name?: string;
 }
 
 function toSessionUser(data: MeResponse): SessionUser {
@@ -58,6 +60,7 @@ function toSessionUser(data: MeResponse): SessionUser {
     email: data.email,
     name: data.name ?? "",
     role: data.role ?? "member",
+    workspaceName: data.workspace_name ?? "",
   };
 }
 

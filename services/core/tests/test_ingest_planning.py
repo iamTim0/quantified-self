@@ -92,6 +92,21 @@ def test_first_sync_uses_the_full_lookback():
     assert "First import" in reason
 
 
+def test_first_sync_supports_a_sub_day_lookback():
+    """A high-frequency connector can request only the last few hours."""
+    now = BASE + timedelta(days=40)
+    window, reason = compute_sync_window(
+        now=now,
+        poll_interval_hours=1,
+        lookback_days=7,
+        lookback_hours=6,
+        last_success_end=None,
+    )
+    assert window.start == now - timedelta(hours=6)
+    assert window.end == now
+    assert "6 hours" in reason
+
+
 def test_subsequent_sync_resumes_with_overlap():
     """A resumed sync starts before the last success, not at it."""
     now = BASE + timedelta(days=10)

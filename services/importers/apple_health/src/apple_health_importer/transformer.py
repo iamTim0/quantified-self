@@ -18,10 +18,16 @@ used to do that the registry makes unnecessary:
 """
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import FieldReportCollector, idempotency_key, provenance
+from shared_schemas import (
+    FieldReportCollector,
+    aggregate_events,
+    idempotency_key,
+    provenance,
+)
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -565,6 +571,7 @@ def transform_health_auto_export_json(
     tenant_id: str,
     source_id: str,
     report: FieldReportCollector | None = None,
+    ingest_policies: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Transform Health Auto Export JSON structure into standardized DataPoints.
 
@@ -623,6 +630,18 @@ def transform_health_auto_export_json(
             }
             if "source" in entry:
                 base_metadata["device_source"] = entry["source"]
+            definition = METRIC_CATALOG.get(metric_type)
+            if (
+                definition is not None
+                and definition.aggregation.value == "sum"
+                and definition.cadence.value == "daily"
+                and not entry.get("startDate")
+                and not entry.get("endDate")
+            ):
+                # A scalar daily statement is authoritative over interval samples
+                # in the same bucket. The shared aggregator uses this marker to
+                # prevent double counting without retaining the raw payload.
+                base_metadata["provider_total"] = True
 
             # Shapes that carry their numbers under their own names rather than
             # under `qty`: heart rate as Min/Avg/Max, blood pressure as
@@ -1002,7 +1021,7 @@ def transform_health_auto_export_json(
                 continue
             report.unmapped(f"workouts.{key}", value)
 
-    return data_points
+    return aggregate_events(data_points, ingest_policies) if ingest_policies is not None else data_points
 
 
 def route_points(

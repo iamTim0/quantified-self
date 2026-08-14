@@ -17,6 +17,13 @@ export interface SyncRun {
   points_processed: number;
   points_accepted: number;
   points_duplicate: number;
+  points_rejected: number;
+  unsupported_fields: number;
+  backlog_at_start: number | null;
+  backlog_at_end: number | null;
+  provider_window_start: string | null;
+  provider_window_end: string | null;
+  provider_exported_at: string | null;
   message: string | null;
   message_code: string | null;
   message_params: Record<string, string | number | boolean>;

@@ -128,6 +128,7 @@ def compute_sync_window(
     now: datetime,
     poll_interval_hours: float,
     lookback_days: int,
+    lookback_hours: float | None = None,
     last_success_end: datetime | None = None,
     earliest_known_gap: datetime | None = None,
 ) -> tuple[TimeRange, str]:
@@ -137,12 +138,21 @@ def compute_sync_window(
     UI and stored on the sync run so a later reader can tell why a range was chosen.
     """
     now = _as_utc(now)
-    horizon = now - timedelta(days=max(1, lookback_days))
+    if lookback_hours is not None:
+        hours = max(1.0, float(lookback_hours))
+        duration = timedelta(hours=hours)
+        lookback_label = (
+            f"{hours / 24:g} days" if hours % 24 == 0 else f"{hours:g} hours"
+        )
+    else:
+        duration = timedelta(days=max(1, lookback_days))
+        lookback_label = f"{max(1, lookback_days)} days"
+    horizon = now - duration
 
     if last_success_end is None:
         return (
             TimeRange(horizon, now),
-            f"First import: the whole period of the last {lookback_days} days.",
+            f"First import: the whole period of the last {lookback_label}.",
         )
 
     last_success_end = _as_utc(last_success_end)
@@ -166,7 +176,7 @@ def compute_sync_window(
 
     if start < horizon:
         start = horizon
-        reason += f" Capped at the configured lookback of {lookback_days} days."
+        reason += f" Capped at the configured lookback of {lookback_label}."
 
     if start >= now:
         # The connector already has everything up to now; nothing sensible to do

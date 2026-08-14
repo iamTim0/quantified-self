@@ -76,6 +76,38 @@ async def test_configure_source_stores_custom_config_and_publishes_task(mock_nat
     finally:
         await cleanup_test_tenant(tenant_id)
 
+
+@pytest.mark.asyncio
+async def test_configure_source_accepts_sub_day_lookback(mock_nats):
+    """A frequent connector can store a six-hour window instead of whole days."""
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/configure",
+                json={
+                    "source_type": "oura",
+                    "display_name": "Oura Ring",
+                    "access_token": "test-token",
+                    "status": "active",
+                    "lookback_days": 1,
+                    "lookback_hours": 6,
+                },
+                headers=headers,
+            )
+            assert res.status_code == 200
+            token = await ac.get(
+                "/api/v1/internal/data/sources/oura/token",
+                headers=service_headers(tenant_id),
+            )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+    assert token.status_code == 200
+    assert token.json()["config"]["lookback_hours"] == 6
+    assert token.json()["config"]["lookback_days"] == 1
+
 @pytest.mark.asyncio
 async def test_internal_token_endpoint_returns_token_and_config():
     tenant_id = await create_test_tenant()

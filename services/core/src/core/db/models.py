@@ -157,6 +157,77 @@ class DataPoint(Base):
     )
 
 
+class MetricIngestPolicy(Base):
+    """Tenant-scoped import resolution override for one canonical metric."""
+
+    __tablename__ = "metric_ingest_policies"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    raw_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "metric_type", name="uq_metric_ingest_policies_tenant_metric"
+        ),
+    )
+
+
+class MetricRollup(Base):
+    """Tenant/source-scoped rollup maintained alongside accepted data points."""
+
+    __tablename__ = "metric_rollups"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    bucket_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sum_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+    is_provider_total: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "metric_type",
+            "resolution",
+            "bucket_start",
+            name="uq_metric_rollups_tenant_source_metric_resolution_bucket",
+        ),
+    )
+
+
 class TenantShare(Base):
     __tablename__ = "tenant_shares"
 
@@ -301,6 +372,13 @@ class SyncRun(Base):
     points_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    points_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unsupported_fields: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backlog_at_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    backlog_at_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     skipped_ranges: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     message: Mapped[str | None] = mapped_column(String(512), nullable=True)
     # Stable client-facing status; `message` remains an English operator fallback

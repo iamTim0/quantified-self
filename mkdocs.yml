@@ -35,6 +35,7 @@ nav:
       - Calendar: importers/calendar.md
   - Features:
       - Smart and force import: features/smart-import.md
+      - Data resolution and rollups: features/data-resolution.md
       - Data quality: features/data-quality.md
       - Uploading an export file: features/file-import.md
       - Correlations and simple analyses: features/correlations.md

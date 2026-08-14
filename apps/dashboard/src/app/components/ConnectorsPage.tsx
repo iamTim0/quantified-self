@@ -38,6 +38,7 @@ export interface ConnectorItem {
   masked_token: string;
   poll_interval_hours: number;
   lookback_days: number;
+  lookback_hours: number;
   created_at?: string;
   updated_at?: string;
   sync_status?: string;
@@ -503,7 +504,7 @@ export default function ConnectorsPage({
                                 ? t("connectors.webhookDriven")
                                 : t("connectors.everyHours", {
                                     hours: c.poll_interval_hours,
-                                    days: c.lookback_days,
+                                    lookback: c.lookback_hours ?? c.lookback_days * 24,
                                   })}
                           </td>
                           {/*

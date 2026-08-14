@@ -6,7 +6,9 @@ When a connector is imported, the platform first works out which parts of the re
 are **already complete**, and imports only the rest. The period itself is adapted automatically to
 how often the connector actually imports.
 
-Before, every sync re-requested a fixed period (30 days by default) regardless of what was already
+New connectors start with a 168-hour (seven-day) lookback. The user can reduce that to six or twelve
+hours, one day, or choose a longer provider-appropriate window. Before adaptive planning, every sync re-requested a fixed period
+regardless of what was already
 stored. That produced thousands of duplicate events per run. The idempotency check discarded them,
 but they still spent processing time and the provider's API quota for nothing.
 
@@ -44,6 +46,9 @@ lost when data arrives late at the provider, and a single failed run is caught u
 Further rules:
 
 - Without a previous successful run, the full configured lookback is used.
+- The configured lookback is stored in hours, so high-frequency connectors can request only the
+  current day or the last few hours. Older configurations that contain only `lookback_days` remain
+  valid and are interpreted as 24 hours per day.
 - If an older gap in the data is known, the window is extended back to it.
 - The window is always capped at the configured lookback.
 - Only a run with status `success` moves the resume point.

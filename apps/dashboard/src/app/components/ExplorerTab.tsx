@@ -40,7 +40,12 @@ export interface DataPointItem {
   value: number;
   metadata?: Record<string, any>;
   idempotency_key?: string;
+  sample_count?: number;
+  is_derived?: boolean;
+  resolution?: string;
 }
+
+type Resolution = "auto" | "raw" | "minute" | "hour" | "day";
 
 /** Which of the three views is on screen. Part of a saved view, so one restores it. */
 type ExplorerView = "chart" | "raw" | "overview";
@@ -56,6 +61,7 @@ export interface BackendSavedView {
     dateRangePreset?: "7d" | "14d" | "30d" | "90d" | "all" | "custom";
     searchQuery?: string;
     view?: ExplorerView;
+    importResolution?: Exclude<Resolution, "auto">;
   };
   is_shared?: boolean;
   created_at?: string;
@@ -84,7 +90,7 @@ const COLOR_PALETTE = [
  * instead, which is the honest way to read a metric whose history is longer than the
  * sample.
  */
-const POINT_LIMIT = 1000;
+const POINT_LIMIT = 10000;
 
 /** Metrics preselected on first load, so the chart is not empty on arrival. */
 const INITIAL_METRICS = 3;
@@ -100,6 +106,24 @@ function dayOf(isoString?: string): string {
   if (!isoString) return "";
   const date = new Date(isoString);
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().split("T")[0];
+}
+
+function queryWindow(
+  preset: "7d" | "14d" | "30d" | "90d" | "all" | "custom",
+  customStart: string,
+  customEnd: string,
+): { start?: string; end?: string } {
+  if (preset === "all") return {};
+  if (preset === "custom") {
+    return {
+      start: customStart ? new Date(`${customStart}T00:00:00Z`).toISOString() : undefined,
+      end: customEnd ? new Date(`${customEnd}T23:59:59.999Z`).toISOString() : undefined,
+    };
+  }
+  const days = Number.parseInt(preset, 10);
+  const end = new Date();
+  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
@@ -131,6 +155,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
    */
   const [chosenMetrics, setChosenMetrics] = useState<string[] | null>(null);
   const [selectedSource, setSelectedSource] = useState("all");
+  const [importResolution, setImportResolution] = useState<Resolution>("auto");
   const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
   const [chartType, setChartType] = useState<"area" | "line" | "bar">("area");
   const [dateRangePreset, setDateRangePreset] = useState<
@@ -151,16 +176,25 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   const [isSavingView, setIsSavingView] = useState(false);
 
   /**
-   * Newest first, because this is a log: the previous version took the endpoint's
-   * default ascending order, so the "raw data" on screen were the *oldest* 500
-   * points the workspace had ever stored.
+   * The server returns a bounded, time-windowed result. Longer windows use the
+   * server-side rollups, so the Explorer does not mistake a newest-point sample for
+   * the complete history.
    */
   const loadPoints = useCallback(
     async (scope: string | null) => {
       setLoading(true);
       try {
-        const query = new URLSearchParams({ limit: String(POINT_LIMIT), sort: "desc" });
+        const queryResolution = dateRangePreset === "all" ? "day" : "auto";
+        const query = new URLSearchParams({
+          limit: String(POINT_LIMIT),
+          sort: "asc",
+          resolution: queryResolution,
+        });
         if (scope) query.set("metric_type", scope);
+        if (selectedSource !== "all") query.set("source_type", selectedSource);
+        const window = queryWindow(dateRangePreset, customStartDate, customEndDate);
+        if (window.start) query.set("start_time", window.start);
+        if (window.end) query.set("end_time", window.end);
         const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
           headers: { "X-Tenant-ID": tenantId },
         });
@@ -174,7 +208,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         setLoading(false);
       }
     },
-    [apiBase, tenantId],
+    [
+      apiBase,
+      tenantId,
+      selectedSource,
+      dateRangePreset,
+      customStartDate,
+      customEndDate,
+    ],
   );
 
   /**
@@ -255,6 +296,23 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     [chosenMetrics, metricOptions],
   );
 
+  const saveImportResolution = useCallback(
+    async (resolution: Resolution) => {
+      if (resolution === "auto" || selectedMetrics.length === 0) return;
+      await Promise.all(
+        selectedMetrics.map((metric) =>
+          apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
+            body: JSON.stringify({ resolution, raw_retention_days: 90 }),
+          }),
+        ),
+      );
+      await loadPoints(metricScope);
+    },
+    [apiBase, tenantId, selectedMetrics, loadPoints, metricScope],
+  );
+
   const availableSources = useMemo(() => {
     const set = new Set<string>();
     dataPoints.forEach((p) => {
@@ -279,6 +337,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             dateRangePreset,
             searchQuery,
             view,
+            importResolution: importResolution === "auto" ? undefined : importResolution,
           },
           is_shared: false,
         }),
@@ -321,12 +380,18 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     if (cfg.dateRangePreset) setDateRangePreset(cfg.dateRangePreset);
     if (cfg.searchQuery !== undefined) setSearchQuery(cfg.searchQuery);
     if (cfg.view) setView(cfg.view);
+    if (cfg.importResolution) setImportResolution(cfg.importResolution);
     // A saved view describes a query across all metrics, so a single-metric scope
     // left over from a drill-down would silently contradict it.
     if (metricScope !== null) {
       setMetricScope(null);
       void loadPoints(null);
     }
+  };
+
+  const handleImportResolutionChange = (resolution: Resolution) => {
+    setImportResolution(resolution);
+    void saveImportResolution(resolution);
   };
 
   /** Changing the selection by hand leaves the drill-down's single-metric fetch. */
@@ -492,6 +557,26 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     </div>
   );
 
+  const importResolutionFilter = (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+        {t("explorer.importResolution")}
+      </span>
+      <select
+        value={importResolution}
+        onChange={(event) => handleImportResolutionChange(event.target.value as Resolution)}
+        title={t("explorer.importResolutionHint")}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-[#0d5c3a]"
+      >
+        <option value="auto">{t("explorer.resolutionAuto")}</option>
+        <option value="raw">{t("explorer.resolutionRaw")}</option>
+        <option value="minute">{t("explorer.resolutionMinute")}</option>
+        <option value="hour">{t("explorer.resolutionHour")}</option>
+        <option value="day">{t("explorer.resolutionDay")}</option>
+      </select>
+    </div>
+  );
+
   const periodFilter = (
     <div className="flex items-center gap-2">
       <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -554,9 +639,8 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   );
 
   /*
-    A cap the reader is told about. The sample is the newest POINT_LIMIT points across
-    every metric, so a chart over a busy workspace can end earlier than the data do —
-    and a cap nobody mentions reads as "this is everything".
+    The API cap is shown explicitly. For long periods the rows are rollup buckets,
+    while a shorter raw request can still reach the same limit.
   */
   const sampleNote =
     metricScope === null && dataPoints.length >= POINT_LIMIT ? (
@@ -711,6 +795,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   onChange={handleMetricChange}
                 />
                 {sourceFilter}
+                {importResolutionFilter}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
@@ -793,6 +878,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 onChange={handleMetricChange}
               />
               {sourceFilter}
+              {importResolutionFilter}
             </div>
             {periodFilter}
             {fullTextSearch}

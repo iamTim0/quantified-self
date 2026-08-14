@@ -10,7 +10,9 @@ import logging
 import tempfile
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import nats
 import uvicorn
@@ -28,6 +30,7 @@ from apple_health_importer.auth import extract_presented_key, resolve_api_key
 from apple_health_importer.client import (
     bearer_token,
     close_sync_run,
+    get_ingest_policies,
     open_sync_run,
     report_sync_progress,
     resolve_session,
@@ -77,9 +80,31 @@ PUBLISH_ATTEMPTS = 5
 #: retries. Long enough to outlast a busy broker, short enough that a genuinely broken one
 #: still fails the import rather than stalling it for hours.
 PUBLISH_RETRY_DELAY = 0.1
+PUBLISH_CONCURRENCY = 32
 
 #: How often the spool is checked for uploads nobody came back to finish.
 _SWEEP_INTERVAL_SECONDS = 300
+
+
+def _field_report_count(report: FieldReportCollector) -> int:
+    """Count provider field occurrences that arrived but were not stored."""
+    return sum(sighting.occurrences for sighting in report.build().unmapped)
+
+
+def _event_window(events: list[dict[str, Any]]) -> tuple[str | None, str | None]:
+    """Return the normalized provider coverage window without retaining payloads."""
+    timestamps: list[datetime] = []
+    for event in events:
+        try:
+            value = datetime.fromisoformat(str(event["timestamp"]).replace("Z", "+00:00"))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        timestamps.append(value.astimezone(timezone.utc))
+    if not timestamps:
+        return None, None
+    return min(timestamps).isoformat(), max(timestamps).isoformat()
 
 
 async def _sweep_uploads_forever() -> None:
@@ -236,8 +261,17 @@ async def ingest_health_auto_export_payload(
 
     field_report = FieldReportCollector()
     try:
+        ingest_policies = (
+            await get_ingest_policies(tenant_id, source_id, req_id=x_request_id)
+            if nc_client and nc_client.is_connected
+            else {}
+        )
         events = transform_health_auto_export_json(
-            payload, tenant_id=tenant_id, source_id=source_id, report=field_report
+            payload,
+            tenant_id=tenant_id,
+            source_id=source_id,
+            report=field_report,
+            ingest_policies=ingest_policies,
         )
     except Exception as exc:  # noqa: BLE001
         await close_sync_run(
@@ -250,26 +284,26 @@ async def ingest_health_auto_export_payload(
         )
         raise HTTPException(status_code=400, detail="The Apple Health payload could not be imported.") from None
 
+    provider_window_start, provider_window_end = _event_window(events)
+    unsupported_fields = _field_report_count(field_report)
     await report_sync_progress(
         tenant_id,
         source_id,
         sync_run_id,
         req_id=x_request_id,
         points_expected=len(events),
+        unsupported_fields=unsupported_fields,
+        provider_window_start=provider_window_start,
+        provider_window_end=provider_window_end,
         message=f"Health Auto Export transformed {len(events)} data point(s).",
     )
 
     published_count = 0
     if nc_client and nc_client.is_connected:
         js = nc_client.jetstream()
-        for event in events:
-            # AGENTS.md rule 13: correlation id travels with the event, not just the log.
-            event["request_id"] = x_request_id
-            if sync_run_id:
-                event["sync_run_id"] = sync_run_id
-            raw_data = json.dumps(event).encode("utf-8")
-            await js.publish("qs.ingest.apple_health", raw_data)
-            published_count += 1
+        published_count = await _publish_events(
+            js, events, req_id=x_request_id, sync_run_id=sync_run_id
+        )
     else:
         # Testing dry-run mode
         published_count = len(events)
@@ -302,6 +336,9 @@ async def ingest_health_auto_export_payload(
             status="idle",
             message=f"{published_count} data point(s) received from Health Auto Export.",
             points_received=published_count,
+            unsupported_fields=unsupported_fields,
+            provider_window_start=provider_window_start,
+            provider_window_end=provider_window_end,
         ),
     )
 
@@ -387,6 +424,30 @@ async def _publish_with_retry(js, payload: bytes, req_id: str) -> None:
             delay *= 2
 
 
+async def _publish_events(
+    js,
+    events: list[dict],
+    *,
+    req_id: str,
+    sync_run_id: str | None,
+) -> int:
+    """Publish a bounded batch concurrently while retaining broker backpressure."""
+    published = 0
+    for offset in range(0, len(events), PUBLISH_CONCURRENCY):
+        batch = events[offset : offset + PUBLISH_CONCURRENCY]
+        tasks = []
+        for event in batch:
+            event["request_id"] = req_id
+            if sync_run_id:
+                event["sync_run_id"] = sync_run_id
+            tasks.append(
+                _publish_with_retry(js, json.dumps(event).encode("utf-8"), req_id)
+            )
+        await asyncio.gather(*tasks)
+        published += len(batch)
+    return published
+
+
 async def _import_archive(
     path: str,
     *,
@@ -405,20 +466,37 @@ async def _import_archive(
     """
     report = FieldReportCollector()
     published = 0
-    points = read_export(path, tenant_id=tenant_id, source_id=source_id, report=report)
+    provider_window_start: str | None = None
+    provider_window_end: str | None = None
+    ingest_policies = (
+        await get_ingest_policies(tenant_id, source_id, req_id=req_id)
+        if nc_client and nc_client.is_connected
+        else {}
+    )
+    points = read_export(
+        path,
+        tenant_id=tenant_id,
+        source_id=source_id,
+        report=report,
+        ingest_policies=ingest_policies,
+    )
     try:
         js = nc_client.jetstream() if nc_client else None
         while True:
             batch = await asyncio.to_thread(_drain, points, 1000)
             if not batch:
                 break
-            for event in batch:
-                event["request_id"] = req_id
-                if sync_run_id:
-                    event["sync_run_id"] = sync_run_id
-                if js is not None:
-                    await _publish_with_retry(js, json.dumps(event).encode("utf-8"), req_id)
-                published += 1
+            batch_start, batch_end = _event_window(batch)
+            if batch_start and (provider_window_start is None or batch_start < provider_window_start):
+                provider_window_start = batch_start
+            if batch_end and (provider_window_end is None or batch_end > provider_window_end):
+                provider_window_end = batch_end
+            if js is not None:
+                published += await _publish_events(
+                    js, batch, req_id=req_id, sync_run_id=sync_run_id
+                )
+            else:
+                published += len(batch)
     except TimeoutError as exc:
         # Distinguished from the generic failure below because the cause is elsewhere and
         # the remedy is not the user's: the archive was read fine, the broker did not
@@ -436,6 +514,9 @@ async def _import_archive(
                 f"rather than duplicating."
             ),
             points_received=published,
+            unsupported_fields=_field_report_count(report),
+            provider_window_start=provider_window_start,
+            provider_window_end=provider_window_end,
         )
         return
     except (ArchiveTooLarge, ArchiveUnreadable) as exc:
@@ -448,6 +529,9 @@ async def _import_archive(
         await close_sync_run(
             tenant_id, source_id, sync_run_id, req_id=req_id, status="error",
             message=str(exc), points_received=published,
+            unsupported_fields=_field_report_count(report),
+            provider_window_start=provider_window_start,
+            provider_window_end=provider_window_end,
         )
         return
     except Exception as exc:  # noqa: BLE001
@@ -456,6 +540,9 @@ async def _import_archive(
             tenant_id, source_id, sync_run_id, req_id=req_id, status="error",
             message=f"Reading the archive failed after {published} data point(s): {exc}",
             points_received=published,
+            unsupported_fields=_field_report_count(report),
+            provider_window_start=provider_window_start,
+            provider_window_end=provider_window_end,
         )
         return
     finally:
@@ -467,11 +554,26 @@ async def _import_archive(
         points.close()
         Path(path).unlink(missing_ok=True)
 
+    unsupported_fields = _field_report_count(report)
+    await report_sync_progress(
+        tenant_id,
+        source_id,
+        sync_run_id,
+        req_id=req_id,
+        points_received=published,
+        unsupported_fields=unsupported_fields,
+        provider_window_start=provider_window_start,
+        provider_window_end=provider_window_end,
+        message=f"Archive parsed: {published} data point(s) published so far.",
+    )
     await send_field_report(tenant_id, source_id, report.build(), req_id=req_id, sync_run_id=sync_run_id)
     await close_sync_run(
         tenant_id, source_id, sync_run_id, req_id=req_id, status="idle",
         message=f"Archive read: {published} data point(s) published.",
         points_received=published,
+        unsupported_fields=unsupported_fields,
+        provider_window_start=provider_window_start,
+        provider_window_end=provider_window_end,
     )
     logger.info("[req_id=%s] Archive upload finished: %d data point(s) published.", req_id, published)
 
