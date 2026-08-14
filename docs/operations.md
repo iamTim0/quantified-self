@@ -290,10 +290,14 @@ A production deployment should show nothing here. If it does, at least one of th
   `backlog_at_end`, `provider_window_start`, `provider_window_end` and `provider_exported_at` on
   the run. A successful importer request means that the importer finished publishing; it does not
   mean that the provider export covered every requested timestamp.
+- **Workspace data wipe**: the owner/admin endpoint `DELETE /api/v1/data/wipe` removes the tenant's
+  raw points, quarantined values and derived metric rollups in one transaction. The response keeps
+  `deleted_count` for point values and reports `deleted_rollup_count` separately; no stale chart
+  aggregate survives to be combined with a later re-import.
 - **Resolution**: `GET /api/v1/data/metrics?resolution=auto` selects minute, hour or day buckets from
-  the requested window. The Explorer shows the returned resolution and sample count. A query that
-  falls back to raw points reports `rollup_available=false` so the client can say why the result is
-  limited.
+  the requested window. The Explorer shows the returned resolution and sample count. A mixed
+  historical/new result reports `contains_legacy_raw=true` and marks compatibility points in their
+  metadata; `rollup_available` still says whether any requested rollup rows were available.
 - **Broker pressure**: the ingestion stream has bounded age and size. When it is full, new
   publishes are rejected and importers pause/retry; old unacknowledged events are not silently
   discarded. Investigate the Core consumer and database before increasing the stream limit.
@@ -349,6 +353,9 @@ the connector credentials is worthless.
 - The scheduler is single-flight through a transaction-scoped Postgres advisory lock. Several Core
   replicas are therefore unproblematic: exactly one of them plans per tick. If it dies, the connection
   releases the lock.
+- Manual and scheduled planning also take a connector-scoped transaction lock around the in-flight
+  check and `SyncRun` insert. Two simultaneous **Sync now** requests therefore produce one queued
+  run and one transparent `sync_in_flight` history entry instead of two provider calls.
 - Analysis holds no database connection. Deterministic analysis and the MCP endpoint
   scale independently of Core without sticky routing. Codex chat threads are ephemeral
   process state, so `/api/v1/chat/turn` needs sticky routing when Analysis has multiple

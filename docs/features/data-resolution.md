@@ -69,13 +69,18 @@ With `auto`, the Explorer selects:
 | More than 90 days | day |
 
 The server applies the time window and source filter before the limit. The response
-declares the actual resolution, bucket timestamp, sample count and whether a point
-is derived. This prevents the client from presenting a newest-1,000-point sample as
-the complete history.
+declares the requested resolution, bucket timestamp, sample count and whether a
+point is derived. If a workspace contains a mixture of historical raw points and
+newer rollups, Core merges both sources instead of returning only the rollup rows.
+The response sets `contains_legacy_raw=true`, and each compatibility point carries
+`metadata.compatibility_fallback=true` and `metadata.resolution="raw"`. This keeps
+the fallback bounded by the same limit while preventing the client from presenting
+a newest-1,000-point sample as the complete history.
 
-`/api/v1/data/metrics/summary` uses day rollups when available and reports the
-resolution in its response. Data imported before rollups were introduced remains
-queryable through the compatibility fallback until a backfill is run.
+`/api/v1/data/metrics/summary` combines day-rollup aggregates with uncovered legacy
+points when both exist and reports `contains_legacy_raw=true`. Data imported before
+rollups were introduced remains queryable through this compatibility fallback until
+a backfill is run.
 
 ## Backfill and retention
 

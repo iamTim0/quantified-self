@@ -561,9 +561,12 @@ async def complete_chunked_upload(
     except (OffsetMismatch, SpoolTooLarge, UnknownUpload) as exc:
         return _upload_failure(exc)
 
-    target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
-
+    received = session.received
     try:
+        # Resolve the connector before reading, but keep cleanup around both
+        # operations. ``finish`` removes the session from the registry, so a target
+        # lookup failure otherwise left the archive invisible to the spool sweeper.
+        target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
         # In a worker thread: the archive is read from disk in one go because that is
         # what this importer's parser takes, and reading it on the event loop would
         # stall every other request for as long as it takes.
@@ -578,7 +581,7 @@ async def complete_chunked_upload(
         target.source_id,
         req_id=x_request_id,
         points_expected=None,
-        message=f"WHOOP archive received ({session.received} byte(s)).",
+        message=f"WHOOP archive received ({received} byte(s)).",
     )
 
     return await _accept_export(

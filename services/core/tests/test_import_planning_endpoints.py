@@ -9,6 +9,7 @@ Maps to Fizzbee Invariants:
 - SmartSkipOnlyWhenComplete
 """
 
+import asyncio
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from core.db.models import ApiKey, DataPoint, DataSource, SyncRun
 from core.db.session import async_session_maker
-from core.events.consumer import _tally
+from core.events.consumer import _tally, _tally_rejected_event
 from core.main import app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -248,6 +249,40 @@ async def test_sync_publishes_a_window_and_records_a_run(mock_nats):
             assert run.status == "running"
             assert run.window_start is not None
             assert run.window_reason
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sync_requests_create_only_one_in_flight_run(mock_nats):
+    """Verifies Fizzbee Invariant: SchedulerSingleFlight."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed_source(tenant_id, "whoop")
+
+        async def trigger():
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://testserver"
+            ) as ac:
+                return await ac.post(
+                    "/api/v1/data/sources/sync",
+                    json={
+                        "source_type": "whoop",
+                        "mode": "force",
+                        "start": BASE.isoformat(),
+                        "end": (BASE + timedelta(hours=1)).isoformat(),
+                    },
+                    headers=auth_headers(tenant_id),
+                )
+
+        responses = await asyncio.gather(trigger(), trigger())
+
+        assert {response.status_code for response in responses} == {202}
+        assert {response.json()["status"] for response in responses} == {
+            "sync_queued",
+            "skipped",
+        }
+        assert len(mock_nats.published) == 1
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -593,6 +628,49 @@ async def test_core_marks_run_success_only_on_the_last_processed_event():
             ).scalar_one()
             assert redelivered.points_processed == 2
             assert redelivered.points_duplicate == 1
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_permanent_rejection_drains_a_run_counter():
+    """Verifies Fizzbee Invariant: ImportCompletionAfterCoreProcessing."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop")
+        run_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    id=run_id,
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-rejected-event",
+                    mode="force",
+                    trigger="upload",
+                    status="loading",
+                    points_expected=1,
+                    points_received=1,
+                    started_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+        await _tally_rejected_event(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            sync_run_id=run_id,
+            event_key="rejected-event-1",
+        )
+
+        async with async_session_maker() as session:
+            run = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert run.status == "success"
+            assert run.points_processed == 1
+            assert run.points_rejected == 1
     finally:
         await cleanup_test_tenant(tenant_id)
 

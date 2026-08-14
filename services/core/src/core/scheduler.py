@@ -31,6 +31,7 @@ Maps to Fizzbee Invariants:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -140,6 +141,36 @@ async def has_in_flight_run(
         .limit(1)
     )
     return result.scalars().first() is not None
+
+
+def connector_lock_key(tenant_id: str, source_id: str) -> int:
+    """Return a stable PostgreSQL advisory-lock key for one connector instance.
+
+    The lock is deliberately keyed by both tenant and source. A tenant's two
+    connectors can plan independently, while every Core replica still uses the
+    same key for the same connector. A digest avoids relying on Python's process-
+    randomised ``hash()`` implementation.
+    """
+    digest = hashlib.blake2b(
+        f"{tenant_id}:{source_id}".encode(), digest_size=8
+    ).digest()
+    key = int.from_bytes(digest, byteorder="big", signed=True)
+    return key or 1
+
+
+async def acquire_connector_lock(
+    session: AsyncSession, tenant_id: str, source_id: str
+) -> None:
+    """Serialize planning and run creation for one tenant-scoped connector.
+
+    This is transaction-scoped, so a crashed request releases the lock with its
+    database transaction. Waiting rather than returning ``False`` is important:
+    the second request must re-check ``has_in_flight_run`` after the first request
+    commits, otherwise two simultaneous clicks can both pass the check.
+    """
+    await session.execute(
+        select(func.pg_advisory_xact_lock(connector_lock_key(tenant_id, source_id)))
+    )
 
 
 async def expire_stale_runs(

@@ -815,41 +815,49 @@ async def complete_chunked_upload(
     except (OffsetMismatch, SpoolTooLarge, UnknownUpload) as exc:
         return _upload_failure(exc)
 
-    target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
+    received = session.received
+    try:
+        target = await resolve_upload_target(tenant_id, session.source_id, req_id=x_request_id)
 
-    if (nc_client is None or not nc_client.is_connected) and not getattr(
-        app.state, "testing", False
-    ):
-        session.path.unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=503, detail="NATS event broker unavailable. Please retry later."
-        )
+        if (nc_client is None or not nc_client.is_connected) and not getattr(
+            app.state, "testing", False
+        ):
+            raise HTTPException(
+                status_code=503, detail="NATS event broker unavailable. Please retry later."
+            )
 
-    sync_run_id = await open_sync_run(
-        tenant_id,
-        target.source_id,
-        req_id=x_request_id,
-        trigger="upload",
-        message=f"Apple Health archive received ({session.received} byte(s)).",
-    )
-
-    task = asyncio.create_task(
-        _import_archive(
-            str(session.path),
-            tenant_id=tenant_id,
-            source_id=target.source_id,
-            sync_run_id=sync_run_id,
+        sync_run_id = await open_sync_run(
+            tenant_id,
+            target.source_id,
             req_id=x_request_id,
+            trigger="upload",
+            message=f"Apple Health archive received ({received} byte(s)).",
         )
-    )
-    _running_imports.add(task)
-    task.add_done_callback(_running_imports.discard)
+
+        task = asyncio.create_task(
+            _import_archive(
+                str(session.path),
+                tenant_id=tenant_id,
+                source_id=target.source_id,
+                sync_run_id=sync_run_id,
+                req_id=x_request_id,
+            )
+        )
+        # The task owns the path from this point. Its finally block removes it after
+        # the parser has released the ZIP; failures before task creation are cleaned
+        # up by the outer finally below.
+        session = None
+        _running_imports.add(task)
+        task.add_done_callback(_running_imports.discard)
+    finally:
+        if session is not None:
+            session.path.unlink(missing_ok=True)
 
     logger.info(
         "[req_id=%s] Tenant %s: assembled a %d byte Apple Health archive for connector %s.",
         x_request_id,
         tenant_id,
-        session.received,
+        received,
         target.source_id,
     )
 
@@ -860,7 +868,7 @@ async def complete_chunked_upload(
             "sync_run_id": sync_run_id,
             "source_id": target.source_id,
             "source_type": target.source_type,
-            "received": session.received,
+            "received": received,
         },
     )
 

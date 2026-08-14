@@ -48,7 +48,7 @@ from shared_schemas.metrics import (
     canonical_metric_type,
     describe,
 )
-from sqlalchemy import and_, delete, distinct, func, or_, select
+from sqlalchemy import and_, delete, distinct, exists, func, or_, select
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -121,7 +121,12 @@ from core.oauth_refresh import (
     refresh_credential,
 )
 from core.rollups import update_rollups_for_point
-from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
+from core.scheduler import (
+    DueConnector,
+    acquire_connector_lock,
+    has_in_flight_run,
+    run_scheduler,
+)
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
@@ -1913,6 +1918,36 @@ def _round(value: float | None, digits: int) -> float | None:
     return round(float(value), digits) if value is not None else None
 
 
+def _rollup_covers_point(resolution: str):
+    """Return a predicate for raw points already represented by a rollup.
+
+    A deployment can contain both legacy raw points and newer incremental rollups.
+    The rollup's timestamp bounds let the compatibility query retain raw points
+    before or after a partially covered bucket, while provider totals remain
+    authoritative for their whole bucket. This keeps mixed history visible without
+    blindly adding the same point to a rollup twice.
+    """
+    bucket = func.date_trunc(resolution, DataPoint.timestamp)
+    return exists(
+        select(MetricRollup.id).where(
+            MetricRollup.tenant_id == DataPoint.tenant_id,
+            MetricRollup.source_id == DataPoint.source_id,
+            MetricRollup.metric_type == DataPoint.metric_type,
+            MetricRollup.resolution == resolution,
+            MetricRollup.bucket_start == bucket,
+            or_(
+                MetricRollup.is_provider_total.is_(True),
+                and_(
+                    MetricRollup.first_timestamp.is_not(None),
+                    MetricRollup.last_timestamp.is_not(None),
+                    DataPoint.timestamp >= MetricRollup.first_timestamp,
+                    DataPoint.timestamp <= MetricRollup.last_timestamp,
+                ),
+            ),
+        )
+    )
+
+
 
 @app.get("/api/v1/data/metrics")
 async def query_metrics(
@@ -1991,31 +2026,88 @@ async def query_metrics(
             if sort == "desc"
             else MetricRollup.bucket_start.asc()
         ).limit(limit)
-        rows = (await session.execute(stmt)).all()
-        if rows:
+        rollup_rows = (await session.execute(stmt)).all()
+
+        # Do not use rollups as an all-or-nothing switch. Historical data may have
+        # been written before incremental rollups existed, or a first bucket may
+        # only be partly covered by a deployment that has just started producing
+        # them. Return those legacy points alongside the rollups, bounded by the
+        # same limit and marked so clients can explain the mixed resolution.
+        raw_stmt = (
+            select(DataPoint, DataSource.source_type)
+            .join(
+                DataSource,
+                and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+            )
+            .where(
+                DataPoint.tenant_id == tenant_id,
+                ~_rollup_covers_point(effective_resolution),
+                *source_filter,
+            )
+        )
+        if metric_type:
+            raw_stmt = raw_stmt.where(DataPoint.metric_type == metric_type)
+        if start_dt:
+            raw_stmt = raw_stmt.where(DataPoint.timestamp >= start_dt)
+        if end_dt:
+            raw_stmt = raw_stmt.where(DataPoint.timestamp <= end_dt)
+        raw_stmt = raw_stmt.order_by(
+            DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
+        ).limit(limit)
+        raw_rows = (await session.execute(raw_stmt)).all()
+
+        points = [
+            {
+                "id": rollup.id,
+                "source_id": rollup.source_id,
+                "source_type": source,
+                "metric_type": rollup.metric_type,
+                "timestamp": rollup.bucket_start.isoformat(),
+                "value": rollup.value,
+                "metadata": {
+                    **(rollup.metadata_ or {}),
+                    "sample_count": rollup.sample_count,
+                    "resolution": rollup.resolution,
+                    "derived": not rollup.is_provider_total,
+                },
+                "sample_count": rollup.sample_count,
+                "is_derived": not rollup.is_provider_total,
+                "_sort_timestamp": rollup.bucket_start,
+            }
+            for rollup, source in rollup_rows
+        ]
+        points.extend(
+            {
+                "id": point.id,
+                "source_id": point.source_id,
+                "source_type": source,
+                "metric_type": point.metric_type,
+                "timestamp": point.timestamp.isoformat(),
+                "value": point.value,
+                "metadata": {
+                    **(point.metadata_ or {}),
+                    "resolution": "raw",
+                    "compatibility_fallback": True,
+                    "sample_count": 1,
+                },
+                "sample_count": 1,
+                "is_derived": False,
+                "_sort_timestamp": point.timestamp,
+            }
+            for point, source in raw_rows
+        )
+        points.sort(key=lambda item: item["_sort_timestamp"], reverse=sort == "desc")
+        points = points[:limit]
+        if points and rollup_rows:
             return {
                 "tenant_id": tenant_id,
-                "count": len(rows),
+                "count": len(points),
                 "resolution": effective_resolution,
-                "rollup_available": True,
+                "rollup_available": bool(rollup_rows),
+                "contains_legacy_raw": bool(raw_rows),
                 "data_points": [
-                    {
-                        "id": rollup.id,
-                        "source_id": rollup.source_id,
-                        "source_type": source,
-                        "metric_type": rollup.metric_type,
-                        "timestamp": rollup.bucket_start.isoformat(),
-                        "value": rollup.value,
-                        "metadata": {
-                            **(rollup.metadata_ or {}),
-                            "sample_count": rollup.sample_count,
-                            "resolution": rollup.resolution,
-                            "derived": not rollup.is_provider_total,
-                        },
-                        "sample_count": rollup.sample_count,
-                        "is_derived": not rollup.is_provider_total,
-                    }
-                    for rollup, source in rows
+                    {key: value for key, value in point.items() if key != "_sort_timestamp"}
+                    for point in points
                 ],
             }
 
@@ -2216,24 +2308,65 @@ async def get_metrics_summary(
         .group_by(MetricRollup.metric_type)
         .order_by(MetricRollup.metric_type.asc())
     )
-    rows = (await session.execute(rollup_stmt)).all()
-    rollup_backed = bool(rows)
-    if not rows:
-        stmt = (
-            select(
-                DataPoint.metric_type,
-                func.count(DataPoint.id).label("count"),
-                func.avg(DataPoint.value).label("avg_value"),
-                func.min(DataPoint.value).label("min_value"),
-                func.max(DataPoint.value).label("max_value"),
-                func.sum(DataPoint.value).label("sum_value"),
-                func.max(DataPoint.timestamp).label("latest_timestamp"),
-            )
-            .where(DataPoint.tenant_id == tenant_id)
-            .group_by(DataPoint.metric_type)
-            .order_by(DataPoint.metric_type.asc())
+    rollup_rows = (await session.execute(rollup_stmt)).all()
+    raw_stmt = (
+        select(
+            DataPoint.metric_type,
+            func.count(DataPoint.id).label("count"),
+            func.avg(DataPoint.value).label("avg_value"),
+            func.min(DataPoint.value).label("min_value"),
+            func.max(DataPoint.value).label("max_value"),
+            func.sum(DataPoint.value).label("sum_value"),
+            func.max(DataPoint.timestamp).label("latest_timestamp"),
         )
-        rows = (await session.execute(stmt)).all()
+        .where(
+            DataPoint.tenant_id == tenant_id,
+            DataPoint.value.is_not(None),
+            ~_rollup_covers_point("day"),
+        )
+        .group_by(DataPoint.metric_type)
+        .order_by(DataPoint.metric_type.asc())
+    )
+    raw_rows = (await session.execute(raw_stmt)).all()
+
+    # Merge the aggregate state rather than choosing either source wholesale. The
+    # weighted average is reconstructed from count and sum, so legacy points and
+    # rollup buckets contribute with their real sample weight.
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in [*rollup_rows, *raw_rows]:
+        count = int(row.count or 0)
+        sum_value = row.sum_value
+        if sum_value is None and row.avg_value is not None:
+            sum_value = float(row.avg_value) * count
+        item = aggregates.setdefault(
+            row.metric_type,
+            {
+                "count": 0,
+                "sum_value": 0.0,
+                "min_value": None,
+                "max_value": None,
+                "latest_timestamp": None,
+            },
+        )
+        item["count"] += count
+        item["sum_value"] += float(sum_value or 0.0)
+        if row.min_value is not None:
+            item["min_value"] = (
+                float(row.min_value)
+                if item["min_value"] is None
+                else min(item["min_value"], float(row.min_value))
+            )
+        if row.max_value is not None:
+            item["max_value"] = (
+                float(row.max_value)
+                if item["max_value"] is None
+                else max(item["max_value"], float(row.max_value))
+            )
+        if row.latest_timestamp is not None and (
+            item["latest_timestamp"] is None
+            or row.latest_timestamp > item["latest_timestamp"]
+        ):
+            item["latest_timestamp"] = row.latest_timestamp
     custom_rules = await session.execute(
         select(MetricMappingRule).where(
             MetricMappingRule.tenant_id == tenant_id,
@@ -2243,30 +2376,40 @@ async def get_metrics_summary(
     custom_definitions = _custom_definitions(list(custom_rules.scalars()))
 
     summary = {}
-    for row in rows:
-        definition = _definition_payload(row.metric_type, custom_definitions)
+    for metric_name, aggregate in aggregates.items():
+        definition = _definition_payload(metric_name, custom_definitions)
         # Rounding follows the metric rather than a blanket one decimal: a step count
         # with a fractional part is noise, a coordinate rounded to 0.1° is a different
         # town.
         digits = definition["precision"] if definition else 1
 
-        summary[row.metric_type] = {
-            "count": row.count,
-            "average": _round(row.avg_value, digits),
-            "min": _round(row.min_value, digits),
-            "max": _round(row.max_value, digits),
+        average = (
+            aggregate["sum_value"] / aggregate["count"]
+            if aggregate["count"]
+            else None
+        )
+        summary[metric_name] = {
+            "count": aggregate["count"],
+            "average": _round(average, digits),
+            "min": _round(aggregate["min_value"], digits),
+            "max": _round(aggregate["max_value"], digits),
             # Which of average and total is the meaningful one is a property of the
             # metric (`definition.aggregation`), so both are returned and the caller
             # picks: averaging a day's step counts answers a question nobody asked.
-            "sum": _round(row.sum_value, digits),
-            "latest_timestamp": row.latest_timestamp.isoformat() if row.latest_timestamp else None,
+            "sum": _round(aggregate["sum_value"], digits),
+            "latest_timestamp": (
+                aggregate["latest_timestamp"].isoformat()
+                if aggregate["latest_timestamp"]
+                else None
+            ),
             "definition": definition,
         }
 
     return {
         "tenant_id": tenant_id,
-        "resolution": "day" if rollup_backed else "raw",
-        "rollup_available": rollup_backed,
+        "resolution": "day" if rollup_rows else "raw",
+        "rollup_available": bool(rollup_rows),
+        "contains_legacy_raw": bool(raw_rows),
         "metrics": summary,
     }
 
@@ -3464,6 +3607,13 @@ async def plan_and_enqueue_sync(
             "sync_run_id": run.id,
             "message": run.message,
         }
+
+    # The check and the following plan/run insert must be one single-flight
+    # critical section. The HTTP handler creates one database session per request,
+    # so a plain SELECT here still lets two simultaneous clicks both see an empty
+    # in-flight set. The transaction-scoped connector lock makes the second request
+    # wait, then re-check after the first run has committed.
+    await acquire_connector_lock(session, tenant_id, source.id)
 
     # Core is the single authority on whether a connector is already busy. The
     # importers each kept a process-local `active_syncs` set, which stops nothing
@@ -5274,6 +5424,9 @@ async def wipe_tenant_data_points(
     tenant_id = principal.tenant_id
     stmt = delete(DataPoint).where(DataPoint.tenant_id == tenant_id)
     result = await session.execute(stmt)
+    rollup_result = await session.execute(
+        delete(MetricRollup).where(MetricRollup.tenant_id == tenant_id)
+    )
     quarantine_result = await session.execute(
         delete(QuarantinedDataPoint).where(QuarantinedDataPoint.tenant_id == tenant_id)
     )
@@ -5282,6 +5435,7 @@ async def wipe_tenant_data_points(
     return {
         "status": "wiped",
         "deleted_count": (result.rowcount or 0) + (quarantine_result.rowcount or 0),
+        "deleted_rollup_count": rollup_result.rowcount or 0,
         "message": (
             f"Successfully deleted {(result.rowcount or 0) + (quarantine_result.rowcount or 0)} "
             "data points for tenant."

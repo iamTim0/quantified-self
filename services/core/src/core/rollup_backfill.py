@@ -119,6 +119,7 @@ async def rebuild(tenant_id: str) -> None:
                         ELSE max(points.timestamp)
                     END,
                     jsonb_build_object(
+                        'derived_from', jsonb_build_array(points.metric_type),
                         'derived_by', 'backfill',
                         'rollup_resolution', :resolution,
                         'sample_count', CASE

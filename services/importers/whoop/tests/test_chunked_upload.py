@@ -14,6 +14,7 @@ import io
 import zipfile
 from unittest.mock import AsyncMock, patch
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from whoop_importer.core_client import UploadTarget
 from whoop_importer.web import _uploads, app
@@ -106,6 +107,27 @@ def test_the_assembled_file_does_not_outlive_the_import(mock_session, mock_targe
         mock_open.return_value = "run-2"
         client.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
 
+    assert not spooled.exists()
+
+
+@patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
+@patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
+def test_target_lookup_failure_still_removes_the_finished_archive(mock_session, mock_target):
+    """A finished upload remains disposable even when its connector disappeared."""
+    mock_session.return_value = TENANT
+    mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
+
+    payload = _archive()
+    upload_id = client.post(f"/upload/begin?source_id={SOURCE}", headers=AUTH).json()[
+        "upload_id"
+    ]
+    client.post(f"/upload/chunk?upload_id={upload_id}&offset=0", content=payload, headers=AUTH)
+    spooled = _uploads.session(upload_id, TENANT).path
+    mock_target.side_effect = HTTPException(status_code=404, detail="Connector not found")
+
+    completed = client.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
+
+    assert completed.status_code == 404
     assert not spooled.exists()
 
 

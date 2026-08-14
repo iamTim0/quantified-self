@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from shared_schemas.metrics import Aggregation, describe
-from sqlalchemy import case, func
+from sqlalchemy import case, func, literal
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,6 +51,11 @@ async def update_rollups_for_point(
 
     now = datetime.now(timezone.utc)
     point_metadata = metadata or {}
+    derived_from = point_metadata.get("derived_from")
+    if not isinstance(derived_from, list) or not all(
+        isinstance(field, str) and field for field in derived_from
+    ):
+        derived_from = [metric_type]
     ingest_resolution = str(point_metadata.get("ingest_resolution") or "raw")
     provider_total = point_metadata.get("provider_total") is True
     # Legacy/raw points only need a day bucket for the summary. Minute imports get
@@ -69,6 +74,16 @@ async def update_rollups_for_point(
     )
     for resolution in resolutions:
         bucket = _bucket(timestamp, resolution)
+        rollup_metadata = (
+            point_metadata
+            if provider_total
+            else {
+                "derived_from": derived_from,
+                "derived_by": aggregation.value,
+                "sample_count": 1,
+                "rollup_resolution": resolution,
+            }
+        )
         # Use the table-level insert: ``metadata`` is a reserved SQLAlchemy ORM
         # attribute, while the physical column is intentionally named metadata.
         # The ORM-level insert interprets it as DeclarativeBase.metadata.
@@ -88,7 +103,7 @@ async def update_rollups_for_point(
             last_value=float(value),
             first_timestamp=timestamp,
             last_timestamp=timestamp,
-            metadata=point_metadata,
+            metadata=rollup_metadata,
             is_provider_total=provider_total,
             updated_at=now,
         )
@@ -166,6 +181,7 @@ async def update_rollups_for_point(
                     "first_timestamp": first_timestamp,
                     "last_timestamp": latest_timestamp,
                     "metadata": func.jsonb_build_object(
+                        "derived_from", literal(derived_from, type_=MetricRollup.__table__.c.metadata.type),
                         "derived_by", aggregation.value,
                         "sample_count", current_count,
                         "rollup_resolution", resolution,

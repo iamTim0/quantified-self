@@ -328,26 +328,91 @@ def _mapping_from_row(rule: MetricMappingRule) -> ValidatedMapping:
     )
 
 
+async def _tally_rejected_event(
+    *,
+    tenant_id: str | None,
+    source_id: str | None,
+    sync_run_id: str | None,
+    event_key: str,
+    session: AsyncSession | None = None,
+) -> None:
+    """Count a valid run-scoped event that Core permanently rejects.
+
+    Importers set ``points_expected`` to the number of events they publish. A
+    permanent validation rejection is still processed by Core, so it must advance
+    the same once-only ledger as an accepted, duplicate or quarantined event. The
+    helper verifies the tenant/source/run relationship before writing anything;
+    malformed or forged identifiers are therefore acknowledged without creating an
+    orphan progress record.
+    """
+    if not all(
+        isinstance(value, str) and value
+        for value in (tenant_id, source_id, sync_run_id)
+    ):
+        return
+
+    async def record(rejection_session: AsyncSession) -> None:
+        run = await rejection_session.execute(
+            select(SyncRun.id).where(
+                SyncRun.id == sync_run_id,
+                SyncRun.tenant_id == tenant_id,
+                SyncRun.source_id == source_id,
+            )
+        )
+        if run.scalar_one_or_none() is None:
+            return
+        await _tally(
+            rejection_session,
+            tenant_id,
+            sync_run_id,
+            source_id=source_id,
+            event_key=event_key,
+            inserted=None,
+            rejected=True,
+        )
+
+    if session is not None:
+        await record(session)
+        return
+
+    async with async_session_maker() as rejection_session:
+        await record(rejection_session)
+        await rejection_session.commit()
+
+
 async def process_message(msg):
     # Bound before the try so the failure handlers can name the tenant whose event it
     # was; a rejection that does not say whose data it dropped is hard to act on.
     tenant_id: str | None = None
     source_id: str | None = None
+    sync_run_id: str | None = None
     event_key = _processing_event_key(msg)
+
+    async def _ack_rejected(session: AsyncSession | None = None) -> None:
+        """Acknowledge a permanent rejection after recording run progress."""
+        await _tally_rejected_event(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            sync_run_id=sync_run_id,
+            event_key=event_key,
+            session=session,
+        )
+        await msg.ack()
+
     try:
         if len(msg.data) > MAX_INGEST_EVENT_BYTES:
             logger.error("Rejected oversized ingest event. Acking to prevent redelivery.")
-            await msg.ack()
+            await _ack_rejected()
             return
         try:
             data = json.loads(msg.data.decode())
         except (UnicodeDecodeError, json.JSONDecodeError):
             logger.error("Rejected malformed ingest event. Acking to prevent redelivery.")
-            await msg.ack()
+            await _ack_rejected()
             return
         if not isinstance(data, dict):
             logger.error("Rejected non-object ingest event. Acking to prevent redelivery.")
-            await msg.ack()
+            await _ack_rejected()
             return
 
         # Bind the correlation id before anything is logged, so a whole ingest is
@@ -357,7 +422,7 @@ async def process_message(msg):
             not isinstance(request_id, str) or not request_id or len(request_id) > 128
         ):
             logger.error("Rejected ingest event with an invalid request_id.")
-            await msg.ack()
+            await _ack_rejected()
             return
         if request_id:
             set_current_request_id(request_id)
@@ -366,19 +431,19 @@ async def process_message(msg):
         tenant_id = data.get("tenant_id")
         if not isinstance(tenant_id, str) or not tenant_id or len(tenant_id) > 128:
             logger.error("Rejected event: missing tenant_id. Acking to prevent redelivery.")
-            await msg.ack()
+            await _ack_rejected()
             return
 
         idempotency_key = data.get("idempotency_key")
         if not isinstance(idempotency_key, str) or not idempotency_key:
             logger.error("Rejected event: missing idempotency_key. Acking to prevent redelivery.")
-            await msg.ack()
+            await _ack_rejected()
             return
 
         raw_metric_type = data.get("metric_type")
         if not isinstance(raw_metric_type, str):
             logger.error("Rejected event for tenant=%s: metric_type is not a string.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         raw_metric_type = raw_metric_type.strip()
         source_id = data.get("source_id")
@@ -389,7 +454,7 @@ async def process_message(msg):
         sync_run_id = data.get("sync_run_id")
         if not isinstance(source_id, str) or not source_id or len(source_id) > 128:
             logger.error("Rejected event for tenant=%s: source_id is invalid.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         try:
             uuid.UUID(tenant_id)
@@ -399,7 +464,7 @@ async def process_message(msg):
                 "Rejected event: tenant_id or source_id is not a UUID. "
                 "Acking to prevent redelivery."
             )
-            await msg.ack()
+            await _ack_rejected()
             return
         if (
             not isinstance(idempotency_source_id, str)
@@ -409,14 +474,14 @@ async def process_message(msg):
             logger.error(
                 "Rejected event for tenant=%s: idempotency_source_id is invalid.", tenant_id
             )
-            await msg.ack()
+            await _ack_rejected()
             return
         if sync_run_id is not None:
             try:
                 uuid.UUID(str(sync_run_id))
             except (ValueError, AttributeError):
                 logger.error("Rejected event for tenant=%s: sync_run_id is invalid.", tenant_id)
-                await msg.ack()
+                await _ack_rejected()
                 return
             sync_run_id = str(sync_run_id)
         if (
@@ -430,23 +495,23 @@ async def process_message(msg):
                 "Acking to prevent redelivery.",
                 tenant_id,
             )
-            await msg.ack()
+            await _ack_rejected()
             return
 
         ts_raw = data.get("timestamp")
         if not isinstance(ts_raw, str):
             logger.error("Rejected event for tenant=%s: timestamp is invalid.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         try:
             ts_val = datetime.fromisoformat(ts_raw)
         except ValueError:
             logger.error("Rejected event for tenant=%s: timestamp is invalid.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         if not isinstance(ts_val, datetime):
             logger.error("Rejected event for tenant=%s: timestamp is invalid.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         if ts_val.tzinfo is None:
             ts_val = ts_val.replace(tzinfo=timezone.utc)
@@ -456,7 +521,7 @@ async def process_message(msg):
             metadata = {}
         elif not isinstance(metadata, dict):
             logger.error("Rejected event for tenant=%s: metadata is not an object.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         raw_value = data.get("value")
         if raw_value is not None and (
@@ -465,7 +530,7 @@ async def process_message(msg):
             or not math.isfinite(float(raw_value))
         ):
             logger.error("Rejected event for tenant=%s: value is not numeric.", tenant_id)
-            await msg.ack()
+            await _ack_rejected()
             return
         numeric_value = float(raw_value) if raw_value is not None else None
 
@@ -492,7 +557,7 @@ async def process_message(msg):
                 tenant_id,
                 source_id,
             )
-            await msg.ack()
+            await _ack_rejected()
             return
 
         metadata = bounded_point_metadata(metadata, numeric_value)
@@ -511,7 +576,8 @@ async def process_message(msg):
                     tenant_id,
                     source_id,
                 )
-                await msg.ack()
+                await _ack_rejected(session)
+                await session.commit()
                 return
             if event_source_type is not None and event_source_type != source.source_type:
                 logger.error(
@@ -520,7 +586,8 @@ async def process_message(msg):
                     tenant_id,
                     source.id,
                 )
-                await msg.ack()
+                await _ack_rejected(session)
+                await session.commit()
                 return
             if idempotency_source_id != source.id and not idempotency_source_id.startswith(
                 f"{source.id}_"
@@ -531,7 +598,8 @@ async def process_message(msg):
                     tenant_id,
                     source.id,
                 )
-                await msg.ack()
+                await _ack_rejected(session)
+                await session.commit()
                 return
 
             if unknown_error is not None:
@@ -734,7 +802,7 @@ async def process_message(msg):
             tenant_id,
             source_id,
         )
-        await msg.ack()
+        await _ack_rejected()
     except Exception as exc:  # noqa: BLE001 - transient failures need redelivery
         logger.error(
             "Error processing ingest event for tenant=%s source=%s (%s)",
