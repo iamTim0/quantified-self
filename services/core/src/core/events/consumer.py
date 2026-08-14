@@ -31,8 +31,9 @@ import nats
 from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
-from sqlalchemy import and_, case, delete, func, select, update
+from sqlalchemy import and_, case, delete, func, literal, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -864,7 +865,7 @@ async def _tally(
                 else_=SyncRun.message_code,
             ),
             SyncRun.message_params: case(
-                (drained, {}),
+                (drained, literal({}, type_=JSONB)),
                 else_=SyncRun.message_params,
             ),
         }

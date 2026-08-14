@@ -91,6 +91,10 @@ counts, the importer publish count, the Core processing count, optional expected
 and duration. The connector id is used deliberately:
 two connectors of the same type must never share a history or progress display.
 
+Run status messages also carry a stable `message_code` and an optional `message_params` object. Core
+stores that parameter object as PostgreSQL `JSONB`; clients use the code and parameters for localized
+presentation and keep the English `message` field as a fallback for codes they do not recognize.
+
 The Connectors page also reads `GET /api/v1/data/sync-runs` for a tenant-wide overview. It includes
 the connector display name and supports pagination plus optional `status` and `source_type` filters.
 The lifecycle is explicit: `queued` means Core has not handed the task to an importer yet, `running`

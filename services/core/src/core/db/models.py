@@ -20,7 +20,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -306,7 +306,7 @@ class SyncRun(Base):
     # Stable client-facing status; `message` remains an English operator fallback
     # for clients that do not know a code yet.
     message_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    message_params: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    message_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
