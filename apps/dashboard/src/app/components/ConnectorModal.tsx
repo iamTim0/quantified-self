@@ -834,7 +834,7 @@ export default function ConnectorModal({
                   <div className="space-y-3">
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        Yazio E-Mail{" "}
+                        Yazio {t("auth.email")}{" "}
                         {isEditing && (
                           <span className="text-slate-400 font-normal lowercase">(optional)</span>
                         )}
@@ -849,7 +849,7 @@ export default function ConnectorModal({
                     </div>
                     <div>
                       <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1">
-                        Yazio Passwort{" "}
+                        Yazio {t("auth.password")}{" "}
                         {isEditing && (
                           <span className="text-slate-400 font-normal lowercase">(optional)</span>
                         )}

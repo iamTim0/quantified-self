@@ -6,8 +6,8 @@ check at all and had drifted exactly as far as the documentation once did.
 
 `PROVIDER_CATALOG` in the dashboard's connector modal carries the chips shown on each
 provider card. They used to be hand-written display text, in two languages at once —
-`["Kalorien", "Protein", …]` beside `["Steps", "Heart rate", …]` — and several named
-nothing any importer produces: `"Gegessene Produkte"`, `"Sleep stages"`, `"Workouts"`.
+`["Calories", "Protein", …]` beside `["Steps", "Heart rate", …]` — and several named
+nothing any importer produces: `"Consumed products"`, `"Sleep stages"`, `"Workouts"`.
 Two of them carried a unit in the name (`"Weight (kg)"`, `"Busy Hours"`), which is the
 duplicate AGENTS.md rule 15 exists to prevent — `calendar_busy_hours` is deliberately
 not even an alias.

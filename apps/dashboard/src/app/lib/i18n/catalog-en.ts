@@ -25,6 +25,8 @@ export const en = {
   "common.unknown": "Unknown",
   "common.days_one": "{count} day",
   "common.days_other": "{count} days",
+  "common.years_one": "{count} year",
+  "common.years_other": "{count} years",
 
   // ── Language switcher ──────────────────────────────────────────────────────
   "lang.label": "Language",
@@ -93,6 +95,7 @@ export const en = {
   "auth.callbackTitle": "Sign-in failed",
   "auth.callbackDone": "Signed in. Redirecting…",
   "auth.callbackIncomplete": "The provider's response was incomplete.",
+  "auth.callbackProviderCancelled": "Sign-in was cancelled by the provider.",
 
   // ── System warnings ─────────────────────────────────────────────────────
   "warnings.region": "System warnings",
@@ -251,6 +254,7 @@ export const en = {
   "chart.emptyPeriod": "No data points in the selected period.",
   "chart.emptyFilter": "No data points for the current filter.",
   "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",
+  "map.loading": "Loading GPS data…",
   "map.today": "Today",
   "map.showTiles": "Load the map",
   "map.hideTiles": "Hide the map",
@@ -423,6 +427,14 @@ export const en = {
   "apikeys.revokeTitle": "Invalidate immediately",
   "apikeys.namePlaceholder": "e.g. iPhone",
   "apikeys.noExpiry": "No expiry",
+  "apikeys.rotationFailed": "Rotation failed.",
+  "apikeys.revokeFailed": "Revocation failed.",
+  "apikeys.webhookTitle": "{provider} webhook configuration",
+  "apikeys.headerExample": "Authorization: Bearer <your-key>",
+  "apikeys.hideRevealed": "Got it, hide",
+  "apikeys.title": "API keys ({count} active)",
+  "apikeys.expiryLabel": "Expiry",
+  "apikeys.create": "Create key",
   "apikeys.rotationHint":
     "Several active keys are intended: that is how you rotate without interrupting the data flow. Revoke the old one once the",
   "oidc.forbidden": "Only owners and administrators can manage providers.",
@@ -519,7 +531,8 @@ export const en = {
   "import.previewLegend": "Preview",
   "import.howItWorks": "How smart and force imports work",
   "import.recent": "Recent imports ({count})",
-  "import.runCounts": "{accepted} new · {duplicate} duplicates · {rejected} rejected · {unsupported} unsupported fields",
+  "import.runCounts":
+    "{accepted} new · {duplicate} duplicates · {rejected} rejected · {unsupported} unsupported fields",
   "import.running": "Import running",
   "import.loadingCore": "Loading data in Core",
   "import.progressOf": "{done} of {total} events processed by Core",
@@ -613,7 +626,8 @@ export const en = {
   "explorer.source": "Source:",
   "explorer.allSources": "All sources",
   "explorer.importResolution": "Import resolution:",
-  "explorer.importResolutionHint": "This changes the resolution of future imports for the selected metrics.",
+  "explorer.importResolutionHint":
+    "This changes the resolution of future imports for the selected metrics.",
   "explorer.resolutionAuto": "Registry default",
   "explorer.resolutionRaw": "Raw",
   "explorer.resolutionMinute": "Minute",
@@ -851,7 +865,8 @@ export const en = {
   "analysis.noneMatchFilters":
     "No relationships match the filters. That is a valid result — not every metric relates to another.",
   "analysis.laggedTitle": "Time-shifted relationships",
-  "analysis.laggedTail": "later. A sequence in time is no evidence of a cause.",
+  "analysis.laggedTail":
+    "A value from one day is compared with another metric a few days later. A sequence in time is no evidence of a cause.",
   "analysis.lagDays": "+{count} days",
   "analysis.sameDirection": "same direction",
   "analysis.oppositeDirection": "opposite direction",
@@ -859,7 +874,7 @@ export const en = {
   "analysis.trendStats": "Mean {mean} · R² {r2} · n={n} days",
   "analysis.tooFewForNormalRange": "Too few days to establish a personal normal range.",
   "analysis.anomalyBasis":
-    "Based on the median and mean absolute deviation over {days} days. Unusual means unusual for you, not",
+    "Based on the median and mean absolute deviation over {days} days. Unusual means unusual for you, not automatically medically concerning.",
   "analysis.tooFewForWeekly": "At least two weeks of data are needed to see weekly patterns.",
   "analysis.colDays": "Days",
   "analysis.sufficient": "sufficient",
@@ -871,8 +886,26 @@ export const en = {
     "Colour scale from strongly opposite through no relationship to strongly aligned",
   "analysis.scaleEnds": "opposite ← → aligned",
   "analysis.matrixHint":
-    "Each cell shows the strength of the relationship as a percentage. Empty cells mean",
+    "Each cell shows the strength of the relationship as a percentage. Empty cells mean there are too few shared days.",
   "analysis.strongestTitle": "Strongest relationships",
+  "analysis.matrixTitle": "Correlation matrix",
+  "analysis.matrixAria": "Correlation matrix of metrics",
+  "analysis.interpretationTitle": "Interpretation",
+  "analysis.sharedDays": "Shared days: {count}",
+  "analysis.periodLabel": "Period:",
+  "analysis.coverageLabel": "Coverage:",
+  "analysis.calculationTitle": "Calculation",
+  "analysis.pearsonLabel": "Pearson (linear):",
+  "analysis.spearmanLabel": "Spearman (rank):",
+  "analysis.pValueLabel": "p-value:",
+  "analysis.analysisVersionLabel": "Analysis version:",
+  "analysis.computedLabel": "Computed:",
+  "analysis.metricLabel": "Metric",
+  "analysis.statusLabel": "Status",
+  "analysis.qualityHint":
+    "Analyses run only on metrics with enough data. Everything else is deliberately hidden rather than shown weakly.",
+  "analysis.provenanceSummary":
+    "Period {start} – {end} · Sources: {sources} · analysis version {version} · computed {computed}",
   "analysis.provenanceTitle": "Data basis",
   "analysis.sources": "Sources: {list}",
   "analysis.significant": "significant (α = 0.05)",

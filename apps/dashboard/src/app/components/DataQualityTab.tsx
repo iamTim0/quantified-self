@@ -99,7 +99,7 @@ type MappingDraft = {
   keep_indefinitely: boolean;
 };
 
-/** Contiguous runs of missing days, so "12 Tage" becomes a usable backfill range. */
+/** Contiguous runs of missing days, so "12 days" becomes a usable backfill range. */
 function toRanges(dates: string[]): { start: string; end: string; days: number }[] {
   const sorted = [...dates].sort();
   const ranges: { start: string; end: string; days: number }[] = [];
@@ -220,8 +220,12 @@ export default function DataQualityTab({ apiBase }: Props) {
           source_id: metric.source_id,
           raw_metric_type: metric.raw_metric_type,
           action: draft.action,
-          target_metric_type: draft.action === "map" || draft.action === "adopt" ? draft.target_metric_type : undefined,
-          source_unit: draft.action === "map" || draft.action === "adopt" ? draft.source_unit : undefined,
+          target_metric_type:
+            draft.action === "map" || draft.action === "adopt"
+              ? draft.target_metric_type
+              : undefined,
+          source_unit:
+            draft.action === "map" || draft.action === "adopt" ? draft.source_unit : undefined,
           target_unit: draft.action === "adopt" ? draft.target_unit : undefined,
           aggregation: draft.action === "adopt" ? draft.aggregation : undefined,
           cadence: draft.action === "adopt" ? draft.cadence : undefined,
@@ -409,9 +413,7 @@ export default function DataQualityTab({ apiBase }: Props) {
         <article className="space-y-3" aria-live={quarantineCapacityLiveMode}>
           <div>
             <h2 className="font-bold text-slate-900">{t("quality.quarantineCapacityTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              {t("quality.quarantineCapacityIntro")}
-            </p>
+            <p className="mt-1 text-sm text-slate-600">{t("quality.quarantineCapacityIntro")}</p>
           </div>
           {quarantineCapacity.map((capacity) => {
             const classes = quarantineWarningClasses(capacity.warning_code);
@@ -621,7 +623,9 @@ export default function DataQualityTab({ apiBase }: Props) {
                       )}
                       <input
                         value={draft.source_unit}
-                        onChange={(event) => updateDraft(metric, { source_unit: event.target.value })}
+                        onChange={(event) =>
+                          updateDraft(metric, { source_unit: event.target.value })
+                        }
                         placeholder={t("quality.mappingSourceUnit")}
                         className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
                         aria-label={t("quality.mappingSourceUnit")}
@@ -630,7 +634,9 @@ export default function DataQualityTab({ apiBase }: Props) {
                         <>
                           <input
                             value={draft.target_unit}
-                            onChange={(event) => updateDraft(metric, { target_unit: event.target.value })}
+                            onChange={(event) =>
+                              updateDraft(metric, { target_unit: event.target.value })
+                            }
                             placeholder={t("quality.mappingTargetUnit")}
                             className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
                             aria-label={t("quality.mappingTargetUnit")}

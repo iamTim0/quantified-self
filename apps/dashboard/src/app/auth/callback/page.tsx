@@ -42,7 +42,7 @@ function CallbackInner() {
 
     if (providerError) {
       // The user declined, or the provider refused. Not our error to explain away.
-      setError(params.get("error_description") || "Die Anmeldung wurde vom Anbieter abgebrochen.");
+      setError(params.get("error_description") || t("auth.callbackProviderCancelled"));
       return;
     }
     if (!code || !state || !provider) {

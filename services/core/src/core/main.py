@@ -1060,7 +1060,7 @@ async def change_password(
         raise HTTPException(status_code=404, detail="User account not found.")
 
     if not pwd_context.verify(req.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch.")
+        raise HTTPException(status_code=400, detail="The current password is incorrect.")
 
     user.password_hash = pwd_context.hash(req.new_password)
 
