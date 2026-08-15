@@ -4,8 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    SERVICE_NAME: str = "qs-importer-yazio"
     NATS_URL: str = "nats://localhost:4222"
     CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
+    HEALTH_PORT: int = 8008
     # NOTE: TENANT_ID was removed deliberately. It defaulted to the workspace
     # UUID that infra/db/init.sql used to seed, so it named a tenant that no
     # longer exists and, worse, gave every code path a plausible-looking tenant

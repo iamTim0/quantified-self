@@ -288,14 +288,11 @@ jobs:
           # without trusting a mutable tag.
           tags="${name}:${VERSION}"$'\n'"${name}:sha-${GITHUB_SHA::7}"
 
-          # The dashboard needs to know which source it was built from: AGPL-3.0 §13
-          # makes the running version's Corresponding Source something the UI has to
-          # offer, and only this job knows the version and the commit. Empty for
-          # every other image, so no build receives an argument it does not declare.
-          args=""
-          if [ "$IMAGE" = "dashboard" ]; then
-            args="SOURCE_VERSION=${VERSION}"$'\n'"SOURCE_COMMIT=${GITHUB_SHA}"
-          fi
+          # Every first-party image reports the exact release and source commit in
+          # its health metadata. The dashboard also uses SOURCE_VERSION and
+          # SOURCE_COMMIT for its Corresponding Source link. Dockerfiles declare
+          # these arguments with development defaults for local builds.
+          args="SOURCE_VERSION=${VERSION}"$'\n'"SOURCE_COMMIT=${GITHUB_SHA}"
 
           {
             echo "list<<EOF"

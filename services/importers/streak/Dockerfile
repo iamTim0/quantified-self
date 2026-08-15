@@ -28,6 +28,10 @@ COPY services/importers/streak/src/ ./src/
 COPY services/importers/streak/README.md ./
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/importers/streak/.venv/bin:${PATH}"
 
 EXPOSE 8006

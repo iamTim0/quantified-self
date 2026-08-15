@@ -8,7 +8,7 @@ COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
 
 def route_request(path: str) -> str:
     """Apply the proxy precedence modeled by the Fizzbee specification."""
-    if path == "/health" or path.startswith("/api"):
+    if path in {"/health", "/healthz"} or path.startswith("/api"):
         return "api-gateway"
     if path.startswith("/docs"):
         return "docs"
@@ -72,6 +72,7 @@ def test_specific_routes_precede_dashboard() -> None:
         "/explorer": "dashboard",
         "/api/v1/data": "api-gateway",
         "/health": "api-gateway",
+        "/healthz": "api-gateway",
         "/docs": "docs",
         "/docs/operations/": "docs",
         "/ingest/streak": "streak-importer",

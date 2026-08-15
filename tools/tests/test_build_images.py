@@ -17,6 +17,7 @@ PROD_COMPOSE = REPO_ROOT / "docker-compose.prod.yml"
 COOLIFY_COMPOSE = REPO_ROOT / "docker-compose.coolify.yml"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "release.yml"
+BUILD_SCRIPT = REPO_ROOT / "tools" / "build_images.py"
 
 
 def test_every_dockerfile_is_either_published_or_explicitly_not():
@@ -79,6 +80,30 @@ def test_release_bundle_contains_the_prod_topology():
     """A release must ship the maintained prod compose file."""
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     assert 'cp docker-compose.prod.yml "$bundle/"' in workflow
+
+
+def test_every_published_image_bakes_release_metadata():
+    """Every release image must be able to identify its source at runtime."""
+    workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    assert 'args="SOURCE_VERSION=${VERSION}"' in workflow
+    assert '"SOURCE_COMMIT=${GITHUB_SHA}"' in workflow
+
+    for image in IMAGES:
+        dockerfile = (REPO_ROOT / image.dockerfile).read_text(encoding="utf-8")
+        assert re.search(r"^ARG SOURCE_VERSION(?:=|$)", dockerfile, re.MULTILINE)
+        assert re.search(r"^ARG SOURCE_COMMIT(?:=|$)", dockerfile, re.MULTILINE)
+        assert (
+            "ENV QS_SERVICE_VERSION=$SOURCE_VERSION" in dockerfile
+            or '"version":"%s"' in dockerfile
+        )
+        assert (
+            "ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT" in dockerfile
+            or '"commit":"%s"' in dockerfile
+        )
+
+    build_script = BUILD_SCRIPT.read_text(encoding="utf-8")
+    assert 'f"SOURCE_VERSION={version}"' in build_script
+    assert 'f"SOURCE_COMMIT={_source_commit()}"' in build_script
 
 
 def test_matrix_shape_matches_what_the_workflow_reads():

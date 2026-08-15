@@ -46,11 +46,16 @@ def _identity(tenant_id: str = TENANT_A) -> ApiKeyIdentity:
 
 def test_health_check_endpoint():
     """Verifies GET /health endpoint."""
-    response = client.get("/health")
+    connected_nats = type("ConnectedNats", (), {"is_connected": True})()
+    with patch("streak_importer.main.nc_client", connected_nats):
+        response = client.get("/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ok"
     assert data["service"] == "qs-importer-streak"
+    assert data["version"]
+    assert data["commit"]
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_head_and_get_ingest_server_checks():

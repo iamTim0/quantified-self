@@ -226,7 +226,7 @@ What it checks:
 
 | Check | Expectation |
 | --- | --- |
-| `/health` | `200` |
+| `/health` | `200` when all services are ready; `503` with per-service status while degraded |
 | `/` | `200` — the dashboard |
 | `/docs/` | the documentation, recognized by the page content and not only by the status code |
 | `POST /api/v1/auth/signup` | **`403`** — otherwise the application is open to anyone who knows the address |
@@ -287,7 +287,27 @@ A production deployment should show nothing here. If it does, at least one of th
 
 ## Monitoring
 
-- **Health checks**: every service offers `GET /health`; the docs additionally `/healthz`.
+- **Health checks**: the production Compose file is the source of truth. Every
+  long-running image has a Docker healthcheck, and every HTTP service returns
+  `status`, `service`, `version` and `commit` from its unauthenticated health
+  endpoint with `Cache-Control: no-store`. The docs image uses `/healthz` because
+  its route is served by nginx; NATS-only workers expose `/health` through a
+  dependency-free internal server.
+- **Public release check**: open `GET /health` on the public host in a browser.
+  The Gateway concurrently observes every long-running first-party service and
+  includes a `services` array with the observed status, version and commit for
+  `core`, its two worker roles, Analysis, Gateway, dashboard, docs and all
+  importers. `core-migrate` is included as `status: "expected"` because it is a
+  successful one-shot job, not a live process. A missing or degraded service
+  makes the aggregate return HTTP 503; `healthz` remains a local Gateway
+  liveness check for Compose startup ordering. These entries are build and
+  process metadata, not tenant data. Infrastructure images such as PostgreSQL,
+  NATS and Traefik have independent upstream versions and are checked by Docker
+  Compose.
+- **Build traceability**: `version` is the release passed to the image build and
+  `commit` is the source revision passed to the same build. Local images use
+  `dev` and `unknown`; a production image that reports those values was not built
+  by the release workflow.
 - **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
   the data point that was written.
 - **Import history**: open the **All import runs** overview on the Connectors page for a tenant-wide

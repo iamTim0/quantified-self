@@ -70,9 +70,14 @@ class _FakeNats:
 
 
 def test_health_check_reports_the_broker_connection():
-    response = client.get("/health")
+    with patch.object(web.app.state, "nats_client", _FakeNats(), create=True):
+        response = client.get("/health")
     assert response.status_code == 200
-    assert response.json()["service"] == "qs-importer-whoop"
+    payload = response.json()
+    assert payload["service"] == "qs-importer-whoop"
+    assert payload["version"]
+    assert payload["commit"]
+    assert response.headers["cache-control"] == "no-store"
 
 
 def test_an_upload_without_a_session_is_refused():

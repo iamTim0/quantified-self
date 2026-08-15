@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from shared_schemas import (
     FieldReportCollector,
@@ -32,6 +32,7 @@ from shared_schemas import (
     UnknownUpload,
     UploadSession,
     UploadSpool,
+    health_payload,
 )
 
 from whoop_importer.config import settings
@@ -98,7 +99,10 @@ async def lifespan(_app: FastAPI):
     sweeper.cancel()
 
 
-app = FastAPI(title="WHOOP Importer Service", version="0.1.0", lifespan=lifespan)
+app = FastAPI(
+    title="WHOOP Importer Service",
+    lifespan=lifespan,
+)
 
 #: Imports still publishing after their response went out. See the comment where
 #: they are added: an unreferenced task can be collected while it runs.
@@ -115,13 +119,16 @@ PROGRESS_INTERVAL_POINTS = 10_000
 
 
 @app.get("/health")
-async def health_check():
+async def health_check(response: Response):
+    response.headers["Cache-Control"] = "no-store"
     nc = getattr(app.state, "nats_client", None)
-    return {
-        "status": "ok",
-        "service": settings.SERVICE_NAME,
-        "nats_connected": nc is not None and nc.is_connected,
-    }
+    nats_connected = nc is not None and nc.is_connected
+    response.status_code = 200 if nats_connected else 503
+    return health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if nats_connected else "degraded",
+        nats_connected=nats_connected,
+    )
 
 
 async def _spool_request(

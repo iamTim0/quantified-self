@@ -24,6 +24,12 @@ from starlette.background import BackgroundTask
 
 from gateway.auth import decode_jwt
 from gateway.config import settings
+from gateway.metadata import (
+    HEALTH_TARGETS,
+    HealthTarget,
+    expected_release_manifest,
+    health_payload,
+)
 from gateway.tracing import (
     RequestTracingMiddleware,
     get_current_request_id,
@@ -179,9 +185,139 @@ def _relay_response(upstream: httpx.Response) -> Response:
     return out
 
 
+HEALTH_PROBE_TIMEOUT_SECONDS = 1.5
+HEALTH_STATUS_VALUES = {"ok", "degraded", "unavailable"}
+
+
+def _unavailable_health(target: HealthTarget, error_code: str) -> dict[str, object]:
+    """Return a bounded, machine-readable result without exposing probe errors."""
+    result: dict[str, object] = {
+        "service": target.service,
+        "status": "unavailable",
+        "observed": False,
+        "version": None,
+        "commit": None,
+        "error_code": error_code,
+    }
+    if target.role is not None:
+        result["role"] = target.role
+    return result
+
+
+async def _probe_health(
+    client: httpx.AsyncClient,
+    target: HealthTarget,
+) -> dict[str, object]:
+    """Observe one private service without forwarding credentials or tenant data."""
+    base_url = getattr(settings, target.setting).rstrip("/")
+    try:
+        response = await client.get(
+            f"{base_url}{target.path}",
+            timeout=HEALTH_PROBE_TIMEOUT_SECONDS,
+        )
+        payload = response.json()
+    except (httpx.HTTPError, ValueError, TypeError):
+        return _unavailable_health(target, "health_unreachable")
+
+    if not isinstance(payload, dict):
+        return _unavailable_health(target, "invalid_health_response")
+
+    remote_status = payload.get("status")
+    if remote_status not in HEALTH_STATUS_VALUES:
+        return _unavailable_health(target, "invalid_health_response")
+
+    version = payload.get("version")
+    commit = payload.get("commit")
+    if response.status_code == 200 and remote_status == "ok" and not (
+        isinstance(version, str)
+        and version
+        and isinstance(commit, str)
+        and commit
+    ):
+        return _unavailable_health(target, "missing_metadata")
+
+    result: dict[str, object] = {
+        "service": target.service,
+        "status": remote_status,
+        "observed": True,
+        "version": version if isinstance(version, str) else None,
+        "commit": commit if isinstance(commit, str) else None,
+    }
+    if target.role is not None:
+        result["role"] = target.role
+    if response.status_code != 200 and result["status"] == "ok":
+        result["status"] = "unavailable"
+        result["observed"] = False
+        result["error_code"] = "health_unavailable"
+    return result
+
+
+async def _observe_service_health() -> list[dict[str, object]]:
+    """Probe every long-running first-party target concurrently."""
+    async with httpx.AsyncClient() as client:
+        results = await asyncio.gather(
+            *(_probe_health(client, target) for target in HEALTH_TARGETS)
+        )
+
+    observed_by_name = {result["service"]: result for result in results}
+    own_metadata = health_payload(settings.SERVICE_NAME)
+    own = {
+        "service": "api-gateway",
+        "status": "ok",
+        "observed": True,
+        "version": own_metadata["version"],
+        "commit": own_metadata["commit"],
+    }
+    expected = {
+        result["service"]: result for result in expected_release_manifest()
+    }
+    services: list[dict[str, object]] = []
+    for service, expected_entry in expected.items():
+        if service == "core-migrate":
+            migration = dict(expected_entry)
+            migration["one_shot"] = True
+            services.append(migration)
+        elif service == "api-gateway":
+            services.append(own)
+        else:
+            services.append(observed_by_name[service])
+    return services
+
+
 @app.get("/health")
 async def health_check():
-    return {"status": "ok", "service": settings.SERVICE_NAME}
+    """Return a browser-friendly aggregate of private service health probes."""
+    services = await _observe_service_health()
+    ready = all(
+        entry["status"] == "ok"
+        for entry in services
+        if entry["service"] != "core-migrate"
+    )
+    gateway_metadata = health_payload(settings.SERVICE_NAME)
+    payload = health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if ready else "degraded",
+        expected_release={
+            "version": gateway_metadata["version"],
+            "commit": gateway_metadata["commit"],
+        },
+        services=services,
+    )
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content=payload,
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/healthz")
+async def liveness_check():
+    """Return Gateway process liveness without waiting on downstream services."""
+    return JSONResponse(
+        status_code=200,
+        content=health_payload(settings.SERVICE_NAME),
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @app.get("/api/v1/auth/config")

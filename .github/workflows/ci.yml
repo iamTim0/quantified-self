@@ -221,7 +221,9 @@ jobs:
             uvicorn gateway.main:app --host 127.0.0.1 --port 8000 --log-level warning \
             > /tmp/gateway.log 2>&1 &
 
-          wait_for "Gateway" http://127.0.0.1:8000/health /tmp/gateway.log
+          # /health aggregates the production topology; this lightweight CI
+          # process intentionally does not start every importer and docs image.
+          wait_for "Gateway" http://127.0.0.1:8000/healthz /tmp/gateway.log
 
           # The UI must be reachable *through* the Gateway, not just directly.
           # That is the origin the tests use, and the proxy is the part most

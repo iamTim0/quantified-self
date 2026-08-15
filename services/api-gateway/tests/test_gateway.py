@@ -104,13 +104,175 @@ def _make_token(
 
 
 @pytest.mark.asyncio
-async def test_gateway_health():
-    from gateway.main import app
-    transport = ASGITransport(app=app)
+async def test_gateway_health_reports_observed_metadata(monkeypatch):
+    """Verifies Fizzbee Invariant: VersionComesFromObservedService."""
+    from gateway import main as gateway_main
+    from gateway.metadata import RELEASE_SERVICES
+
+    monkeypatch.setenv("QS_SERVICE_VERSION", "test-release")
+    monkeypatch.setenv("QS_SOURCE_COMMIT", "test-commit")
+
+    services = [
+        {
+            "service": service,
+            "status": "expected" if service == "core-migrate" else "ok",
+            "observed": service != "core-migrate",
+            "version": "test-release",
+            "commit": "test-commit",
+        }
+        for service in RELEASE_SERVICES
+    ]
+
+    async def observed_health():
+        return services
+
+    monkeypatch.setattr(gateway_main, "_observe_service_health", observed_health)
+    transport = ASGITransport(app=gateway_main.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         response = await ac.get("/health")
     assert response.status_code == 200
-    assert response.json()["service"] == "qs-api-gateway"
+    payload = response.json()
+    assert payload["service"] == "qs-api-gateway"
+    assert payload["version"] == "test-release"
+    assert payload["commit"] == "test-commit"
+    assert payload["expected_release"] == {
+        "version": "test-release",
+        "commit": "test-commit",
+    }
+    assert {entry["service"] for entry in payload["services"]} == set(RELEASE_SERVICES)
+    assert all(
+        entry["version"] == "test-release" and entry["commit"] == "test-commit"
+        for entry in payload["services"]
+    )
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_gateway_observer_matches_the_release_manifest(monkeypatch):
+    """Verifies Fizzbee Invariant: VersionComesFromObservedService."""
+    from gateway import main as gateway_main
+    from gateway.metadata import RELEASE_SERVICES
+
+    monkeypatch.setenv("QS_SERVICE_VERSION", "gateway-release")
+    monkeypatch.setenv("QS_SOURCE_COMMIT", "gateway-commit")
+
+    async def observed_probe(_client, target):
+        result = {
+            "service": target.service,
+            "status": "ok",
+            "observed": True,
+            "version": f"{target.service}-release",
+            "commit": f"{target.service}-commit",
+        }
+        if target.role is not None:
+            result["role"] = target.role
+        return result
+
+    monkeypatch.setattr(gateway_main, "_probe_health", observed_probe)
+
+    services = await gateway_main._observe_service_health()
+
+    assert [entry["service"] for entry in services] == list(RELEASE_SERVICES)
+    by_name = {entry["service"]: entry for entry in services}
+    assert by_name["api-gateway"] == {
+        "service": "api-gateway",
+        "status": "ok",
+        "observed": True,
+        "version": "gateway-release",
+        "commit": "gateway-commit",
+    }
+    assert by_name["core-migrate"]["status"] == "expected"
+    assert by_name["core-migrate"]["observed"] is False
+    assert by_name["core"]["role"] == "api"
+
+
+@pytest.mark.asyncio
+async def test_gateway_probe_preserves_exact_service_metadata(monkeypatch):
+    """Verifies Fizzbee Invariant: VersionComesFromObservedService."""
+    from gateway import main as gateway_main
+    from gateway.metadata import HealthTarget
+
+    monkeypatch.setattr(gateway_main.settings, "CORE_SERVICE_URL", "http://core:8001")
+
+    class FakeClient:
+        async def get(self, url, *, timeout):
+            assert url == "http://core:8001/health"
+            assert timeout == gateway_main.HEALTH_PROBE_TIMEOUT_SECONDS
+            return httpx.Response(
+                200,
+                json={
+                    "status": "ok",
+                    "service": "qs-core-service",
+                    "version": "0.3.0",
+                    "commit": "abc123",
+                },
+            )
+
+    result = await gateway_main._probe_health(
+        FakeClient(), HealthTarget("core", "CORE_SERVICE_URL")
+    )
+
+    assert result == {
+        "service": "core",
+        "status": "ok",
+        "observed": True,
+        "version": "0.3.0",
+        "commit": "abc123",
+    }
+
+
+@pytest.mark.asyncio
+async def test_gateway_health_exposes_an_unavailable_dependency(monkeypatch):
+    """Verifies Fizzbee Invariant: UnhealthyDependencyIsVisible."""
+    from gateway import main as gateway_main
+    from gateway.metadata import RELEASE_SERVICES
+
+    services = [
+        {
+            "service": service,
+            "status": "expected" if service == "core-migrate" else "ok",
+            "observed": service != "core-migrate",
+            "version": "test-release",
+            "commit": "test-commit",
+        }
+        for service in RELEASE_SERVICES
+    ]
+    services[1] = {
+        "service": "core",
+        "status": "unavailable",
+        "observed": False,
+        "version": None,
+        "commit": None,
+        "error_code": "health_unreachable",
+        "role": "api",
+    }
+
+    async def observed_health():
+        return services
+
+    monkeypatch.setattr(gateway_main, "_observe_service_health", observed_health)
+    transport = ASGITransport(app=gateway_main.app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        response = await ac.get("/health")
+
+    assert response.status_code == 503
+    assert response.json()["status"] == "degraded"
+    assert response.json()["services"][1]["error_code"] == "health_unreachable"
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.asyncio
+async def test_gateway_liveness_does_not_probe_dependencies():
+    """Verifies Fizzbee Invariant: LivenessDoesNotWaitForDependencies."""
+    from gateway.main import app
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        response = await ac.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

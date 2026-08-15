@@ -207,7 +207,7 @@ Traefik routes by role, not by enumerated paths. Four rules, each making exactly
 | --- | --- | --- | --- |
 | 30 | `ingest` | ``PathPrefix(`/ingest`)`` | Streak importer |
 | 20 | `docs` | ``PathPrefix(`/docs`)`` | Documentation |
-| 10 | `api` | ``PathPrefix(`/api`) \|\| Path(`/health`)`` | API Gateway |
+| 10 | `api` | ``PathPrefix(`/api`) \|\| Path(`/health`) \|\| Path(`/healthz`)`` | API Gateway |
 | 1 | `workspace` | ``PathPrefix(`/`)`` | Dashboard |
 
 Higher priority wins. Each route describes only what belongs to it; the **workspace takes everything
@@ -311,7 +311,7 @@ cloudflared
    │  http://traefik:80
 stack Traefik
    ├── /                  → dashboard:3000
-   ├── /api and /health   → api-gateway:8000
+   ├── /api, /health and /healthz → api-gateway:8000
    ├── /docs              → docs:8003  (strip /docs)
    └── /ingest            → streak-importer:8006
 
@@ -352,10 +352,21 @@ and must be updated whenever a service, image, internal port, or public route ch
    HTTP inside the application network.
 
 Every long-running first-party service in the production stack declares a healthcheck, as does the public Traefik
-ingress. HTTP images check their local, unauthenticated endpoint; NATS-only importer workers check the broker
-connection without requiring a configured connector. The checks never call a provider API or expose credentials.
-Third-party infrastructure uses a native or Compose healthcheck where supported. One-shot migration and
-volume-initialization services are intentionally exempt because successful exit is their healthy outcome.
+ingress. HTTP images check their local, unauthenticated endpoint; NATS-only importer workers expose a small
+internal health endpoint whose result includes broker connectivity without requiring a configured connector. The
+checks never call a provider API or expose credentials. Third-party infrastructure uses a native or Compose
+healthcheck where supported. One-shot migration and volume-initialization services are intentionally exempt because
+successful exit is their healthy outcome.
+
+The Compose healthchecks are the deployment contract; do not duplicate them in Coolify's application form. The
+release workflow passes the version and source commit as build arguments to every first-party image. Each health
+endpoint returns that metadata with `Cache-Control: no-store`. The public Gateway concurrently probes the private
+HTTP health endpoints and returns the observed `status`, `version` and `commit` for every long-running service in
+its `services` array. The one-shot `core-migrate` entry is explicitly marked `status: "expected"` rather than
+pretending that an exited container is live. This makes `GET /health` a browser-friendly deployment check without
+exposing Core, Analysis, NATS or the polling importers as public routes.
+The safety properties of this aggregation are modeled in `specs/health_aggregation.fizz` and covered by the
+corresponding invariant tests.
 
 The production `traefik` service enables Traefik's native `/ping` endpoint on its internal admin entrypoint and
 declares a Docker healthcheck for it. Coolify can therefore see whether the stack's actual public entrypoint is
@@ -384,7 +395,7 @@ Before putting the hostname into service, verify both the public routes and the 
 docker compose ps
 docker compose exec traefik traefik healthcheck --ping
 docker compose exec api-gateway python -c \
-  "import urllib.request; urllib.request.urlopen('http://core:8001/health', timeout=5)"
+  "import urllib.request; urllib.request.urlopen('http://core:8001/readyz', timeout=5)"
 docker compose exec api-gateway python -c \
   "import urllib.request; r=urllib.request.Request('http://traefik/health', headers={'Host':'your-host.example'}); urllib.request.urlopen(r, timeout=5)"
 docker compose exec analysis python -c \
@@ -395,6 +406,13 @@ curl -fsS https://your-host.example/health
 curl -fsS https://your-host.example/
 curl -fsS https://your-host.example/docs/
 ```
+
+The public health response should contain the Gateway's `status: "ok"` and a `services` array whose live entries have
+`observed: true`, `status: "ok"`, and the version and commit returned by the running process. If a service is
+restarting or unreachable, the aggregate returns HTTP 503 with `status: "degraded"` and a stable `error_code`; this
+is an operational signal, not a browser-cache failure. The expected release is shown separately under
+`expected_release`. The version is embedded in each image, so a browser refresh cannot turn an old `latest` image
+into a new one; if one release is required, pin `QS_VERSION` to that release before the next deploy.
 
 If an internal hostname resolves to `127.0.0.1`, a service name does not resolve, or a public request
 returns 404/502, inspect cloudflared and the stack Traefik logs. A Cloudflare route to `localhost` cannot

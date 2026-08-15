@@ -392,11 +392,7 @@ export default function DashboardPage() {
         {/* Main Outer App Window Shell */}
         <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
           {/* Sidebar Navigation with URL Sync */}
-          <Sidebar
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            onLogout={handleLogout}
-          />
+          <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onLogout={handleLogout} />
 
           {/* Main Content Area */}
           <main className="flex-1 p-6 lg:p-8 overflow-y-auto">

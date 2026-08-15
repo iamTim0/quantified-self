@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 import nats
+from shared_schemas import HealthServer, health_payload
 
 from weather_importer.client import (
     DEFAULT_BASE_URL,
@@ -23,6 +24,16 @@ logging.basicConfig(
     format="%(asctime)s [qs-importer-weather] [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+nc_client: nats.NATS | None = None
+
+
+def _health_payload() -> dict[str, Any]:
+    connected = nc_client is not None and nc_client.is_connected
+    return health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if connected else "degraded",
+        nats_connected=connected,
+    )
 
 
 async def credentials(
@@ -167,20 +178,29 @@ async def process(message: Any, connection: Any) -> None:
 
 
 async def main() -> None:
+    global nc_client
     logger.info("Starting Weather Importer Service...")
-    connection = await nats.connect(settings.NATS_URL)
-    stream = connection.jetstream()
+    health_server = HealthServer(settings.HEALTH_PORT, _health_payload)
+    await health_server.start()
+    nc_client = await nats.connect(settings.NATS_URL)
     try:
-        await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception:  # noqa: BLE001, S110
-        pass
-    await stream.subscribe(
-        "qs.task.sync.weather",
-        queue="weather_importer_task_group",
-        cb=lambda msg: process(msg, connection),
-    )
-    logger.info("Subscribed to NATS subject 'qs.task.sync.weather'")
-    await asyncio.Event().wait()
+        stream = nc_client.jetstream()
+        try:
+            await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+        except Exception:  # noqa: BLE001, S110
+            pass
+        await stream.subscribe(
+            "qs.task.sync.weather",
+            queue="weather_importer_task_group",
+            cb=lambda msg: process(msg, nc_client),
+        )
+        logger.info("Subscribed to NATS subject 'qs.task.sync.weather'")
+        await asyncio.Event().wait()
+    finally:
+        if nc_client is not None and not nc_client.is_closed:
+            await nc_client.close()
+        nc_client = None
+        await health_server.close()
 
 
 if __name__ == "__main__":

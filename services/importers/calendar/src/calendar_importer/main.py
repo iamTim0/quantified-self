@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 import nats
+from shared_schemas import HealthServer, health_payload
 
 from calendar_importer.client import (
     CalendarAuthError,
@@ -29,6 +30,16 @@ logging.basicConfig(
     format="%(asctime)s [qs-importer-calendar] [%(levelname)s] %(message)s",
 )
 logger = logging.getLogger(__name__)
+nc_client: nats.NATS | None = None
+
+
+def _health_payload() -> dict[str, Any]:
+    connected = nc_client is not None and nc_client.is_connected
+    return health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if connected else "degraded",
+        nats_connected=connected,
+    )
 
 # In-process guard against two tasks for the same tenant overlapping *inside this
 # worker*. It is not the distributed lock it may look like: a second replica has
@@ -200,23 +211,32 @@ async def process(message: Any, connection: Any) -> None:
 
 
 async def main() -> None:
+    global nc_client
     logger.info("Starting Calendar Importer Service...")
-    connection = await nats.connect(settings.NATS_URL)
-    stream = connection.jetstream()
+    health_server = HealthServer(settings.HEALTH_PORT, _health_payload)
+    await health_server.start()
+    nc_client = await nats.connect(settings.NATS_URL)
     try:
-        await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
-        logger.debug(
-            "Could not create the task stream; it may already exist (%s)",
-            type(exc).__name__,
+        stream = nc_client.jetstream()
+        try:
+            await stream.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+        except (nats.errors.Error, nats.js.errors.Error, asyncio.TimeoutError) as exc:
+            logger.debug(
+                "Could not create the task stream; it may already exist (%s)",
+                type(exc).__name__,
+            )
+        await stream.subscribe(
+            "qs.task.sync.calendar",
+            queue="calendar_importer_task_group",
+            cb=lambda msg: process(msg, nc_client),
         )
-    await stream.subscribe(
-        "qs.task.sync.calendar",
-        queue="calendar_importer_task_group",
-        cb=lambda msg: process(msg, connection),
-    )
-    logger.info("Subscribed to NATS subject 'qs.task.sync.calendar'")
-    await asyncio.Event().wait()
+        logger.info("Subscribed to NATS subject 'qs.task.sync.calendar'")
+        await asyncio.Event().wait()
+    finally:
+        if nc_client is not None and not nc_client.is_closed:
+            await nc_client.close()
+        nc_client = None
+        await health_server.close()
 
 
 if __name__ == "__main__":

@@ -63,7 +63,12 @@ async def test_health_check_endpoint():
     async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
         response = await ac.get("/health")
     assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["service"] == "qs-core-service"
+    assert payload["version"]
+    assert payload["commit"]
+    assert response.headers["cache-control"] == "no-store"
 
 
 @pytest.mark.asyncio

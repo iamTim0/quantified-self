@@ -174,6 +174,29 @@ def test_every_published_production_service_declares_a_healthcheck():
         assert any(line.startswith("healthcheck:") for line in services[name]), name
 
 
+def test_versioned_health_aggregation_uses_private_compose_targets():
+    """Keeps the browser check and Compose liveness check on separate contracts."""
+    text = (REPO_ROOT / "docker-compose.prod.yml").read_text(encoding="utf-8")
+
+    assert "Path(`/health`)" in text
+    assert "Path(`/healthz`)" in text
+    assert "127.0.0.1:8000/healthz" in text
+    for target in (
+        "CORE_INGEST_URL=http://core-ingest:8001",
+        "CORE_SCHEDULER_URL=http://core-scheduler:8001",
+        "DOCS_URL=http://docs:8003",
+        "YAZIO_IMPORTER_URL=http://yazio-importer:8008",
+        "DAWARICH_IMPORTER_URL=http://dawarich-importer:8009",
+        "HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011",
+        "WEATHER_IMPORTER_URL=http://weather-importer:8012",
+        "CALENDAR_IMPORTER_URL=http://calendar-importer:8013",
+    ):
+        assert target in text
+
+    for port in (8008, 8009, 8011, 8012, 8013):
+        assert f"127.0.0.1:{port}/health" in text
+
+
 def _depends_on(block: list[str]) -> dict[str, str]:
     """`{service: condition}` from a service's `depends_on:` mapping.
 

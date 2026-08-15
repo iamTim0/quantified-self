@@ -27,6 +27,10 @@ RUN uv sync --frozen --no-install-project
 COPY services/importers/whoop/src/ ./src/
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/importers/whoop/.venv/bin:${PATH}"
 
 # The export upload. Polled syncs still arrive over NATS; both are served by the

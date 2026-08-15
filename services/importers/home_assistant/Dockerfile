@@ -27,9 +27,15 @@ RUN uv sync --frozen --no-install-project
 COPY services/importers/home_assistant/src/ ./src/
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/importers/home_assistant/.venv/bin:${PATH}"
 
+EXPOSE 8011
+
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD python -c "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=3)"
 
 CMD ["python", "-m", "home_assistant_importer.main"]

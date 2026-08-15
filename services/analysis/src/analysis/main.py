@@ -24,7 +24,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from shared_schemas import health_payload
 
 from analysis.auth import resolve_tenant
 from analysis.chat_api import codex
@@ -89,8 +90,9 @@ def build_daily_series(
 
 
 @app.get("/health")
-async def health_check() -> dict[str, str]:
-    return {"status": "ok", "service": settings.SERVICE_NAME}
+async def health_check(response: Response) -> dict[str, str]:
+    response.headers["Cache-Control"] = "no-store"
+    return health_payload(settings.SERVICE_NAME)
 
 
 @app.get("/api/v1/analysis/insights")

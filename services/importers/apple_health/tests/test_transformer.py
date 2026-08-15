@@ -8,7 +8,6 @@ Maps to System Invariants:
 import hashlib
 
 import pytest
-
 from apple_health_importer.transformer import (
     generate_idempotency_key,
     transform_health_auto_export_json,

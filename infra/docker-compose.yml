@@ -170,21 +170,29 @@ services:
       - nats
     environment:
       - CORE_SERVICE_URL=http://core:8001
+      - CORE_INGEST_URL=http://core:8001
+      - CORE_SCHEDULER_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - YAZIO_IMPORTER_URL=http://yazio-importer:8008
+      - DAWARICH_IMPORTER_URL=http://dawarich-importer:8009
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       # Defaults to 127.0.0.1:8005, which in this container is the Gateway itself,
       # so POST /api/v1/ingest/apple-health proxied to nothing.
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
       - WHOOP_IMPORTER_URL=http://whoop-importer:8007
+      - HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011
+      - WEATHER_IMPORTER_URL=http://weather-importer:8012
+      - CALENDAR_IMPORTER_URL=http://calendar-importer:8013
       # The Gateway serves the UI on / by proxying it. In this network that is
       # the container; the code default is loopback, for a local checkout.
       - DASHBOARD_URL=http://dashboard:3000
+      - DOCS_URL=http://docs:8003
       - ENVIRONMENT=dev
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`) || Path(`/healthz`)"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.routers.api.priority=10"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
@@ -205,6 +213,9 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8008
+    expose:
+      - "8008"
     networks:
       - qs-network
 
@@ -222,6 +233,9 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8009
+    expose:
+      - "8009"
     networks:
       - qs-network
 
@@ -303,6 +317,9 @@ services:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8011
+    expose:
+      - "8011"
     networks: [qs-network]
 
   weather-importer:
@@ -316,6 +333,9 @@ services:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8012
+    expose:
+      - "8012"
     networks: [qs-network]
 
   calendar-importer:
@@ -329,6 +349,9 @@ services:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8013
+    expose:
+      - "8013"
     networks: [qs-network]
 
   dashboard:

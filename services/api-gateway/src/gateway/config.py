@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     SERVICE_NAME: str = "qs-api-gateway"
     ENVIRONMENT: str = "production"  # SECURITY: Default to production, not dev
     CORE_SERVICE_URL: str = "http://127.0.0.1:8001"
+    CORE_INGEST_URL: str = "http://127.0.0.1:8001"
+    CORE_SCHEDULER_URL: str = "http://127.0.0.1:8001"
     # 8010, which is the port the Analysis service actually binds
     # (services/analysis/src/analysis/main.py) and the one both Compose files
     # publish. It said 8002 here, so every /api/v1/analysis/* call from a local
@@ -33,6 +35,11 @@ class Settings(BaseSettings):
     # The WHOOP importer only listens on NATS for its polled syncs; the port is for
     # the emailed export upload, and 8007 is what that service binds.
     WHOOP_IMPORTER_URL: str = "http://127.0.0.1:8007"
+    YAZIO_IMPORTER_URL: str = "http://127.0.0.1:8008"
+    DAWARICH_IMPORTER_URL: str = "http://127.0.0.1:8009"
+    HOME_ASSISTANT_IMPORTER_URL: str = "http://127.0.0.1:8011"
+    WEATHER_IMPORTER_URL: str = "http://127.0.0.1:8012"
+    CALENDAR_IMPORTER_URL: str = "http://127.0.0.1:8013"
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated CORS origins
@@ -44,6 +51,7 @@ class Settings(BaseSettings):
     # proxied to the UI first spent a DNS failure and then a connect timeout on
     # the next candidate — see _UI_FALLBACKS in main.py.
     DASHBOARD_URL: str = "http://127.0.0.1:3000"
+    DOCS_URL: str = "http://127.0.0.1:8003"
     # Off by default: this is a personal analytics platform, and a public
     # deployment with open signup is a decision, not a default. Create the
     # first account with `python -m core.create_owner`; turn this on only

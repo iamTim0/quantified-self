@@ -28,6 +28,10 @@ COPY services/importers/apple_health/src/ ./src/
 COPY services/importers/apple_health/README.md ./
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/importers/apple_health/.venv/bin:${PATH}"
 
 EXPOSE 8005

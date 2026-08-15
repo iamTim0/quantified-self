@@ -476,9 +476,9 @@ export default function ConnectorsPage({
                                     ? t("connectors.loadingCore")
                                     : rowIsBusy
                                       ? t("connectors.processing")
-                                    : c.sync_status === "error"
-                                      ? t("connectors.syncFailed")
-                                      : t("connectors.readyActive")}
+                                      : c.sync_status === "error"
+                                        ? t("connectors.syncFailed")
+                                        : t("connectors.readyActive")}
                                 </span>
                               </span>
                               {c.last_sync_message && (
@@ -538,9 +538,9 @@ export default function ConnectorsPage({
                                       ? t("connectors.loadingCore")
                                       : rowIsBusy
                                         ? t("connectors.queued")
-                                      : rowUploadOnly
-                                        ? t("connectors.upload")
-                                        : t("connectors.import")}
+                                        : rowUploadOnly
+                                          ? t("connectors.upload")
+                                          : t("connectors.import")}
                                   </span>
                                 </button>
                               )}
