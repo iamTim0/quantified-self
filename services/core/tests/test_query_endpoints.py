@@ -17,6 +17,7 @@ import pytest
 from core.db.models import DataPoint, DataSource, MetricRollup
 from core.db.session import async_session_maker
 from core.main import app
+from core.rollup_coverage import forget_day_rollup_coverage
 from core.rollups import update_rollups_for_point
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
@@ -345,6 +346,220 @@ async def test_query_metrics_ignores_legacy_points_a_full_rollup_page_outranks()
     assert [point["value"] for point in data["data_points"]] == [300.0, 200.0]
     # The legacy point ranked below both buckets and was never part of the answer.
     assert data["contains_legacy_raw"] is False
+
+
+@pytest.mark.asyncio
+async def test_metrics_summary_stops_scanning_a_fully_covered_workspace():
+    """Verifies Fizzbee Invariant: ReturnedDataBelongsToTarget.
+
+    The compatibility scan is a proof about data written before rollups existed,
+    and no import can produce another such point — every insert path updates the
+    rollups for it in the same transaction. So the scan runs until it comes back
+    empty once, and then stops.
+
+    A point inserted here *behind* Core's back stands in for a scan that should no
+    longer be happening: it is exactly what an ingested point can never be, and if
+    the second summary counted it the memo would be re-deriving rather than
+    remembering.
+    """
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    bucket = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        source_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                DataSource(
+                    id=source_id,
+                    tenant_id=tenant_id,
+                    source_type="whoop",
+                    display_name="WHOOP",
+                )
+            )
+            await session.flush()
+            session.add(
+                MetricRollup(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    metric_type="steps",
+                    resolution="day",
+                    bucket_start=bucket,
+                    value=900.0,
+                    sample_count=1,
+                    sum_value=900.0,
+                    min_value=900.0,
+                    max_value=900.0,
+                    first_value=900.0,
+                    last_value=900.0,
+                    first_timestamp=bucket,
+                    last_timestamp=bucket,
+                    is_provider_total=True,
+                )
+            )
+            await session.commit()
+
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            first = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+
+            # Uncovered, and therefore only reachable by a scan.
+            async with async_session_maker() as session:
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        timestamp=bucket - timedelta(days=400),
+                        value=7.0,
+                        idempotency_key=f"behind-core-{uuid.uuid4().hex}",
+                    )
+                )
+                await session.commit()
+
+            second = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+            forget_day_rollup_coverage(tenant_id)
+            third = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+    finally:
+        forget_day_rollup_coverage(tenant_id)
+        await cleanup_test_tenant(tenant_id)
+
+    assert first.status_code == 200
+    assert first.json()["contains_legacy_raw"] is False
+    assert first.json()["metrics"]["steps"]["sum"] == 900.0
+
+    # Remembered: the scan did not run again, so the point behind Core's back is
+    # not in the answer and the rollup total is untouched.
+    assert second.json()["contains_legacy_raw"] is False
+    assert second.json()["metrics"]["steps"]["sum"] == 900.0
+
+    # Forgetting restores the scan, which is what a Core restart does.
+    assert third.json()["contains_legacy_raw"] is True
+    assert third.json()["metrics"]["steps"]["sum"] == 907.0
+
+
+@pytest.mark.asyncio
+async def test_hour_query_still_reads_raw_points_in_a_day_covered_workspace():
+    """Verifies Fizzbee Invariant: ReturnedDataBelongsToTarget.
+
+    Day coverage does not imply coverage at the other resolutions and must never be
+    read as if it did. `update_rollups_for_point` gives an ordinary raw point a day
+    bucket and nothing else, so at hour resolution that point is uncovered by design
+    and the compatibility query is where its value comes from — not a compensation
+    for old data, but the answer itself. A workspace proven to need no *day*
+    compensation must therefore still be read raw for an hour series.
+    """
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    hourly_at = now - timedelta(hours=5)
+    raw_at = now - timedelta(hours=2)
+    try:
+        source_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                DataSource(
+                    id=source_id,
+                    tenant_id=tenant_id,
+                    source_type="home_assistant",
+                    display_name="Home Assistant",
+                )
+            )
+            await session.flush()
+            # Imported at hour resolution: hour and day buckets.
+            # An ordinary raw point beside it: day bucket only.
+            for timestamp, value, metadata in (
+                (hourly_at, 21.0, {"ingest_resolution": "hour"}),
+                (raw_at, 23.0, {}),
+            ):
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="home_assistant_temperature",
+                        timestamp=timestamp,
+                        value=value,
+                        metadata_=metadata,
+                        idempotency_key=f"point-{uuid.uuid4().hex}",
+                    )
+                )
+                await update_rollups_for_point(
+                    session,
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    metric_type="home_assistant_temperature",
+                    timestamp=timestamp,
+                    value=value,
+                    metadata=metadata,
+                )
+            await session.commit()
+
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            summary = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+            hourly = await ac.get(
+                "/api/v1/data/metrics",
+                params={
+                    "metric_type": "home_assistant_temperature",
+                    "resolution": "hour",
+                    "sort": "asc",
+                    "limit": 100,
+                },
+                headers=headers,
+            )
+    finally:
+        forget_day_rollup_coverage(tenant_id)
+        await cleanup_test_tenant(tenant_id)
+
+    # Every point sits in a day rollup, so the day-resolution proof holds.
+    assert summary.json()["contains_legacy_raw"] is False
+
+    # And the hour series is unaffected by it: both readings are present.
+    data = hourly.json()
+    assert [point["value"] for point in data["data_points"]] == [21.0, 23.0]
+    assert data["contains_legacy_raw"] is True
+
+
+@pytest.mark.asyncio
+async def test_metrics_summary_keeps_scanning_while_legacy_points_remain():
+    """Verifies Fizzbee Invariant: ReturnedDataBelongsToTarget.
+
+    Only the empty result is remembered. A workspace that still holds legacy
+    points is re-queried every time, because that set shrinks — `core.retention`
+    and `core.rollup_backfill` both remove members of it — and a remembered
+    aggregate would go on reporting points that are gone.
+    """
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    try:
+        source_id = await ensure_seeded_data(tenant_id)
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            first = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+
+            async with async_session_maker() as session:
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        timestamp=datetime.now(timezone.utc) - timedelta(days=3),
+                        value=500.0,
+                        idempotency_key=f"legacy-{uuid.uuid4().hex}",
+                    )
+                )
+                await session.commit()
+
+            second = await ac.get("/api/v1/data/metrics/summary", headers=headers)
+    finally:
+        forget_day_rollup_coverage(tenant_id)
+        await cleanup_test_tenant(tenant_id)
+
+    assert first.json()["contains_legacy_raw"] is True
+    assert first.json()["metrics"]["steps"]["count"] == 1
+    assert second.json()["metrics"]["steps"]["count"] == 2
 
 
 @pytest.mark.asyncio

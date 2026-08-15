@@ -123,6 +123,10 @@ from core.oauth_refresh import (
     needs_refresh,
     refresh_credential,
 )
+from core.rollup_coverage import (
+    may_hold_points_outside_day_rollups,
+    remember_day_rollup_coverage,
+)
 from core.rollups import update_rollups_for_point
 from core.scheduler import (
     DueConnector,
@@ -2141,13 +2145,21 @@ async def query_metrics(
         # same limit and marked so clients can explain the mixed resolution.
         #
         # Two bounds keep that compatibility query from costing more than the answer
-        # it contributes, because `~_rollup_covers_point` is evaluated per row and is
-        # at its most expensive exactly when it finds nothing — the normal case for a
-        # deployment whose data all arrived after rollups existed. Without them, a
-        # chart request with no time window walked the tenant's entire history,
-        # probing the rollup index once per point, to return zero rows.
+        # it contributes. `~_rollup_covers_point` has to be applied to every point
+        # the query considers, and it is at its most expensive exactly when it finds
+        # nothing — the normal case for a deployment whose data all arrived after
+        # rollups existed. Without them, a chart request with no time window walked
+        # the tenant's entire history to return zero rows. `core.rollup_coverage`
+        # then removes the query outright once that has been proven once.
+        # The proof in `core.rollup_coverage` is about day buckets alone. A minute
+        # or hour request must still read raw points: an ordinary raw point is only
+        # ever rolled up into a day, so at those resolutions it is uncovered by
+        # design and the fallback is where the answer comes from, not a compensation.
+        covered = effective_resolution == "day" and not may_hold_points_outside_day_rollups(
+            tenant_id
+        )
         raw_rows: list[Any] = []
-        if rollup_rows:
+        if rollup_rows and not covered:
             # A full page of rollups means `limit` items already rank ahead of the
             # oldest one returned (newest one, ascending), so a legacy point beyond
             # that boundary cannot survive the `points[:limit]` slice below. Bounding
@@ -2417,7 +2429,14 @@ async def list_metric_types(
 async def get_metrics_summary(
     session: AsyncSession = Depends(get_session),
 ):
-    """Get summary statistics from day rollups, with a compatibility fallback."""
+    """Get summary statistics from day rollups, with a compatibility fallback.
+
+    The fallback covers points stored before rollups existed. It has no time
+    window to bound it — the answer is the workspace's whole history — so it is
+    the one query here that scales with the size of the data rather than with the
+    number of days. `core.rollup_coverage` explains why it only ever has to run
+    until it comes back empty once.
+    """
     tenant_id = get_current_tenant_id()
     rollup_stmt = (
         select(
@@ -2440,25 +2459,33 @@ async def get_metrics_summary(
         .order_by(MetricRollup.metric_type.asc())
     )
     rollup_rows = (await session.execute(rollup_stmt)).all()
-    raw_stmt = (
-        select(
-            DataPoint.metric_type,
-            func.count(DataPoint.id).label("count"),
-            func.avg(DataPoint.value).label("avg_value"),
-            func.min(DataPoint.value).label("min_value"),
-            func.max(DataPoint.value).label("max_value"),
-            func.sum(DataPoint.value).label("sum_value"),
-            func.max(DataPoint.timestamp).label("latest_timestamp"),
+
+    raw_rows: list[Any] = []
+    if may_hold_points_outside_day_rollups(tenant_id):
+        raw_stmt = (
+            select(
+                DataPoint.metric_type,
+                func.count(DataPoint.id).label("count"),
+                func.avg(DataPoint.value).label("avg_value"),
+                func.min(DataPoint.value).label("min_value"),
+                func.max(DataPoint.value).label("max_value"),
+                func.sum(DataPoint.value).label("sum_value"),
+                func.max(DataPoint.timestamp).label("latest_timestamp"),
+            )
+            .where(
+                DataPoint.tenant_id == tenant_id,
+                DataPoint.value.is_not(None),
+                ~_rollup_covers_point("day"),
+            )
+            .group_by(DataPoint.metric_type)
+            .order_by(DataPoint.metric_type.asc())
         )
-        .where(
-            DataPoint.tenant_id == tenant_id,
-            DataPoint.value.is_not(None),
-            ~_rollup_covers_point("day"),
-        )
-        .group_by(DataPoint.metric_type)
-        .order_by(DataPoint.metric_type.asc())
-    )
-    raw_rows = (await session.execute(raw_stmt)).all()
+        raw_rows = (await session.execute(raw_stmt)).all()
+        if not raw_rows:
+            # Proven, not assumed: this workspace holds no point outside a day
+            # rollup, and ingestion cannot produce one. The scan is now unnecessary
+            # work forever, so stop doing it.
+            remember_day_rollup_coverage(tenant_id)
 
     # Merge the aggregate state rather than choosing either source wholesale. The
     # weighted average is reconstructed from count and sum, so legacy points and
@@ -4345,6 +4372,22 @@ async def list_connectors(
     res = await session.execute(stmt)
     sources = res.scalars().all()
 
+    # One grouped query for every connector's newest write, not one per connector.
+    #
+    # This is the endpoint the connector page refreshes on a timer, so its cost is
+    # paid continuously rather than once: with eight connectors configured it ran
+    # eight `max(created_at)` aggregates over the largest table in the database
+    # every ten seconds, per open tab. The grouped form reads the same index once.
+    last_write_stmt = (
+        select(DataPoint.source_id, func.max(DataPoint.created_at))
+        .where(DataPoint.tenant_id == tenant_id)
+        .group_by(DataPoint.source_id)
+    )
+    last_write_at = {
+        source_id: created_at
+        for source_id, created_at in (await session.execute(last_write_stmt)).all()
+    }
+
     connectors = []
     for s in sources:
         config = s.config or {}
@@ -4356,12 +4399,7 @@ async def list_connectors(
         if not config.get("encrypted_token") and not credential_optional:
             continue
 
-        last_dp_stmt = select(func.max(DataPoint.created_at)).where(
-            DataPoint.tenant_id == tenant_id,
-            DataPoint.source_id == s.id,
-        )
-        last_dp_res = await session.execute(last_dp_stmt)
-        last_dp_dt = last_dp_res.scalar()
+        last_dp_dt = last_write_at.get(s.id)
 
         last_sync_at = (
             last_dp_dt.isoformat()
@@ -5907,6 +5945,9 @@ async def wipe_tenant_data_points(
         delete(QuarantinedDataPoint).where(QuarantinedDataPoint.tenant_id == tenant_id)
     )
     await session.commit()
+    # An empty workspace holds no point outside a rollup, so the first summary
+    # after a wipe has nothing to prove by scanning for one.
+    remember_day_rollup_coverage(tenant_id)
 
     return {
         "status": "wiped",

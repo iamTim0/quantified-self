@@ -82,9 +82,9 @@ request found no rollups at all — the plain raw query answers that case — an
 the rollup page came back full, it is bounded by the oldest bucket that page returned,
 since anything beyond it ranks below `limit` rows that are already in hand. Both bounds
 leave the returned points identical. They matter because the "is this point already in
-a rollup?" test is evaluated per row: unbounded, a workspace whose data all arrived
-after rollups existed paid a scan of its entire history, on every chart request, to
-find nothing.
+a rollup?" test has to be applied to every point the query considers: unbounded, a
+workspace whose data all arrived after rollups existed scanned its entire history, on
+every chart request, to find nothing.
 
 Analysis uses Core's internal `QueryMetricSeries` gRPC method for daily and hourly work. The method
 returns one explicit bucket per `(metric_type, source_id, interval)`, with `sample_count` and an
@@ -111,6 +111,27 @@ metrics are reported as unavailable instead of being guessed or combined.
 points when both exist and reports `contains_legacy_raw=true`. Data imported before
 rollups were introduced remains queryable through this compatibility fallback until
 a backfill is run.
+
+The summary answers over a workspace's whole history and so has no time window to
+bound that fallback with — it was the one query in the platform that scaled with the
+amount of data rather than with the number of days on screen. It now runs **until it
+comes back empty once**, and then stops for as long as Core is running.
+
+That is sound because an import cannot create a point the fallback would find. Every
+path that stores a `DataPoint` — the NATS consumer, the internal bulk-write endpoint
+and the quarantine replay — updates that point's rollups in the same transaction, and
+nothing deletes a rollup except the workspace wipe, which deletes the points too. A
+point outside a rollup is therefore older than rollups themselves, and that set only
+ever shrinks. Only the empty result is remembered; a workspace that still holds legacy
+points is re-queried every time, because [retention](#backfill-and-retention) and the
+backfill remove members of that set and a remembered total would go on reporting points
+that are gone. The backfill consequently needs no cache invalidation: once it has
+covered the last legacy point, the next summary comes back empty and stops scanning.
+
+Measured on a 2,000,000-point workspace whose data was fully covered, the summary fell
+from 276 ms to 18 ms, and stopped occupying eight parallel workers to do it. The state
+is held in the Core process, not in the database, so restarting Core re-proves it —
+which is also the answer for a database restored or edited outside the service.
 
 ## Backfill and retention
 
