@@ -12,10 +12,16 @@ flowchart TB
     traefik["Traefik&nbsp;&mdash; routes by role, one origin"]
     ui["Dashboard&nbsp;:3000&nbsp;&mdash; Next.js"]
     gateway["API Gateway&nbsp;:8000&nbsp;&mdash; verifies the JWT,<br/>injects X-Tenant-ID and X-Request-ID"]
-    analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends, anomalies,<br/>stateless MCP tools and AI chat"]
     bus{{"NATS JetStream"}}
     importers["Importers&nbsp;&mdash; 8 stateless services, one per provider"]
     providers[/"Provider APIs and devices"/]
+    mcp_client[/"MCP client&nbsp;&mdash; not published in production"/]
+
+    subgraph reader["Reads through Core, never around it"]
+        analysis["Analysis&nbsp;:8010&nbsp;&mdash; correlations, trends,<br/>anomalies, routines"]
+        mcp["POST /mcp&nbsp;&mdash; stateless MCP 2026-07-28,<br/>four read-only tools"]
+        codex["Codex app server&nbsp;&mdash; local JSONL stdio,<br/>drives the /chat page"]
+    end
 
     subgraph owner["The only service that may touch the database"]
         core["Core API&nbsp;:8001, gRPC&nbsp;:50051&nbsp;&mdash; REST and import planning"]
@@ -29,7 +35,11 @@ flowchart TB
     traefik --> gateway
     gateway --> core
     gateway --> analysis
+    gateway -->|"/api/v1/chat"| codex
+    codex -->|"a tool callback is a fresh<br/>authenticated MCP request"| mcp
+    mcp_client -.->|"internal endpoint today; publishing it<br/>needs OAuth 2.1 or revocable tokens"| mcp
     analysis -->|"gRPC, read only"| core
+    mcp -->|"gRPC, read only&nbsp;&mdash; plus ValidateUserSession<br/>on every request"| core
     core --- db
 
     core -->|"1. qs.task.sync.SOURCE&nbsp;&mdash; window, mode, request_id"| bus

@@ -19,17 +19,36 @@ protocol used here.
 
 ## Data flow and tenant isolation
 
-```text
-MCP client
-  └─ POST /mcp + user access token + X-Request-ID
-       └─ Analysis validates the token and derives tenant_id/user_id
-            └─ CoreDataService gRPC + internal service token + X-Request-ID
-                 └─ Core executes a query filtered by tenant_id
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Client as MCP client
+    participant Analysis as Analysis :8010
+    participant Core as Core gRPC :50051
+    participant DB as PostgreSQL
+
+    Client->>Analysis: POST /mcp — user access token,<br/>MCP-Protocol-Version, X-Request-ID
+    Analysis->>Analysis: verify signature and claims,<br/>derive tenant_id and user_id
+    Analysis->>Core: ValidateUserSession(jti)
+    Core->>DB: denied jti? older than sessions_valid_from?
+    DB-->>Core: verdict
+    Core-->>Analysis: session valid
+    Analysis->>Core: CoreDataService — internal service token,<br/>the same X-Request-ID
+    Core->>DB: query filtered by tenant_id
+    DB-->>Core: rows
+    Core-->>Analysis: metrics, series, definitions
+    Analysis-->>Client: structuredContent — schema version,<br/>units, window, correlation ID
 ```
 
-The tool schemas contain no `tenant_id` or `user_id`. Unknown identity-shaped
-arguments cannot override the authenticated principal. Analysis imports no database
-driver and performs no SQL; Core remains the only database owner.
+The identity travels down that chain and never back up it. The tool schemas contain no
+`tenant_id` or `user_id`, so an unknown identity-shaped argument cannot override the
+authenticated principal, and step 3 means a revoked token stops working on the next
+request rather than at its expiry. A Core outage fails the whole exchange closed with
+`503`, because a service that cannot check revocation cannot serve data either.
+
+Analysis imports no database driver and performs no SQL; Core remains the only database
+owner. Note which arrows touch `PostgreSQL` in the diagram above: all of them start at
+Core.
 
 The MCP response contains `structuredContent` with a schema version, canonical metric
 names, registry units, the analysed time window, configured source types, point count,

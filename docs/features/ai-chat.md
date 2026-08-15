@@ -17,17 +17,27 @@ tracking resources.
 
 ## Data flow and service boundaries
 
-```text
-Dashboard /chat
-  -> Gateway /api/v1/chat/* + session cookie + CSRF + X-Request-ID
-     -> Analysis validates the user token and asks Core to validate the session
-        -> Codex app server over local JSONL stdio
-           -> dynamic tool callback
-              -> fresh MCP 2026-07-28 POST /mcp + the same user token/request ID
-                 -> Analysis derives tenant_id from the token
-                    -> CoreDataService gRPC
-                       -> Core query filtered by tenant_id
+```mermaid
+flowchart TB
+    chat["Dashboard /chat"]
+    gateway["API Gateway&nbsp;&mdash; session cookie, CSRF, X-Request-ID"]
+    codex["Codex app server&nbsp;&mdash; local JSONL stdio"]
+    model[/"ChatGPT&nbsp;&mdash; sees tool schemas and results,<br/>never a credential or a tenant id"/]
+    mcp["POST /mcp&nbsp;&mdash; sessionless MCP 2026-07-28"]
+    core["Core gRPC&nbsp;:50051"]
+    db[("PostgreSQL")]
+
+    chat -->|"/api/v1/chat/*"| gateway
+    gateway -->|"Analysis validates the user token,<br/>Core validates the session"| codex
+    codex <--> model
+    codex -->|"every dynamic tool callback becomes a new,<br/>separately authenticated request &mdash; same user token,<br/>same X-Request-ID, no inherited session"| mcp
+    mcp -->|"tenant_id derived from the token,<br/>never from a tool argument"| core
+    core --> db
 ```
+
+The loop back into `POST /mcp` is the point of the design, not an implementation detail:
+the model's tool call does not get a shortcut into the data layer, it goes through the
+same front door as any other MCP client and is authenticated again on the way in.
 
 Only Core owns the database. Analysis contains no SQL or database driver, and the
 Gateway does not read platform data. The model sees the read-only tool schemas and

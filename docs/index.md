@@ -21,6 +21,8 @@ it deliberately separate from the product UI.
 - Credentials are fetched from Core at run time and never stored in an importer.
 - Every event carries `tenant_id`, `source_id`, `metric_type`, `timestamp` and a deterministic `idempotency_key`.
 - Core stays the only service with database access; the Analysis service reads over gRPC.
+- The MCP surface is read-only and sessionless: every request is authenticated on its own, and the
+  tenant comes from the token rather than from a tool argument, so no conversation can select one.
 - Distributed interactions are specified in `specs/` and model-checked before they are implemented.
 
 ## Where to start
@@ -33,6 +35,8 @@ it deliberately separate from the product UI.
 | [Authentication](features/authentication.md) | Sessions, cookies, logout, route guard |
 | [External sign-in (OIDC)](features/oidc.md) | Provider administration, account linking, back-channel logout |
 | [API keys](features/api-keys.md) | Tenant-bound inbound keys |
+| [Stateless MCP analytics](features/mcp.md) | The read-only tool surface, its bounds, and what publishing it would require |
+| [AI chat](features/ai-chat.md) | The `/chat` page, the Codex adapter, and why a tool call re-authenticates |
 | [Licensing](licensing.md) | Our own licence, redistributed third-party software, what a network service changes |
 | [Troubleshooting](troubleshooting.md) | Common failure modes and what they mean |
 
