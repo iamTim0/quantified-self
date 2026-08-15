@@ -25,6 +25,11 @@ FROM nginx:1.27-alpine AS runtime
 
 COPY --from=build /site /usr/share/nginx/html
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+RUN printf '{"status":"ok","service":"qs-docs","version":"%s","commit":"%s"}\n' \
+      "$SOURCE_VERSION" "$SOURCE_COMMIT" > /usr/share/nginx/html/health.json
+
 # Traefik strips the /docs prefix, so the site is served from the root here.
 RUN printf '%s\n' \
   'server {' \
@@ -32,7 +37,11 @@ RUN printf '%s\n' \
   '  root /usr/share/nginx/html;' \
   '  index index.html;' \
   '  location / { try_files $uri $uri/ $uri.html /404.html; }' \
-  '  location = /healthz { return 200 "ok"; add_header Content-Type text/plain; }' \
+  '  location = /healthz {' \
+  '    default_type application/json;' \
+  '    add_header Cache-Control "no-store";' \
+  '    try_files /health.json =404;' \
+  '  }' \
   '}' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8003

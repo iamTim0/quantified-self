@@ -9,6 +9,7 @@ REQUEST_PATHS = [
     "/explorer",
     "/api/v1/data",
     "/health",
+    "/healthz",
     "/docs",
     "/ingest/streak"
 ]
@@ -48,7 +49,7 @@ atomic action RoutePublicRequest:
     path = oneof(REQUEST_PATHS)
     last_path = path
 
-    if path == "/api/v1/data" or path == "/health":
+    if path == "/api/v1/data" or path == "/health" or path == "/healthz":
         last_backend = "api-gateway"
     elif path == "/docs":
         last_backend = "docs"
@@ -71,7 +72,7 @@ always assertion TunnelRequiresHealthyProxy:
     return True
 
 always assertion SpecificRoutesPrecedeDashboard:
-    if last_path == "/api/v1/data" or last_path == "/health":
+    if last_path == "/api/v1/data" or last_path == "/health" or last_path == "/healthz":
         return last_backend == "api-gateway"
     if last_path == "/docs":
         return last_backend == "docs"
@@ -80,5 +81,4 @@ always assertion SpecificRoutesPrecedeDashboard:
     if last_path == "/" or last_path == "/explorer":
         return last_backend == "dashboard"
     return True
-
 

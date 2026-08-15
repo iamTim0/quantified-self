@@ -13,6 +13,7 @@ import nats
 import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
+from shared_schemas import health_payload
 
 from streak_importer.auth import extract_presented_key, resolve_api_key
 from streak_importer.client import close_sync_run, open_sync_run, report_sync_progress
@@ -64,18 +65,20 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Streak Gym Log Importer Service",
-    version="0.1.0",
     lifespan=lifespan,
 )
 
 
 @app.get("/health")
-async def health_check():
-    return {
-        "status": "ok",
-        "service": settings.SERVICE_NAME,
-        "nats_connected": nc_client is not None and nc_client.is_connected,
-    }
+async def health_check(response: Response):
+    nats_connected = nc_client is not None and nc_client.is_connected
+    response.status_code = 200 if nats_connected else 503
+    response.headers["Cache-Control"] = "no-store"
+    return health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if nats_connected else "degraded",
+        nats_connected=nats_connected,
+    )
 
 
 @app.head("/ingest")

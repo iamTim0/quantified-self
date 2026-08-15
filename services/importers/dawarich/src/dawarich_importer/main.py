@@ -12,6 +12,7 @@ from typing import Any
 
 import httpx
 import nats
+from shared_schemas import HealthServer, health_payload
 
 from dawarich_importer.client import (
     DawarichApiError,
@@ -64,6 +65,16 @@ logger = logging.getLogger(__name__)
 # so the duplicate task is never published in the first place. This stays as a
 # cheap local backstop for a redelivered message.
 active_syncs: set[str] = set()
+nc_client: nats.NATS | None = None
+
+
+def _health_payload() -> dict[str, Any]:
+    connected = nc_client is not None and nc_client.is_connected
+    return health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if connected else "degraded",
+        nats_connected=connected,
+    )
 
 
 async def report_sync_result_to_core(
@@ -233,31 +244,37 @@ async def process_task_message(msg, nc: nats.NATS):
 
 
 async def main():
+    global nc_client
     logger.info("Starting Dawarich Importer Service; awaiting sync tasks on NATS...")
-    nc = await nats.connect(settings.NATS_URL)
+    health_server = HealthServer(settings.HEALTH_PORT, _health_payload)
+    await health_server.start()
+    nc_client = await nats.connect(settings.NATS_URL)
     logger.info(f"Connected to NATS at {settings.NATS_URL}")
 
-    js = nc.jetstream()
     try:
-        await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
-    except Exception as e:  # noqa: BLE001
-        logger.info(f"Stream 'tasks' check: {e}")
+        js = nc_client.jetstream()
+        try:
+            await js.add_stream(name="tasks", subjects=["qs.task.sync.>"])
+        except Exception as e:  # noqa: BLE001
+            logger.info(f"Stream 'tasks' check: {e}")
 
-    await js.subscribe(
-        "qs.task.sync.dawarich",
-        queue="dawarich_importer_task_group",
-        cb=lambda msg: process_task_message(msg, nc),
-    )
-    logger.info(
-        "Subscribed to NATS subject 'qs.task.sync.dawarich' (queue group: 'dawarich_importer_task_group')"
-    )
+        await js.subscribe(
+            "qs.task.sync.dawarich",
+            queue="dawarich_importer_task_group",
+            cb=lambda msg: process_task_message(msg, nc_client),
+        )
+        logger.info(
+            "Subscribed to NATS subject 'qs.task.sync.dawarich' (queue group: 'dawarich_importer_task_group')"
+        )
 
-    try:
         await asyncio.Event().wait()
     except (KeyboardInterrupt, SystemExit):
         logger.info("Stopping Dawarich Importer Service...")
     finally:
-        await nc.close()
+        if nc_client is not None and not nc_client.is_closed:
+            await nc_client.close()
+        nc_client = None
+        await health_server.close()
 
 
 if __name__ == "__main__":

@@ -58,8 +58,9 @@ Core uses one image with explicit runtime roles. Local development keeps the def
 single process. Production runs `core` as the API/publisher role, `core-ingest` as the JetStream
 consumer, and `core-scheduler` as the periodic planner. They all remain database-owned Core
 processes; the split is a scaling and failure-isolation boundary, not a new service boundary.
-`/health` is process liveness. `/readyz` reports database, NATS and gRPC readiness for the role that
-is running.
+Core's `/health` is process liveness and `/readyz` reports database, NATS and gRPC readiness for the role that
+is running. The public Gateway's `/health` is the aggregate browser check; its `/healthz` is process liveness for
+Compose startup ordering.
 
 ## The data flow of an import
 

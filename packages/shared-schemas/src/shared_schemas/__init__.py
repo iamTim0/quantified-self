@@ -17,6 +17,7 @@ from .field_report import (
     FieldSighting,
     value_kind,
 )
+from .health_server import HealthServer
 from .metrics import (
     CANONICAL_KEYS,
     DYNAMIC_NAMESPACES,
@@ -36,6 +37,7 @@ from .metrics import (
     is_known_metric_type,
     metrics_for_source,
 )
+from .service_metadata import health_payload, service_version, source_commit
 from .upload_spool import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_TTL_SECONDS,
@@ -59,6 +61,7 @@ __all__ = [
     "FieldReport",
     "FieldReportCollector",
     "FieldSighting",
+    "HealthServer",
     "IngestEvent",
     "IngestResolution",
     "MetricCategory",
@@ -80,9 +83,12 @@ __all__ = [
     "convert",
     "default_policies",
     "describe",
+    "health_payload",
     "idempotency_key",
     "is_known_metric_type",
     "metrics_for_source",
     "provenance",
+    "service_version",
+    "source_commit",
     "value_kind",
 ]

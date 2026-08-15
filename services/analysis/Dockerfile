@@ -36,6 +36,10 @@ RUN uv sync --frozen --no-install-project
 COPY services/analysis/src/ ./src/
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/analysis/.venv/bin:${PATH}"
 
 EXPOSE 8010

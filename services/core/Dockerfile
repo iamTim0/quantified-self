@@ -39,6 +39,10 @@ COPY services/core/alembic/ ./alembic/
 COPY services/core/src/ ./src/
 RUN uv sync --frozen
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/services/core/.venv/bin:${PATH}"
 
 # 8001 is HTTP; 50051 is the gRPC read API the Analysis Service uses.

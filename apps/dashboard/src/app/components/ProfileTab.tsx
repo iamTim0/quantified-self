@@ -106,9 +106,7 @@ export default function ProfileTab({
       setProfileWorkspaceName(savedWorkspace);
       onUpdateProfile?.(savedName, savedEmail, savedWorkspace);
       setProfileSuccess(
-        data?.session_refreshed
-          ? t("profile.savedAndSessionRefreshed")
-          : t("profile.saved"),
+        data?.session_refreshed ? t("profile.savedAndSessionRefreshed") : t("profile.saved"),
       );
     } catch (err: unknown) {
       setProfileError(err instanceof Error ? err.message : String(err));
@@ -317,7 +315,9 @@ export default function ProfileTab({
                   />
                 </div>
                 {userRole === "member" && (
-                  <p className="mt-1 text-[11px] text-slate-500">{t("profile.workspaceAdminOnly")}</p>
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    {t("profile.workspaceAdminOnly")}
+                  </p>
                 )}
               </div>
 
@@ -405,13 +405,13 @@ export default function ProfileTab({
             </div>
 
             <form onSubmit={handlePasswordChange} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
-                    {t("profile.currentPassword")}
-                  </label>
-                  <input
-                    type="password"
-                    placeholder={t("profile.passwordPlaceholder")}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  {t("profile.currentPassword")}
+                </label>
+                <input
+                  type="password"
+                  placeholder={t("profile.passwordPlaceholder")}
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   required
@@ -424,9 +424,9 @@ export default function ProfileTab({
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
                     {t("profile.newPassword")}
                   </label>
-                    <input
-                      type="password"
-                      placeholder={t("profile.passwordMinimum")}
+                  <input
+                    type="password"
+                    placeholder={t("profile.passwordMinimum")}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
@@ -439,9 +439,9 @@ export default function ProfileTab({
                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
                     {t("profile.confirm")}
                   </label>
-                    <input
-                      type="password"
-                      placeholder={t("profile.passwordRepeat")}
+                  <input
+                    type="password"
+                    placeholder={t("profile.passwordRepeat")}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
@@ -618,9 +618,7 @@ export default function ProfileTab({
         <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
           {t("profile.legalTitle")}
         </h3>
-        <p className="mb-2 text-xs text-slate-500">
-          {t("profile.privacyLead")}
-        </p>
+        <p className="mb-2 text-xs text-slate-500">{t("profile.privacyLead")}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
           <a href="/legal/datenschutz" className="text-[#0d5c3a] underline hover:text-[#08432a]">
             {t("footer.privacy")}

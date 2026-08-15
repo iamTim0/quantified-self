@@ -114,6 +114,9 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `NeverSkipIncompleteMetric` | `test_missing_metric_cannot_be_hidden_by_a_dense_metric` | Core import planner |
 | `RevisionChangeInvalidatesCoverage` | `test_revision_change_invalidates_historical_coverage` | Core import planner |
 | `UnknownCoverageImports` | `test_unknown_coverage_is_imported` | Core import planner |
+| `UnhealthyDependencyIsVisible` | `test_unhealthy_dependency_is_visible` | API Gateway health aggregation |
+| `VersionComesFromObservedService` | `test_gateway_health_reports_observed_metadata` | API Gateway health aggregation |
+| `LivenessDoesNotWaitForDependencies` | `test_liveness_is_independent_from_aggregate_readiness` | API Gateway / Compose |
 
 ## Adding New Specs
 

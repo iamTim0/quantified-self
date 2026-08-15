@@ -357,7 +357,11 @@ async def test_insights_do_not_merge_ambiguous_metric_sources(monkeypatch):
 
 def test_health_endpoint_needs_no_credential():
     with TestClient(app) as client:
-        assert client.get("/health").status_code == 200
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json()["version"]
+        assert response.json()["commit"]
+        assert response.headers["cache-control"] == "no-store"
 
 
 def test_insights_without_a_token_is_401():

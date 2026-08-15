@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 
-
 TENANTS = {"tenant_a", "tenant_b"}
 RESOLUTIONS = {"raw", "minute", "hour", "day"}
 

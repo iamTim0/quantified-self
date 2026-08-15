@@ -61,20 +61,14 @@ export default function ImportRunsOverview({
     void loadRuns();
   }, [loadRuns, refreshTrigger, tenantId]);
 
-  const active = useMemo(
-    () => runs.filter((run) => ACTIVE_STATUSES.has(run.status)),
-    [runs],
-  );
+  const active = useMemo(() => runs.filter((run) => ACTIVE_STATUSES.has(run.status)), [runs]);
   const loadingInCore = active.filter((run) => run.status === "loading").length;
   const completed = runs.filter((run) => run.status === "success").length;
   const failed = runs.filter((run) => run.status === "error").length;
 
   useEffect(() => {
     if (!tenantId) return;
-    const timer = setInterval(
-      () => void loadRuns(),
-      active.length > 0 ? 2500 : 10000,
-    );
+    const timer = setInterval(() => void loadRuns(), active.length > 0 ? 2500 : 10000);
     return () => clearInterval(timer);
   }, [active.length, loadRuns, tenantId]);
 
@@ -103,7 +97,11 @@ export default function ImportRunsOverview({
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <OverviewCount label={t("importOverview.active")} value={active.length} tone="active" />
-        <OverviewCount label={t("importOverview.loadingCore")} value={loadingInCore} tone="loading" />
+        <OverviewCount
+          label={t("importOverview.loadingCore")}
+          value={loadingInCore}
+          tone="loading"
+        />
         <OverviewCount label={t("importOverview.completed")} value={completed} tone="success" />
         <OverviewCount label={t("importOverview.failed")} value={failed} tone="error" />
       </div>
@@ -121,7 +119,10 @@ export default function ImportRunsOverview({
           {runs.map((run) => {
             const isActive = ACTIVE_STATUSES.has(run.status);
             const expected = run.points_expected ?? run.points_received;
-            const progress = expected > 0 ? Math.min(100, Math.round((run.points_processed / expected) * 100)) : null;
+            const progress =
+              expected > 0
+                ? Math.min(100, Math.round((run.points_processed / expected) * 100))
+                : null;
             return (
               <article
                 key={run.id}
@@ -145,17 +146,26 @@ export default function ImportRunsOverview({
                       <span className="text-[10px] uppercase tracking-wide text-slate-400">
                         {run.source_type}
                       </span>
-                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass(run.status)}`}>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass(run.status)}`}
+                      >
                         {t(statusKey(run.status))}
                       </span>
                     </div>
                     <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
                       <span>{t(triggerKey(run.trigger))}</span>
-                      <span>{run.started_at ? formatDateTime(run.started_at) : t("importerDetail.unknown")}</span>
+                      <span>
+                        {run.started_at
+                          ? formatDateTime(run.started_at)
+                          : t("importerDetail.unknown")}
+                      </span>
                       <span>
                         {t("importOverview.progress", {
                           processed: formatNumber(run.points_processed),
-                          total: run.points_expected === null ? t("importerDetail.unknown") : formatNumber(run.points_expected),
+                          total:
+                            run.points_expected === null
+                              ? t("importerDetail.unknown")
+                              : formatNumber(run.points_expected),
                         })}
                       </span>
                     </div>
@@ -169,12 +179,17 @@ export default function ImportRunsOverview({
                     )}
                   </div>
                   {progress !== null && isActive && (
-                    <span className="shrink-0 text-[11px] font-semibold text-slate-600">{progress}%</span>
+                    <span className="shrink-0 text-[11px] font-semibold text-slate-600">
+                      {progress}%
+                    </span>
                   )}
                 </div>
                 {progress !== null && isActive && (
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                    <div className="h-full rounded-full bg-[#0d5c3a] transition-all" style={{ width: `${progress}%` }} />
+                    <div
+                      className="h-full rounded-full bg-[#0d5c3a] transition-all"
+                      style={{ width: `${progress}%` }}
+                    />
                   </div>
                 )}
                 {messageForRun(t, run) && (

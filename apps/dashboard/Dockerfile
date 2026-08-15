@@ -91,6 +91,9 @@ RUN bun run notices
 
 FROM oven/bun:1-alpine AS runner
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=3000
@@ -98,6 +101,8 @@ ENV PORT=3000
 # nobody. Explicit rather than relying on the default.
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 
 # The traced server, plus the two things tracing deliberately does not cover:
 # the client-side chunks and the public assets, which are served as files rather
@@ -128,6 +133,6 @@ COPY --from=builder /app/THIRD-PARTY-NOTICES.txt ./THIRD-PARTY-NOTICES.txt
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD bun -e "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
+  CMD bun -e "fetch('http://127.0.0.1:3000/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"
 
 CMD ["bun", "server.js"]

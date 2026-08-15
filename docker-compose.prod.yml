@@ -114,7 +114,7 @@ services:
   #   ────────  ─────────   ─────────────────────────────────   ──────────────
   #         30  ingest      PathPrefix(`/ingest`)               streak-importer
   #         20  docs        PathPrefix(`/docs`)                 docs
-  #         10  api         PathPrefix(`/api`) || Path(`/health`)  api-gateway
+  #         10  api         PathPrefix(`/api`) || Path(`/health`) || Path(`/healthz`)  api-gateway
   #          1  workspace   PathPrefix(`/`)                     dashboard
   #
   # Higher priority wins, so each route only has to describe what it owns and the
@@ -352,7 +352,12 @@ services:
         condition: service_healthy
     environment:
       - CORE_SERVICE_URL=http://core:8001
+      - CORE_INGEST_URL=http://core-ingest:8001
+      - CORE_SCHEDULER_URL=http://core-scheduler:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - DOCS_URL=http://docs:8003
+      - YAZIO_IMPORTER_URL=http://yazio-importer:8008
+      - DAWARICH_IMPORTER_URL=http://dawarich-importer:8009
       # Both were missing, and both default to 127.0.0.1 — which inside this
       # container is the Gateway itself, so each of these proxies pointed at
       # nothing. The Gateway is the documented way in for the two push importers
@@ -361,6 +366,9 @@ services:
       - STREAK_IMPORTER_URL=http://streak-importer:8006
       - APPLE_HEALTH_IMPORTER_URL=http://apple-health-importer:8005
       - WHOOP_IMPORTER_URL=http://whoop-importer:8007
+      - HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011
+      - WEATHER_IMPORTER_URL=http://weather-importer:8012
+      - CALENDAR_IMPORTER_URL=http://calendar-importer:8013
       # Traefik routes / to the dashboard directly, so this only matters for a
       # request that reaches the Gateway on its own port. In this network the UI
       # is the container; the code default is loopback, for a local checkout.
@@ -383,7 +391,9 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://${PUBLIC_HOST:-localhost},http://${PUBLIC_HOST:-localhost}}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      # /health aggregates downstream services and may be degraded while one is
+      # restarting. /healthz is the local process check used for dependency order.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -392,7 +402,7 @@ services:
       # `api`, priority 10. /health is the second clause only because it is a
       # top-level path that monitoring and tools/smoke_deployment.sh already use.
       - "traefik.enable=true"
-      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`)"
+      - "traefik.http.routers.api.rule=PathPrefix(`/api`) || Path(`/health`) || Path(`/healthz`)"
       - "traefik.http.routers.api.entrypoints=web"
       - "traefik.http.routers.api.priority=10"
       - "traefik.http.services.api.loadbalancer.server.port=8000"
@@ -417,7 +427,7 @@ services:
     environment:
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/healthz').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -482,12 +492,15 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8008
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8008/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    expose:
+      - "8008"
     networks:
       - qs-network
 
@@ -504,12 +517,15 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8009
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8009/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    expose:
+      - "8009"
     networks:
       - qs-network
 
@@ -619,12 +635,15 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8011
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8011/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    expose:
+      - "8011"
     networks:
       - qs-network
 
@@ -641,12 +660,15 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8012
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8012/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    expose:
+      - "8012"
     networks:
       - qs-network
 
@@ -663,12 +685,15 @@ services:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8013
     healthcheck:
-      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8013/health', timeout=3)"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+    expose:
+      - "8013"
     networks:
       - qs-network
 

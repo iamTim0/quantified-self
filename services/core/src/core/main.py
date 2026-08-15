@@ -36,7 +36,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-from shared_schemas import FieldReport, idempotency_key
+from shared_schemas import FieldReport, health_payload, idempotency_key
 from shared_schemas.metrics import (
     CANONICAL_KEYS,
     DYNAMIC_NAMESPACES,
@@ -501,12 +501,13 @@ app.add_middleware(AuthenticationMiddleware)
 
 
 @app.get("/health")
-async def health_check():
-    return {"status": "ok", "service": settings.SERVICE_NAME}
+async def health_check(response: Response):
+    response.headers["Cache-Control"] = "no-store"
+    return health_payload(settings.SERVICE_NAME, role=settings.CORE_ROLE.lower())
 
 
 @app.get("/readyz")
-async def readiness_check():
+async def readiness_check(response: Response):
     """Report whether Core dependencies can serve traffic safely.
 
     ``/health`` is deliberately a cheap process liveness probe. This endpoint is
@@ -538,9 +539,18 @@ async def readiness_check():
         grpc_server = getattr(app.state, "grpc_server", None)
         components["grpc"] = "ok" if grpc_server is not None else "unavailable"
     ready = all(value == "ok" for value in components.values())
-    payload = {"status": "ok" if ready else "degraded", "service": settings.SERVICE_NAME, "components": components}
+    payload = health_payload(
+        settings.SERVICE_NAME,
+        status="ok" if ready else "degraded",
+        components=components,
+    )
     if not ready:
-        return JSONResponse(status_code=503, content=payload)
+        return JSONResponse(
+            status_code=503,
+            content=payload,
+            headers={"Cache-Control": "no-store"},
+        )
+    response.headers["Cache-Control"] = "no-store"
     return payload
 
 

@@ -29,8 +29,10 @@ check so Coolify can observe it.
 
 - HTTP importers use an unauthenticated local `/health` endpoint. It checks that the importer process
   can serve requests and does not require a tenant, connector token, or provider API.
-- NATS-only workers check TCP connectivity to the configured `NATS_URL`. They remain healthy while
-  no connector is configured, because an idle importer is an expected state rather than a failure.
+- NATS-only workers expose a dependency-free internal `/health` endpoint. It reports the worker version
+  and whether the configured NATS connection is active; it never requires a tenant or connector. They
+  remain healthy while no connector is configured, because an idle importer is an expected state rather
+  than a failure.
 - Provider APIs and connector credentials are never called from a healthcheck. Provider outages belong
   in sync-run status and deployment logs, not in container liveness.
 - One-shot services such as migrations and volume initialization are excluded: successful exit is their

@@ -18,6 +18,10 @@ without any test noticing. The dashboard's had -- its pnpm lockfile went stale
 while CI installed with npm, so the image had been unbuildable for some time and
 nothing said so.
 
+Local builds pass the selected tag and the current checkout commit as
+`SOURCE_VERSION` and `SOURCE_COMMIT`, so their health endpoints identify the
+artefact instead of falling back to an anonymous development build.
+
 Contexts differ per image and are not cosmetic. Core and Analysis build from the
 repository root because they depend on `packages/proto`, and every importer does the
 same because it depends on `packages/shared-schemas` for the metric catalog -- a path
@@ -151,6 +155,18 @@ def importers() -> list[str]:
     )
 
 
+def _source_commit() -> str:
+    """Return the checkout revision used to build local images."""
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.stdout.strip() if result.returncode == 0 else "unknown"
+
+
 def build(selected: list[str], *, prefix: str, version: str) -> int:
     docker = shutil.which("docker")
     if docker is None:
@@ -165,11 +181,17 @@ def build(selected: list[str], *, prefix: str, version: str) -> int:
         return 2
 
     failures: list[str] = []
+    build_args = [
+        "--build-arg",
+        f"SOURCE_VERSION={version}",
+        "--build-arg",
+        f"SOURCE_COMMIT={_source_commit()}",
+    ]
     for index, image in enumerate(images, start=1):
         tag = f"{prefix}/{image.name}:{version}"
         print(f"[{index}/{len(images)}] {tag}", flush=True)
         result = subprocess.run(
-            [docker, "build", "-f", image.dockerfile, "-t", tag, image.context],
+            [docker, "build", *build_args, "-f", image.dockerfile, "-t", tag, image.context],
             cwd=REPO_ROOT,
             # One failing image must not abort the other twelve; the point of a
             # local run is to find out which ones are broken, not the first one.

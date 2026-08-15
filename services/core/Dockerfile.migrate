@@ -26,6 +26,10 @@ COPY services/core/src/core/config.py ./src/core/config.py
 COPY services/core/src/core/db/__init__.py ./src/core/db/__init__.py
 COPY services/core/src/core/db/models.py ./src/core/db/models.py
 
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
 ENV PATH="/app/migrations/.venv/bin:${PATH}"
 ENV PYTHONPATH="/app/services/core/src"
 ENV PYTHONDONTWRITEBYTECODE="1"

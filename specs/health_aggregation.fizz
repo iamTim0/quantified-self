@@ -1,0 +1,60 @@
+# Fizzbee Formal Specification: Runtime Health Aggregation
+# Models the public Gateway observing private service health endpoints.
+#
+# A missing or degraded dependency must never be reported as an entirely healthy
+# deployment. The Gateway's own liveness endpoint remains independent so Compose
+# can start the dashboard while the aggregate endpoint is still degraded.
+
+SERVICES = ["core", "dashboard"]
+STATUSES = ["ok", "degraded", "unavailable"]
+SERVICE_VERSIONS = {
+    "core": "release-a",
+    "dashboard": "release-a"
+}
+
+
+action Init:
+    observed_status = {"core": "unknown", "dashboard": "unknown"}
+    observed_version = {"core": "", "dashboard": ""}
+    aggregate_status = "unknown"
+    liveness_status = "ok"
+
+
+atomic action ObserveTarget:
+    target = oneof(SERVICES)
+    target_status = oneof(STATUSES)
+    observed_status[target] = target_status
+    aggregate_status = "unknown"
+    if target_status == "unavailable":
+        observed_version[target] = ""
+    else:
+        observed_version[target] = SERVICE_VERSIONS[target]
+
+
+atomic action AggregateHealth:
+    aggregate_status = "ok"
+    for target in SERVICES:
+        if observed_status[target] != "ok":
+            aggregate_status = "degraded"
+
+
+always assertion UnhealthyDependencyIsVisible:
+    if aggregate_status == "ok":
+        for target in SERVICES:
+            if observed_status[target] != "ok":
+                return False
+    return True
+
+
+always assertion VersionComesFromObservedService:
+    for target in SERVICES:
+        if observed_version[target] != "":
+            if observed_version[target] != SERVICE_VERSIONS[target]:
+                return False
+    return True
+
+
+always assertion LivenessDoesNotWaitForDependencies:
+    if aggregate_status == "degraded":
+        return liveness_status == "ok"
+    return True
