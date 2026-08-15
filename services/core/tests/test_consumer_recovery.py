@@ -4,7 +4,6 @@ from contextlib import suppress
 from typing import Any
 
 import pytest
-
 from core.events import consumer as consumer_module
 
 

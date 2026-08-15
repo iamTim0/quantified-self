@@ -22,7 +22,6 @@ from core.ingest_planning import (
     BucketCount,
     TimeRange,
     analyse_coverage,
-    analyse_metric_coverage,
     choose_bucket_seconds,
     classify_buckets,
     compute_sync_window,

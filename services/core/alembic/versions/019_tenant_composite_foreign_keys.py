@@ -9,7 +9,7 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "019_tenant_composite_foreign_keys"
+revision: str = "019_tenant_source_fks"
 down_revision: str | None = "018_case_insensitive_user_email"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

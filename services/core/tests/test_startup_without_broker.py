@@ -18,7 +18,6 @@ import asyncio
 import time
 
 import pytest
-
 from core.events import consumer as consumer_module
 
 
@@ -116,9 +115,8 @@ async def test_the_app_starts_and_serves_while_the_broker_is_unreachable(monkeyp
     Runs the real lifespan with a NATS URL pointing at a closed port. If the
     consumer were awaited again, this would take minutes instead of a moment.
     """
-    from httpx import ASGITransport, AsyncClient
-
     from core.main import app
+    from httpx import ASGITransport, AsyncClient
 
     # A port nothing is listening on.
     monkeypatch.setattr(consumer_module.settings, "NATS_URL", "nats://127.0.0.1:14222")

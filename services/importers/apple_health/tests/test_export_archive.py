@@ -276,27 +276,25 @@ def test_apple_health_mobility_nutrition_hearing_and_workout_fields_are_usable()
         f'endDate="2026-08-06 06:{index:02d}:01 +0000" value="{value}"/>'
         for index, (name, unit, value) in enumerate(quantity_records)
     )
-    categories = "\n".join(
-        (
-            '<Record type="HKCategoryTypeIdentifierAppleStandHour" '
-            'startDate="2026-08-06 08:00:00 +0000" endDate="2026-08-06 09:00:00 +0000" '
-            'value="HKCategoryValueAppleStandHourStood"/>',
-            '<Record type="HKCategoryTypeIdentifierHandwashingEvent" '
-            'startDate="2026-08-06 08:05:00 +0000" endDate="2026-08-06 08:05:01 +0000" '
-            'value="HKCategoryValueHandwashingEvent"/>',
-            '<Record type="HKCategoryTypeIdentifierMindfulSession" '
-            'startDate="2026-08-06 09:00:00 +0000" endDate="2026-08-06 09:20:00 +0000" '
-            'value="Mindfulness"/>',
-            '<Record type="HKCategoryTypeIdentifierToothbrushingEvent" '
-            'startDate="2026-08-06 09:30:00 +0000" endDate="2026-08-06 09:30:01 +0000" '
-            'value="HKCategoryValueToothbrushingEvent"/>',
-            '<Record type="HKCategoryTypeIdentifierAudioExposureEvent" '
-            'startDate="2026-08-06 10:00:00 +0000" endDate="2026-08-06 10:00:01 +0000" '
-            'value="HKCategoryValueAudioExposureEvent"/>',
-            '<Record type="HKCategoryTypeIdentifierHeadphoneAudioExposureEvent" '
-            'startDate="2026-08-06 10:05:00 +0000" endDate="2026-08-06 10:05:01 +0000" '
-            'value="HKCategoryValueHeadphoneAudioExposureEvent"/>',
-        )
+    categories = (
+        '<Record type="HKCategoryTypeIdentifierAppleStandHour" '
+        'startDate="2026-08-06 08:00:00 +0000" endDate="2026-08-06 09:00:00 +0000" '
+        'value="HKCategoryValueAppleStandHourStood"/>\n'
+        '<Record type="HKCategoryTypeIdentifierHandwashingEvent" '
+        'startDate="2026-08-06 08:05:00 +0000" endDate="2026-08-06 08:05:01 +0000" '
+        'value="HKCategoryValueHandwashingEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierMindfulSession" '
+        'startDate="2026-08-06 09:00:00 +0000" endDate="2026-08-06 09:20:00 +0000" '
+        'value="Mindfulness"/>\n'
+        '<Record type="HKCategoryTypeIdentifierToothbrushingEvent" '
+        'startDate="2026-08-06 09:30:00 +0000" endDate="2026-08-06 09:30:01 +0000" '
+        'value="HKCategoryValueToothbrushingEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierAudioExposureEvent" '
+        'startDate="2026-08-06 10:00:00 +0000" endDate="2026-08-06 10:00:01 +0000" '
+        'value="HKCategoryValueAudioExposureEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierHeadphoneAudioExposureEvent" '
+        'startDate="2026-08-06 10:05:00 +0000" endDate="2026-08-06 10:05:01 +0000" '
+        'value="HKCategoryValueHeadphoneAudioExposureEvent"/>\n'
     )
     workout_metadata = "\n".join(
         f'<MetadataEntry key="{key}" value="{value}"/>'
