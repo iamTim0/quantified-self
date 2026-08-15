@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { CheckCircle2, Clock3, Loader2, RefreshCw, XCircle } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
 import {
   ACTIVE_STATUSES,
@@ -66,11 +67,7 @@ export default function ImportRunsOverview({
   const completed = runs.filter((run) => run.status === "success").length;
   const failed = runs.filter((run) => run.status === "error").length;
 
-  useEffect(() => {
-    if (!tenantId) return;
-    const timer = setInterval(() => void loadRuns(), active.length > 0 ? 2500 : 10000);
-    return () => clearInterval(timer);
-  }, [active.length, loadRuns, tenantId]);
+  usePolling(() => void loadRuns(), tenantId ? (active.length > 0 ? 2500 : 10000) : null);
 
   return (
     <section className="space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">

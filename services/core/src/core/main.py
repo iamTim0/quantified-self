@@ -2139,28 +2139,53 @@ async def query_metrics(
         # only be partly covered by a deployment that has just started producing
         # them. Return those legacy points alongside the rollups, bounded by the
         # same limit and marked so clients can explain the mixed resolution.
-        raw_stmt = (
-            select(DataPoint, DataSource.source_type)
-            .join(
-                DataSource,
-                and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+        #
+        # Two bounds keep that compatibility query from costing more than the answer
+        # it contributes, because `~_rollup_covers_point` is evaluated per row and is
+        # at its most expensive exactly when it finds nothing — the normal case for a
+        # deployment whose data all arrived after rollups existed. Without them, a
+        # chart request with no time window walked the tenant's entire history,
+        # probing the rollup index once per point, to return zero rows.
+        raw_rows: list[Any] = []
+        if rollup_rows:
+            # A full page of rollups means `limit` items already rank ahead of the
+            # oldest one returned (newest one, ascending), so a legacy point beyond
+            # that boundary cannot survive the `points[:limit]` slice below. Bounding
+            # the scan there is not an approximation: the discarded rows are exactly
+            # the rows the slice discarded before.
+            boundary: datetime | None = None
+            if len(rollup_rows) == limit:
+                buckets = [rollup.bucket_start for rollup, _ in rollup_rows]
+                boundary = min(buckets) if sort == "desc" else max(buckets)
+
+            raw_stmt = (
+                select(DataPoint, DataSource.source_type)
+                .join(
+                    DataSource,
+                    and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+                )
+                .where(
+                    DataPoint.tenant_id == tenant_id,
+                    ~_rollup_covers_point(effective_resolution),
+                    *source_filter,
+                )
             )
-            .where(
-                DataPoint.tenant_id == tenant_id,
-                ~_rollup_covers_point(effective_resolution),
-                *source_filter,
-            )
-        )
-        if metric_type:
-            raw_stmt = raw_stmt.where(DataPoint.metric_type == metric_type)
-        if start_dt:
-            raw_stmt = raw_stmt.where(DataPoint.timestamp >= start_dt)
-        if end_dt:
-            raw_stmt = raw_stmt.where(DataPoint.timestamp <= end_dt)
-        raw_stmt = raw_stmt.order_by(
-            DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
-        ).limit(limit)
-        raw_rows = (await session.execute(raw_stmt)).all()
+            if metric_type:
+                raw_stmt = raw_stmt.where(DataPoint.metric_type == metric_type)
+            if start_dt:
+                raw_stmt = raw_stmt.where(DataPoint.timestamp >= start_dt)
+            if end_dt:
+                raw_stmt = raw_stmt.where(DataPoint.timestamp <= end_dt)
+            if boundary is not None:
+                raw_stmt = raw_stmt.where(
+                    DataPoint.timestamp >= boundary
+                    if sort == "desc"
+                    else DataPoint.timestamp <= boundary
+                )
+            raw_stmt = raw_stmt.order_by(
+                DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
+            ).limit(limit)
+            raw_rows = (await session.execute(raw_stmt)).all()
 
         points = [
             {

@@ -310,7 +310,7 @@ A production deployment should show nothing here. If it does, at least one of th
   by the release workflow.
 - **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
   the data point that was written.
-- **Import history**: open the **All import runs** overview on the Connectors page for a tenant-wide
+- **Import history**: open the **Import runs** button on the Connectors page for a tenant-wide
   view, open a configured connector's **Runs** detail page for its complete history, or call
   `GET /api/v1/data/sync-runs` and `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the
   trigger, lifecycle status, duration, request id, expected/received/processed/accepted/duplicate

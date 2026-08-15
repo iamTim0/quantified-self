@@ -339,6 +339,8 @@ export const de: Record<MessageKey, string> = {
   "connectors.tabCurrent": "Aktuelle Importer",
   "connectors.tabAvailable": "Importer hinzufügen",
   "connectors.availableHint": "Wähle eine Datenquelle für diesen Workspace aus.",
+  "connectors.showRuns": "Importläufe",
+  "connectors.runsActiveHint": "{count} Import läuft gerade",
   "connectors.details": "Läufe",
   "connectors.openDetails": "Details zu den Importer-Läufen öffnen",
 

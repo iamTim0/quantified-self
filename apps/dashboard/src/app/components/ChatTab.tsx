@@ -16,6 +16,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { apiFetch, apiJson } from "../lib/api";
+import { usePolling } from "../lib/polling";
 import { type MessageKey, useT } from "../lib/i18n/provider";
 
 interface ChatStatus {
@@ -176,19 +177,15 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiBase]);
 
-  useEffect(() => {
-    if (!login) return;
-    const timer = window.setInterval(async () => {
+  usePolling(() => {
+    void (async () => {
       const next = await refreshStatus();
       if (next?.authenticated) {
         setLogin(null);
         setErrorKey(null);
       }
-    }, 2_000);
-    return () => window.clearInterval(timer);
-    // refreshStatus deliberately reads no changing state.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [login, apiBase]);
+    })();
+  }, login ? 2_000 : null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -12,6 +12,7 @@ import {
 import ImportDialog from "./ImportDialog";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/polling";
 import { CANONICAL_KEYS } from "../lib/metrics/catalog";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
@@ -244,14 +245,12 @@ export default function DataQualityTab({ apiBase }: Props) {
       await Promise.resolve();
       if (!cancelled) await load();
     })();
-    const interval = window.setInterval(() => {
-      if (!cancelled) void load();
-    }, 15000);
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
     };
   }, [load]);
+
+  usePolling(() => void load(), 15000);
 
   const quarantineWarningKey = (code: QuarantineWarningCode) => {
     switch (code) {

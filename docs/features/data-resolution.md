@@ -77,6 +77,15 @@ The response sets `contains_legacy_raw=true`, and each compatibility point carri
 the fallback bounded by the same limit while preventing the client from presenting
 a newest-1,000-point sample as the complete history.
 
+The fallback is only searched where it can change the answer. It is skipped when the
+request found no rollups at all — the plain raw query answers that case — and, when
+the rollup page came back full, it is bounded by the oldest bucket that page returned,
+since anything beyond it ranks below `limit` rows that are already in hand. Both bounds
+leave the returned points identical. They matter because the "is this point already in
+a rollup?" test is evaluated per row: unbounded, a workspace whose data all arrived
+after rollups existed paid a scan of its entire history, on every chart request, to
+find nothing.
+
 Analysis uses Core's internal `QueryMetricSeries` gRPC method for daily and hourly work. The method
 returns one explicit bucket per `(metric_type, source_id, interval)`, with `sample_count` and an
 absent value for gaps. It reads the matching rollup resolution first and aggregates only raw points
@@ -85,10 +94,15 @@ Core returns separate source series and an `AMBIGUOUS_METRIC_SOURCE` issue; it n
 together. Analysis excludes that metric until a source is selected. This keeps large analyses
 bounded without silently treating a missing day as zero or a second connector as extra activity.
 
-The Explorer requests each selected metric and connector instance separately. It keeps the raw
-table query independent from the chart query, so a chart is not truncated by the table's page size
-and a second source cannot overwrite the first source's series. The selected range is sent to Core
-as an explicit start/end window; it is not hardcoded to a week.
+The Explorer requests each selected metric separately, and keeps the raw table query independent
+from the chart query, so a chart is not truncated by the table's page size. It does **not** split
+that request per connector instance: one query per metric carries a limit scaled by the number of
+configured connectors, and the per-source series are separated client-side from the `source_id`
+each point already carries. Splitting it multiplied the query count by the number of connectors —
+eight connectors and three metrics meant twenty-four concurrent queries, each entitled to ten
+thousand raw points, which is what made a whole-history drill-down stall the browser and the
+database at once. The selected range is sent to Core as an explicit start/end window; it is not
+hardcoded to a week.
 The Analysis view offers the same connector-instance selection and sends its `source_id` to the
 Analysis service. Leaving the selector on all sources is intentionally conservative: ambiguous
 metrics are reported as unavailable instead of being guessed or combined.

@@ -266,6 +266,88 @@ async def test_query_metrics_merges_legacy_points_with_new_rollups():
 
 
 @pytest.mark.asyncio
+async def test_query_metrics_ignores_legacy_points_a_full_rollup_page_outranks():
+    """Verifies Fizzbee Invariants: StrictTenantIsolationOnRead & ReturnedDataBelongsToTarget.
+
+    A full page of rollups already fills the requested limit, so a legacy raw point
+    older than the oldest returned bucket cannot appear in the answer. Core stops
+    looking for one there, because `~_rollup_covers_point` is evaluated per row and
+    an unbounded search walks the tenant's whole history to return nothing.
+    """
+    tenant_id = await create_test_tenant()
+    transport = ASGITransport(app=app)
+    today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        source_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                DataSource(
+                    id=source_id,
+                    tenant_id=tenant_id,
+                    source_type="apple_health",
+                    display_name="Apple Health",
+                )
+            )
+            await session.flush()
+            # Older than every bucket below, and covered by no rollup.
+            session.add(
+                DataPoint(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    metric_type="steps",
+                    timestamp=today - timedelta(days=30),
+                    value=10.0,
+                    idempotency_key=f"legacy-{uuid.uuid4().hex}",
+                )
+            )
+            for day_offset, value in ((0, 300.0), (1, 200.0)):
+                bucket = today - timedelta(days=day_offset)
+                session.add(
+                    MetricRollup(
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="steps",
+                        resolution="day",
+                        bucket_start=bucket,
+                        value=value,
+                        sample_count=1,
+                        sum_value=value,
+                        min_value=value,
+                        max_value=value,
+                        first_value=value,
+                        last_value=value,
+                        first_timestamp=bucket,
+                        last_timestamp=bucket,
+                        is_provider_total=True,
+                    )
+                )
+            await session.commit()
+
+        headers = auth_headers(tenant_id)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.get(
+                "/api/v1/data/metrics",
+                params={
+                    "metric_type": "steps",
+                    "resolution": "day",
+                    "sort": "desc",
+                    "limit": 2,
+                },
+                headers=headers,
+            )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["count"] == 2
+    assert [point["value"] for point in data["data_points"]] == [300.0, 200.0]
+    # The legacy point ranked below both buckets and was never part of the answer.
+    assert data["contains_legacy_raw"] is False
+
+
+@pytest.mark.asyncio
 async def test_wipe_removes_rollups_with_tenant_data():
     """Verifies Fizzbee Invariant: StrictTenantIsolationOnDelete."""
     tenant_id = await create_test_tenant()

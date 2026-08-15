@@ -339,6 +339,8 @@ export const en = {
   "connectors.tabCurrent": "Current importers",
   "connectors.tabAvailable": "Add importer",
   "connectors.availableHint": "Choose a data source to configure for this workspace.",
+  "connectors.showRuns": "Import runs",
+  "connectors.runsActiveHint": "{count} import running right now",
   "connectors.details": "Runs",
   "connectors.openDetails": "Open importer run details",
 
