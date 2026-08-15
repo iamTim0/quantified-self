@@ -26,11 +26,12 @@ import math
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import nats
-from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
+from nats.js.api import ConsumerConfig, DiscardPolicy, RetentionPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 from sqlalchemy import and_, case, delete, func, literal, select, update
@@ -393,6 +394,10 @@ class _SyntheticPointMessage:
         self.data = data
         self.metadata = None
         self.failed = False
+        # Whether the failure is one a redelivery could fix. A constraint violation
+        # is not: the envelope would fail identically every time and take its 999
+        # healthy siblings down with it on the last attempt.
+        self.permanent = False
         self.event_key = event_key or "payload:" + hashlib.sha256(data).hexdigest()
 
     async def ack(self) -> None:
@@ -449,6 +454,7 @@ async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
             known_source = source_result.scalars().first()
 
         failed = False
+        permanently_rejected = 0
         for index, raw_child in enumerate(events):
             child = dict(raw_child) if isinstance(raw_child, dict) else {}
             mismatch = any(
@@ -470,19 +476,73 @@ async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
             synthetic = _SyntheticPointMessage(
                 json.dumps(child).encode("utf-8"), event_key=f"batch:{child_key}"
             )
+            # Each child inside its own savepoint. Without one, a child that
+            # violates a constraint poisons the shared transaction, so the only
+            # available response was to fail the whole envelope — which JetStream
+            # then redelivered five times before discarding all thousand events,
+            # the 999 storable ones included. The single-event path has acked this
+            # class of failure since the day a wiped database produced it in bulk;
+            # the batch path could not, and so undid that fix wherever batching was
+            # in use.
+            nested = await session.begin_nested()
             await process_message(
                 synthetic,
                 db_session=session,
                 known_source=known_source,
             )
+
             if synthetic.failed:
-                failed = True
-                break
+                # Rolled back before anything else is decided. A transient failure
+                # is usually a DBAPI error, which leaves the transaction aborted —
+                # and `RELEASE SAVEPOINT` on an aborted transaction raises, so
+                # committing first and branching afterwards threw out of this
+                # function entirely, skipping both the rollback below and
+                # `_retry_or_give_up`. `nested.rollback()`, not
+                # `session.rollback()`: the savepoint is what has to go, and
+                # rolling back the session would discard every sibling already
+                # written in this envelope.
+                await nested.rollback()
+                if not synthetic.permanent:
+                    # A database restarting, say. The envelope stays
+                    # unacknowledged so JetStream delivers it again.
+                    failed = True
+                    break
+                permanently_rejected += 1
+                logger.error(
+                    "Dropped child %s of ingest batch %s: it violates a database "
+                    "constraint, which a redelivery cannot change.",
+                    index,
+                    batch_id,
+                )
+                # Counted against the run, not only logged. The single-event path
+                # tallies this class of rejection, and a batch that quietly did
+                # not would leave `points_processed` short of `points_expected`
+                # forever — the run never reconciles, and the only trace is a log
+                # line. Rule 19: stored, carried, or *named*.
+                await _tally_rejected_event(
+                    tenant_id=child.get("tenant_id"),
+                    source_id=child.get("source_id"),
+                    sync_run_id=child.get("sync_run_id"),
+                    event_key=synthetic.event_key,
+                    session=session,
+                )
+                continue
+
+            await nested.commit()
 
         if failed:
             await session.rollback()
         else:
             await session.commit()
+            if permanently_rejected:
+                logger.error(
+                    "Ingest batch %s stored %s of %s events; %s could not be stored "
+                    "and were dropped rather than failing the envelope.",
+                    batch_id,
+                    len(events) - permanently_rejected,
+                    len(events),
+                    permanently_rejected,
+                )
 
     if failed:
         await _retry_or_give_up(msg)
@@ -951,10 +1011,13 @@ async def process_message(
             source_id,
         )
         if isinstance(msg, _SyntheticPointMessage) and db_session is not None:
-            # The batch owner rolls back the shared transaction and redelivers the
-            # envelope. A constraint failure cannot safely be acknowledged from a
-            # transaction whose state is already failed.
+            # The batch owner rolls back to this child's savepoint and carries on.
+            # A constraint failure cannot safely be acknowledged from a transaction
+            # whose state is already failed, but it is also permanent: marking it as
+            # such is what stops one unstorable point from discarding the whole
+            # envelope after five identical attempts.
             msg.failed = True
+            msg.permanent = True
             return
         await _ack_rejected()
     except Exception as exc:  # noqa: BLE001 - transient failures need redelivery
@@ -1169,6 +1232,87 @@ ACK_WAIT_SECONDS = 30
 STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 STREAM_MAX_BYTES = 4 * 1024 * 1024 * 1024
 
+#: A work queue, because the sentence above was only true of the *comment*.
+#:
+#: With the default `limits` retention, an acknowledged message stays in the stream
+#: until `max_age` expires it. Core stores an event and acks it within milliseconds,
+#: and the message then occupies its bytes for the remaining seven days — so the
+#: stream is not a buffer holding what has yet to be stored, it is an archive of
+#: everything that already has been. Paired with `discard=new`, which refuses a
+#: publish rather than dropping unacknowledged data, that archive eventually fills
+#: and **every importer stops being able to publish at all**.
+#:
+#: Measured in production: 6,292,863 messages, 4,294,966,938 bytes against a
+#: 4 GiB ceiling — 358 bytes below it — with the consumer fully caught up
+#: (`num_pending=0`, `num_ack_pending=0`, ack floor equal to the last sequence).
+#: Nothing was stuck; there was simply no room left. Every importer failed
+#: identically with `ServiceUnavailableError` after 0 events, across all four
+#: triggers, which is what made it look like a Core fault rather than a full disk.
+#:
+#: `WORK_QUEUE` deletes a message when the consumer acks it, which is the behaviour
+#: the comment above always claimed. `discard=new` keeps its meaning and gets its
+#: teeth back: the stream can now only fill with events Core has *not* yet stored,
+#: which is the one case where refusing a publish is the correct answer.
+#:
+#: This requires exactly one consumer per subject, which `qs.ingest.>` has
+#: (`core_data_service_group`). A second overlapping consumer would be refused by
+#: the broker rather than silently stealing messages.
+STREAM_RETENTION = RetentionPolicy.WORK_QUEUE
+
+
+async def _reconcile_stream(js: Any, desired: StreamConfig) -> None:
+    """Bring an existing ingestion stream up to the configuration above.
+
+    `max_age` and `max_bytes` are updatable in place. **`retention` is not** — the
+    broker rejects a change on a live stream, and that refusal is the one worth
+    saying out loud rather than folding into a generic warning: a stream left on
+    `limits` retention will fill with already-stored events and stop accepting
+    publishes from every importer at once (see STREAM_RETENTION).
+
+    Deliberately not self-healing. Switching retention means deleting and
+    recreating the stream, and a stream may hold events Core has not stored yet;
+    destroying those to fix a configuration problem would trade an outage that
+    stops when someone acts for data loss that does not. So this reports precisely
+    what is wrong and what to do, and leaves the decision to a person.
+    """
+    try:
+        current = await js.stream_info(desired.name)
+        actual_retention = current.config.retention
+    except Exception as exc:  # noqa: BLE001 - an old server may not answer stream_info
+        logger.warning(
+            "Could not read the ingestion stream's configuration (%s)",
+            type(exc).__name__,
+        )
+        actual_retention = None
+
+    if actual_retention is not None and actual_retention != desired.retention:
+        logger.error(
+            "The 'ingestion' stream uses %s retention, not %s. Acknowledged events "
+            "are therefore kept until max_age instead of being dropped once stored, "
+            "so the stream fills with data Core already holds and discard=new then "
+            "refuses every importer's publish. Retention cannot be changed in place: "
+            "drain the stream, confirm the consumer reports num_pending=0 and "
+            "num_ack_pending=0, then delete and let Core recreate it.",
+            getattr(actual_retention, "value", actual_retention),
+            getattr(desired.retention, "value", desired.retention),
+        )
+    # What is actually sent. On a retention mismatch the broker rejects the whole
+    # update, so asking for the desired retention would also throw away the age
+    # and byte ceilings — in exactly the deployment where they matter most, since
+    # a legacy `limits` stream is the one that fills up. Ask for the retention the
+    # stream already has, and the rest applies.
+    applicable = desired
+    if actual_retention is not None and actual_retention != desired.retention:
+        applicable = replace(desired, retention=actual_retention)
+
+    try:
+        await js.update_stream(applicable)
+    except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
+        logger.warning(
+            "Could not apply the ingestion stream's limits (%s)",
+            type(exc).__name__,
+        )
+
 
 async def start_consumer(
     connection_lost: asyncio.Event | None = None,
@@ -1207,6 +1351,8 @@ async def start_consumer(
             subjects=["qs.ingest.>"],
             max_age=STREAM_MAX_AGE_SECONDS,
             max_bytes=STREAM_MAX_BYTES,
+            # Acked events leave the stream immediately; see STREAM_RETENTION.
+            retention=STREAM_RETENTION,
             # Ingestion is a delivery buffer, not a lossy cache. A full stream must
             # apply publisher backpressure so the importer can pause and resume rather
             # than silently discarding unacknowledged medical data.
@@ -1218,13 +1364,7 @@ async def start_consumer(
             # Its limits are brought up to date rather than left as whatever the first Core
             # to start ever created. An unbounded stream is the state this exists to correct,
             # so finding one is expected, not exceptional.
-            try:
-                await js.update_stream(stream)
-            except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
-                logger.warning(
-                    "Could not apply the ingestion stream's limits (%s)",
-                    type(exc).__name__,
-                )
+            await _reconcile_stream(js, stream)
 
         consumer = ConsumerConfig(
             max_deliver=MAX_DELIVERY_ATTEMPTS,
