@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     # only place that knows it (AGENTS.md rule 2).
     SOURCE_ID: str = "dawarich_importer"
     DAWARICH_API_BASE_URL: str = "http://localhost:3000"
-    POLL_LOOKBACK_DAYS: int = 30
+    POLL_LOOKBACK_DAYS: int = 7
 
     # Bearer credential presented to Core's internal API. Must match Core's
     # INTERNAL_SERVICE_SECRET; empty derives the shared dev default.

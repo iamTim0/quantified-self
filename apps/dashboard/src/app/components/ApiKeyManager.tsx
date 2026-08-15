@@ -139,7 +139,7 @@ export default function ApiKeyManager({
         headers: headers(),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || "Rotation fehlgeschlagen.");
+      if (!res.ok) throw new Error(data?.detail || t("apikeys.rotationFailed"));
       setRevealedKey(data.api_key);
       await load();
     } catch (err) {
@@ -160,7 +160,7 @@ export default function ApiKeyManager({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
-        throw new Error(data?.detail || "Widerruf fehlgeschlagen.");
+        throw new Error(data?.detail || t("apikeys.revokeFailed"));
       }
       await load();
     } catch (err) {
@@ -188,7 +188,7 @@ export default function ApiKeyManager({
       <div className="space-y-2.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4">
         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
           <Plug className="h-4 w-4 text-[#0d5c3a]" />
-          <span>{providerLabel} Webhook-Konfiguration</span>
+          <span>{t("apikeys.webhookTitle", { provider: providerLabel })}</span>
         </div>
         <div className="space-y-1.5">
           <div className="text-[11px] font-bold text-slate-600">1. URL:</div>
@@ -200,7 +200,7 @@ export default function ApiKeyManager({
         <div className="space-y-1.5">
           <div className="text-[11px] font-bold text-slate-600">2. Header:</div>
           <div className="inline-block select-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-extrabold text-slate-900 shadow-sm">
-            Authorization: Bearer &lt;dein-key&gt;
+            {t("apikeys.headerExample")}
           </div>
           <p className="text-[11px] text-slate-500">{t("apikeys.headerHint")}</p>
         </div>
@@ -239,7 +239,7 @@ export default function ApiKeyManager({
             onClick={() => setRevealedKey(null)}
             className="text-[11px] font-semibold text-amber-900 underline"
           >
-            Verstanden, ausblenden
+            {t("apikeys.hideRevealed")}
           </button>
         </div>
       )}
@@ -248,7 +248,7 @@ export default function ApiKeyManager({
         <div className="mb-2.5 flex items-center gap-1.5">
           <KeyRound className="h-4 w-4 text-[#0d5c3a]" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-            API-Keys ({activeKeys.length} aktiv)
+            {t("apikeys.title", { count: activeKeys.length })}
           </h3>
           {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
         </div>
@@ -336,7 +336,7 @@ export default function ApiKeyManager({
           </label>
           <label>
             <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              Ablauf
+              {t("apikeys.expiryLabel")}
             </span>
             <select
               value={expiresInDays}
@@ -347,8 +347,8 @@ export default function ApiKeyManager({
             >
               <option value="">{t("apikeys.noExpiry")}</option>
               <option value={90}>{t("quality.windowDays", { count: 90 })}</option>
-              <option value={365}>1 Jahr</option>
-              <option value={730}>2 Jahre</option>
+              <option value={365}>{t("common.years_one", { count: 1 })}</option>
+              <option value={730}>{t("common.years_other", { count: 2 })}</option>
             </select>
           </label>
           <button
@@ -362,7 +362,7 @@ export default function ApiKeyManager({
             ) : (
               <KeyRound className="h-3.5 w-3.5" />
             )}
-            Key erzeugen
+            {t("apikeys.create")}
           </button>
         </div>
 

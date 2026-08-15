@@ -253,6 +253,31 @@ session. `qs_refresh` is restricted to `/api/v1/auth` and is not sent on a page 
 `POST /api/v1/auth/change-password` changes the password of the **calling** user (resolved from `user_id`
 in the token) and then revokes every session of that account, including the token just used.
 
+If the current password does not verify, Core returns HTTP `400` with the English detail
+`The current password is incorrect.`
+
+## Changing account and workspace details
+
+The signed-in user can edit their own display name and email address from the profile settings. Owners and
+administrators can also rename the workspace; members can see the current name but cannot change it.
+
+```http
+PUT /api/v1/auth/me
+Content-Type: application/json
+X-Tenant-ID: <the token's tenant id>
+
+{
+  "name": "New display name",
+  "email": "new-address@example.test",
+  "workspace_name": "New workspace name"
+}
+```
+
+The tenant and user are resolved from the authenticated token; the header is only checked for agreement and
+never selects another workspace. Email addresses are normalized case-insensitively and remain globally unique.
+Changing an email revokes older sessions and refreshes the current browser session with the new address.
+The existing account and tenant columns are reused, so no manual data migration is needed for this feature.
+
 ## Correlation
 
 Every request carries an `X-Request-ID`, which is propagated across the Gateway, Core, the NATS events and

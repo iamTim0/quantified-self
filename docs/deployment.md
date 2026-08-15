@@ -234,7 +234,7 @@ Only **Traefik** belongs in public (`QS_HTTP_PORT`), and through it the Gateway,
 documentation; the two importers that external devices send to also stay reachable. Two things are
 deliberately different from the old production compose file: Core no longer publishes host ports, and the
 Traefik dashboard listens on loopback. The reasoning and the way in are under
-[Network boundaries](operations.md#network-boundaries-standalone-compose).
+[Network boundaries](operations.md#network-boundaries-production-compose).
 
 ### Where the dashboard looks for its API
 
@@ -350,6 +350,17 @@ and must be updated whenever a service, image, internal port, or public route ch
    prioritize `/ingest`, `/docs`, and `/api` ahead of the dashboard catch-all.
 7. Let Cloudflare terminate public TLS and keep `COOKIE_SECURE=true`. The tunnel-to-Traefik hop stays private
    HTTP inside the application network.
+
+Every long-running first-party service in the production stack declares a healthcheck, as does the public Traefik
+ingress. HTTP images check their local, unauthenticated endpoint; NATS-only importer workers check the broker
+connection without requiring a configured connector. The checks never call a provider API or expose credentials.
+Third-party infrastructure uses a native or Compose healthcheck where supported. One-shot migration and
+volume-initialization services are intentionally exempt because successful exit is their healthy outcome.
+
+The production `traefik` service enables Traefik's native `/ping` endpoint on its internal admin entrypoint and
+declares a Docker healthcheck for it. Coolify can therefore see whether the stack's actual public entrypoint is
+alive, without exposing a new public port or changing the Cloudflare route. This is a process liveness check; the
+end-to-end request path should still be verified with the public `/health` and `/` checks below.
 
 The stack's `core-migrate` service creates and upgrades the schema through Alembic. On a fresh volume,
 `infra/db/init.sql` creates the base extensions and schema; subsequent changes belong to migrations. PostgreSQL

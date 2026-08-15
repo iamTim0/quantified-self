@@ -56,6 +56,9 @@ docker compose -f docker-compose.prod.yml run --rm core \
   python -m core.create_owner --email you@example.com --workspace "My Data"
 ```
 
+The production Traefik entrypoint includes a private native healthcheck, so Coolify and Docker can report whether
+the ingress process is alive without exposing an additional public port.
+
 From a checkout, `task prod:config`, `task prod:up` and `task prod:owner` do the
 same. Upgrading is `QS_VERSION` in `.env`, then `pull` and `up -d`: the
 `core-migrate` service applies pending migrations before Core starts.
@@ -352,7 +355,7 @@ slowly doubles.
 
 ## Licence
 
-AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Timo Hoffschröer. Every
+AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Quantified Self contributors. Every
 package manifest declares it, every image carries it as an OCI label, and each
 release bundle ships the file.
 

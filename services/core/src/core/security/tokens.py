@@ -208,7 +208,11 @@ def create_service_token(
     return jwt.encode(payload, _internal_secret(), algorithm=settings.JWT_ALGORITHM)
 
 
-def verify_service_credential(raw: str) -> dict[str, Any]:
+def verify_service_credential(
+    raw: str,
+    *,
+    service_name: str | None = None,
+) -> dict[str, Any]:
     """Authenticate an internal mesh peer.
 
     Accepts either a service JWT (preferred — it expires) or the raw shared
@@ -220,31 +224,41 @@ def verify_service_credential(raw: str) -> dict[str, Any]:
         TokenError: if the credential is neither a valid service JWT nor the
             configured shared secret.
     """
-    secret = _internal_secret()
+    configured = getattr(settings, "internal_service_secrets", {})
+    if configured and not service_name:
+        raise TokenError("Internal service identity is required")
+    if service_name and configured:
+        secret = configured.get(service_name)
+        if secret is None:
+            raise TokenError("Unknown internal service identity")
+        candidates = [(service_name, secret)]
+    else:
+        candidates = [(name, secret) for name, secret in configured.items()]
+        candidates.append((None, _internal_secret()))
 
-    try:
-        payload = jwt.decode(
-            raw,
-            secret,
-            algorithms=[settings.JWT_ALGORITHM],
-            audience=AUDIENCE_INTERNAL,
-            issuer=ISSUER,
-            options={"require": ["exp", "iat", "sub"]},
-        )
-        if payload.get("token_type") != TOKEN_TYPE_SERVICE:
-            raise TokenError("Invalid internal service credential")
-        return payload
-    except TokenError:
-        raise
-    except jwt.PyJWTError:
-        pass
+    for configured_name, secret in candidates:
+        try:
+            payload = jwt.decode(
+                raw,
+                secret,
+                algorithms=[settings.JWT_ALGORITHM],
+                audience=AUDIENCE_INTERNAL,
+                issuer=ISSUER,
+                options={"require": ["exp", "iat", "sub"]},
+            )
+        except jwt.PyJWTError:
+            payload = None
+        if payload is not None and payload.get("token_type") == TOKEN_TYPE_SERVICE:
+            if service_name and payload.get("sub") != service_name:
+                raise TokenError("Internal service identity does not match credential")
+            return payload
 
-    if hmac.compare_digest(raw, secret):
-        return {
-            "sub": "qs-internal-shared-secret",
-            "token_type": TOKEN_TYPE_SERVICE,
-            "iss": ISSUER,
-            "aud": AUDIENCE_INTERNAL,
-        }
+        if hmac.compare_digest(raw, secret):
+            return {
+                "sub": configured_name or "qs-internal-shared-secret",
+                "token_type": TOKEN_TYPE_SERVICE,
+                "iss": ISSUER,
+                "aud": AUDIENCE_INTERNAL,
+            }
 
     raise TokenError("Invalid internal service credential")

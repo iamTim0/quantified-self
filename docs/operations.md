@@ -81,8 +81,10 @@ task docs:build        # MkDocs --strict
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection | yes |
 | `NATS_URL` | Broker | yes |
+| `CORE_ROLE` | Core runtime role: `all`, `api`, `ingest` or `scheduler` | no (`all` locally) |
 | `JWT_SECRET` | Signature of the user tokens | **yes — the default is unsafe** |
 | `INTERNAL_SERVICE_SECRET` | Secret for internal service calls | **yes** |
+| `INTERNAL_SERVICE_SECRETS` | Optional JSON map of distinct service credentials, keyed by service name | no during rollout |
 | `ENCRYPTION_KEY` | Fernet key for connector credentials | **yes** |
 | `ACCESS_TOKEN_TTL_MINUTES` | Access token lifetime (720 by default) | no |
 | `REFRESH_TOKEN_TTL_DAYS` | Refresh token lifetime (30 by default) | no |
@@ -107,7 +109,13 @@ task docs:build        # MkDocs --strict
     python -c "import secrets; print(secrets.token_urlsafe(48))"
     ```
 
-    `INTERNAL_SERVICE_SECRET` has to be identical on Core **and** on every importer.
+    `INTERNAL_SERVICE_SECRET` has to be identical on Core **and** on every importer while the
+    legacy shared-credential mode is used. For separated credentials, set
+    `INTERNAL_SERVICE_SECRETS` to a deployment secret store value such as
+    `{"analysis":"…","apple_health":"…","whoop":"…"}` and set the matching secret in each
+    service. Importers send their stable service identity with the request; Core rejects a token
+    minted for another identity. The shared value remains a deliberate migration fallback until
+    every service has a dedicated credential.
 
 ### Rotating `ENCRYPTION_KEY`
 
@@ -168,8 +176,9 @@ is then open to anyone who knows the address.
 
 ## Deployment
 
-`docker-compose.prod.yml` describes the production stack: Traefik, Gateway, Core, Analysis, dashboard,
-documentation and the eight importers. It **builds nothing**; it pulls the images the release workflow
+`docker-compose.prod.yml` describes the production stack: Traefik, Gateway, the Core API, ingest and
+scheduler roles, Analysis, dashboard, documentation and the eight importers. It **builds nothing**;
+it pulls the images the release workflow
 published — a deployment is a download and a restart.
 
 The full walkthrough — cutting a release, first install, updating, rolling back, this stack's variables
@@ -191,7 +200,7 @@ docker compose -f docker-compose.prod.yml run --rm core \
 ```
 
 `up` migrates before Core serves: the `core-migrate` service runs `alembic upgrade head` and exits, and
-Core starts only once that has succeeded. A container of its own rather than Core's entrypoint, so that
+the API, ingest and scheduler roles start only once that has succeeded. A container of its own rather than Core's entrypoint, so that
 several replicas coming up at once cannot migrate against each other — and not a step in these
 instructions, because a deploy that only starts the stack has nowhere to type one. Self-registration is
 off, hence the last command — see [Creating the first account](#creating-the-first-account).
@@ -250,7 +259,10 @@ does authenticate those calls itself these days, but the published port remains 
 
 Since `docker-compose.prod.yml` that is no longer a request but the state of things: **Core publishes no
 host ports.** The old production compose file exposed `8001` and `50051`, although Traefik never routed
-them. Inside the compose network Core is reachable at `core:8001` and `core:50051` as before.
+them. Inside the compose network the API role is reachable at `core:8001` and `core:50051` as before.
+The `core-ingest` and `core-scheduler` services expose no host ports and are not request targets.
+Use `/health` for process liveness and `/readyz` to verify the database, NATS and gRPC dependencies
+of the relevant role before routing traffic or declaring ingestion ready.
 
 The Traefik dashboard likewise now listens on `127.0.0.1` instead of on every interface — it runs with
 `--api.insecure=true`, which on a public host made it an unauthenticated admin UI. Reach it through an
@@ -278,17 +290,56 @@ A production deployment should show nothing here. If it does, at least one of th
 - **Health checks**: every service offers `GET /health`; the docs additionally `/healthz`.
 - **Correlation**: every line carries `[req_id=…]`. An import can be followed with it from the trigger to
   the data point that was written.
-- **Import history**: open a configured connector's **Runs** detail page, or call
-  `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the trigger, status, duration,
-  request id, expected/received/accepted/duplicate point counts and the final message per run —
-  the most reliable answer to "why is data missing". The history includes failed planning,
+- **Import history**: open the **All import runs** overview on the Connectors page for a tenant-wide
+  view, open a configured connector's **Runs** detail page for its complete history, or call
+  `GET /api/v1/data/sync-runs` and `GET /api/v1/data/sources/{connector-id}/sync-runs`. It shows the
+  trigger, lifecycle status, duration, request id, expected/received/processed/accepted/duplicate
+  point counts and the final message per run — the most reliable answer to "why is data missing".
+  The history includes failed planning,
   upload, webhook and importer runs; an unknown or missing API key cannot be assigned to a tenant
   safely and is therefore not shown in a tenant's connector history.
+- **Completeness**: inspect `points_rejected`, `unsupported_fields`, `backlog_at_start`,
+  `backlog_at_end`, `provider_window_start`, `provider_window_end` and `provider_exported_at` on
+  the run. A successful importer request means that the importer finished publishing; it does not
+  mean that the provider export covered every requested timestamp.
+- **Workspace data wipe**: the owner/admin endpoint `DELETE /api/v1/data/wipe` removes the tenant's
+  raw points, quarantined values and derived metric rollups in one transaction. The response keeps
+  `deleted_count` for point values and reports `deleted_rollup_count` separately; no stale chart
+  aggregate survives to be combined with a later re-import.
+- **Resolution**: `GET /api/v1/data/metrics?resolution=auto` selects minute, hour or day buckets from
+  the requested window. The Explorer shows the returned resolution and sample count. A mixed
+  historical/new result reports `contains_legacy_raw=true` and marks compatibility points in their
+  metadata; `rollup_available` still says whether any requested rollup rows were available.
+- **Broker pressure**: the ingestion stream has bounded age and size. When it is full, new
+  publishes are rejected and importers pause/retry; old unacknowledged events are not silently
+  discarded. Investigate the Core consumer and database before increasing the stream limit.
 
 ```bash
 task logs -- --service qs-core --level ERROR
 docker compose -f docker-compose.prod.yml logs -f core
 ```
+
+### Rollup backfill and nightly maintenance
+
+Database schema migrations are automatic: `core-migrate` runs `alembic upgrade head` during
+`docker compose up`, and Core starts only after it succeeds. You do not need to run Alembic by hand
+after a normal deployment. The commands below are data-maintenance jobs, not schema migrations.
+
+Run the historical backfill once after deploying the rollup code if the existing database should have
+minute/hour/day rollups immediately. Then run the retention job nightly from the operator's scheduler,
+not from a web request or service startup:
+
+```bash
+# One-time migration step: rebuild rollups for data imported before incremental rollups existed.
+python -m core.rollup_backfill --tenant-id <tenant-id>
+
+# Nightly: review and then enforce the configured raw-point retention.
+python -m core.retention --tenant-id <tenant-id> --dry-run
+python -m core.retention --tenant-id <tenant-id>
+```
+
+Rollups are retained when raw points are purged. Keep the dry-run output with the maintenance
+record so a user can distinguish intentional retention from an incomplete provider export.
 
 ## Backup
 
@@ -305,13 +356,18 @@ the connector credentials is worthless.
 
 - Importers are stateless and run in NATS queue groups; several replicas share the load automatically.
 - Core's ingest consumer uses a queue group too.
+- Core's sync-run ledger counts each broker event once, including after JetStream redelivery; it
+  stores only the broker identity, not the imported value.
 - Duplicate runs are prevented by **Core**, not by the importer: a connector with a `SyncRun` already
-  queued or running is not scheduled again. The `active_syncs` set in the importers is now only a local
+  queued, running or loading is not scheduled again. The `active_syncs` set in the importers is now only a local
   buffer against a redelivered message — it was never a distributed lock, and with several replicas it
   would have prevented nothing.
 - The scheduler is single-flight through a transaction-scoped Postgres advisory lock. Several Core
   replicas are therefore unproblematic: exactly one of them plans per tick. If it dies, the connection
   releases the lock.
+- Manual and scheduled planning also take a connector-scoped transaction lock around the in-flight
+  check and `SyncRun` insert. Two simultaneous **Sync now** requests therefore produce one queued
+  run and one transparent `sync_in_flight` history entry instead of two provider calls.
 - Analysis holds no database connection. Deterministic analysis and the MCP endpoint
   scale independently of Core without sticky routing. Codex chat threads are ephemeral
   process state, so `/api/v1/chat/turn` needs sticky routing when Analysis has multiple

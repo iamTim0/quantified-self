@@ -384,6 +384,23 @@ def test_catalogued_values_are_labelled_with_registry_unit() -> None:
     assert mcp_module._result_unit(points, definition) == "km"
 
 
+def test_mcp_rejects_an_implicit_cross_source_series() -> None:
+    """MCP never turns two connector instances into one silent aggregate."""
+    batch = PointBatch(
+        points=[
+            MetricPoint("steps", datetime(2026, 8, 1, tzinfo=UTC), 350.0, "source-a"),
+            MetricPoint("steps", datetime(2026, 8, 1, tzinfo=UTC), 1000.0, "source-b"),
+        ],
+        truncated=False,
+    )
+    with pytest.raises(mcp_module.MCPError) as excinfo:
+        mcp_module._require_single_source(
+            batch, metric_type="steps", source_id=None
+        )
+    assert excinfo.value.data["code"] == "AMBIGUOUS_METRIC_SOURCE"
+    assert excinfo.value.data["source_ids"] == ["source-a", "source-b"]
+
+
 def test_unexpected_tool_errors_are_sanitized(monkeypatch) -> None:
     """Internal exception messages must never become model-visible tool output."""
     monkeypatch.setattr(mcp_module, "core_client", FailingCoreClient())

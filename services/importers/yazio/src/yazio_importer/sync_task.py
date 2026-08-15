@@ -19,7 +19,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_LOOKBACK_DAYS = 30
+DEFAULT_LOOKBACK_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -95,5 +95,11 @@ def resolve_window(
     if task.window_start:
         return task.window_start, end
 
+    raw_hours = config.get("lookback_hours")
+    if raw_hours is not None:
+        try:
+            return end - timedelta(hours=max(1.0, float(raw_hours))), end
+        except (TypeError, ValueError):
+            pass
     lookback = int(config.get("lookback_days", DEFAULT_LOOKBACK_DAYS) or DEFAULT_LOOKBACK_DAYS)
     return end - timedelta(days=max(1, lookback)), end

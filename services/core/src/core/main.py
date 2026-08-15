@@ -8,9 +8,12 @@ Enforces multi-tenant isolation via TenantMiddleware & contextvars.
 """
 
 import asyncio
+import hashlib
 import json
 import logging
+import math
 import os
+import re
 import uuid
 from collections.abc import Sequence
 from contextlib import asynccontextmanager, suppress
@@ -40,12 +43,14 @@ from shared_schemas.metrics import (
     METRIC_ALIASES,
     METRIC_CATALOG,
     Cadence,
+    IngestResolution,
     MetricDefinition,
     UnknownMetricTypeError,
     canonical_metric_type,
     describe,
+    metrics_for_source,
 )
-from sqlalchemy import delete, distinct, func, or_, select
+from sqlalchemy import and_, delete, distinct, exists, func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -72,7 +77,9 @@ from core.db.models import (
     DataSource,
     ExplorerView,
     IngestFieldReport,
+    MetricIngestPolicy,
     MetricMappingRule,
+    MetricRollup,
     OidcAuthRequest,
     OidcProvider,
     QuarantinedDataPoint,
@@ -98,6 +105,7 @@ from core.ingest_planning import (
     BucketCount,
     TimeRange,
     analyse_coverage,
+    analyse_metric_coverage,
     compute_sync_window,
     plan_import,
 )
@@ -115,7 +123,13 @@ from core.oauth_refresh import (
     needs_refresh,
     refresh_credential,
 )
-from core.scheduler import DueConnector, has_in_flight_run, run_scheduler
+from core.rollups import update_rollups_for_point
+from core.scheduler import (
+    DueConnector,
+    acquire_connector_lock,
+    has_in_flight_run,
+    run_scheduler,
+)
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
@@ -250,6 +264,50 @@ class UserLoginRequest(BaseModel):
     password: str = Field(..., description="User password")
 
 
+_PROFILE_EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class UpdateProfileRequest(BaseModel):
+    """Self-service account fields and the workspace label."""
+
+    name: str | None = Field(None, min_length=1, max_length=128)
+    email: str | None = Field(None, min_length=3, max_length=320)
+    workspace_name: str | None = Field(None, min_length=1, max_length=128)
+
+    @field_validator("name", "workspace_name", mode="before")
+    @classmethod
+    def trim_display_names(cls, value: Any) -> Any:
+        """Reject whitespace-only labels while preserving omitted fields."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("must be a string")
+        trimmed = value.strip()
+        if not trimmed:
+            raise ValueError("must not be blank")
+        return trimmed
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def normalize_email(cls, value: Any) -> Any:
+        """Store sign-in addresses canonically and catch obvious typos."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise TypeError("must be a string")
+        normalized = value.strip().casefold()
+        if not _PROFILE_EMAIL.fullmatch(normalized):
+            raise ValueError("must be a valid email address")
+        return normalized
+
+    @model_validator(mode="after")
+    def require_one_change(self) -> "UpdateProfileRequest":
+        """Do not accept an empty profile update."""
+        if self.name is None and self.email is None and self.workspace_name is None:
+            raise ValueError("at least one profile field is required")
+        return self
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if getattr(app.state, "testing", False):
@@ -267,20 +325,25 @@ async def lifespan(app: FastAPI):
         service="core",
     )
 
+    role = settings.CORE_ROLE.lower()
+    if role not in {"all", "api", "ingest", "scheduler"}:
+        raise RuntimeError(f"Unsupported CORE_ROLE: {settings.CORE_ROLE}")
+
     # The gRPC server is how the Analysis Service reads data (AGENTS.md rule 3).
     # It starts before the NATS consumer and outside that try block on purpose:
     # the consumer's failure path deliberately still yields so Core serves HTTP
     # without a broker, and folding gRPC into it would have let the read API for
     # another service disappear silently.
     grpc_server = None
-    try:
-        grpc_server = await serve_grpc()
-        app.state.grpc_server = grpc_server
-    except Exception:
-        logger.exception("gRPC server failed to start; Analysis Service reads will fail")
+    if role in {"all", "api"}:
+        try:
+            grpc_server = await serve_grpc()
+            app.state.grpc_server = grpc_server
+        except Exception:
+            logger.exception("gRPC server failed to start; Analysis Service reads will fail")
 
     scheduler_task = None
-    if settings.SCHEDULER_ENABLED:
+    if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
 
     # The NATS subscription is established in the background, never awaited here.
@@ -294,18 +357,34 @@ async def lifespan(app: FastAPI):
     # A broker outage should degrade ingestion. It should not take down queries,
     # authentication or the dashboard.
     app.state.nats_client = None
+    app.state.nats_status = "disconnected"
 
     def _remember(nc):
         app.state.nats_client = nc
+        app.state.nats_status = "connected"
 
-    consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+    consumer_task = None
+    publisher_task = None
+    if role in {"all", "ingest"}:
+        consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+    if role in {"api", "scheduler"}:
+        # API-triggered imports and scheduled imports both publish task messages,
+        # but neither role should consume the ingest stream. Keeping this small
+        # publisher connection in the API role preserves manual syncs when the
+        # production deployment separates the consumer into core-ingest.
+        publisher_task = asyncio.create_task(_run_nats_publisher_forever(app))
 
     try:
         yield
     finally:
-        consumer_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await consumer_task
+        if consumer_task is not None:
+            consumer_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await consumer_task
+        if publisher_task is not None:
+            publisher_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await publisher_task
         if (nc := getattr(app.state, "nats_client", None)) is not None:
             with suppress(Exception):
                 await nc.close()
@@ -315,6 +394,39 @@ async def lifespan(app: FastAPI):
                 await scheduler_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
+
+
+async def _run_nats_publisher_forever(app: FastAPI) -> None:
+    """Keep a NATS connection for task publishing without consuming ingest events."""
+    delay = 1.0
+    while True:
+        try:
+            nc = await nats.connect(
+                settings.NATS_URL,
+                connect_timeout=5,
+                max_reconnect_attempts=0,
+                allow_reconnect=False,
+            )
+            app.state.nats_client = nc
+            app.state.nats_status = "connected"
+            delay = 1.0
+            await nc.closed
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - retry after a broker outage
+            logger.warning(
+                "NATS publisher unavailable (%s); task publishing is paused for %.0fs",
+                type(exc).__name__,
+                delay,
+            )
+        finally:
+            app.state.nats_status = "disconnected"
+            if (current := getattr(app.state, "nats_client", None)) is not None:
+                with suppress(Exception):
+                    await current.close()
+                app.state.nats_client = None
+        await asyncio.sleep(delay)
+        delay = min(delay * 2, 30.0)
 
 
 async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
@@ -327,7 +439,14 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
     token = _current_tenant_id.set(connector.tenant_id)
     try:
         async with async_session_maker() as session:
-            source = await session.get(DataSource, connector.source_id)
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == connector.source_id,
+                        DataSource.tenant_id == connector.tenant_id,
+                    )
+                )
+            ).scalars().first()
             if source is None:
                 return
             await plan_and_enqueue_sync(
@@ -344,6 +463,24 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
 
 setup_tracing_logger("qs-core")
 logger = logging.getLogger(__name__)
+
+DEFAULT_LOOKBACK_HOURS = 7 * 24
+
+
+def _configured_lookback_hours(config: dict[str, Any] | None) -> float:
+    """Read the sub-day lookback while preserving legacy day-only configs."""
+    config = config or {}
+    raw_hours = config.get("lookback_hours")
+    if raw_hours is not None:
+        try:
+            return max(1.0, min(365 * 24, float(raw_hours)))
+        except (TypeError, ValueError):
+            pass
+    try:
+        raw_days = float(config.get("lookback_days", DEFAULT_LOOKBACK_HOURS / 24))
+    except (TypeError, ValueError):
+        raw_days = DEFAULT_LOOKBACK_HOURS / 24
+    return max(24.0, min(365 * 24, raw_days * 24))
 
 app = FastAPI(
     title=settings.SERVICE_NAME,
@@ -366,6 +503,45 @@ app.add_middleware(AuthenticationMiddleware)
 @app.get("/health")
 async def health_check():
     return {"status": "ok", "service": settings.SERVICE_NAME}
+
+
+@app.get("/readyz")
+async def readiness_check():
+    """Report whether Core dependencies can serve traffic safely.
+
+    ``/health`` is deliberately a cheap process liveness probe. This endpoint is
+    the dependency-aware probe for operators and deployment controllers: a live
+    Core with a disconnected broker must not be mistaken for an ingest-ready Core.
+    It never checks tenant state or provider credentials.
+    """
+    role = settings.CORE_ROLE.lower()
+    components: dict[str, str] = {"database": "ok"}
+    if role in {"all", "api", "ingest", "scheduler"}:
+        components["nats"] = "unknown"
+    if role in {"all", "api"}:
+        components["grpc"] = "unknown"
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("Core readiness database check failed")
+        components["database"] = "error"
+
+    if "nats" in components:
+        nc = getattr(app.state, "nats_client", None)
+        if nc is not None and getattr(nc, "is_connected", False):
+            components["nats"] = "ok"
+        else:
+            components["nats"] = "disconnected"
+
+    if "grpc" in components:
+        grpc_server = getattr(app.state, "grpc_server", None)
+        components["grpc"] = "ok" if grpc_server is not None else "unavailable"
+    ready = all(value == "ok" for value in components.values())
+    payload = {"status": "ok" if ready else "degraded", "service": settings.SERVICE_NAME, "components": components}
+    if not ready:
+        return JSONResponse(status_code=503, content=payload)
+    return payload
 
 
 # ─── Auth Endpoints ──────────────────────────────────────────
@@ -511,6 +687,7 @@ async def signup(
         "email": req.email,
         "name": req.name,
         "role": "owner",
+        "workspace_name": tenant.name,
     }
 
 
@@ -526,6 +703,10 @@ async def login(
 
     if not user or not pwd_context.verify(req.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
 
     tokens = await _issue_session(
         session,
@@ -544,6 +725,7 @@ async def login(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
     }
 
 
@@ -609,10 +791,16 @@ async def refresh_session(
     if expires_at <= now:
         raise HTTPException(status_code=401, detail="Refresh token has expired")
 
-    user_res = await session.execute(select(User).where(User.id == stored.user_id))
+    user_res = await session.execute(
+        select(User).where(User.id == stored.user_id, User.tenant_id == stored.tenant_id)
+    )
     user = user_res.scalars().first()
     if not user:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
+
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
 
     raw_refresh, refresh_hash, refresh_expires = create_refresh_token()
     replacement = RefreshToken(
@@ -655,6 +843,7 @@ async def refresh_session(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
     }
 
 
@@ -821,13 +1010,18 @@ async def get_current_user(session: AsyncSession = Depends(get_session)):
     """Return the authenticated identity. Used by the dashboard to validate a session."""
     principal = get_current_principal()
     res = await session.execute(
-        select(User).where(
-            User.id == principal.user_id, User.tenant_id == principal.tenant_id
+        select(User, Tenant)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(
+            User.id == principal.user_id,
+            User.tenant_id == principal.tenant_id,
+            Tenant.id == principal.tenant_id,
         )
     )
-    user = res.scalars().first()
-    if not user:
+    row = res.first()
+    if not row:
         raise HTTPException(status_code=401, detail="Account no longer exists")
+    user, tenant = row
 
     return {
         "user_id": user.id,
@@ -835,6 +1029,101 @@ async def get_current_user(session: AsyncSession = Depends(get_session)):
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant.name,
+    }
+
+
+@app.put("/api/v1/auth/me")
+async def update_current_user_profile(
+    req: UpdateProfileRequest,
+    response: Response,
+    session: AsyncSession = Depends(get_session),
+):
+    """Update the caller's identity and, for admins, the workspace label.
+
+    Email changes revoke every existing session and immediately issue one fresh
+    session for the caller. This keeps the current browser usable while closing
+    any session that may still know the old sign-in address.
+    """
+    principal = get_current_principal()
+    res = await session.execute(
+        select(User, Tenant)
+        .join(Tenant, Tenant.id == User.tenant_id)
+        .where(
+            User.id == principal.user_id,
+            User.tenant_id == principal.tenant_id,
+            Tenant.id == principal.tenant_id,
+        )
+    )
+    row = res.first()
+    if not row:
+        raise HTTPException(status_code=404, detail="Account no longer exists")
+    user, tenant = row
+
+    if req.workspace_name is not None and user.role not in {"owner", "admin"}:
+        raise HTTPException(
+            status_code=403,
+            detail="Only owners and administrators can rename the workspace.",
+        )
+
+    email_changed = req.email is not None and req.email != user.email
+    if email_changed:
+        existing = await session.execute(
+            select(User.id).where(
+                User.tenant_id == principal.tenant_id,
+                User.id != user.id,
+                func.lower(User.email) == req.email,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="An account with this email address already exists.",
+            )
+        user.email = req.email
+    if req.name is not None:
+        user.name = req.name
+    if req.workspace_name is not None:
+        tenant.name = req.workspace_name
+
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="An account with this email address already exists.",
+        ) from exc
+
+    if email_changed:
+        await _revoke_all_sessions(
+            session,
+            tenant_id=principal.tenant_id,
+            user_id=user.id,
+            reason="email_change",
+        )
+    await session.commit()
+
+    session_tokens: dict[str, Any] = {}
+    if email_changed:
+        session_tokens = await _issue_session(
+            session,
+            response,
+            user_id=user.id,
+            tenant_id=user.tenant_id,
+            email=user.email,
+            role=user.role,
+        )
+
+    return {
+        **session_tokens,
+        "user_id": user.id,
+        "tenant_id": user.tenant_id,
+        "email": user.email,
+        "name": user.name,
+        "role": user.role,
+        "workspace_name": tenant.name,
+        "session_refreshed": email_changed,
     }
 
 
@@ -867,7 +1156,7 @@ async def change_password(
         raise HTTPException(status_code=404, detail="User account not found.")
 
     if not pwd_context.verify(req.current_password, user.password_hash):
-        raise HTTPException(status_code=400, detail="Aktuelles Passwort ist falsch.")
+        raise HTTPException(status_code=400, detail="The current password is incorrect.")
 
     user.password_hash = pwd_context.hash(req.new_password)
 
@@ -1377,6 +1666,9 @@ async def _oidc_session_response(
     linked: bool,
 ) -> dict[str, Any]:
     """Issue the same session an email/password login would."""
+    tenant_name = (
+        await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
+    ).scalar_one()
     tokens = await _issue_session(
         session,
         response,
@@ -1400,6 +1692,7 @@ async def _oidc_session_response(
         "email": user.email,
         "name": user.name,
         "role": user.role,
+        "workspace_name": tenant_name,
         "provider": provider_slug,
         "account_created": linked,
     }
@@ -1680,9 +1973,75 @@ def _definition_payload(
         return None
 
 
+def _ingest_policy_payload(
+    metric_type: str,
+    definition: MetricDefinition | None = None,
+    override: MetricIngestPolicy | None = None,
+) -> dict[str, Any]:
+    """Serialize the effective importer policy without exposing tenant internals."""
+    definition = definition or _definition_payload(metric_type)
+    if isinstance(definition, MetricDefinition):
+        default_resolution = definition.default_ingest_resolution.value
+        aggregation = definition.aggregation.value
+        retention = definition.raw_retention_days
+    elif isinstance(definition, dict):
+        default_resolution = definition.get("ingest_resolution")
+        if default_resolution is None:
+            default_resolution = (
+                IngestResolution.MINUTE.value
+                if definition.get("cadence") == Cadence.CONTINUOUS.value
+                else IngestResolution.RAW.value
+            )
+        aggregation = definition.get("aggregation", "average")
+        retention = int(definition.get("raw_retention_days", 90))
+    else:
+        default_resolution = IngestResolution.RAW.value
+        aggregation = "average"
+        retention = 90
+    resolution = override.resolution if override is not None else default_resolution
+    return {
+        "metric_type": metric_type,
+        "resolution": resolution,
+        "default_resolution": default_resolution,
+        "aggregation": aggregation,
+        "raw_retention_days": override.raw_retention_days if override else retention,
+        "effective_from": override.updated_at.isoformat() if override else None,
+    }
+
+
 def _round(value: float | None, digits: int) -> float | None:
     """Round an aggregate to the precision the metric declares."""
     return round(float(value), digits) if value is not None else None
+
+
+def _rollup_covers_point(resolution: str):
+    """Return a predicate for raw points already represented by a rollup.
+
+    A deployment can contain both legacy raw points and newer incremental rollups.
+    The rollup's timestamp bounds let the compatibility query retain raw points
+    before or after a partially covered bucket, while provider totals remain
+    authoritative for their whole bucket. This keeps mixed history visible without
+    blindly adding the same point to a rollup twice.
+    """
+    bucket = func.date_trunc(resolution, DataPoint.timestamp)
+    return exists(
+        select(MetricRollup.id).where(
+            MetricRollup.tenant_id == DataPoint.tenant_id,
+            MetricRollup.source_id == DataPoint.source_id,
+            MetricRollup.metric_type == DataPoint.metric_type,
+            MetricRollup.resolution == resolution,
+            MetricRollup.bucket_start == bucket,
+            or_(
+                MetricRollup.is_provider_total.is_(True),
+                and_(
+                    MetricRollup.first_timestamp.is_not(None),
+                    MetricRollup.last_timestamp.is_not(None),
+                    DataPoint.timestamp >= MetricRollup.first_timestamp,
+                    DataPoint.timestamp <= MetricRollup.last_timestamp,
+                ),
+            ),
+        )
+    )
 
 
 
@@ -1691,50 +2050,199 @@ async def query_metrics(
     metric_type: str | None = Query(None, description="Filter by metric type (e.g. sleep_score, steps)"),
     start_time: str | None = Query(None, description="ISO start timestamp"),
     end_time: str | None = Query(None, description="ISO end timestamp"),
-    limit: int = Query(100, ge=1, le=1000, description="Max data points to return"),
+    source_id: str | None = Query(None, description="Filter by connector instance"),
+    source_type: str | None = Query(None, description="Filter by connector type"),
+    resolution: Literal["auto", "raw", "minute", "hour", "day"] = Query(
+        "raw", description="Raw points or a server-side rollup resolution"
+    ),
+    limit: int = Query(100, ge=1, le=10000, description="Max points or buckets to return"),
     sort: Literal["asc", "desc"] = Query("asc", description="Sort by timestamp"),
     session: AsyncSession = Depends(get_session),
 ):
-    """Query time-series metric data points for the authenticated tenant."""
+    """Query raw points or bounded, tenant-scoped rollups."""
     tenant_id = get_current_tenant_id()
-    stmt = select(DataPoint).where(DataPoint.tenant_id == tenant_id)
+    start_dt: datetime | None = None
+    end_dt: datetime | None = None
+    try:
+        if start_time:
+            start_dt = datetime.fromisoformat(start_time)
+        if end_time:
+            end_dt = datetime.fromisoformat(end_time)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid ISO timestamp") from None
+    if start_dt and start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=timezone.utc)
+    if end_dt and end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=timezone.utc)
+    if start_dt and end_dt and end_dt <= start_dt:
+        raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
+    effective_resolution = resolution
+    if resolution == "auto":
+        if not start_dt or not end_dt:
+            effective_resolution = "raw"
+        else:
+            duration = end_dt - start_dt
+            effective_resolution = (
+                "minute" if duration <= timedelta(hours=24)
+                else "hour" if duration <= timedelta(days=90)
+                else "day"
+            )
+
+    source_filter = []
+    if source_id:
+        source_filter.append(DataSource.id == source_id)
+    if source_type:
+        source_filter.append(DataSource.source_type == source_type)
+
+    if effective_resolution != "raw":
+        stmt = (
+            select(MetricRollup, DataSource.source_type)
+            .join(
+                DataSource,
+                and_(
+                    DataSource.id == MetricRollup.source_id,
+                    DataSource.tenant_id == tenant_id,
+                ),
+            )
+            .where(
+                MetricRollup.tenant_id == tenant_id,
+                MetricRollup.resolution == effective_resolution,
+                *source_filter,
+            )
+        )
+        if metric_type:
+            stmt = stmt.where(MetricRollup.metric_type == metric_type)
+        if start_dt:
+            stmt = stmt.where(MetricRollup.bucket_start >= start_dt)
+        if end_dt:
+            stmt = stmt.where(MetricRollup.bucket_start <= end_dt)
+        stmt = stmt.order_by(
+            MetricRollup.bucket_start.desc()
+            if sort == "desc"
+            else MetricRollup.bucket_start.asc()
+        ).limit(limit)
+        rollup_rows = (await session.execute(stmt)).all()
+
+        # Do not use rollups as an all-or-nothing switch. Historical data may have
+        # been written before incremental rollups existed, or a first bucket may
+        # only be partly covered by a deployment that has just started producing
+        # them. Return those legacy points alongside the rollups, bounded by the
+        # same limit and marked so clients can explain the mixed resolution.
+        raw_stmt = (
+            select(DataPoint, DataSource.source_type)
+            .join(
+                DataSource,
+                and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+            )
+            .where(
+                DataPoint.tenant_id == tenant_id,
+                ~_rollup_covers_point(effective_resolution),
+                *source_filter,
+            )
+        )
+        if metric_type:
+            raw_stmt = raw_stmt.where(DataPoint.metric_type == metric_type)
+        if start_dt:
+            raw_stmt = raw_stmt.where(DataPoint.timestamp >= start_dt)
+        if end_dt:
+            raw_stmt = raw_stmt.where(DataPoint.timestamp <= end_dt)
+        raw_stmt = raw_stmt.order_by(
+            DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
+        ).limit(limit)
+        raw_rows = (await session.execute(raw_stmt)).all()
+
+        points = [
+            {
+                "id": rollup.id,
+                "source_id": rollup.source_id,
+                "source_type": source,
+                "metric_type": rollup.metric_type,
+                "timestamp": rollup.bucket_start.isoformat(),
+                "value": rollup.value,
+                "metadata": {
+                    **(rollup.metadata_ or {}),
+                    "sample_count": rollup.sample_count,
+                    "resolution": rollup.resolution,
+                    "derived": not rollup.is_provider_total,
+                },
+                "sample_count": rollup.sample_count,
+                "is_derived": not rollup.is_provider_total,
+                "_sort_timestamp": rollup.bucket_start,
+            }
+            for rollup, source in rollup_rows
+        ]
+        points.extend(
+            {
+                "id": point.id,
+                "source_id": point.source_id,
+                "source_type": source,
+                "metric_type": point.metric_type,
+                "timestamp": point.timestamp.isoformat(),
+                "value": point.value,
+                "metadata": {
+                    **(point.metadata_ or {}),
+                    "resolution": "raw",
+                    "compatibility_fallback": True,
+                    "sample_count": 1,
+                },
+                "sample_count": 1,
+                "is_derived": False,
+                "_sort_timestamp": point.timestamp,
+            }
+            for point, source in raw_rows
+        )
+        points.sort(key=lambda item: item["_sort_timestamp"], reverse=sort == "desc")
+        points = points[:limit]
+        if points and rollup_rows:
+            return {
+                "tenant_id": tenant_id,
+                "count": len(points),
+                "resolution": effective_resolution,
+                "rollup_available": bool(rollup_rows),
+                "contains_legacy_raw": bool(raw_rows),
+                "data_points": [
+                    {key: value for key, value in point.items() if key != "_sort_timestamp"}
+                    for point in points
+                ],
+            }
+
+    stmt = (
+        select(DataPoint, DataSource.source_type)
+        .join(
+            DataSource,
+            and_(DataSource.id == DataPoint.source_id, DataSource.tenant_id == tenant_id),
+        )
+        .where(DataPoint.tenant_id == tenant_id, *source_filter)
+    )
     if metric_type:
         stmt = stmt.where(DataPoint.metric_type == metric_type)
-
-    if start_time:
-        try:
-            start_dt = datetime.fromisoformat(start_time)
-            stmt = stmt.where(DataPoint.timestamp >= start_dt)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid start_time ISO format") from None
-
-    if end_time:
-        try:
-            end_dt = datetime.fromisoformat(end_time)
-            stmt = stmt.where(DataPoint.timestamp <= end_dt)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid end_time ISO format") from None
-
+    if start_dt:
+        stmt = stmt.where(DataPoint.timestamp >= start_dt)
+    if end_dt:
+        stmt = stmt.where(DataPoint.timestamp <= end_dt)
     stmt = stmt.order_by(
         DataPoint.timestamp.desc() if sort == "desc" else DataPoint.timestamp.asc()
     ).limit(limit)
-    res = await session.execute(stmt)
-    points = res.scalars().all()
-
+    rows = (await session.execute(stmt)).all()
     return {
         "tenant_id": tenant_id,
-        "count": len(points),
+        "count": len(rows),
+        "resolution": "raw",
+        "rollup_available": False,
         "data_points": [
             {
-                "id": p.id,
-                "metric_type": p.metric_type,
-                "timestamp": p.timestamp.isoformat(),
-                "value": p.value,
-                "metadata": p.metadata_,
-                "idempotency_key": p.idempotency_key,
+                "id": point.id,
+                "source_id": point.source_id,
+                "source_type": source,
+                "metric_type": point.metric_type,
+                "timestamp": point.timestamp.isoformat(),
+                "value": point.value,
+                "metadata": point.metadata_,
+                "idempotency_key": point.idempotency_key,
+                "is_derived": False,
             }
-            for p in points
+            for point, source in rows
         ],
     }
 
@@ -1756,6 +2264,80 @@ async def get_metric_catalog():
         "metrics": [METRIC_CATALOG[key].model_dump(mode="json") for key in CANONICAL_KEYS],
         "aliases": dict(sorted(METRIC_ALIASES.items())),
         "namespaces": [ns.model_dump(mode="json") for ns in DYNAMIC_NAMESPACES],
+    }
+
+
+class MetricIngestPolicyRequest(BaseModel):
+    """Tenant-owned resolution override used by future imports."""
+
+    resolution: IngestResolution
+    raw_retention_days: int = Field(90, ge=0, le=3650)
+
+
+async def _effective_ingest_policies(
+    session: AsyncSession, tenant_id: str
+) -> dict[str, dict[str, Any]]:
+    """Build the full registry policy map and apply tenant overrides."""
+    result = await session.execute(
+        select(MetricIngestPolicy).where(MetricIngestPolicy.tenant_id == tenant_id)
+    )
+    overrides = {row.metric_type: row for row in result.scalars().all()}
+    return {
+        key: _ingest_policy_payload(key, override=overrides.get(key))
+        for key in CANONICAL_KEYS
+    }
+
+
+@app.get("/api/v1/data/metrics/ingest-policy")
+async def get_ingest_policy(session: AsyncSession = Depends(get_session)):
+    """Return effective metric resolution rules for the authenticated workspace."""
+    tenant_id = get_current_tenant_id()
+    return {
+        "tenant_id": tenant_id,
+        "policies": await _effective_ingest_policies(session, tenant_id),
+        "applies_to": "future_imports",
+    }
+
+
+@app.put("/api/v1/data/metrics/ingest-policy/{metric_type}")
+async def set_ingest_policy(
+    metric_type: str,
+    req: MetricIngestPolicyRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Set one workspace metric resolution for future importer runs."""
+    tenant_id = get_current_tenant_id()
+    try:
+        canonical = canonical_metric_type(metric_type)
+    except UnknownMetricTypeError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    if canonical != metric_type:
+        raise HTTPException(status_code=422, detail="metric_type must be canonical")
+
+    definition = describe(canonical)
+    statement = pg_insert(MetricIngestPolicy).values(
+        tenant_id=tenant_id,
+        metric_type=canonical,
+        resolution=req.resolution.value,
+        raw_retention_days=req.raw_retention_days,
+        updated_at=datetime.now(timezone.utc),
+    )
+    statement = statement.on_conflict_do_update(
+        index_elements=["tenant_id", "metric_type"],
+        set_={
+            "resolution": statement.excluded.resolution,
+            "raw_retention_days": statement.excluded.raw_retention_days,
+            "updated_at": statement.excluded.updated_at,
+        },
+    )
+    await session.execute(statement)
+    await session.commit()
+    return {
+        "tenant_id": tenant_id,
+        "policy": _ingest_policy_payload(canonical, definition=definition),
+        "resolution": req.resolution.value,
+        "raw_retention_days": req.raw_retention_days,
+        "applies_to": "future_imports",
     }
 
 
@@ -1800,9 +2382,30 @@ async def list_metric_types(
 async def get_metrics_summary(
     session: AsyncSession = Depends(get_session),
 ):
-    """Get summary statistics (latest, average, min, max) for all metric types of the tenant."""
+    """Get summary statistics from day rollups, with a compatibility fallback."""
     tenant_id = get_current_tenant_id()
-    stmt = (
+    rollup_stmt = (
+        select(
+            MetricRollup.metric_type,
+            func.sum(MetricRollup.sample_count).label("count"),
+            (
+                func.sum(MetricRollup.sum_value)
+                / func.nullif(func.sum(MetricRollup.sample_count), 0)
+            ).label("avg_value"),
+            func.min(MetricRollup.min_value).label("min_value"),
+            func.max(MetricRollup.max_value).label("max_value"),
+            func.sum(MetricRollup.sum_value).label("sum_value"),
+            func.max(MetricRollup.last_timestamp).label("latest_timestamp"),
+        )
+        .where(
+            MetricRollup.tenant_id == tenant_id,
+            MetricRollup.resolution == "day",
+        )
+        .group_by(MetricRollup.metric_type)
+        .order_by(MetricRollup.metric_type.asc())
+    )
+    rollup_rows = (await session.execute(rollup_stmt)).all()
+    raw_stmt = (
         select(
             DataPoint.metric_type,
             func.count(DataPoint.id).label("count"),
@@ -1812,13 +2415,54 @@ async def get_metrics_summary(
             func.sum(DataPoint.value).label("sum_value"),
             func.max(DataPoint.timestamp).label("latest_timestamp"),
         )
-        .where(DataPoint.tenant_id == tenant_id)
+        .where(
+            DataPoint.tenant_id == tenant_id,
+            DataPoint.value.is_not(None),
+            ~_rollup_covers_point("day"),
+        )
         .group_by(DataPoint.metric_type)
         .order_by(DataPoint.metric_type.asc())
     )
+    raw_rows = (await session.execute(raw_stmt)).all()
 
-    res = await session.execute(stmt)
-    rows = res.all()
+    # Merge the aggregate state rather than choosing either source wholesale. The
+    # weighted average is reconstructed from count and sum, so legacy points and
+    # rollup buckets contribute with their real sample weight.
+    aggregates: dict[str, dict[str, Any]] = {}
+    for row in [*rollup_rows, *raw_rows]:
+        count = int(row.count or 0)
+        sum_value = row.sum_value
+        if sum_value is None and row.avg_value is not None:
+            sum_value = float(row.avg_value) * count
+        item = aggregates.setdefault(
+            row.metric_type,
+            {
+                "count": 0,
+                "sum_value": 0.0,
+                "min_value": None,
+                "max_value": None,
+                "latest_timestamp": None,
+            },
+        )
+        item["count"] += count
+        item["sum_value"] += float(sum_value or 0.0)
+        if row.min_value is not None:
+            item["min_value"] = (
+                float(row.min_value)
+                if item["min_value"] is None
+                else min(item["min_value"], float(row.min_value))
+            )
+        if row.max_value is not None:
+            item["max_value"] = (
+                float(row.max_value)
+                if item["max_value"] is None
+                else max(item["max_value"], float(row.max_value))
+            )
+        if row.latest_timestamp is not None and (
+            item["latest_timestamp"] is None
+            or row.latest_timestamp > item["latest_timestamp"]
+        ):
+            item["latest_timestamp"] = row.latest_timestamp
     custom_rules = await session.execute(
         select(MetricMappingRule).where(
             MetricMappingRule.tenant_id == tenant_id,
@@ -1828,28 +2472,40 @@ async def get_metrics_summary(
     custom_definitions = _custom_definitions(list(custom_rules.scalars()))
 
     summary = {}
-    for row in rows:
-        definition = _definition_payload(row.metric_type, custom_definitions)
+    for metric_name, aggregate in aggregates.items():
+        definition = _definition_payload(metric_name, custom_definitions)
         # Rounding follows the metric rather than a blanket one decimal: a step count
         # with a fractional part is noise, a coordinate rounded to 0.1° is a different
         # town.
         digits = definition["precision"] if definition else 1
 
-        summary[row.metric_type] = {
-            "count": row.count,
-            "average": _round(row.avg_value, digits),
-            "min": _round(row.min_value, digits),
-            "max": _round(row.max_value, digits),
+        average = (
+            aggregate["sum_value"] / aggregate["count"]
+            if aggregate["count"]
+            else None
+        )
+        summary[metric_name] = {
+            "count": aggregate["count"],
+            "average": _round(average, digits),
+            "min": _round(aggregate["min_value"], digits),
+            "max": _round(aggregate["max_value"], digits),
             # Which of average and total is the meaningful one is a property of the
             # metric (`definition.aggregation`), so both are returned and the caller
             # picks: averaging a day's step counts answers a question nobody asked.
-            "sum": _round(row.sum_value, digits),
-            "latest_timestamp": row.latest_timestamp.isoformat() if row.latest_timestamp else None,
+            "sum": _round(aggregate["sum_value"], digits),
+            "latest_timestamp": (
+                aggregate["latest_timestamp"].isoformat()
+                if aggregate["latest_timestamp"]
+                else None
+            ),
             "definition": definition,
         }
 
     return {
         "tenant_id": tenant_id,
+        "resolution": "day" if rollup_rows else "raw",
+        "rollup_available": bool(rollup_rows),
+        "contains_legacy_raw": bool(raw_rows),
         "metrics": summary,
     }
 
@@ -1968,7 +2624,18 @@ async def import_mapped_rows(
             index_elements=["tenant_id", "idempotency_key", "timestamp"]
         )
         result = await session.execute(statement)
-        accepted += result.rowcount or 0
+        inserted = (result.rowcount or 0) > 0
+        if inserted:
+            accepted += 1
+            await update_rollups_for_point(
+                session,
+                tenant_id=tenant_id,
+                source_id=row.source_id,
+                metric_type=row.metric_type,
+                timestamp=normalized_timestamp,
+                value=row.value,
+                metadata=row.metadata,
+            )
     await session.commit()
     return {"tenant_id": tenant_id, "submitted": len(request.rows), "accepted": accepted}
 
@@ -2146,6 +2813,42 @@ def _run_duration_seconds(run: SyncRun, *, now: datetime | None = None) -> float
     return round((finished_at - started_at).total_seconds(), 1)
 
 
+def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dict[str, Any]:
+    """Serialize the shared run shape used by connector and global history views."""
+    return {
+        "id": run.id,
+        "request_id": run.request_id,
+        "source_id": run.source_id,
+        "source_type": run.source_type,
+        "connector_name": connector_name,
+        "mode": run.mode,
+        "trigger": run.trigger,
+        "status": run.status,
+        "window_start": run.window_start.isoformat() if run.window_start else None,
+        "window_end": run.window_end.isoformat() if run.window_end else None,
+        "window_reason": _display_window_reason(run.window_reason),
+        "points_expected": run.points_expected,
+        "points_received": run.points_received,
+        "points_processed": run.points_processed,
+        "points_accepted": run.points_accepted,
+        "points_duplicate": run.points_duplicate,
+        "points_rejected": run.points_rejected,
+        "unsupported_fields": run.unsupported_fields,
+        "provider_window_start": run.provider_window_start.isoformat() if run.provider_window_start else None,
+        "provider_window_end": run.provider_window_end.isoformat() if run.provider_window_end else None,
+        "provider_exported_at": run.provider_exported_at.isoformat() if run.provider_exported_at else None,
+        "backlog_at_start": run.backlog_at_start,
+        "backlog_at_end": run.backlog_at_end,
+        "skipped_ranges": run.skipped_ranges,
+        "message": run.message,
+        "message_code": run.message_code,
+        "message_params": run.message_params or {},
+        "started_at": run.started_at.isoformat() if run.started_at else None,
+        "finished_at": run.finished_at.isoformat() if run.finished_at else None,
+        "duration_seconds": _run_duration_seconds(run),
+    }
+
+
 def _looks_like_uuid(value: str) -> bool:
     try:
         uuid.UUID(value)
@@ -2168,27 +2871,249 @@ async def _resolve_source_ref(
     return await _resolve_source(session, tenant_id, ref)
 
 
-async def _last_successful_sync_end(
-    session: AsyncSession, tenant_id: str, source_id: str
-) -> datetime | None:
-    """When this connector's last successful run ended, for adaptive resumption.
+_COVERAGE_MARKER_PREFIX = "[coverage-contract:"
+_COVERAGE_MARKER_SUFFIX = "]"
 
-    Keyed on the instance, not the type: with two calendars, the type would let
-    one connector's successful window advance the other's resume point, and the
-    second calendar would silently skip everything the first had already fetched.
+
+def _configured_supported_metrics(
+    config: dict[str, Any] | None,
+) -> tuple[str, ...] | None:
+    """Return the canonical metric manifest configured for a connector.
+
+    A missing or malformed manifest is intentionally represented as ``None``. Core
+    must not guess that all metrics are covered from a connector-wide point count.
     """
-    res = await session.execute(
-        select(SyncRun.window_end)
+    config = config or {}
+    values = [
+        config[key]
+        for key in ("supported_metrics", "supported_metric_types")
+        if key in config
+    ]
+    if not values or any(value != values[0] for value in values[1:]):
+        return None
+
+    raw_metrics = values[0]
+    if not isinstance(raw_metrics, (list, tuple, set)) or not raw_metrics:
+        return None
+
+    canonical: set[str] = set()
+    for raw_metric in raw_metrics:
+        if not isinstance(raw_metric, str):
+            return None
+        try:
+            canonical.add(canonical_metric_type(raw_metric))
+        except UnknownMetricTypeError:
+            return None
+    return tuple(sorted(canonical)) or None
+
+
+def _configured_coverage_version(
+    config: dict[str, Any] | None,
+    keys: tuple[str, ...],
+) -> str | None:
+    """Read the first configured schema/transform version as a stable string."""
+    config = config or {}
+    for key in keys:
+        if key not in config:
+            continue
+        value = config[key]
+        if isinstance(value, (str, int, float)) and not isinstance(value, bool):
+            return str(value)
+        return None
+    return None
+
+
+def _source_coverage_contract(source: DataSource) -> tuple[tuple[str, ...], str] | None:
+    """Build the source/metric/schema contract used to trust historical coverage."""
+    config = source.config or {}
+    metrics = _configured_supported_metrics(config)
+    manifest_is_configured = any(
+        key in config for key in ("supported_metrics", "supported_metric_types")
+    )
+    if metrics is None and not manifest_is_configured:
+        # Static providers already have an exact metric ownership list in the shared
+        # registry. Using it as the built-in manifest makes the safe planner useful
+        # for existing connectors created before the manifest field was introduced.
+        # Dynamic providers are intentionally excluded: their user's installation
+        # determines which fields exist, so a catalog list cannot prove completeness.
+        has_dynamic_namespace = any(
+            source.source_type in namespace.sources for namespace in DYNAMIC_NAMESPACES
+        )
+        registry_metrics = tuple(sorted(d.key for d in metrics_for_source(source.source_type)))
+        if has_dynamic_namespace or not registry_metrics:
+            return None
+        metrics = registry_metrics
+        manifest_source = "registry"
+    elif metrics is not None:
+        manifest_source = "configured"
+    else:
+        # A malformed explicit manifest must not silently fall back to a broader
+        # registry assumption. Keep the conservative full-window behavior.
+        return None
+
+    contract = {
+        "source_id": source.id,
+        "source_type": source.source_type,
+        "supported_metrics": metrics,
+        "manifest_source": manifest_source,
+        "schema_version": _configured_coverage_version(
+            config, ("schema_version", "provider_schema_version")
+        )
+        or "registry-v1",
+        "transform_version": _configured_coverage_version(
+            config, ("transform_version", "importer_transform_version")
+        ),
+        "contract_version": 1,
+    }
+    encoded = json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    return metrics, hashlib.sha256(encoded).hexdigest()
+
+
+def _coverage_marker(signature: str) -> str:
+    """Return the durable machine marker kept at the start of ``window_reason``."""
+    return f"{_COVERAGE_MARKER_PREFIX}{signature}{_COVERAGE_MARKER_SUFFIX}"
+
+
+def _coverage_signature_from_reason(reason: str | None) -> str | None:
+    """Extract a coverage contract marker without relying on human wording."""
+    if not reason or not reason.startswith(_COVERAGE_MARKER_PREFIX):
+        return None
+    end = reason.find(_COVERAGE_MARKER_SUFFIX, len(_COVERAGE_MARKER_PREFIX))
+    if end < 0:
+        return None
+    return reason[len(_COVERAGE_MARKER_PREFIX) : end]
+
+
+def _with_coverage_marker(reason: str, signature: str | None) -> str:
+    """Prefix a run reason with its contract while keeping the existing text."""
+    if not signature:
+        return reason
+    return f"{_coverage_marker(signature)} {reason}".strip()
+
+
+def _display_window_reason(reason: str | None) -> str | None:
+    """Remove the internal contract marker from user-facing sync history."""
+    if reason is None:
+        return None
+    if not reason.startswith(_COVERAGE_MARKER_PREFIX):
+        return reason
+    end = reason.find(_COVERAGE_MARKER_SUFFIX, len(_COVERAGE_MARKER_PREFIX))
+    if end < 0:
+        return reason
+    return reason[end + 1 :].lstrip() or None
+
+
+async def _coverage_contract_is_current(
+    session: AsyncSession,
+    tenant_id: str,
+    source_id: str,
+    signature: str | None,
+) -> bool:
+    """Whether the latest successful run used the current coverage contract.
+
+    A connector with no successful history is allowed to use its configured metric
+    manifest. Once history exists, an unmarked or different contract invalidates
+    smart skipping until a run under the current contract succeeds.
+    """
+    if not signature:
+        return False
+    result = await session.execute(
+        select(SyncRun.id, SyncRun.window_reason)
         .where(
             SyncRun.tenant_id == tenant_id,
             SyncRun.source_id == source_id,
             SyncRun.status == "success",
-            SyncRun.window_end.is_not(None),
         )
-        .order_by(SyncRun.window_end.desc())
+        .order_by(SyncRun.finished_at.desc(), SyncRun.id.desc())
         .limit(1)
     )
-    value = res.scalar_one_or_none()
+    row = result.first()
+    if row is None:
+        return True
+    return _coverage_signature_from_reason(row.window_reason) == signature
+
+
+async def _source_coverage_plan(
+    session: AsyncSession,
+    tenant_id: str,
+    source: DataSource,
+) -> tuple[dict[str, Any], str | None, str, str | None]:
+    """Return metric fetchers, contract signature, scope and an optional reason."""
+    contract = _source_coverage_contract(source)
+    if contract is None:
+        return (
+            {},
+            None,
+            "unknown",
+            (
+                "The connector has no valid canonical metric manifest. The full requested "
+                "period will be imported conservatively."
+            ),
+        )
+
+    metrics, signature = contract
+    fetchers = {
+        metric: _bucket_fetcher(
+            session,
+            tenant_id,
+            source_id=source.id,
+            metric_type=metric,
+        )
+        for metric in metrics
+    }
+    if not await _coverage_contract_is_current(
+        session, tenant_id, source.id, signature
+    ):
+        return (
+            fetchers,
+            signature,
+            "unknown",
+            (
+                "The connector's supported metrics or transformation contract changed. "
+                "The full requested period will be imported to revalidate coverage."
+            ),
+        )
+    return fetchers, signature, "metric_set", None
+
+
+async def _last_successful_sync_end(
+    session: AsyncSession,
+    tenant_id: str,
+    source_id: str,
+    *,
+    coverage_signature: str | None = None,
+    require_coverage_contract: bool = False,
+) -> datetime | None:
+    """Return the last provider-confirmed coverage end for adaptive resumption.
+
+    Keyed on the instance, not the type: with two calendars, the type would let
+    one connector's successful window advance the other's resume point, and the
+    second calendar would silently skip everything the first had already fetched.
+    A requested window end is deliberately not used as a watermark. Providers can
+    return a shorter range than requested, and advancing from the request alone can
+    create a permanent gap after the overlap expires.
+    """
+    if require_coverage_contract and not coverage_signature:
+        return None
+
+    res = await session.execute(
+        select(SyncRun.provider_window_end, SyncRun.window_reason)
+        .where(
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.source_id == source_id,
+            SyncRun.status == "success",
+            SyncRun.provider_window_end.is_not(None),
+        )
+        .order_by(SyncRun.provider_window_end.desc())
+    )
+    value: datetime | None = None
+    for provider_end, window_reason in res.all():
+        if coverage_signature is not None and (
+            _coverage_signature_from_reason(window_reason) != coverage_signature
+        ):
+            continue
+        value = provider_end
+        break
     if value is not None and value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value
@@ -2268,6 +3193,7 @@ async def get_coverage(
     tenant_id = get_current_tenant_id()
     window = _validated_window(start, end)
 
+    source: DataSource | None = None
     source_id = None
     if source_type:
         source = await _resolve_source(session, tenant_id, source_type)
@@ -2275,27 +3201,84 @@ async def get_coverage(
             raise HTTPException(status_code=404, detail="Connector not configured")
         source_id = source.id
 
-    fetch = _bucket_fetcher(
-        session, tenant_id, source_id=source_id, metric_type=metric_type
-    )
-    covered, missing, confidence, expectation, total = await analyse_coverage(fetch, window)
+    canonical_metric = None
+    if metric_type:
+        try:
+            canonical_metric = canonical_metric_type(metric_type)
+        except UnknownMetricTypeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    coverage_reason: str | None = None
+    coverage_metrics: list[str] = []
+    if canonical_metric:
+        fetch = _bucket_fetcher(
+            session,
+            tenant_id,
+            source_id=source_id,
+            metric_type=canonical_metric,
+        )
+        covered, missing, confidence, expectation, total = await analyse_coverage(
+            fetch, window
+        )
+        coverage_scope = "single_metric"
+        coverage_metrics = [canonical_metric]
+    elif source is not None:
+        fetchers, _signature, coverage_scope, coverage_reason = await _source_coverage_plan(
+            session, tenant_id, source
+        )
+        if coverage_scope == "metric_set":
+            covered, missing, confidence, expectation, total = await analyse_metric_coverage(
+                fetchers, window
+            )
+            coverage_metrics = sorted(fetchers)
+        else:
+            covered, missing, confidence, expectation, total = (
+                [],
+                [window],
+                "low",
+                None,
+                0,
+            )
+    else:
+        covered, missing, confidence, expectation, total = (
+            [],
+            [window],
+            "low",
+            None,
+            0,
+        )
+        coverage_scope = "unknown"
+        coverage_reason = (
+            "A source and canonical metric were not specified. Coverage cannot be "
+            "evaluated safely across all connectors."
+        )
 
     return {
         "tenant_id": tenant_id,
         "source_type": source_type,
-        "metric_type": metric_type,
+        "metric_type": canonical_metric,
         "window": window.to_dict(),
         "covered_ranges": [r.to_dict() for r in covered],
         "missing_ranges": [r.to_dict() for r in missing],
         "confidence": confidence,
         "expected_points_per_bucket": expectation or None,
         "total_points": total,
+        "coverage_scope": coverage_scope,
+        "coverage_metrics": coverage_metrics,
+        "coverage_reason": coverage_reason,
     }
 
 
 class ImportPlanRequest(BaseModel):
     start: datetime | None = Field(None, description="Requested window start")
     end: datetime | None = Field(None, description="Requested window end")
+    metric_type: str | None = Field(
+        None,
+        description=(
+            "Canonical metric whose coverage may be used for smart skipping. "
+            "Omit to force a conservative full-window import."
+        ),
+    )
     mode: Literal["smart", "force"] = Field("smart", description="Smart skips known-complete ranges")
 
 
@@ -2318,6 +3301,24 @@ async def get_import_plan(
     config = source.config or {}
     now = datetime.now(timezone.utc)
 
+    canonical_metric = None
+    if req.metric_type:
+        try:
+            canonical_metric = canonical_metric_type(req.metric_type)
+        except UnknownMetricTypeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    (
+        configured_fetchers,
+        configured_signature,
+        configured_scope,
+        configured_reason,
+    ) = await _source_coverage_plan(session, tenant_id, source)
+    # Keep a changed manifest/transform contract visible even when the user asks
+    # for one metric explicitly. A stale provider watermark must not advance the
+    # new contract; the planner will conservatively revalidate it.
+    coverage_signature = configured_signature
+
     if req.start and req.end:
         window = _validated_window(req.start, req.end)
         window_reason = "Period chosen by the user."
@@ -2325,18 +3326,43 @@ async def get_import_plan(
         window, window_reason = compute_sync_window(
             now=now,
             poll_interval_hours=float(config.get("poll_interval_hours", 6)),
-            lookback_days=int(config.get("lookback_days", 30)),
-            last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
+            lookback_days=int(config.get("lookback_days", 7)),
+            lookback_hours=_configured_lookback_hours(config),
+            last_success_end=await _last_successful_sync_end(
+                session,
+                tenant_id,
+                source.id,
+                coverage_signature=coverage_signature,
+                require_coverage_contract=coverage_signature is not None,
+            ),
         )
 
-    fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
-    plan = await plan_import(fetch, window, mode=req.mode)
+    coverage_scope = "single_metric" if canonical_metric else configured_scope
+    metric_fetchers = None if canonical_metric else configured_fetchers
+    coverage_reason = None if canonical_metric else configured_reason
+    fetch = _bucket_fetcher(
+        session,
+        tenant_id,
+        source_id=source.id,
+        metric_type=canonical_metric,
+    )
+    plan = await plan_import(
+        fetch,
+        window,
+        mode=req.mode,
+        metric_type=canonical_metric,
+        require_metric_scope=False,
+        metric_fetchers=metric_fetchers,
+        coverage_scope=coverage_scope,
+        coverage_reason=coverage_reason,
+    )
 
     payload = plan.to_dict()
     payload["window_reason"] = window_reason
     payload["tenant_id"] = tenant_id
     payload["source_id"] = source.id
     payload["source_type"] = source.source_type
+    payload["metric_type"] = canonical_metric
     payload["docs_url"] = "/docs/features/smart-import/"
     return payload
 
@@ -2378,28 +3404,48 @@ async def list_sync_runs(
         "offset": offset,
         "limit": limit,
         "has_more": len(runs) == limit,
-        "runs": [
-            {
-                "id": run.id,
-                "request_id": run.request_id,
-                "mode": run.mode,
-                "trigger": run.trigger,
-                "status": run.status,
-                "window_start": run.window_start.isoformat() if run.window_start else None,
-                "window_end": run.window_end.isoformat() if run.window_end else None,
-                "window_reason": run.window_reason,
-                "points_expected": run.points_expected,
-                "points_received": run.points_received,
-                "points_accepted": run.points_accepted,
-                "points_duplicate": run.points_duplicate,
-                "skipped_ranges": run.skipped_ranges,
-                "message": run.message,
-                "started_at": run.started_at.isoformat() if run.started_at else None,
-                "finished_at": run.finished_at.isoformat() if run.finished_at else None,
-                "duration_seconds": _run_duration_seconds(run),
-            }
-            for run in runs
-        ],
+        "runs": [_sync_run_payload(run, connector_name=source.display_name) for run in runs],
+    }
+
+
+@app.get("/api/v1/data/sync-runs")
+async def list_all_sync_runs(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0, le=10000),
+    status: str | None = Query(None, min_length=1, max_length=32),
+    source_type: str | None = Query(None, min_length=1, max_length=64),
+    session: AsyncSession = Depends(get_session),
+):
+    """List the tenant's import runs across all connector instances."""
+    tenant_id = get_current_tenant_id()
+    query = (
+        select(SyncRun, DataSource.display_name)
+        .outerjoin(
+            DataSource,
+            and_(
+                DataSource.id == SyncRun.source_id,
+                DataSource.tenant_id == tenant_id,
+            ),
+        )
+        .where(SyncRun.tenant_id == tenant_id)
+    )
+    if status:
+        query = query.where(SyncRun.status == status)
+    if source_type:
+        query = query.where(SyncRun.source_type == source_type)
+    query = query.order_by(SyncRun.started_at.desc()).offset(offset).limit(limit)
+
+    rows = (await session.execute(query)).all()
+    runs = [
+        _sync_run_payload(run, connector_name=connector_name)
+        for run, connector_name in rows
+    ]
+    return {
+        "tenant_id": tenant_id,
+        "offset": offset,
+        "limit": limit,
+        "has_more": len(runs) == limit,
+        "runs": runs,
     }
 
 
@@ -2558,7 +3604,10 @@ class ConfigureConnectorRequest(BaseModel):
     access_token: str | None = Field(None, description="Raw API access token / credential", max_length=2048)
     status: ValidStatus = Field("active", description="active / inactive")
     poll_interval_hours: int = Field(6, ge=1, le=168, description="Poll frequency in hours")
-    lookback_days: int = Field(30, ge=1, le=365, description="Lookback window in days")
+    lookback_days: int = Field(7, ge=1, le=365, description="Lookback window in days")
+    lookback_hours: int | None = Field(
+        None, ge=1, le=365 * 24, description="Lookback window in hours; takes precedence over days"
+    )
     config: dict[str, Any] | None = Field(None, description="Custom configuration for the connector")
 
     # The OAuth refresh grant, for providers whose access token is short-lived.
@@ -2671,7 +3720,10 @@ async def configure_connector(
     config_data: dict[str, Any] = {
         "status": req.status,
         "poll_interval_hours": req.poll_interval_hours,
-        "lookback_days": req.lookback_days,
+        "lookback_days": math.ceil(
+            (req.lookback_hours or req.lookback_days * 24) / 24
+        ),
+        "lookback_hours": req.lookback_hours or req.lookback_days * 24,
         "updated_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -2748,6 +3800,23 @@ async def configure_connector(
             )
         }
         config_data.update(clean_config)
+        if req.lookback_hours is None:
+            configured_hours = clean_config.get("lookback_hours")
+            if configured_hours is None and "lookback_days" in clean_config:
+                try:
+                    configured_hours = math.ceil(float(clean_config["lookback_days"]) * 24)
+                except (TypeError, ValueError):
+                    configured_hours = None
+            if configured_hours is not None:
+                try:
+                    config_data["lookback_hours"] = max(1, math.ceil(float(configured_hours)))
+                except (TypeError, ValueError):
+                    pass
+    if req.lookback_hours is not None:
+        # The typed top-level field is authoritative when both the legacy nested
+        # setting and the new sub-day setting are supplied.
+        config_data["lookback_hours"] = req.lookback_hours
+        config_data["lookback_days"] = math.ceil(req.lookback_hours / 24)
 
     if existing:
         merged_config = dict(existing.config or {})
@@ -2822,7 +3891,8 @@ async def configure_connector(
         "display_name": display_name,
         "masked_token": config_data.get("masked_token", "••••••••"),
         "poll_interval_hours": req.poll_interval_hours,
-        "lookback_days": req.lookback_days,
+        "lookback_days": config_data["lookback_days"],
+        "lookback_hours": config_data["lookback_hours"],
     }
 
 
@@ -2869,7 +3939,10 @@ async def _record_failed_sync_request(
     mode: Literal["smart", "force"],
     trigger: str,
     message: str,
+    message_code: str = "sync_failed",
+    message_params: dict[str, Any] | None = None,
     update_connector: bool = True,
+    status: Literal["error", "skipped"] = "error",
 ) -> SyncRun:
     """Persist a failed import request after its connector was resolved.
 
@@ -2885,8 +3958,10 @@ async def _record_failed_sync_request(
         request_id=request_id,
         mode=mode,
         trigger=trigger,
-        status="error",
+        status=status,
         message=message[:512],
+        message_code=message_code,
+        message_params=message_params or {},
         started_at=now,
         finished_at=now,
     )
@@ -2940,6 +4015,7 @@ async def plan_and_enqueue_sync(
                 "This connector does not support scheduled imports; use its webhook "
                 "or upload flow."
             ),
+            message_code="sync_not_scheduled",
         )
         return {
             "status": "error",
@@ -2950,13 +4026,20 @@ async def plan_and_enqueue_sync(
             "message": run.message,
         }
 
+    # The check and the following plan/run insert must be one single-flight
+    # critical section. The HTTP handler creates one database session per request,
+    # so a plain SELECT here still lets two simultaneous clicks both see an empty
+    # in-flight set. The transaction-scoped connector lock makes the second request
+    # wait, then re-check after the first run has committed.
+    await acquire_connector_lock(session, tenant_id, source.id)
+
     # Core is the single authority on whether a connector is already busy. The
     # importers each kept a process-local `active_syncs` set, which stops nothing
     # once a second replica exists -- both would accept the same task. Refusing to
     # enqueue here means the duplicate never reaches them, whatever they run.
-    # `force` is exempt: an explicit user override should not be blocked by a run
-    # that may itself be stuck.
-    if mode != "force" and await has_in_flight_run(
+    # `force` bypasses coverage skipping, not single-flight execution. Allowing it
+    # through here was the source of two concurrent provider runs for one click.
+    if await has_in_flight_run(
         session, tenant_id, source.id, now=now
     ):
         logger.info(
@@ -2972,10 +4055,12 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message="The connector already has an import in flight.",
+            message_code="sync_in_flight",
             update_connector=False,
+            status="skipped",
         )
         return {
-            "status": "error",
+            "status": "skipped",
             "source_type": source_type,
             "tenant_id": tenant_id,
             "request_id": req_id,
@@ -2984,6 +4069,14 @@ async def plan_and_enqueue_sync(
         }
 
     try:
+        (
+            configured_fetchers,
+            configured_signature,
+            coverage_scope,
+            coverage_reason,
+        ) = await _source_coverage_plan(session, tenant_id, source)
+        coverage_signature = configured_signature
+
         if start and end:
             window = _validated_window(start, end)
             window_reason = "Period chosen by the user."
@@ -2991,12 +4084,26 @@ async def plan_and_enqueue_sync(
             window, window_reason = compute_sync_window(
                 now=now,
                 poll_interval_hours=float(config.get("poll_interval_hours", 6)),
-                lookback_days=int(config.get("lookback_days", 30)),
-                last_success_end=await _last_successful_sync_end(session, tenant_id, source.id),
+                lookback_days=int(config.get("lookback_days", 7)),
+                lookback_hours=_configured_lookback_hours(config),
+                last_success_end=await _last_successful_sync_end(
+                    session,
+                    tenant_id,
+                    source.id,
+                    coverage_signature=coverage_signature,
+                    require_coverage_contract=True,
+                ),
             )
 
         fetch = _bucket_fetcher(session, tenant_id, source_id=source.id)
-        plan = await plan_import(fetch, window, mode=mode)
+        plan = await plan_import(
+            fetch,
+            window,
+            mode=mode,
+            metric_fetchers=configured_fetchers,
+            coverage_scope=coverage_scope,
+            coverage_reason=coverage_reason,
+        )
     except HTTPException as exc:
         await _record_failed_sync_request(
             session,
@@ -3006,6 +4113,7 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message=str(exc.detail),
+            message_code="sync_plan_failed",
         )
         raise
     except Exception as exc:
@@ -3017,6 +4125,7 @@ async def plan_and_enqueue_sync(
             mode=mode,
             trigger=trigger,
             message=f"Import planning failed: {type(exc).__name__}.",
+            message_code="sync_plan_failed",
         )
         raise
 
@@ -3032,10 +4141,14 @@ async def plan_and_enqueue_sync(
         trigger=trigger,
         window_start=effective.start,
         window_end=effective.end,
-        window_reason=f"{window_reason} {plan.reason}".strip()[:255],
+        window_reason=_with_coverage_marker(
+            f"{window_reason} {plan.reason}".strip(), coverage_signature
+        )[:255],
         status="skipped" if nothing_to_do else "queued",
         skipped_ranges=[r.to_dict() for r in plan.covered],
         message=plan.reason[:512],
+        message_code="sync_skipped" if nothing_to_do else "sync_queued",
+        message_params={},
         finished_at=now if nothing_to_do else None,
     )
     session.add(run)
@@ -3107,6 +4220,8 @@ async def plan_and_enqueue_sync(
         )
         run.status = "error"
         run.message = message[:512]
+        run.message_code = "sync_queue_failed"
+        run.message_params = {}
         run.finished_at = datetime.now(timezone.utc)
         source_config = dict(source.config or {})
         source_config["sync_status"] = "error"
@@ -3122,6 +4237,32 @@ async def plan_and_enqueue_sync(
             "sync_run_id": run.id,
             "message": run.message,
         }
+
+    # The importer can call back immediately after NATS accepts the task. Move
+    # the run to the importer phase only if it is still queued; a conditional
+    # update prevents this request from overwriting a faster `loading` or
+    # `success` transition made by the importer/consumer.
+    importer_message = "Import task queued for the importer."
+    transition = await session.execute(
+        sa_update(SyncRun)
+        .where(
+            SyncRun.id == run.id,
+            SyncRun.tenant_id == tenant_id,
+            SyncRun.status == "queued",
+        )
+        .values(
+            status="running",
+            message=importer_message,
+            message_code="sync_queued",
+            message_params={},
+        )
+    )
+    if transition.rowcount:
+        source_config = dict(source.config or {})
+        source_config["sync_status"] = "running"
+        source_config["last_sync_message"] = importer_message
+        source.config = source_config
+    await session.commit()
 
     return {
         "status": "sync_queued",
@@ -3195,6 +4336,7 @@ async def list_connectors(
 
         connectors.append({
             "id": s.id,
+            "source_id": s.id,
             "tenant_id": s.tenant_id,
             "source_type": s.source_type,
             "display_name": s.display_name,
@@ -3213,7 +4355,10 @@ async def list_connectors(
             "import_mode": config.get("import_mode"),
             "supports_file_import": supports_file_import(s.source_type),
             "poll_interval_hours": config.get("poll_interval_hours", 6),
-            "lookback_days": config.get("lookback_days", 30),
+            "lookback_days": config.get(
+                "lookback_days", math.ceil(_configured_lookback_hours(config) / 24)
+            ),
+            "lookback_hours": _configured_lookback_hours(config),
             "last_sync_at": last_sync_at,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "updated_at": config.get("updated_at"),
@@ -3361,6 +4506,25 @@ async def get_connector_token(
         }
     except DecryptionError:
         raise HTTPException(status_code=500, detail="Failed to decrypt connector secret")
+
+
+@app.get("/api/v1/internal/data/sources/{source_ref}/ingest-policy")
+async def get_connector_ingest_policy(
+    source_ref: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Return tenant-scoped ingest policies to a stateless importer."""
+    tenant_id = get_current_tenant_id()
+    source = await _resolve_source_ref(session, tenant_id, source_ref)
+    if not source:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    return {
+        "tenant_id": tenant_id,
+        "source_id": str(source.id),
+        "source_type": source.source_type,
+        "policies": await _effective_ingest_policies(session, tenant_id),
+        "applies_to": "future_imports",
+    }
 
 
 # ─── Tenant-bound Inbound API Keys ──────────────────────────
@@ -3782,6 +4946,14 @@ class UpdateConnectorStatusRequest(BaseModel):
     last_sync_message: str
     sync_run_id: str | None = Field(None, description="Run to close out, if known")
     points_received: int | None = Field(None, ge=0)
+    points_rejected: int | None = Field(None, ge=0)
+    unsupported_fields: int | None = Field(None, ge=0)
+    backlog: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 class FieldReportPayload(FieldReport):
@@ -4020,6 +5192,15 @@ async def _replay_quarantined_rows(
                 inserted = (await session.execute(statement)).rowcount or 0
                 if inserted:
                     accepted += 1
+                    await update_rollups_for_point(
+                        session,
+                        tenant_id=tenant_id,
+                        source_id=source.id,
+                        metric_type=mapping.target_metric_type,
+                        timestamp=row.timestamp,
+                        value=value,
+                        metadata=metadata,
+                    )
                 else:
                     duplicates += 1
                 row.status = "promoted"
@@ -4442,7 +5623,12 @@ class OpenSyncRunRequest(BaseModel):
     # Known up front for a file upload, unknowable for a webhook. Where it is
     # unknown the interface counts rather than showing an invented percentage.
     points_expected: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
     message: str | None = Field(None, max_length=512)
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 class UpdateSyncRunProgressRequest(BaseModel):
@@ -4450,7 +5636,15 @@ class UpdateSyncRunProgressRequest(BaseModel):
 
     points_expected: int | None = Field(None, ge=0)
     points_received: int | None = Field(None, ge=0)
+    points_rejected: int | None = Field(None, ge=0)
+    unsupported_fields: int | None = Field(None, ge=0)
+    backlog: int | None = Field(None, ge=0)
+    provider_window_start: datetime | None = None
+    provider_window_end: datetime | None = None
+    provider_exported_at: datetime | None = None
     message: str | None = Field(None, max_length=512)
+    code: str | None = Field(None, max_length=64)
+    params: dict[str, str | int | float | bool] = Field(default_factory=dict)
 
 
 @app.post("/api/v1/internal/data/sources/{source_ref}/sync-runs", status_code=201)
@@ -4485,13 +5679,18 @@ async def open_sync_run_internal(
         window_end=None,
         points_expected=req.points_expected,
         points_received=0,
+        provider_window_start=req.provider_window_start,
+        provider_window_end=req.provider_window_end,
+        provider_exported_at=req.provider_exported_at,
         message=(req.message or "")[:512] or None,
+        message_code=req.code or "sync_running",
+        message_params=req.params,
         started_at=now,
     )
     session.add(run)
 
     config = dict(source.config or {})
-    config["sync_status"] = "queued"
+    config["sync_status"] = "running"
     config["last_sync_message"] = req.message or "Import running."
     source.config = config
 
@@ -4535,8 +5734,28 @@ async def update_sync_run_progress_internal(
         run.points_expected = req.points_expected
     if req.points_received is not None:
         run.points_received = req.points_received
+    if req.points_rejected is not None:
+        run.points_rejected = req.points_rejected
+    if req.unsupported_fields is not None:
+        run.unsupported_fields = req.unsupported_fields
+    if req.backlog is not None:
+        run.backlog_at_end = req.backlog
+    if req.provider_window_start is not None:
+        run.provider_window_start = req.provider_window_start
+    if req.provider_window_end is not None:
+        run.provider_window_end = req.provider_window_end
+    if req.provider_exported_at is not None:
+        run.provider_exported_at = req.provider_exported_at
+    if run.status == "queued":
+        run.status = "running"
+        config = dict(source.config or {})
+        config["sync_status"] = "running"
+        source.config = config
     if req.message:
         run.message = req.message[:512]
+    if req.code:
+        run.message_code = req.code
+        run.message_params = req.params
     await session.commit()
     return {"status": "ok", "sync_run_id": run.id}
 
@@ -4558,27 +5777,80 @@ async def update_connector_status_internal(
     held two connectors of one type.
     """
     ds = await _resolve_source_ref(session, tenant_id, source_ref)
-    if ds:
-        cfg = dict(ds.config or {})
-        cfg["sync_status"] = req.sync_status
-        cfg["last_sync_message"] = req.last_sync_message
-        ds.config = cfg
+    if not ds:
+        raise HTTPException(status_code=404, detail="Connector not configured")
+
+    cfg = dict(ds.config or {})
+    cfg["sync_status"] = req.sync_status
+    cfg["last_sync_message"] = req.last_sync_message
+    ds.config = cfg
 
     if req.sync_run_id:
-        run_res = await session.execute(
-            select(SyncRun).where(
-                SyncRun.id == req.sync_run_id, SyncRun.tenant_id == tenant_id
-            )
+        run_query = select(SyncRun).where(
+            SyncRun.id == req.sync_run_id,
+            SyncRun.tenant_id == tenant_id,
         )
+        run_query = run_query.where(SyncRun.source_id == ds.id)
+        run_res = await session.execute(run_query)
         run = run_res.scalars().first()
         if run:
-            run.status = (
-                "success" if req.sync_status in {"idle", "success", "ok"} else req.sync_status
-            )
-            run.message = req.last_sync_message[:512]
-            run.finished_at = datetime.now(timezone.utc)
             if req.points_received is not None:
                 run.points_received = req.points_received
+                if run.points_expected is None and req.sync_status in {"idle", "success", "ok"}:
+                    run.points_expected = req.points_received
+            if req.points_rejected is not None:
+                run.points_rejected = req.points_rejected
+            if req.unsupported_fields is not None:
+                run.unsupported_fields = req.unsupported_fields
+            if req.backlog is not None:
+                run.backlog_at_end = req.backlog
+            if req.provider_window_start is not None:
+                run.provider_window_start = req.provider_window_start
+            if req.provider_window_end is not None:
+                run.provider_window_end = req.provider_window_end
+            if req.provider_exported_at is not None:
+                run.provider_exported_at = req.provider_exported_at
+
+            now = datetime.now(timezone.utc)
+            if req.sync_status in {"idle", "success", "ok"}:
+                run.message = (
+                    f"{req.last_sync_message[:450]} Core is loading the published data."
+                )[:512]
+                run.status = "loading"
+                run.message_code = req.code or "sync_loading"
+                run.message_params = req.params
+                run.finished_at = None
+                if (
+                    run.points_expected is not None
+                    and run.points_processed >= run.points_expected
+                ):
+                    run.status = "success"
+                    run.finished_at = now
+                    run.message = "Core loaded all published data points."
+                    run.message_code = "core_loaded"
+                    run.message_params = {}
+                    cfg = dict(ds.config or {})
+                    cfg["sync_status"] = "idle"
+                    cfg["last_sync_at"] = now.isoformat()
+                    cfg["last_sync_message"] = run.message
+                    ds.config = cfg
+                else:
+                    cfg = dict(ds.config or {})
+                    cfg["sync_status"] = "loading"
+                    cfg["last_sync_message"] = run.message
+                    ds.config = cfg
+            elif req.sync_status in {"queued", "running", "loading"}:
+                run.status = req.sync_status
+                run.message = req.last_sync_message[:512]
+                run.message_code = req.code or "sync_queued"
+                run.message_params = req.params
+                run.finished_at = None
+            else:
+                run.status = req.sync_status
+                run.message = req.last_sync_message[:512]
+                run.message_code = req.code or "sync_failed"
+                run.message_params = req.params
+                run.finished_at = now
 
     await session.commit()
     return {"status": "ok"}
@@ -4593,6 +5865,9 @@ async def wipe_tenant_data_points(
     tenant_id = principal.tenant_id
     stmt = delete(DataPoint).where(DataPoint.tenant_id == tenant_id)
     result = await session.execute(stmt)
+    rollup_result = await session.execute(
+        delete(MetricRollup).where(MetricRollup.tenant_id == tenant_id)
+    )
     quarantine_result = await session.execute(
         delete(QuarantinedDataPoint).where(QuarantinedDataPoint.tenant_id == tenant_id)
     )
@@ -4601,6 +5876,7 @@ async def wipe_tenant_data_points(
     return {
         "status": "wiped",
         "deleted_count": (result.rowcount or 0) + (quarantine_result.rowcount or 0),
+        "deleted_rollup_count": rollup_result.rowcount or 0,
         "message": (
             f"Successfully deleted {(result.rowcount or 0) + (quarantine_result.rowcount or 0)} "
             "data points for tenant."

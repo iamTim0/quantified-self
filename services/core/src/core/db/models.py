@@ -16,11 +16,12 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     String,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -118,6 +119,10 @@ class DataSource(Base):
             "display_name",
             name="uq_data_sources_tenant_type_name",
         ),
+        # Child rows carry tenant_id as well as source_id. Keeping the pair
+        # addressable lets PostgreSQL enforce that those two claims describe the
+        # same connector, rather than relying only on every application query.
+        UniqueConstraint("tenant_id", "id", name="uq_data_sources_tenant_id_id"),
     )
 
 
@@ -153,6 +158,87 @@ class DataPoint(Base):
             "idempotency_key",
             "timestamp",
             name="uq_data_points_tenant_idempotency_time",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_data_points_tenant_source",
+        ),
+    )
+
+
+class MetricIngestPolicy(Base):
+    """Tenant-scoped import resolution override for one canonical metric."""
+
+    __tablename__ = "metric_ingest_policies"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    raw_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "metric_type", name="uq_metric_ingest_policies_tenant_metric"
+        ),
+    )
+
+
+class MetricRollup(Base):
+    """Tenant/source-scoped rollup maintained alongside accepted data points."""
+
+    __tablename__ = "metric_rollups"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    metric_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    resolution: Mapped[str] = mapped_column(String(16), nullable=False)
+    bucket_start: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
+    value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sample_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sum_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    min_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    first_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_: Mapped[dict[str, Any] | None] = mapped_column("metadata", JSONB, nullable=True)
+    is_provider_total: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "source_id",
+            "metric_type",
+            "resolution",
+            "bucket_start",
+            name="uq_metric_rollups_tenant_source_metric_resolution_bucket",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_metric_rollups_tenant_source",
         ),
     )
 
@@ -295,14 +381,78 @@ class SyncRun(Base):
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
     points_expected: Mapped[int | None] = mapped_column(Integer, nullable=True)
     points_received: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Events published by an importer are not stored synchronously. This count
+    # advances in the Core consumer and is what separates "published" from
+    # "loaded" in the run lifecycle.
+    points_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_accepted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     points_duplicate: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    points_rejected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    unsupported_fields: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    provider_window_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_window_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_exported_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    backlog_at_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    backlog_at_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
     skipped_ranges: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Stable client-facing status; `message` remains an English operator fallback
+    # for clients that do not know a code yet.
+    message_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_sync_runs_tenant_id_id"),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_sync_runs_tenant_source",
+        ),
+    )
+
+
+class SyncRunEvent(Base):
+    """Durable once-only ledger for events counted against an import run.
+
+    JetStream delivers at least once. The data-point unique key protects storage,
+    but it cannot protect the progress counters: a redelivered duplicate must not
+    advance a run twice. The ledger stores only the broker identity (or a bounded
+    payload fingerprint for non-JetStream delivery), never the provider payload.
+    """
+
+    __tablename__ = "sync_run_events"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    sync_run_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("sync_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    event_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    counted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "sync_run_id",
+            "event_key",
+            name="uq_sync_run_events_tenant_run_key",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "sync_run_id"],
+            ["sync_runs.tenant_id", "sync_runs.id"],
+            name="fk_sync_run_events_tenant_run",
+        ),
+    )
 
 
 class IngestFieldReport(Base):
@@ -353,6 +503,11 @@ class IngestFieldReport(Base):
     __table_args__ = (
         UniqueConstraint(
             "tenant_id", "source_id", "field_path", name="uq_field_reports_tenant_source_path"
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_field_reports_tenant_source",
         ),
     )
 
@@ -407,6 +562,11 @@ class QuarantinedDataPoint(Base):
             "timestamp",
             name="uq_quarantine_tenant_source_key_time",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_quarantine_tenant_source",
+        ),
     )
 
 
@@ -453,6 +613,11 @@ class MetricMappingRule(Base):
             "raw_metric_type",
             name="uq_metric_mapping_tenant_source_raw",
         ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_metric_mapping_tenant_source",
+        ),
     )
 
 
@@ -491,6 +656,11 @@ class QuarantineRefusal(Base):
             "raw_metric_type",
             "reason",
             name="uq_quarantine_refusal_tenant_source_raw_reason",
+        ),
+        ForeignKeyConstraint(
+            ["tenant_id", "source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_quarantine_refusal_tenant_source",
         ),
     )
 

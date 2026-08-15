@@ -1,0 +1,33 @@
+# Fizzbee specification for service identity separation.
+
+SERVICES = ["qs-analysis-service", "qs-importer-whoop"]
+
+action Init:
+    credentials = {
+        "qs-analysis-service": "analysis-secret",
+        "qs-importer-whoop": "whoop-secret",
+    }
+    authorized = []
+
+atomic action Authenticate:
+    service = oneof(SERVICES)
+    presented = credentials[service]
+    authorized.append({"service": service, "secret": presented})
+
+atomic action AuthenticateWrongService:
+    service = SERVICES[0]
+    presented = credentials[SERVICES[1]]
+    if presented == credentials[service]:
+        authorized.append({"service": service, "secret": presented})
+
+always assertion CredentialBoundToIdentity:
+    for entry in authorized:
+        if credentials[entry["service"]] != entry["secret"]:
+            return False
+    return True
+
+always assertion CrossServiceCredentialRejected:
+    for entry in authorized:
+        if entry["service"] == SERVICES[0] and entry["secret"] == credentials[SERVICES[1]]:
+            return False
+    return True

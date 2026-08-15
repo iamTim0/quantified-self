@@ -102,6 +102,13 @@ def test_falls_back_to_configured_lookback_for_legacy_payloads():
     assert start == NOW - timedelta(days=7)
 
 
+def test_falls_back_to_configured_sub_day_lookback():
+    task = parse_sync_task(_payload(window_start=None, window_end=None))
+    start, end = resolve_window(task, {"lookback_hours": 6}, now=NOW)
+    assert end == NOW
+    assert start == NOW - timedelta(hours=6)
+
+
 def test_falls_back_to_default_lookback_without_config():
     task = parse_sync_task(_payload(window_start=None, window_end=None))
     start, end = resolve_window(task, None, now=NOW)  # noqa: RUF059

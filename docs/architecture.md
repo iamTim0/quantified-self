@@ -18,7 +18,9 @@ flowchart TB
     providers[/"Provider APIs and devices"/]
 
     subgraph owner["The only service that may touch the database"]
-        core["Core&nbsp;:8001, gRPC&nbsp;:50051&nbsp;&mdash; REST, ingest consumer,<br/>scheduler, import planning"]
+        core["Core API&nbsp;:8001, gRPC&nbsp;:50051&nbsp;&mdash; REST and import planning"]
+        core_ingest["Core ingest role&nbsp;&mdash; NATS consumer"]
+        core_scheduler["Core scheduler role&nbsp;&mdash; periodic planner"]
         db[("PostgreSQL&nbsp;&mdash; TimescaleDB, pgvector, PostGIS")]
     end
 
@@ -31,12 +33,15 @@ flowchart TB
     core --- db
 
     core -->|"1. qs.task.sync.SOURCE&nbsp;&mdash; window, mode, request_id"| bus
+    core_scheduler -->|"scheduled task"| bus
     bus --> importers
     importers -->|"2. asks Core for the encrypted credential"| core
     importers -->|"3. fetches exactly that window"| providers
     importers -->|"4. qs.ingest.SOURCE&nbsp;&mdash; canonical name, converted unit,<br/>deterministic idempotency_key"| bus
-    bus -->|"5. one consumer, queue group"| core
-    core -->|"6. INSERT ... ON CONFLICT DO NOTHING"| db
+    bus -->|"5. bounded batches, one consumer role"| core_ingest
+    core -->|"6. INSERT ... ON CONFLICT DO NOTHING + rollups"| db
+    core_ingest --- db
+    core_scheduler --- db
 ```
 
 ## Services
@@ -49,6 +54,13 @@ flowchart TB
 | `services/analysis/` | Correlations, trends, anomalies, routines, read-only MCP tools, Codex chat adapter | no, reads from Core over gRPC |
 | `apps/dashboard/` | Next.js interface | no |
 
+Core uses one image with explicit runtime roles. Local development keeps the default `CORE_ROLE=all`
+single process. Production runs `core` as the API/publisher role, `core-ingest` as the JetStream
+consumer, and `core-scheduler` as the periodic planner. They all remain database-owned Core
+processes; the split is a scaling and failure-isolation boundary, not a new service boundary.
+`/health` is process liveness. `/readyz` reports database, NATS and gRPC readiness for the role that
+is running.
+
 ## The data flow of an import
 
 1. The user triggers an import, or a connector is configured.
@@ -59,11 +71,14 @@ flowchart TB
 4. The importer fetches its credentials over
    `GET /api/v1/internal/data/sources/<source>/token` — it stores none itself.
 5. The importer calls the provider API for exactly that window.
-6. For every data point a deterministic `idempotency_key` is derived and an event is published on
-   `qs.ingest.<source>`.
-7. Core's consumer writes with `INSERT … ON CONFLICT DO NOTHING` and counts accepted and duplicate
-   points onto the `SyncRun`.
-8. The importer reports the outcome; only a successful run moves the resume point.
+6. The importer resolves the tenant's metric policy, canonicalises the name, converts the unit and
+   aggregates high-frequency samples before publishing on `qs.ingest.<source>`. It may group up to
+   1,000 homogeneous points in one versioned batch envelope of at most 512 KiB.
+7. Core validates the inherited tenant/source identity, applies the same per-point canonical metric
+   and idempotency checks, writes bounded rollups in the same transaction and acknowledges the
+   envelope only after every child is durably stored, deduplicated or recorded as rejected. A
+   redelivery is safe because point and run-event keys are idempotent.
+8. The importer reports provider coverage and the outcome; only a successful run moves the resume point.
 
 For push sources (Apple Health, Streak) steps 1–5 do not apply: the external service sends
 straight to the importer, which resolves the tenant from the API key.
@@ -86,18 +101,36 @@ the same audit trail as successful work.
 
 The tenant-protected endpoint
 `GET /api/v1/data/sources/<connector-id>/sync-runs` returns the newest runs for that connector.
-Each entry includes its status, trigger, request id, import window, accepted and duplicate point
-counts, optional expected point count, message and duration. The connector id is used deliberately:
+Each entry includes its status, trigger, request id, import window, accepted, duplicate and rejected
+point counts, unsupported-field occurrences, the importer publish count, the Core processing count,
+optional expected point count, provider coverage window, broker backlog, message and duration. The
+connector id is used deliberately:
 two connectors of the same type must never share a history or progress display.
+
+Run status messages also carry a stable `message_code` and an optional `message_params` object. Core
+stores that parameter object as PostgreSQL `JSONB`; clients use the code and parameters for localized
+presentation and keep the English `message` field as a fallback for codes they do not recognize.
+
+The Connectors page also reads `GET /api/v1/data/sync-runs` for a tenant-wide overview. It includes
+the connector display name and supports pagination plus optional `status` and `source_type` filters.
+The lifecycle is explicit: `queued` means Core has not handed the task to an importer yet, `running`
+is the importer/discovery phase, `loading` means the importer has published its events and Core is
+still consuming them, `success` means Core has processed the complete published count, and `error`
+or `skipped` are terminal outcomes. `points_received` is the number published by the importer;
+`points_processed` is the number Core has stored, deduplicated or quarantined.
+
+Core also records a bounded broker-event identity in `sync_run_events`. This tenant-scoped ledger
+contains no provider values and makes the counter idempotent when JetStream redelivers a message
+after the database commit but before the acknowledgement.
 
 An importer can report a known total while it is still running through Core's internal
 `.../sync-runs/<sync-run-id>/progress` endpoint. `points_expected` may remain unknown for a
 streaming API import and becomes known after a file importer has parsed its archive. Core remains
 the only owner of the run record and the dashboard reads it through the tenant-scoped API. The
 connector detail view at `/connectors/<connector-id>` shows the latest status, progress counts,
-durations and history.
+provider coverage, durations and history.
 
-Core also expires a `queued` or `running` run after six hours without completion. It records an
+Core also expires a `queued`, `running` or `loading` run after six hours without completion. It records an
 error and allows the next scheduled attempt to proceed, so a crashed importer cannot block a
 connector forever. Rejected push API keys may be attributed to their connector using only the
 stored key hash; the plaintext key is never sent to Core or written to the run history.
@@ -137,6 +170,8 @@ and the importer, and appears in every log as `[req_id=…]`.
 | `tenants`, `users` | Workspace and identities kept separate. `users.sessions_valid_from` is the cut-off from which older access tokens are rejected |
 | `data_sources` | One row per configured connector *instance*. A tenant may hold several of a type — three calendars, two weather locations — told apart by `display_name` and unique on `(tenant_id, source_type, display_name)` |
 | `data_points` | The time series, a TimescaleDB hypertable |
+| `metric_rollups` | Tenant/source-scoped minute, hour and day aggregates |
+| `metric_ingest_policies` | Workspace resolution overrides for future imports |
 | `sync_runs` | Import and audit log, the basis for adaptive windows |
 | `api_keys` | Tenant-bound inbound keys, stored only as a hash |
 | `refresh_tokens`, `revoked_access_tokens` | Sessions and revocation |
@@ -155,8 +190,9 @@ transport a separate service could have read over at all.
 
 Today:
 
-- Core runs `CoreDataService` on port `50051` with `QueryDataPoints`, `GetDataPoint`,
-  `ListMetricTypes`, `ListDataSources` and `ValidateUserSession`.
+- Core runs `CoreDataService` on port `50051` with paged point reads, the registry-aware
+  `QueryMetricSeries` rollup endpoint, `GetDataPoint`, `ListMetricTypes`, `ListDataSources` and
+  `ValidateUserSession`.
 - Every call needs an internal service credential; every query filters by `tenant_id`, which is
   validated as a UUID first.
 - `DataSourceSummary` carries only `id`, `source_type` and `display_name`. There is deliberately no
@@ -170,7 +206,12 @@ ten. `tools/tests/test_service_boundaries.py` now walks every service except Cor
 imported driver, on a *declared* dependency on one, and on a migration directory outside Core — so a
 new importer is covered the day it is added, rather than the day somebody writes it a test.
 
-The interface calls `/api/v1/analysis/insights`; the Gateway proxies it through.
+`QueryMetricSeries` returns explicit UTC hour/day buckets, sample counts and null gaps, each scoped
+to a `(metric_type, source_id)` pair. It reads existing rollups and only falls back to uncovered raw
+points, so Analysis does not transfer or re-aggregate millions of samples for a daily insight. If
+several connector instances report the same metric, Core returns separate series and the stable
+`AMBIGUOUS_METRIC_SOURCE` issue; Analysis excludes that metric until a source is selected. The interface calls
+`/api/v1/analysis/insights`; the Gateway proxies it through.
 Analysis also owns the internal `POST /mcp` endpoint. It accepts only the sessionless
 MCP `2026-07-28` revision, authenticates every request independently, and derives the
 tenant from the user token rather than from tool arguments. Its four read-only tools
@@ -190,7 +231,7 @@ See [AI chat](features/ai-chat.md).
 ## Scheduled imports
 
 `poll_interval_hours` used to control only the window size — nothing was ever triggered. Core now
-runs a scheduler, because Core is the only service that knows both of the things the decision needs:
+runs a scheduler role, because Core is the only service that knows both of the things the decision needs:
 the connector configuration and the import history.
 
 - Every five minutes it checks which connectors are due.
@@ -202,6 +243,14 @@ the connector configuration and the import history.
 - Push connectors are never scheduled. Nothing subscribes to `qs.task.sync.apple_health`, so a
   planned run there could only ever expire as stale while the connector showed as queued throughout.
 - Turn it off with `SCHEDULER_ENABLED=false`.
+
+The scheduler is metric-aware when a connector declares a supported metric manifest. For static
+providers, Core can derive that manifest from the shared registry for legacy connector rows; dynamic
+providers still need an explicit manifest because the user's installation determines their fields.
+Coverage is evaluated per metric and intersected: a dense `steps` series cannot hide a missing
+`sleep` series. A changed manifest or transform/schema revision invalidates the old coverage
+contract and forces a conservative revalidation window. If a provider does not declare coverage,
+Core imports the configured window instead of pretending that an unknown result is complete.
 
 That also means the importers' former process-local `active_syncs` lock no longer carries any weight:
 Core never queues the duplicate job in the first place.

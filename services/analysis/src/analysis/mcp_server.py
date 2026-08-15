@@ -266,15 +266,24 @@ def _metric_definition(metric_type: str):
     return describe(canonical)
 
 
-async def _sources(tenant_id: str, request_id: str) -> list[str]:
+async def _sources(
+    tenant_id: str,
+    request_id: str,
+    source_ids: set[str] | None = None,
+) -> list[str]:
     try:
-        return await core_client.fetch_source_types(tenant_id, request_id=request_id)
+        source_map = await core_client.fetch_source_map(
+            tenant_id, request_id=request_id
+        )
     except CoreUnavailable as exc:
         raise MCPError(
             -32000,
             "Analysis data is temporarily unavailable",
             {"code": "CORE_UNAVAILABLE"},
         ) from exc
+    if source_ids is None:
+        source_ids = set(source_map)
+    return sorted({source_map.get(source_id, "unknown") for source_id in source_ids})
 
 
 async def _points(
@@ -285,15 +294,21 @@ async def _points(
     end: datetime,
     metric_type: str | None,
     max_points: int,
+    source_id: str | None = None,
 ) -> PointBatch:
     try:
+        point_kwargs: dict[str, Any] = {
+            "start": start,
+            "end": end,
+            "request_id": request_id,
+            "metric_type": metric_type,
+            "max_points": max_points,
+        }
+        if source_id is not None:
+            point_kwargs["source_id"] = source_id
         batch = await core_client.fetch_points_bounded(
             principal.tenant_id,
-            start=start,
-            end=end,
-            request_id=request_id,
-            metric_type=metric_type,
-            max_points=max_points,
+            **point_kwargs,
         )
     except CoreUnavailable as exc:
         raise MCPError(
@@ -308,6 +323,27 @@ async def _points(
             {"code": "SOURCE_RESULT_TOO_LARGE", "max_source_points": max_points},
         )
     return batch
+
+
+def _require_single_source(
+    batch: PointBatch,
+    *,
+    metric_type: str,
+    source_id: str | None,
+) -> set[str]:
+    """Reject an implicit cross-source aggregate before it reaches statistics."""
+    source_ids = {point.source_id for point in batch.points if point.source_id}
+    if source_id is None and len(source_ids) > 1:
+        raise MCPError(
+            -32602,
+            "Select one connector instance before aggregating this metric",
+            {
+                "code": "AMBIGUOUS_METRIC_SOURCE",
+                "metric_type": metric_type,
+                "source_ids": sorted(source_ids),
+            },
+        )
+    return source_ids
 
 
 def _result_unit(points: list[MetricPoint], definition: Any) -> str:
@@ -536,6 +572,7 @@ async def query_metric_series(
     end: datetime | None = None,
     bucket: Literal["raw", "hour", "day", "week"] = "day",
     max_points: Annotated[int, Field(ge=2, le=2000)] = 500,
+    source_id: str | None = None,
 ) -> MetricSeriesResult:
     """Query one bounded metric series with registry-correct aggregation."""
     principal, request_id = _request_context(ctx)
@@ -553,7 +590,11 @@ async def query_metric_series(
         start=begin,
         end=finish,
         metric_type=metric_type,
+        source_id=source_id,
         max_points=MAX_QUERY_SOURCE_POINTS,
+    )
+    source_ids = _require_single_source(
+        batch, metric_type=metric_type, source_id=source_id
     )
     series, sampled = _series_points(
         batch.points,
@@ -561,7 +602,7 @@ async def query_metric_series(
         definition=definition,
         max_points=max_points,
     )
-    sources = await _sources(principal.tenant_id, request_id)
+    sources = await _sources(principal.tenant_id, request_id, source_ids)
     return MetricSeriesResult(
         metric_type=metric_type,
         unit=_result_unit(batch.points, definition),
@@ -596,6 +637,7 @@ async def analyze_metrics(
         tuple[Literal["summary", "trend", "correlation"], ...],
         Field(min_length=1, max_length=3),
     ] = ("summary", "trend", "correlation"),
+    source_id: str | None = None,
 ) -> AnalyzeMetricsResult:
     """Analyze tenant data without producing diagnoses or causal claims."""
     principal, request_id = _request_context(ctx)
@@ -620,8 +662,10 @@ async def analyze_metrics(
             start=begin,
             end=finish,
             metric_type=name,
+            source_id=source_id,
             max_points=MAX_ANALYSIS_SOURCE_POINTS,
         )
+        _require_single_source(batch, metric_type=name, source_id=source_id)
         batches[name] = batch
         daily[name] = _daily_values(batch.points, definitions[name])
 
@@ -653,7 +697,13 @@ async def analyze_metrics(
     correlations = correlation_pairs(daily) if "correlation" in requested else []
     point_count = sum(len(batch.points) for batch in batches.values())
     truncated = any(batch.truncated for batch in batches.values())
-    sources = await _sources(principal.tenant_id, request_id)
+    source_ids = {
+        point.source_id
+        for batch in batches.values()
+        for point in batch.points
+        if point.source_id
+    }
+    sources = await _sources(principal.tenant_id, request_id, source_ids)
     return AnalyzeMetricsResult(
         metric_types=unique_metrics,
         summaries=summaries,

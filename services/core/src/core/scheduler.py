@@ -31,6 +31,7 @@ Maps to Fizzbee Invariants:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -41,7 +42,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.connectors import is_scheduled
-from core.db.models import DataSource, SyncRun
+from core.db.models import DataSource, SyncRun, Tenant
 from core.db.session import async_session_maker
 
 logger = logging.getLogger(__name__)
@@ -61,7 +62,11 @@ TICK_SECONDS = 300
 STALE_RUN_AFTER = timedelta(hours=6)
 
 # Statuses that mean "this connector is busy".
-IN_FLIGHT_STATUSES = ("queued", "running")
+# Core loading is still part of the same import. A second scheduled run must
+# wait until the consumer has drained the first run's events, otherwise the
+# connector can report two overlapping imports while its first batch is only
+# just being written.
+IN_FLIGHT_STATUSES = ("queued", "running", "loading")
 
 DEFAULT_POLL_INTERVAL_HOURS = 6.0
 
@@ -138,6 +143,36 @@ async def has_in_flight_run(
     return result.scalars().first() is not None
 
 
+def connector_lock_key(tenant_id: str, source_id: str) -> int:
+    """Return a stable PostgreSQL advisory-lock key for one connector instance.
+
+    The lock is deliberately keyed by both tenant and source. A tenant's two
+    connectors can plan independently, while every Core replica still uses the
+    same key for the same connector. A digest avoids relying on Python's process-
+    randomised ``hash()`` implementation.
+    """
+    digest = hashlib.blake2b(
+        f"{tenant_id}:{source_id}".encode(), digest_size=8
+    ).digest()
+    key = int.from_bytes(digest, byteorder="big", signed=True)
+    return key or 1
+
+
+async def acquire_connector_lock(
+    session: AsyncSession, tenant_id: str, source_id: str
+) -> None:
+    """Serialize planning and run creation for one tenant-scoped connector.
+
+    This is transaction-scoped, so a crashed request releases the lock with its
+    database transaction. Waiting rather than returning ``False`` is important:
+    the second request must re-check ``has_in_flight_run`` after the first request
+    commits, otherwise two simultaneous clicks can both pass the check.
+    """
+    await session.execute(
+        select(func.pg_advisory_xact_lock(connector_lock_key(tenant_id, source_id)))
+    )
+
+
 async def expire_stale_runs(
     session: AsyncSession,
     source: DataSource,
@@ -185,7 +220,16 @@ async def find_due_connectors(
     behalf of all of them. Each enqueue that follows is still tenant-scoped, and
     the events it publishes still carry their own tenant_id (rule 2).
     """
-    rows = (await session.execute(select(DataSource))).scalars().all()
+    # The scheduler is intentionally cross-tenant, but it still scopes the source
+    # relation to real tenant rows. This keeps the global worker explicit about the
+    # tenant boundary instead of issuing an unqualified source-table scan.
+    rows = (
+        await session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id.in_(select(Tenant.id))
+            )
+        )
+    ).scalars().all()
 
     due: list[DueConnector] = []
     for source in rows:

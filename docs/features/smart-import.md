@@ -6,7 +6,9 @@ When a connector is imported, the platform first works out which parts of the re
 are **already complete**, and imports only the rest. The period itself is adapted automatically to
 how often the connector actually imports.
 
-Before, every sync re-requested a fixed period (30 days by default) regardless of what was already
+New connectors start with a 168-hour (seven-day) lookback. The user can reduce that to six or twelve
+hours, one day, or choose a longer provider-appropriate window. Before adaptive planning, every sync re-requested a fixed period
+regardless of what was already
 stored. That produced thousands of duplicate events per run. The idempotency check discarded them,
 but they still spent processing time and the provider's API quota for nothing.
 
@@ -44,9 +46,22 @@ lost when data arrives late at the provider, and a single failed run is caught u
 Further rules:
 
 - Without a previous successful run, the full configured lookback is used.
+- The configured lookback is stored in hours, so high-frequency connectors can request only the
+  current day or the last few hours. Older configurations that contain only `lookback_days` remain
+  valid and are interpreted as 24 hours per day.
 - If an older gap in the data is known, the window is extended back to it.
 - The window is always capped at the configured lookback.
 - Only a run with status `success` moves the resume point.
+- A successful resume point is the provider coverage end reported by the importer, not the time
+  at which Core happened to finish consuming the broker messages. A run with no provider coverage
+  cannot advance the next window.
+- When the connector declares supported metrics, Core evaluates coverage separately for every
+  metric and intersects the results. Static providers also receive this manifest from the shared
+  registry when an older connector row has no explicit manifest. A missing metric therefore keeps
+  the window open even when another metric is dense.
+- The coverage contract includes the source, metric manifest, schema revision and transform
+  revision. Changing any of those invalidates the previous coverage and causes a conservative
+  revalidation import. Dynamic providers without a manifest use the full configured window.
 
 ## Duplicate detection at the range level
 
@@ -110,6 +125,9 @@ Response (abridged):
   "missing_ranges":   [ { "start": "...", "end": "..." } ],
   "recommended_range":{ "start": "...", "end": "..." },
   "skipped_ranges":   [ { "start": "...", "end": "..." } ],
+  "coverage_scope":   "metric_set",
+  "coverage_metrics": [ "steps", "sleep_duration" ],
+  "coverage_reason":  "coverage checked for every declared metric",
   "confidence": "high",
   "reason": "Already stored: … Only the new period from … to … will be imported."
 }
@@ -143,8 +161,23 @@ GET /api/v1/data/sources/{source_type}/sync-runs?limit=20
 Authorization: Bearer <jwt>
 ```
 
+For a tenant-wide view across all connector instances, use:
+
+```http
+GET /api/v1/data/sync-runs?limit=50&status=loading
+Authorization: Bearer <jwt>
+```
+
 Every run carries its window, mode, trigger, status and skipped ranges, plus the counters
-`points_received`, `points_accepted` and `points_duplicate`.
+`points_received`, `points_processed`, `points_accepted` and `points_duplicate`. The statuses are
+`queued` (waiting for the importer), `running` (the importer is discovering and publishing),
+`loading` (Core is consuming the published events), `success`, `error` or `skipped`. A run is not
+successful merely because publishing finished: Core closes it only after `points_processed` reaches
+the published/expected count.
+
+The dashboard keeps each request row separate. A queued or failed request remains visible with its
+own `request_id`, status and message code; it is not replaced by the latest successful run. This
+avoids implying that a request worked when only a later retry produced data.
 
 ## How to read it, and its limits
 

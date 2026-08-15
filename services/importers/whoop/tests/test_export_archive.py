@@ -145,9 +145,13 @@ def test_export_energy_is_read_as_kilocalories():
     Routed through the API's mapping this figure would be divided by 4.184 —
     2450 would become 586 — and nothing would look wrong.
     """
-    values = {p["metric_type"]: p["value"] for p in _points(_archive({"cycles.csv": CYCLES_CSV}))}
+    points = _points(_archive({"cycles.csv": CYCLES_CSV}))
+    values = {p["metric_type"]: p["value"] for p in points}
 
     assert values["energy_total"] == 2450
+    energy = next(p for p in points if p["metric_type"] == "energy_total")
+    assert energy["metadata"]["provider_value"] == 2450
+    assert energy["metadata"]["units"] == "kcal"
 
 
 def test_rows_are_not_dropped_for_having_no_score_state():
@@ -228,17 +232,198 @@ def test_recovery_columns_in_the_cycle_file_are_not_lost():
     assert values["hrv_rmssd"] == 88
 
 
-def test_unmapped_columns_are_reported_by_name():
-    """One row per column, not one opaque object for all of them."""
+def test_a_physiological_cycle_row_emits_each_metric_once():
+    """Verifies Fizzbee Invariant: NoDuplicateRecords.
+
+    Recovery columns are part of the physiological-cycle row. They must be mapped
+    by the cycle mapping once, rather than causing the same CSV row to be replayed
+    through a second recovery mapping.
+    """
+    body = (
+        "Cycle start time,Recovery score %,Heart rate variability (ms)\n"
+        "2026-08-05 06:00:00,71,88\n"
+    )
+    points = _points(_archive({"physiological_cycles.csv": body}))
+
+    assert len(points) == 2
+    assert len({point["idempotency_key"] for point in points}) == 2
+
+
+def test_real_english_export_headers_are_supported():
+    """Actual WHOOP English headers become metrics or metadata without translation."""
+    from shared_schemas import FieldReportCollector
+
+    body = (
+        "cycle start time,sleep onset,deep sleep / SWS duration (min),nap flag,"
+        "sleep performance %\n"
+        "2026-08-05 06:00:00,2026-08-05 23:00:00,95,True,78\n"
+    )
+    report = FieldReportCollector()
+    points: list[dict] = []
+    for kind, record in read_export(_archive({"sleeps.csv": body})):
+        points.extend(
+            transform_whoop_records(
+                kind,
+                [record],
+                TENANT,
+                SOURCE,
+                require_scored=False,
+                mappings=EXPORT_METRICS,
+                report=report,
+            )
+        )
+
+    values = {point["metric_type"]: point for point in points}
+    assert values["sleep_duration_deep"]["value"] == 95
+    assert values["whoop_sleep_performance"]["value"] == 78
+    assert values["sleep_duration_deep"]["metadata"]["sleep_nap_flag"] is True
+    assert report.build().unmapped == []
+
+
+def test_journal_entries_are_reported_without_storing_their_contents():
+    """Verifies Fizzbee Invariant: ArchiveIsNotRetained."""
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    records = list(
+        read_export(
+            _archive(
+                {
+                    "journal_entries.csv": (
+                        "cycle start time,question text,answered yes,notes\n"
+                        "2026-08-05 06:00:00,Did you sleep well?,True,private note\n"
+                    )
+                }
+            )
+        )
+    )
+    assert [kind for kind, _ in records] == ["journal"]
+
+    transform_whoop_records(
+        "journal",
+        [records[0][1]],
+        TENANT,
+        SOURCE,
+        require_scored=False,
+        mappings=EXPORT_METRICS,
+        report=report,
+    )
+    paths = {s.path for s in report.build().unmapped}
+    assert "journal.question text" in paths
+    assert "journal.answered yes" in paths
+    assert "journal.notes" in paths
+
+
+def test_repeated_sleep_columns_are_carried_without_double_counting():
+    """A repeated sleep summary is metadata on the cycle point, not a second total."""
     from shared_schemas import FieldReportCollector
 
     body = "Cycle start time,Day Strain,Sleep debt (min)\n2026-08-05 06:00:00,14.2,35\n"
     report = FieldReportCollector()
+    points: list[dict] = []
     for kind, record in read_export(_archive({"cycles.csv": body})):
-        transform_whoop_records(
+        points.extend(transform_whoop_records(
             kind, [record], TENANT, SOURCE,
             require_scored=False, mappings=EXPORT_METRICS, report=report,
+        ))
+
+    strain = next(point for point in points if point["metric_type"] == "whoop_strain")
+    assert strain["metadata"]["whoop_sleep_debt"] == 35
+    paths = {s.path for s in report.build().mapped}
+    assert "cycle.sleep_debt_minutes" in paths
+    assert report.build().unmapped == []
+
+
+def test_reported_whoop_fields_are_usable_as_metrics_or_metadata():
+    """Every field from the provider report is stored or carried with its point."""
+    from shared_schemas import FieldReportCollector
+
+    cycles = (
+        "Startzeit des Zyklus,Endzeit des Zyklus,Zeitzone des Zyklus,Beginn des Schlafs,"
+        "Beginn des Aufwachens,Schlafbedarf (min.),Schlafbeständigkeit %,Schlafdefizit (min.),"
+        "HRV RMSSD (ms),Max HR (bpm),Recovery score %,Respiratory rate (rpm),"
+        "Resting heart rate (bpm),Skin temp (celsius),Sleep awake (min.),"
+        "Sleep deep (min.),Sleep duration (min.),Sleep efficiency %,Sleep in bed (min.),"
+        "Sleep light (min.),Sleep performance %,Sleep rem (min.),Blood oxygen %\n"
+        "2026-08-05 06:00:00,2026-08-06 06:00:00,UTC,2026-08-05 23:00:00,"
+        "2026-08-06 07:00:00,480,82,20,65,181,77,14.5,52,36.4,40,90,450,88,"
+        "500,210,76,100,98\n"
+    )
+    sleeps = (
+        "Startzeit des Zyklus,Beginn des Schlafs,Nickerchen,Schlafbedarf (min.),"
+        "Schlafbeständigkeit %,Schlafdefizit (min.),Sleep awake (min.),"
+        "Sleep deep (min.),Sleep duration (min.),Sleep efficiency %,Sleep in bed (min.),"
+        "Sleep light (min.),Sleep performance %,Sleep rem (min.)\n"
+        "2026-08-05 06:00:00,2026-08-05 23:00:00,1,480,82,20,40,90,450,88,"
+        "500,210,76,100\n"
+    )
+    workouts = (
+        "Startzeit des Zyklus,Startzeit des Trainings,Endzeit des Trainings,"
+        "Endzeit des Zyklus,Zeitzone des Zyklus,GPS aktiviert,Name der Aktivität,"
+        "HF-Zone 1 %,HF-Zone 2 %,HF-Zone 3 %,HF-Zone 4 %,HF-Zone 5 %,"
+        "Aktivitätsbelastung,Dauer (Min.),Durchschnittliche HF (Schläge pro Minute)\n"
+        "2026-08-05 06:00:00,2026-08-05 18:00:00,2026-08-05 18:45:00,"
+        "2026-08-06 06:00:00,UTC,Ja,Laufen,10,20,30,25,15,8.1,45,145\n"
+    )
+
+    report = FieldReportCollector()
+    points: list[dict] = []
+    for kind, record in read_export(
+        _archive({
+            "physiologische_zyklen.csv": cycles,
+            "Schlaf.csv": sleeps,
+            "Trainings.csv": workouts,
+        })
+    ):
+        points.extend(
+            transform_whoop_records(
+                kind,
+                [record],
+                TENANT,
+                SOURCE,
+                require_scored=False,
+                mappings=EXPORT_METRICS,
+                report=report,
+            )
         )
 
-    unmapped = {s.path for s in report.build().unmapped}
-    assert any(path.endswith("sleep debt (min)") for path in unmapped), unmapped
+    assert report.build().unmapped == []
+    metric_names = {point["metric_type"] for point in points}
+    assert {
+        "hrv_rmssd",
+        "heart_rate_max",
+        "whoop_recovery_score",
+        "respiratory_rate",
+        "heart_rate_resting",
+        "skin_temperature",
+        "sleep_duration_awake",
+        "sleep_duration_deep",
+        "sleep_duration",
+        "sleep_efficiency",
+        "sleep_duration_in_bed",
+        "sleep_duration_light",
+        "whoop_sleep_performance",
+        "sleep_duration_rem",
+        "blood_oxygen",
+        "whoop_sleep_need",
+        "whoop_sleep_consistency",
+        "whoop_sleep_debt",
+        "sleep_nap_count",
+        "workout_heart_rate_zone_1",
+        "workout_heart_rate_zone_2",
+        "workout_heart_rate_zone_3",
+        "workout_heart_rate_zone_4",
+        "workout_heart_rate_zone_5",
+    } <= metric_names
+
+    workout = next(point for point in points if point["metric_type"] == "workout_duration")
+    assert workout["metadata"]["activity_name"] == "Laufen"
+    assert workout["metadata"]["gps_enabled"] is True
+    assert workout["metadata"]["workout_start_time"] == "2026-08-05 18:00:00"
+    assert workout["metadata"]["workout_end_time"] == "2026-08-05 18:45:00"
+    cycle = next(point for point in points if point["metric_type"] == "whoop_recovery_score")
+    assert cycle["metadata"]["sleep_duration"] == 450
+    assert not any(
+        point["metric_type"] == "sleep_duration" and point["timestamp"] == "2026-08-05 06:00:00"
+        for point in points
+    )

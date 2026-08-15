@@ -290,7 +290,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
   if (loading) {
     return (
       <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-slate-200/80 bg-white p-6 text-xs text-slate-400">
-        Lade GPS-Daten…
+        {t("map.loading")}
       </div>
     );
   }

@@ -1,0 +1,96 @@
+# Fizzbee specification for connector-scoped sync planning.
+#
+# Manual requests and scheduler ticks can reach different Core replicas. The
+# transaction-scoped advisory lock serializes planning for one connector, while
+# allowing different connectors to progress independently. A request that waits
+# for the lock re-checks the active run before it commits a second plan.
+
+CONNECTORS = ["tenant_a/source_a", "tenant_b/source_a", "tenant_a/source_b"]
+REQUESTS = [0, 1, 2]
+REQUEST_CONNECTOR = {
+    0: "tenant_a/source_a",
+    1: "tenant_a/source_a",
+    2: "tenant_b/source_a",
+}
+
+
+action Init:
+    lock_owner = {
+        "tenant_a/source_a": -1,
+        "tenant_b/source_a": -1,
+        "tenant_a/source_b": -1,
+    }
+    run_active = {
+        "tenant_a/source_a": False,
+        "tenant_b/source_a": False,
+        "tenant_a/source_b": False,
+    }
+    request_status = {0: "ready", 1: "ready", 2: "ready"}
+    outcomes = []
+
+
+atomic action BeginPlanning:
+    request = oneof(REQUESTS)
+    connector = REQUEST_CONNECTOR[request]
+    require request_status[request] == "ready"
+    # A second request waits for the transaction-scoped lock instead of planning
+    # against the same connector concurrently.
+    require lock_owner[connector] == -1
+    lock_owner[connector] = request
+    request_status[request] = "planning"
+
+
+atomic action CommitPlanning:
+    request = oneof(REQUESTS)
+    connector = REQUEST_CONNECTOR[request]
+    require request_status[request] == "planning"
+
+    if run_active[connector]:
+        outcomes.append({"request": request, "connector": connector, "status": "skipped"})
+        request_status[request] = "complete"
+    else:
+        run_active[connector] = True
+        outcomes.append({"request": request, "connector": connector, "status": "queued"})
+        request_status[request] = "running"
+
+    # PostgreSQL releases the transaction-scoped lock when this commit completes.
+    lock_owner[connector] = -1
+
+
+atomic action FinishRun:
+    connector = oneof(CONNECTORS)
+    require run_active[connector]
+    run_active[connector] = False
+    for request in REQUESTS:
+        if (
+            REQUEST_CONNECTOR[request] == connector
+            and request_status[request] == "running"
+        ):
+            request_status[request] = "complete"
+
+
+always assertion SchedulerSingleFlight:
+    # At most one request may own an active run for a connector. Requests for
+    # another connector remain independent.
+    for connector in CONNECTORS:
+        active_requests = 0
+        for request in REQUESTS:
+            if (
+                REQUEST_CONNECTOR[request] == connector
+                and request_status[request] == "running"
+            ):
+                active_requests = active_requests + 1
+        if run_active[connector] and active_requests != 1:
+            return False
+        if not run_active[connector] and active_requests != 0:
+            return False
+    return True
+
+
+always assertion ConnectorLockIsScoped:
+    # A lock owner can only be planning the connector whose key it holds.
+    for connector in CONNECTORS:
+        owner = lock_owner[connector]
+        if owner != -1 and REQUEST_CONNECTOR[owner] != connector:
+            return False
+    return True

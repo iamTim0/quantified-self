@@ -18,10 +18,16 @@ used to do that the registry makes unnecessary:
 """
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime, timezone
 from typing import Any
 
-from shared_schemas import FieldReportCollector, idempotency_key, provenance
+from shared_schemas import (
+    FieldReportCollector,
+    aggregate_events,
+    idempotency_key,
+    provenance,
+)
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -103,6 +109,54 @@ METRIC_NAME_MAP: dict[str, str] = {
     "flights_climbed": "flights_climbed",
     "walking_heart_rate_average": "heart_rate_walking_average",
     "dietary_energy_consumed": "nutrition_energy",
+    "physical_effort": "physical_effort",
+    "apple_stand_hour": "standing_events",
+    "distance_cycling": "distance",
+    "distance_swimming": "distance",
+    "distance_downhill_snow_sports": "distance",
+    "environmental_audio_exposure": "audio_exposure_environmental",
+    "headphone_audio_exposure": "audio_exposure_headphone",
+    "environmental_sound_reduction": "audio_exposure_reduction",
+    "walking_step_length": "walking_step_length",
+    "walking_speed": "walking_speed",
+    "walking_double_support_percentage": "walking_double_support",
+    "running_power": "running_power",
+    "running_speed": "running_speed",
+    "walking_asymmetry_percentage": "walking_asymmetry",
+    "time_in_daylight": "daylight_duration",
+    "running_vertical_oscillation": "running_vertical_oscillation",
+    "running_stride_length": "running_stride_length",
+    "running_ground_contact_time": "running_ground_contact_time",
+    "stair_descent_speed": "stair_descent_speed",
+    "stair_ascent_speed": "stair_ascent_speed",
+    "dietary_carbohydrates": "nutrition_carbohydrates",
+    "dietary_protein": "nutrition_protein",
+    "dietary_fat_total": "nutrition_fat",
+    "dietary_sugar": "nutrition_sugar",
+    "dietary_sodium": "nutrition_sodium",
+    "dietary_fat_saturated": "nutrition_fat_saturated",
+    "dietary_potassium": "nutrition_potassium",
+    "dietary_fiber": "nutrition_fiber",
+    "dietary_cholesterol": "nutrition_cholesterol",
+    "dietary_fat_monounsaturated": "nutrition_fat_monounsaturated",
+    "dietary_fat_polyunsaturated": "nutrition_fat_polyunsaturated",
+    "dietary_calcium": "nutrition_calcium",
+    "dietary_vitamin_c": "nutrition_vitamin_c_intake",
+    "dietary_iron": "nutrition_iron",
+    "dietary_caffeine": "nutrition_caffeine",
+    "dietary_water": "water_intake",
+    "heart_rate_recovery_one_minute": "heart_rate_recovery",
+    "body_mass_index": "body_mass_index",
+    "lean_body_mass": "lean_body_mass",
+    "six_minute_walk_test_distance": "six_minute_walk_distance",
+    "apple_walking_steadiness": "walking_steadiness",
+    "swimming_stroke_count": "swimming_strokes",
+    "height": "body_height",
+    "handwashing_event": "handwashing_events",
+    "mindful_session": "mindful_session_duration",
+    "toothbrushing_event": "toothbrushing_events",
+    "audio_exposure_event": "audio_exposure_events",
+    "headphone_audio_exposure_event": "audio_exposure_events",
 }
 
 #: Apple's sleep stage key -> canonical registry key. Apple calls light sleep "Core",
@@ -157,6 +211,13 @@ WORKOUT_FIELD_MAP: tuple[tuple[str, str, MetricUnit | None], ...] = (
     ("maxSpeed", "workout_speed_max", None),
     ("stepCadence", "workout_cadence", None),
     ("elevationUp", "workout_elevation_gain", None),
+    # Health Auto Export keeps these workout-specific quantities in objects with a
+    # `qty`/`units` pair. They are still scalar session values, so they belong in the
+    # registry rather than in a provider-metadata blob.
+    ("elevationDown", "workout_elevation_loss", None),
+    ("lapLength", "workout_lap_length", None),
+    ("swimCadence", "workout_swim_cadence", None),
+    ("totalSwimmingStrokeCount", "workout_swimming_strokes", None),
     ("flightsClimbed", "flights_climbed", None),
     ("intensity", "workout_intensity", None),
 )
@@ -202,6 +263,11 @@ WORKOUT_SERIES_MAP: tuple[tuple[str, str, str], ...] = (
     ("basalEnergy", "workout_energy", "sum"),
     ("walkingAndRunningDistance", "workout_distance", "sum"),
     ("cyclingDistance", "workout_distance", "sum"),
+    ("cyclingCadence", "workout_cycling_cadence", "average"),
+    ("cyclingPower", "workout_cycling_power", "average"),
+    ("cyclingSpeed", "workout_speed_average", "average"),
+    ("swimDistance", "workout_distance", "sum"),
+    ("swimStroke", "workout_swimming_strokes", "sum"),
     ("heartRateData", "workout_heart_rate_average", "average"),
     ("heartRateData", "workout_heart_rate_max", "max"),
     # Its own metric rather than `steps`, which the day's own total already fills.
@@ -283,6 +349,19 @@ UNREAD_SECTIONS: tuple[str, ...] = (
     "heartRateNotifications",
 )
 
+#: Category records have no numeric `value`, but they are still provider data. Event
+#: categories become a count; a mindful session states an interval and becomes its
+#: duration. Keeping this table beside the quantity map makes adding another category
+#: a registry-and-map change rather than another special branch in the XML reader.
+CATEGORY_RECORD_METRICS: dict[str, str] = {
+    "apple_stand_hour": "standing_events",
+    "handwashing_event": "handwashing_events",
+    "toothbrushing_event": "toothbrushing_events",
+    "audio_exposure_event": "audio_exposure_events",
+    "headphone_audio_exposure_event": "audio_exposure_events",
+    "mindful_session": "mindful_session_duration",
+}
+
 #: The `units` strings Health Auto Export emits, lowercased, mapped onto registry
 #: units. Anything absent means "we do not know what this number is in" -- the value is
 #: then stored unconverted rather than silently assumed to be canonical.
@@ -309,7 +388,11 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "h": MetricUnit.HOUR,
     "hours": MetricUnit.HOUR,
     "m": MetricUnit.METER,
+    "cm": MetricUnit.CENTIMETER,
+    "mm": MetricUnit.MILLIMETER,
     "ft": MetricUnit.FOOT,
+    "yd": MetricUnit.YARD,
+    "yard": MetricUnit.YARD,
     "km": MetricUnit.KILOMETER,
     "mi": MetricUnit.MILE,
     # Health Auto Export spells speed with `hr`, not `h`, and follows the phone's locale.
@@ -317,6 +400,8 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "km/h": MetricUnit.KILOMETER_PER_HOUR,
     "mi/hr": MetricUnit.MILE_PER_HOUR,
     "mph": MetricUnit.MILE_PER_HOUR,
+    "w": MetricUnit.WATT,
+    "rpm": MetricUnit.REVOLUTIONS_PER_MINUTE,
     "spm": MetricUnit.STEPS_PER_MINUTE,
     "steps/min": MetricUnit.STEPS_PER_MINUTE,
     "met": MetricUnit.MET,
@@ -324,6 +409,14 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "°c": MetricUnit.CELSIUS,
     "ml/kg·min": MetricUnit.ML_PER_KG_PER_MIN,
     "ml/(kg*min)": MetricUnit.ML_PER_KG_PER_MIN,
+    "mets": MetricUnit.MET,
+    "mg": MetricUnit.MILLIGRAM,
+    "ml": MetricUnit.MILLILITER,
+    "m/s": MetricUnit.METER_PER_SECOND,
+    "db": MetricUnit.DECIBEL,
+    "dba": MetricUnit.DECIBEL,
+    "db(a)": MetricUnit.DECIBEL,
+    "dbaspl": MetricUnit.DECIBEL,
 }
 
 
@@ -370,6 +463,11 @@ def normalise_value(
     if definition is None:
         return value
 
+    # HealthKit documents Walking Steadiness as a 0..1 fraction even though its
+    # export unit is `%`; the registry's percentage convention is 0..100.
+    if metric_type == "walking_steadiness" and declared_units.strip().lower() == "%":
+        value *= 100 if 0 <= value <= 1 else 1
+
     provider_unit = PROVIDER_UNITS.get(declared_units.strip().lower(), default_unit)
     if provider_unit is None or provider_unit is definition.unit:
         return value
@@ -401,6 +499,17 @@ def _member_value(container: dict[str, Any], name: str) -> Any:
         if key.lower() == lowered:
             return value
     return None
+
+
+def _interval_minutes(start: str, end: str) -> float | None:
+    """Return the positive duration of a provider interval in minutes."""
+    first, second = parse_timestamp(start), parse_timestamp(end)
+    if first is None or second is None:
+        return None
+    minutes = (
+        datetime.fromisoformat(second) - datetime.fromisoformat(first)
+    ).total_seconds() / 60
+    return minutes if minutes > 0 else None
 
 
 def _series_figure(samples: list[Any], how: str) -> tuple[float | None, str, int]:
@@ -448,9 +557,12 @@ def _extract_numeric_value(val: Any) -> float | None:
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
     if isinstance(val, dict):
-        q = val.get("qty") or val.get("value") or val.get("avg")
-        if isinstance(q, (int, float)) and not isinstance(q, bool):
-            return float(q)
+        # Membership matters here: zero is a valid lap length, stroke count, or
+        # elevation value, and `or` used to turn it into a missing field.
+        for key in ("qty", "value", "avg"):
+            q = val.get(key)
+            if isinstance(q, (int, float)) and not isinstance(q, bool):
+                return float(q)
     return None
 
 
@@ -459,6 +571,7 @@ def transform_health_auto_export_json(
     tenant_id: str,
     source_id: str,
     report: FieldReportCollector | None = None,
+    ingest_policies: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Transform Health Auto Export JSON structure into standardized DataPoints.
 
@@ -517,6 +630,18 @@ def transform_health_auto_export_json(
             }
             if "source" in entry:
                 base_metadata["device_source"] = entry["source"]
+            definition = METRIC_CATALOG.get(metric_type)
+            if (
+                definition is not None
+                and definition.aggregation.value == "sum"
+                and definition.cadence.value == "daily"
+                and not entry.get("startDate")
+                and not entry.get("endDate")
+            ):
+                # A scalar daily statement is authoritative over interval samples
+                # in the same bucket. The shared aggregator uses this marker to
+                # prevent double counting without retaining the raw payload.
+                base_metadata["provider_total"] = True
 
             # Shapes that carry their numbers under their own names rather than
             # under `qty`: heart rate as Min/Avg/Max, blood pressure as
@@ -534,6 +659,47 @@ def transform_health_auto_export_json(
                     handled_keys.add(interval_field)
                     intervals[metadata_key] = parse_timestamp(moment) or moment
                 base_metadata.update(intervals)
+
+            category_metric = CATEGORY_RECORD_METRICS.get(raw_name)
+            if category_metric is not None:
+                category_value = _extract_numeric_value(entry.get("qty"))
+                category_metadata = {
+                    **base_metadata,
+                    "provider_category": entry.get("value") or entry.get("category"),
+                }
+                if category_value is None and raw_name == "mindful_session":
+                    end_date = entry.get("endDate") or entry.get("end")
+                    if isinstance(end_date, str):
+                        category_value = _interval_minutes(str(raw_date), end_date)
+                        category_metadata.update(
+                            {
+                                "units": "min",
+                                "derived_from": ["startDate", "endDate"],
+                                "derived_by": "difference",
+                                "sample_count": 2,
+                            }
+                        )
+                if category_value is None:
+                    category_value = 1.0
+                    category_metadata["units"] = "count"
+                handled_keys.update({"qty", "value", "category", "endDate", "end"})
+                category_metadata["provider_value"] = category_value
+                data_points.append(
+                    {
+                        "tenant_id": tenant_id,
+                        "source_id": source_id,
+                        "metric_type": category_metric,
+                        "timestamp": ts,
+                        "value": category_value,
+                        "metadata": category_metadata,
+                        "idempotency_key": generate_idempotency_key(
+                            tenant_id, source_id, category_metric, ts
+                        ),
+                        "source_type": "apple_health",
+                    }
+                )
+                report.mapped(f"metrics.{raw_name}", entry, category_metric)
+                continue
 
             if entry_fields:
                 context = {
@@ -677,6 +843,7 @@ def transform_health_auto_export_json(
             # present wins, so a payload carrying v1 and v2 names does not emit two
             # points with one idempotency key.
             if w_metric_type in emitted_metrics:
+                report.mapped(f"workouts.{field_key}", raw_field, w_metric_type)
                 continue
             emitted_metrics.add(w_metric_type)
 
@@ -725,7 +892,10 @@ def transform_health_auto_export_json(
 
             for member, w_metric_type in members.items():
                 val = _extract_numeric_value(_member_value(container, member))
-                if val is None or w_metric_type in emitted_metrics:
+                if val is None:
+                    continue
+                if w_metric_type in emitted_metrics:
+                    report.mapped(f"workouts.{field_key}.{member}", val, w_metric_type)
                     continue
                 emitted_metrics.add(w_metric_type)
                 data_points.append(
@@ -754,13 +924,18 @@ def transform_health_auto_export_json(
         collected: dict[str, dict[str, Any]] = {}
         for field_key, w_metric_type, how in WORKOUT_SERIES_MAP:
             samples = workout.get(field_key)
-            if not isinstance(samples, list) or not samples:
+            if not isinstance(samples, list):
                 continue
             handled_workout_keys.add(field_key)
             if w_metric_type in emitted_metrics:
+                report.mapped(f"workouts.{field_key}", samples, w_metric_type)
+                continue
+            if not samples:
+                report.unmapped(f"workouts.{field_key}", samples)
                 continue
             figure, field_units, count = _series_figure(samples, how)
             if figure is None:
+                report.unmapped(f"workouts.{field_key}", samples)
                 continue
             into = collected.setdefault(
                 w_metric_type,
@@ -846,7 +1021,7 @@ def transform_health_auto_export_json(
                 continue
             report.unmapped(f"workouts.{key}", value)
 
-    return data_points
+    return aggregate_events(data_points, ingest_policies) if ingest_policies is not None else data_points
 
 
 def route_points(

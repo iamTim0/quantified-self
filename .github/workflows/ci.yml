@@ -86,6 +86,7 @@ jobs:
 
       - name: Spec invariant tests
         run: |
+          python .agents/scripts/check_invariant_tests.py
           uv run --with pytest --with cryptography --directory specs pytest tests -q
 
       - name: End-to-end tests
@@ -261,6 +262,9 @@ jobs:
       # why that split.
       - name: Lint specifications
         run: python .agents/scripts/lint_specs.py
+
+      - name: Reject vacuous invariant tests
+        run: python .agents/scripts/check_invariant_tests.py
 
       # AGENTS.md rule 14. Seconds to run, and the only moment it can still
       # help: once a personal address, a deployment hostname or a password hash

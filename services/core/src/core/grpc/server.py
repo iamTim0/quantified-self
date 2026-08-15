@@ -26,10 +26,14 @@ Maps to Fizzbee Invariants:
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import logging
 import uuid
 from concurrent import futures
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
 import grpc
 from google.protobuf.json_format import ParseDict
@@ -38,10 +42,17 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from quantified_self.v1 import core_service_pb2 as pb
 from quantified_self.v1 import core_service_pb2_grpc as pb_grpc
 from quantified_self.v1 import data_point_pb2 as dp_pb
-from sqlalchemy import distinct, select
+from shared_schemas.metrics import Aggregation, canonical_metric_type, describe
+from sqlalchemy import and_, distinct, exists, func, or_, select
 
 from core.config import settings
-from core.db.models import DataPoint, DataSource, RevokedAccessToken, User
+from core.db.models import (
+    DataPoint,
+    DataSource,
+    MetricRollup,
+    RevokedAccessToken,
+    User,
+)
 from core.db.session import async_session_maker
 from core.security.tokens import TokenError, verify_service_credential
 from core.tracing import get_current_request_id, set_current_request_id
@@ -52,9 +63,13 @@ logger = logging.getLogger(__name__)
 # memory. Analysis pages through; it does not ask for everything at once.
 DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 5000
+MAX_SERIES_METRICS = 100
+MAX_SERIES_BUCKETS = 100_000
+MAX_SERIES_RANGE = timedelta(days=366)
 
 AUTH_METADATA_KEY = "authorization"
 REQUEST_ID_METADATA_KEY = "x-request-id"
+SERVICE_NAME_METADATA_KEY = "x-service-name"
 
 
 class _AuthError(Exception):
@@ -76,8 +91,9 @@ def _authenticate(context: grpc.aio.ServicerContext) -> None:
     raw = raw.strip()
     if not raw:
         raise _AuthError("Missing service credential")
+    service_name = _metadata_value(context, SERVICE_NAME_METADATA_KEY)
     try:
-        verify_service_credential(raw)
+        verify_service_credential(raw, service_name=service_name)
     except TokenError as exc:
         raise _AuthError(exc.detail) from exc
 
@@ -97,6 +113,16 @@ def _require_tenant(tenant_id: str) -> str:
     except (ValueError, AttributeError, TypeError) as exc:
         raise ValueError("tenant_id must be a UUID") from exc
     return tenant_id
+
+
+def _require_source_id(source_id: str) -> str:
+    """Validate and canonicalize a connector instance identifier."""
+    if not source_id:
+        raise ValueError("source_id must not be empty")
+    try:
+        return str(uuid.UUID(source_id))
+    except (ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("source_id must be a UUID") from exc
 
 
 def _to_timestamp(value: datetime | None) -> Timestamp | None:
@@ -145,6 +171,152 @@ def _to_proto(row: DataPoint) -> dp_pb.DataPoint:
     return point
 
 
+def _series_resolution(value: int) -> str:
+    """Map the wire enum to the rollup resolution stored by Core."""
+    if value in (
+        pb.METRIC_SERIES_RESOLUTION_UNSPECIFIED,
+        pb.METRIC_SERIES_RESOLUTION_DAY,
+    ):
+        return "day"
+    if value == pb.METRIC_SERIES_RESOLUTION_HOUR:
+        return "hour"
+    raise ValueError("Unsupported metric series resolution")
+
+
+def _series_bucket_start(value: datetime, resolution: str) -> datetime:
+    """Return the UTC boundary containing a timestamp."""
+    value = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    value = value.astimezone(timezone.utc)
+    if resolution == "hour":
+        return value.replace(minute=0, second=0, microsecond=0)
+    return value.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def _series_buckets(start: datetime, end: datetime, resolution: str) -> list[datetime]:
+    """Return all bucket starts intersecting the half-open query interval."""
+    current = _series_bucket_start(start, resolution)
+    step = timedelta(hours=1) if resolution == "hour" else timedelta(days=1)
+    buckets: list[datetime] = []
+    while current < end:
+        buckets.append(current)
+        current += step
+    return buckets
+
+
+def _metric_aggregation(metric_type: str) -> Aggregation:
+    """Resolve a metric's registry aggregation with a safe legacy fallback."""
+    try:
+        return describe(metric_type).aggregation
+    except ValueError:
+        # Older rows may contain a name that is no longer in the registry. They
+        # remain queryable, but must not make the whole tenant's series fail.
+        return Aggregation.AVERAGE
+
+
+def _canonical_metric_types(raw_types: list[str]) -> list[str]:
+    """Validate requested names and return unique canonical metric keys."""
+    metric_types: list[str] = []
+    for raw_type in raw_types:
+        try:
+            metric_type = canonical_metric_type(raw_type)
+        except ValueError as exc:
+            raise ValueError(f"Unknown metric_type: {raw_type}") from exc
+        if metric_type not in metric_types:
+            metric_types.append(metric_type)
+    if len(metric_types) > MAX_SERIES_METRICS:
+        raise ValueError(f"At most {MAX_SERIES_METRICS} metric types may be requested")
+    return metric_types
+
+
+def _rollup_covers_point(resolution: str):
+    """Exclude raw points already represented by an incremental rollup."""
+    bucket = func.date_trunc(resolution, DataPoint.timestamp)
+    return exists(
+        select(MetricRollup.id).where(
+            MetricRollup.tenant_id == DataPoint.tenant_id,
+            MetricRollup.source_id == DataPoint.source_id,
+            MetricRollup.metric_type == DataPoint.metric_type,
+            MetricRollup.resolution == resolution,
+            MetricRollup.bucket_start == bucket,
+            or_(
+                MetricRollup.is_provider_total.is_(True),
+                and_(
+                    MetricRollup.first_timestamp.is_not(None),
+                    MetricRollup.last_timestamp.is_not(None),
+                    DataPoint.timestamp >= MetricRollup.first_timestamp,
+                    DataPoint.timestamp <= MetricRollup.last_timestamp,
+                ),
+            ),
+        )
+    )
+
+
+@dataclass
+class _SeriesAccumulator:
+    """Aggregation state for one source, metric, and time bucket."""
+
+    aggregation: Aggregation
+    sample_count: int = 0
+    sum_value: float = 0.0
+    max_value: float | None = None
+    last_value: float | None = None
+    last_timestamp: datetime | None = None
+
+    def add(
+        self,
+        *,
+        sample_count: int,
+        sum_value: float | None,
+        max_value: float | None,
+        last_value: float | None,
+        last_timestamp: datetime | None,
+    ) -> None:
+        """Merge a source-level aggregate into this source-scoped bucket."""
+        if sample_count <= 0:
+            return
+        self.sample_count += sample_count
+        self.sum_value += float(sum_value or 0.0)
+        if max_value is not None:
+            self.max_value = (
+                float(max_value)
+                if self.max_value is None
+                else max(self.max_value, float(max_value))
+            )
+        if last_timestamp is not None:
+            timestamp = (
+                last_timestamp
+                if last_timestamp.tzinfo
+                else last_timestamp.replace(tzinfo=timezone.utc)
+            ).astimezone(timezone.utc)
+            if self.last_timestamp is None or timestamp >= self.last_timestamp:
+                self.last_timestamp = timestamp
+                self.last_value = (
+                    float(last_value) if last_value is not None else self.last_value
+                )
+
+    def set_last_value(self, value: float, timestamp: datetime) -> None:
+        """Attach the value selected by the raw-data latest-value query."""
+        timestamp = (
+            timestamp if timestamp.tzinfo else timestamp.replace(tzinfo=timezone.utc)
+        ).astimezone(timezone.utc)
+        if self.last_timestamp is None or timestamp >= self.last_timestamp:
+            self.last_timestamp = timestamp
+            self.last_value = float(value)
+
+    @property
+    def value(self) -> float | None:
+        """Return the registry-aware value, or None for an empty bucket."""
+        if self.sample_count == 0:
+            return None
+        if self.aggregation is Aggregation.SUM:
+            return self.sum_value
+        if self.aggregation is Aggregation.MAX:
+            return self.max_value
+        if self.aggregation is Aggregation.LAST:
+            return self.last_value
+        return self.sum_value / self.sample_count
+
+
 class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
     """Read-only projection of Core's data for other services."""
 
@@ -156,26 +328,57 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
 
             page_size = request.pagination.page_size or DEFAULT_PAGE_SIZE
             page_size = max(1, min(page_size, MAX_PAGE_SIZE))
-            offset = _decode_page_token(request.pagination.page_token)
+            cursor, legacy_offset = _decode_page_token(request.pagination.page_token)
+            requested_source_id = None
+            if request.HasField("source_id"):
+                requested_source_id = _require_source_id(request.source_id)
 
             stmt = select(DataPoint).where(DataPoint.tenant_id == tenant_id)
             if request.HasField("metric_type"):
                 stmt = stmt.where(DataPoint.metric_type == request.metric_type)
-            if request.HasField("source_id"):
-                stmt = stmt.where(DataPoint.source_id == request.source_id)
+            if requested_source_id is not None:
+                stmt = stmt.where(DataPoint.source_id == requested_source_id)
             if (start := _from_timestamp(request.start_time)) is not None:
                 stmt = stmt.where(DataPoint.timestamp >= start)
             if (end := _from_timestamp(request.end_time)) is not None:
                 stmt = stmt.where(DataPoint.timestamp <= end)
+
+            if cursor is not None:
+                cursor_timestamp, cursor_id = cursor
+                stmt = stmt.where(
+                    or_(
+                        DataPoint.timestamp > cursor_timestamp,
+                        and_(
+                            DataPoint.timestamp == cursor_timestamp,
+                            DataPoint.id > cursor_id,
+                        ),
+                    )
+                )
 
             # Ordered so paging is stable; id breaks ties between points sharing
             # a timestamp, which is common for a daily summary metric.
             stmt = stmt.order_by(DataPoint.timestamp, DataPoint.id)
             # One extra row tells us whether another page exists without a
             # second COUNT query over the whole window.
-            stmt = stmt.offset(offset).limit(page_size + 1)
+            if legacy_offset is not None:
+                # Accept old offset tokens during a rolling deployment. New
+                # responses use a keyset cursor so deep pages do not make
+                # PostgreSQL scan and discard every earlier row.
+                stmt = stmt.offset(legacy_offset)
+            stmt = stmt.limit(page_size + 1)
 
             async with async_session_maker() as session:
+                if requested_source_id is not None:
+                    source_exists = await session.execute(
+                        select(DataSource.id).where(
+                            DataSource.tenant_id == tenant_id,
+                            DataSource.id == requested_source_id,
+                        )
+                    )
+                    if source_exists.scalar_one_or_none() is None:
+                        await context.abort(
+                            grpc.StatusCode.NOT_FOUND, "Data source not found"
+                        )
                 rows = (await session.execute(stmt)).scalars().all()
 
             has_more = len(rows) > page_size
@@ -185,7 +388,238 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                 data_points=[_to_proto(row) for row in page]
             )
             if has_more:
-                response.pagination.next_page_token = str(offset + page_size)
+                last = page[-1]
+                response.pagination.next_page_token = _encode_page_token(
+                    last.timestamp, str(last.id)
+                )
+            return response
+
+    async def QueryMetricSeries(
+        self, request: pb.QueryMetricSeriesRequest, context: grpc.aio.ServicerContext
+    ) -> pb.QueryMetricSeriesResponse:
+        """Return registry-aware buckets without transferring raw points."""
+        async with _guard(context):
+            tenant_id = _require_tenant(request.tenant_id)
+            start = _from_timestamp(request.start_time)
+            end = _from_timestamp(request.end_time)
+            if start is None or end is None:
+                raise ValueError("start_time and end_time are required")
+            if end <= start:
+                raise ValueError("end_time must be after start_time")
+            if end - start > MAX_SERIES_RANGE:
+                raise ValueError("Metric series range cannot exceed 366 days")
+
+            resolution = _series_resolution(request.resolution)
+            metric_types = _canonical_metric_types(list(request.metric_types))
+            buckets = _series_buckets(start, end, resolution)
+            if metric_types and len(metric_types) * len(buckets) > MAX_SERIES_BUCKETS:
+                raise ValueError("Requested metric series is too large")
+
+            aggregations = {
+                metric_type: _metric_aggregation(metric_type)
+                for metric_type in metric_types
+            }
+            aggregates: dict[tuple[str, str, datetime], _SeriesAccumulator] = {}
+            metric_sources: dict[str, set[str]] = {}
+
+            requested_source_id = None
+            if request.HasField("source_id"):
+                requested_source_id = _require_source_id(request.source_id)
+
+            def accumulator(
+                metric_type: str, source_id: str, bucket: datetime
+            ) -> _SeriesAccumulator:
+                key = (metric_type, source_id, bucket)
+                if key not in aggregates:
+                    aggregation = aggregations.setdefault(
+                        metric_type, _metric_aggregation(metric_type)
+                    )
+                    aggregates[key] = _SeriesAccumulator(aggregation)
+                metric_sources.setdefault(metric_type, set()).add(source_id)
+                return aggregates[key]
+
+            source_filter = []
+            if requested_source_id is not None:
+                source_filter.append(MetricRollup.source_id == requested_source_id)
+
+            async with async_session_maker() as session:
+                if requested_source_id is not None:
+                    source_exists = await session.execute(
+                        select(DataSource.id).where(
+                            DataSource.tenant_id == tenant_id,
+                            DataSource.id == requested_source_id,
+                        )
+                    )
+                    if source_exists.scalar_one_or_none() is None:
+                        await context.abort(
+                            grpc.StatusCode.NOT_FOUND, "Data source not found"
+                        )
+
+                rollup_stmt = select(
+                    MetricRollup.metric_type,
+                    MetricRollup.source_id,
+                    MetricRollup.bucket_start,
+                    MetricRollup.value,
+                    MetricRollup.sample_count,
+                    MetricRollup.sum_value,
+                    MetricRollup.max_value,
+                    MetricRollup.last_value,
+                    MetricRollup.last_timestamp,
+                ).where(
+                    MetricRollup.tenant_id == tenant_id,
+                    MetricRollup.resolution == resolution,
+                    MetricRollup.bucket_start
+                    >= _series_bucket_start(start, resolution),
+                    MetricRollup.bucket_start < end,
+                    *source_filter,
+                )
+                if metric_types:
+                    rollup_stmt = rollup_stmt.where(
+                        MetricRollup.metric_type.in_(metric_types)
+                    )
+
+                for row in (await session.execute(rollup_stmt)).all():
+                    bucket = _series_bucket_start(row.bucket_start, resolution)
+                    accumulator(row.metric_type, str(row.source_id), bucket).add(
+                        sample_count=int(row.sample_count),
+                        sum_value=row.sum_value,
+                        max_value=row.max_value,
+                        last_value=row.last_value,
+                        last_timestamp=row.last_timestamp,
+                    )
+
+                raw_filters = [
+                    DataPoint.tenant_id == tenant_id,
+                    DataPoint.timestamp >= start,
+                    DataPoint.timestamp < end,
+                    ~_rollup_covers_point(resolution),
+                ]
+                if requested_source_id is not None:
+                    raw_filters.append(DataPoint.source_id == requested_source_id)
+                if metric_types:
+                    raw_filters.append(DataPoint.metric_type.in_(metric_types))
+
+                bucket_expr = func.date_trunc(resolution, DataPoint.timestamp).label(
+                    "bucket_start"
+                )
+                raw_stmt = (
+                    select(
+                        DataPoint.metric_type,
+                        DataPoint.source_id,
+                        bucket_expr,
+                        func.count(DataPoint.value).label("sample_count"),
+                        func.sum(DataPoint.value).label("sum_value"),
+                        func.max(DataPoint.value).label("max_value"),
+                        func.max(DataPoint.timestamp)
+                        .filter(DataPoint.value.is_not(None))
+                        .label("last_timestamp"),
+                    )
+                    .where(*raw_filters)
+                    .group_by(DataPoint.metric_type, DataPoint.source_id, bucket_expr)
+                )
+
+                for row in (await session.execute(raw_stmt)).all():
+                    bucket = _series_bucket_start(row.bucket_start, resolution)
+                    accumulator(row.metric_type, str(row.source_id), bucket).add(
+                        sample_count=int(row.sample_count),
+                        sum_value=row.sum_value,
+                        max_value=row.max_value,
+                        last_value=None,
+                        last_timestamp=row.last_timestamp,
+                    )
+
+                last_metrics = {
+                    metric_type
+                    for metric_type, aggregation in aggregations.items()
+                    if aggregation is Aggregation.LAST
+                }
+                if last_metrics:
+                    latest_bucket = func.date_trunc(resolution, DataPoint.timestamp)
+                    row_number = (
+                        func.row_number()
+                        .over(
+                            partition_by=(
+                                DataPoint.metric_type,
+                                DataPoint.source_id,
+                                latest_bucket,
+                            ),
+                            order_by=(DataPoint.timestamp.desc(), DataPoint.id.desc()),
+                        )
+                        .label("row_number")
+                    )
+                    ranked = (
+                        select(
+                            DataPoint.metric_type.label("metric_type"),
+                            DataPoint.source_id.label("source_id"),
+                            latest_bucket.label("bucket_start"),
+                            DataPoint.value.label("value"),
+                            DataPoint.timestamp.label("timestamp"),
+                            row_number,
+                        )
+                        .where(
+                            *raw_filters,
+                            DataPoint.value.is_not(None),
+                            DataPoint.metric_type.in_(last_metrics),
+                        )
+                        .subquery()
+                    )
+                    latest_stmt = select(
+                        ranked.c.metric_type,
+                        ranked.c.source_id,
+                        ranked.c.bucket_start,
+                        ranked.c.value,
+                        ranked.c.timestamp,
+                    ).where(ranked.c.row_number == 1)
+                    for row in (await session.execute(latest_stmt)).all():
+                        bucket = _series_bucket_start(row.bucket_start, resolution)
+                        accumulator(
+                            row.metric_type, str(row.source_id), bucket
+                        ).set_last_value(
+                            row.value, row.timestamp
+                        )
+
+            if requested_source_id is not None:
+                # An explicitly selected source is allowed to return gaps for a
+                # requested metric, even when that source has no point in the
+                # window.
+                for metric_type in metric_types:
+                    metric_sources.setdefault(metric_type, set()).add(
+                        requested_source_id
+                    )
+
+            metric_order = metric_types or sorted(metric_sources)
+            if len(metric_order) > MAX_SERIES_METRICS:
+                raise ValueError(
+                    f"At most {MAX_SERIES_METRICS} metric types may be returned"
+                )
+            series_count = sum(
+                len(metric_sources.get(metric_type, ())) for metric_type in metric_order
+            )
+            if series_count * len(buckets) > MAX_SERIES_BUCKETS:
+                raise ValueError("Metric series is too large")
+
+            response = pb.QueryMetricSeriesResponse()
+            for metric_type in metric_order:
+                source_ids = sorted(metric_sources.get(metric_type, ()))
+                if len(source_ids) > 1:
+                    issue = response.issues.add(
+                        code="AMBIGUOUS_METRIC_SOURCE", metric_type=metric_type
+                    )
+                    issue.source_ids.extend(source_ids)
+                for source_id in source_ids:
+                    for bucket in buckets:
+                        point = response.buckets.add(
+                            metric_type=metric_type,
+                            source_id=source_id,
+                            sample_count=0,
+                        )
+                        point.bucket_start.CopyFrom(_to_timestamp(bucket))
+                        aggregate = aggregates.get((metric_type, source_id, bucket))
+                        if aggregate is None:
+                            continue
+                        point.sample_count = aggregate.sample_count
+                        if (value := aggregate.value) is not None:
+                            point.value = value
             return response
 
     async def GetDataPoint(
@@ -195,13 +629,17 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             tenant_id = _require_tenant(request.tenant_id)
             async with async_session_maker() as session:
                 row = (
-                    await session.execute(
-                        select(DataPoint).where(
-                            DataPoint.tenant_id == tenant_id,
-                            DataPoint.id == request.data_point_id,
+                    (
+                        await session.execute(
+                            select(DataPoint).where(
+                                DataPoint.tenant_id == tenant_id,
+                                DataPoint.id == request.data_point_id,
+                            )
                         )
                     )
-                ).scalars().first()
+                    .scalars()
+                    .first()
+                )
 
             if row is None:
                 # NOT_FOUND for a point in another tenant as well as one that does
@@ -231,10 +669,14 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             tenant_id = _require_tenant(request.tenant_id)
             async with async_session_maker() as session:
                 rows = (
-                    await session.execute(
-                        select(DataSource).where(DataSource.tenant_id == tenant_id)
+                    (
+                        await session.execute(
+                            select(DataSource).where(DataSource.tenant_id == tenant_id)
+                        )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
 
             # Deliberately no `config` and no credentials of any kind, encrypted
             # or otherwise. This response crosses a service boundary; rule 12
@@ -274,15 +716,20 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                         valid=False, code="TOKEN_REVOKED"
                     )
 
-                cutoff = (
+                user_row = (
                     await session.execute(
                         select(User.sessions_valid_from).where(
                             User.tenant_id == tenant_id,
                             User.id == request.user_id,
                         )
                     )
-                ).scalar_one_or_none()
+                ).first()
 
+            if user_row is None:
+                return pb.ValidateUserSessionResponse(
+                    valid=False, code="USER_NOT_FOUND"
+                )
+            cutoff = user_row[0]
             if cutoff is not None and issued_at < cutoff:
                 return pb.ValidateUserSessionResponse(valid=False, code="SESSION_ENDED")
             return pb.ValidateUserSessionResponse(valid=True, code="VALID")
@@ -309,24 +756,51 @@ class _guard:
             return True
         if isinstance(exc, grpc.RpcError) or exc_type.__name__ == "AbortError":
             return False
-        logger.exception(
-            "[req_id=%s] gRPC handler failed", get_current_request_id()
-        )
+        logger.exception("[req_id=%s] gRPC handler failed", get_current_request_id())
         await self._context.abort(grpc.StatusCode.INTERNAL, "Internal error")
         return True
 
 
-def _decode_page_token(token: str) -> int:
-    """Page tokens are opaque to callers but are just an offset."""
+def _encode_page_token(timestamp: datetime, point_id: str) -> str:
+    """Encode a stable keyset cursor without exposing a mutable offset."""
+    payload = json.dumps(
+        {"timestamp": timestamp.astimezone(timezone.utc).isoformat(), "id": point_id},
+        separators=(",", ":"),
+    ).encode()
+    return "k1." + base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_page_token(
+    token: str,
+) -> tuple[tuple[datetime, str] | None, int | None]:
+    """Decode a keyset cursor and tolerate legacy offset tokens during rollout."""
     if not token:
-        return 0
+        return None, None
+    if token.startswith("k1."):
+        try:
+            encoded = token[3:] + "=" * (-len(token[3:]) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(encoded).decode())
+            timestamp = datetime.fromisoformat(payload["timestamp"])
+            point_id = payload["id"]
+            if timestamp.tzinfo is None or not isinstance(point_id, str) or not point_id:
+                raise ValueError
+            return (timestamp.astimezone(timezone.utc), point_id), None
+        except (
+            KeyError,
+            TypeError,
+            ValueError,
+            UnicodeDecodeError,
+            binascii.Error,
+            json.JSONDecodeError,
+        ) as exc:
+            raise ValueError("Invalid page token") from exc
     try:
         offset = int(token)
     except ValueError as exc:
         raise ValueError("Invalid page token") from exc
     if offset < 0:
         raise ValueError("Invalid page token")
-    return offset
+    return None, offset
 
 
 async def serve_grpc(port: int | None = None) -> grpc.aio.Server:

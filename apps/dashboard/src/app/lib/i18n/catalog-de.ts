@@ -1,20 +1,18 @@
 /**
- * Deutsche Meldungen.
+ * German interface messages.
  *
- * Der Typ ist `Record<MessageKey, string>`: fehlt ein Schlüssel, den
- * `catalog-en.ts` hat, schlägt die Typprüfung fehl — und ein Schlüssel, den es dort
- * nicht gibt, ebenfalls. Die beiden Kataloge können also nicht auseinanderlaufen,
- * ohne dass der Build es sagt.
+ * The type is `Record<MessageKey, string>`: a key missing from `catalog-en.ts`
+ * fails the type check, as does a key that does not exist there. The two catalogues
+ * therefore cannot drift without the build reporting it.
  *
- * Dies ist die einzige Datei im Repository, die absichtlich deutschen Text
- * enthält; alles andere — Quelltext, Kommentare, Dokumentation, Servermeldungen —
- * ist englisch.
+ * This file intentionally contains German user-facing messages. Source code,
+ * comments, documentation and service responses remain in English.
  */
 
 import type { MessageKey } from "./catalog-en";
 
 export const de: Record<MessageKey, string> = {
-  // ── Gemeinsames ────────────────────────────────────────────────────────────
+  // ── Shared ─────────────────────────────────────────────────────────────────
   "common.cancel": "Abbrechen",
   "common.save": "Speichern",
   "common.saving": "Speichert…",
@@ -25,12 +23,14 @@ export const de: Record<MessageKey, string> = {
   "common.unknown": "Unbekannt",
   "common.days_one": "{count} Tag",
   "common.days_other": "{count} Tage",
+  "common.years_one": "{count} Jahr",
+  "common.years_other": "{count} Jahre",
 
-  // ── Sprachumschalter ───────────────────────────────────────────────────────
+  // ── Language switcher ──────────────────────────────────────────────────────
   "lang.label": "Sprache",
   "lang.switchTo": "Auf {language} umstellen",
 
-  // ── Seitenleiste ───────────────────────────────────────────────────────────
+  // ── Sidebar ─────────────────────────────────────────────────────────────────
   "sidebar.menu": "Menü",
   "sidebar.general": "Allgemein",
   "sidebar.overview": "Übersicht",
@@ -44,13 +44,13 @@ export const de: Record<MessageKey, string> = {
   "sidebar.settings": "Einstellungen",
   "sidebar.logout": "Abmelden",
 
-  // ── Kopfzeile ──────────────────────────────────────────────────────────────
+  // ── Header ──────────────────────────────────────────────────────────────────
   "header.docs": "Dokumentation",
   "header.refresh": "Aktualisieren",
   "header.refreshTitle": "Gesamte Seite neu laden",
   "header.addConnector": "Connector hinzufügen",
 
-  // ── Rechtliches ────────────────────────────────────────────────────────────
+  // ── Legal ───────────────────────────────────────────────────────────────────
   "footer.nav": "Rechtliches und Dokumentation",
   "footer.imprint": "Impressum",
   "footer.privacy": "Datenschutzerklärung",
@@ -65,7 +65,7 @@ export const de: Record<MessageKey, string> = {
   "legal.translationNote":
     "Dies ist eine Übersetzung als Lesehilfe. Verbindlich ist die deutsche Fassung.",
 
-  // ── Anmeldung ──────────────────────────────────────────────────────────────
+  // ── Sign-in ─────────────────────────────────────────────────────────────────
   "auth.tagline": "Deine persönliche Gesundheits- und Analyse-Plattform.",
   "auth.welcomeBack": "Willkommen zurück",
   "auth.createAccount": "Konto erstellen",
@@ -93,6 +93,7 @@ export const de: Record<MessageKey, string> = {
   "auth.callbackTitle": "Anmeldung fehlgeschlagen",
   "auth.callbackDone": "Angemeldet. Weiterleitung…",
   "auth.callbackIncomplete": "Die Rückmeldung des Anbieters war unvollständig.",
+  "auth.callbackProviderCancelled": "Die Anmeldung wurde vom Anbieter abgebrochen.",
 
   // ── System warnings ─────────────────────────────────────────────────────
   "warnings.region": "Systemwarnungen",
@@ -255,6 +256,7 @@ export const de: Record<MessageKey, string> = {
   "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
   "map.tilesFailed":
     "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
+  "map.loading": "GPS-Daten werden geladen…",
   "map.today": "Heute",
   "map.showTiles": "Karte laden",
   "map.hideTiles": "Karte ausblenden",
@@ -304,7 +306,7 @@ export const de: Record<MessageKey, string> = {
   "connectors.loadingDetails": "Connector- und Queue-Details laden…",
   "connectors.colSource": "Verbindung / Quelle",
   "connectors.colTransfer": "Datenübertragung",
-  "connectors.everyHours": "Alle {hours} Std. ({days} Tage Lookback)",
+  "connectors.everyHours": "Alle {hours} Std. ({lookback} Std. Lookback)",
   "connectors.edit": "Bearbeiten",
   "connectors.emptyList": "Noch keine Connectors konfiguriert.",
   "connectors.addFirst": "Ersten Connector hinzufügen",
@@ -320,6 +322,7 @@ export const de: Record<MessageKey, string> = {
   "connectors.newConnector": "Neuer Connector",
   "connectors.docs": "Doku",
   "connectors.processing": "Event in Warteschlange (wird verarbeitet)",
+  "connectors.loadingCore": "Core lädt Daten",
   "connectors.readyActive": "Bereit / aktiv",
   "connectors.webhookDriven": "Webhook · ereignisbasiert",
   "connectors.tableTitle": "Konfigurierte Verbindungen & Live-Queue-Status",
@@ -371,19 +374,35 @@ export const de: Record<MessageKey, string> = {
   "importerDetail.noDuration": "Noch nicht beendet",
   "importerDetail.durationSeconds": "{count} s",
   "importerDetail.durationMinutes": "{count} Min.",
-  "importerDetail.points": "{accepted} akzeptiert · {duplicate} Duplikate · {expected} erwartet",
+  "importerDetail.points":
+    "{processed} verarbeitet · {accepted} akzeptiert · {duplicate} Duplikate · {rejected} abgewiesen · {unsupported} nicht unterstützte Felder · {expected} erwartet",
+  "importerDetail.providerWindow": "Abdeckung des Providers: {start} – {end}",
+  "importerDetail.backlog": "Broker-Rückstand am Ende: {count}",
   "importerDetail.unknown": "unbekannt",
   "importerDetail.statusSuccess": "Erfolgreich",
   "importerDetail.statusError": "Fehlgeschlagen",
   "importerDetail.statusSkipped": "Übersprungen",
   "importerDetail.statusQueued": "Eingereiht",
   "importerDetail.statusRunning": "Läuft",
+  "importerDetail.statusLoading": "Wird in Core geladen",
   "importerDetail.statusUnknown": "Unbekannt",
   "importerDetail.triggerScheduled": "Geplant",
   "importerDetail.triggerManual": "Manuell",
   "importerDetail.triggerPush": "Push",
   "importerDetail.triggerUpload": "Upload",
   "importerDetail.triggerOther": "Sonstiger",
+  "importerDetail.messageQueued": "Der Importer wurde eingereiht.",
+  "importerDetail.messageLoading": "Core lädt die veröffentlichten Daten.",
+  "importerDetail.messageCoreLoaded": "Core hat alle veröffentlichten Daten geladen.",
+  "importerDetail.messageCredentialsMissing":
+    "Es sind keine aktiven Connector-Zugangsdaten konfiguriert.",
+  "importerDetail.messageSkipped": "Dieser Import wurde übersprungen.",
+  "importerDetail.messageInFlight": "Für diesen Connector läuft bereits ein anderer Import.",
+  "importerDetail.messageFailed": "Der Import konnte nicht abgeschlossen werden.",
+  "importerDetail.messageImporterFailed": "Der Importer hat einen Fehler gemeldet.",
+  "importerDetail.messageUploadRead": "Der Export wurde erfolgreich gelesen.",
+  "importerDetail.messageUploadPublishing": "Der Export wird an Core gesendet.",
+  "importerDetail.messageUploadFailed": "Der Export konnte nicht verarbeitet werden.",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "Schlüssel konnten nicht geladen werden.",
@@ -409,6 +428,14 @@ export const de: Record<MessageKey, string> = {
   "apikeys.revokeTitle": "Sofort ungültig machen",
   "apikeys.namePlaceholder": "z. B. iPhone",
   "apikeys.noExpiry": "Kein Ablauf",
+  "apikeys.rotationFailed": "Rotation fehlgeschlagen.",
+  "apikeys.revokeFailed": "Widerruf fehlgeschlagen.",
+  "apikeys.webhookTitle": "Webhook-Konfiguration für {provider}",
+  "apikeys.headerExample": "Authorization: Bearer <dein-key>",
+  "apikeys.hideRevealed": "Verstanden, ausblenden",
+  "apikeys.title": "API-Keys ({count} aktiv)",
+  "apikeys.expiryLabel": "Ablauf",
+  "apikeys.create": "Key erzeugen",
   "apikeys.rotationHint":
     "Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die",
   "oidc.forbidden": "Nur Inhaber und Administratoren können Anbieter verwalten.",
@@ -436,8 +463,23 @@ export const de: Record<MessageKey, string> = {
   "oidc.toggleEnabledHint": "Erscheint auf der Anmeldeseite.",
 
   // ── Profile and import ──────────────────────────────────────────────────
+  "profile.title": "Konto- und Profileinstellungen",
   "profile.subtitle":
     "Verwalte deine Benutzerdaten, Sicherheitseinstellungen und die 1-Klick-Datenlöschung.",
+  "profile.tenantIsolated": "Mandantentrennung aktiv",
+  "profile.defaultUser": "Benutzer",
+  "profile.defaultInitial": "B",
+  "profile.role": "Rolle: {role}",
+  "profile.username": "Benutzername",
+  "profile.email": "E-Mail-Adresse",
+  "profile.workspaceName": "Workspace-Name",
+  "profile.workspaceAdminOnly":
+    "Nur Inhaber und Administratoren können den Workspace-Namen ändern.",
+  "profile.save": "Profil speichern",
+  "profile.saving": "Wird gespeichert…",
+  "profile.saved": "Profil gespeichert.",
+  "profile.savedAndSessionRefreshed": "Profil gespeichert und Sitzung erneuert.",
+  "profile.saveFailed": "Profil konnte nicht gespeichert werden.",
   "profile.passwordMismatch": "Die neuen Passwörter stimmen nicht überein.",
   "profile.passwordFailed": "Passwortänderung fehlgeschlagen.",
   "profile.passwordChanged": "Passwort geändert.",
@@ -451,10 +493,19 @@ export const de: Record<MessageKey, string> = {
   "profile.wipeButton": "Alle Datenpunkte löschen",
   "profile.deleteAccountButton": "Konto und alle Daten löschen",
   "profile.changePassword": "Passwort ändern",
+  "profile.passwordPlaceholder": "••••••••",
+  "profile.passwordMinimum": "Mindestens 6 Zeichen",
+  "profile.passwordRepeat": "Passwort wiederholen",
   "profile.confirm": "Bestätigen",
   "profile.changing": "Wird geändert…",
   "profile.encryptionNote":
     "Connector-Tokens werden vor der Speicherung mit Fernet AES-256 verschlüsselt.",
+  "profile.workspaceDetails": "Workspace und Mandanten-ID",
+  "profile.tenantId": "Mandanten-ID (UUID)",
+  "profile.copy": "Kopieren",
+  "profile.copied": "Kopiert",
+  "profile.encryptedSecrets": "AES-256-verschlüsselte Zugangsdaten",
+  "profile.sessionTitle": "Sitzung und Abmeldung",
   "profile.signOut": "Vom Konto abmelden",
   "profile.wipeConfirmTitle": "Alle Datenpunkte löschen?",
   "profile.wipeConfirmBody":
@@ -466,6 +517,9 @@ export const de: Record<MessageKey, string> = {
     "Dieser Vorgang löscht alle Datenpunkte, Connector-Tokens und Freigaben deines Kontos unwiderruflich (DSGVO Art. 17).",
   "profile.deleteAccountAction": "Unwiderruflich löschen",
   "profile.deleteAccountRunning": "Lösche Konto…",
+  "profile.legalTitle": "Rechtliches",
+  "profile.documentation": "Dokumentation",
+  "profile.defaultWorkspace": "Workspace von {name}",
   "profile.privacyLead":
     "Welche Daten verarbeitet werden, auf welcher Grundlage und wie du sie löschen kannst",
   "import.days": "{count} Tage",
@@ -473,6 +527,8 @@ export const de: Record<MessageKey, string> = {
   "import.from": "Von",
   "import.to": "Bis",
   "import.suggestion": "Vorschlag:",
+  "import.windowSuggested":
+    "Core hat anhand der Connector-Historie einen sicheren Zeitraum gewählt.",
   "import.modeLegend": "Modus",
   "import.smartLabel": "Smart (empfohlen)",
   "import.forceBody": "Der gesamte Zeitraum wird erneut verarbeitet.",
@@ -481,10 +537,12 @@ export const de: Record<MessageKey, string> = {
   "import.previewLegend": "Vorschau",
   "import.howItWorks": "Wie Smart- und Force-Import funktionieren",
   "import.recent": "Letzte Importe ({count})",
-  "import.runCounts": "{accepted} neu · {duplicate} Duplikate",
+  "import.runCounts":
+    "{accepted} neu · {duplicate} Duplikate · {rejected} abgewiesen · {unsupported} nicht unterstützte Felder",
   "import.running": "Import läuft",
-  "import.progressOf": "{done} von {total} Datenpunkten gespeichert",
-  "import.progressCounted": "{count} Datenpunkte bisher gespeichert",
+  "import.loadingCore": "Daten werden in Core geladen",
+  "import.progressOf": "{done} von {total} Events in Core verarbeitet",
+  "import.progressCounted": "{count} Events bisher in Core verarbeitet",
   "import.typicallySeconds": "dauert üblicherweise etwa {count} s",
   "import.typicallyMinutes": "dauert üblicherweise etwa {count} min",
   "import.passiveExplainer":
@@ -526,7 +584,24 @@ export const de: Record<MessageKey, string> = {
   "import.start": "Import starten",
   "import.nothingToImport": "Nichts zu importieren",
 
-  // ── Upload-Banner (ein Upload, der seinen Dialog überlebt hat) ──────────────
+  // ── Global import-run overview ─────────────────────────────────────────────
+  "importOverview.title": "Alle Importläufe",
+  "importOverview.subtitle":
+    "Alle Connectoren gemeinsam sehen und Warteschlange, Importer, Core-Laden und abgeschlossene Läufe unterscheiden.",
+  "importOverview.refresh": "Läufe aktualisieren",
+  "importOverview.active": "Jetzt aktiv",
+  "importOverview.loadingCore": "Wird in Core geladen",
+  "importOverview.completed": "Abgeschlossen",
+  "importOverview.failed": "Fehlgeschlagen",
+  "importOverview.loading": "Importläufe werden geladen…",
+  "importOverview.loadFailed": "Die Importlauf-Übersicht konnte nicht geladen werden.",
+  "importOverview.empty": "Bisher wurden keine Importläufe aufgezeichnet.",
+  "importOverview.progress": "{processed} von {total} Events verarbeitet",
+  "importOverview.quality": "{rejected} abgewiesen · {unsupported} nicht unterstützte Felder",
+  "importOverview.loadingMore": "Ältere Läufe werden geladen…",
+  "importOverview.loadMore": "Ältere Läufe laden",
+
+  // ── Upload banner (an upload whose dialog survived it) ─────────────────────
   "upload.title": "Upload läuft — {name}",
   "upload.doneTitle": "Upload abgeschlossen — {name}",
   "upload.errorTitle": "Upload fehlgeschlagen — {name}",
@@ -547,7 +622,7 @@ export const de: Record<MessageKey, string> = {
   // ── Data explorer ───────────────────────────────────────────────────────
   "explorer.title": "Rohdaten-Explorer",
   "explorer.subtitle":
-    "Direkter Zugriff auf alle Rohdatenpunkte dieses Workspace. Gespeicherte Ansichten liegen in PostgreSQL.",
+    "Erkunde serverseitig aggregierte Metrikreihen und die neuesten Rohdatenpunkte dieses Workspace. Gespeicherte Ansichten liegen in PostgreSQL.",
   "explorer.refresh": "Daten aktualisieren",
   "explorer.savedViews": "Gespeicherte Ansichten",
   "explorer.saveCurrent": "Aktuelle Ansicht speichern",
@@ -557,11 +632,15 @@ export const de: Record<MessageKey, string> = {
     "Noch keine gespeicherten Ansichten. Filter einstellen und auf „Aktuelle Ansicht speichern“ klicken.",
   "explorer.source": "Quelle:",
   "explorer.allSources": "Alle Quellen",
+  "explorer.importResolution": "Importauflösung:",
+  "explorer.importResolutionHint":
+    "Dies ändert die Auflösung zukünftiger Importe für die ausgewählten Metriken.",
+  "explorer.resolutionAuto": "Registerstandard",
+  "explorer.resolutionRaw": "Rohdaten",
+  "explorer.resolutionMinute": "Minute",
+  "explorer.resolutionHour": "Stunde",
+  "explorer.resolutionDay": "Tag",
   "explorer.period": "Zeitraum:",
-  "explorer.aggregation": "Aggregat:",
-  "explorer.dailySum": "Tages-Summe",
-  "explorer.dailyAverage": "Tages-Durchschnitt",
-  "explorer.dailyMax": "Tages-Maximum",
   "explorer.selectAll": "Alle auswählen",
   "explorer.searchPlaceholder":
     "Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata…)",
@@ -589,11 +668,17 @@ export const de: Record<MessageKey, string> = {
   "explorer.rawCount_other": "{count} Treffer",
   "explorer.rawTruncated": "Angezeigt werden die neuesten {shown} von {total} Treffern.",
   "explorer.liveQuery": "Live-TimescaleDB-Abfrage",
-  "explorer.sampleNote":
-    "Diagramm und Tabelle lesen die neuesten {count} Datenpunkte. Öffne eine einzelne Metrik im Tab {tab}, um stattdessen deren eigene Historie zu laden.",
+  "explorer.seriesQueryNote":
+    "Jede ausgewählte Metrik wird separat als aktuelle serverseitige Reihe geladen. Die API wendet die metrikgerechte Aggregation an; fehlende Zeitabschnitte bleiben leer.",
+  "explorer.rawSeriesQueryNote":
+    "Jede ausgewählte Metrik wird separat geladen, die neuesten Werte zuerst. Wenn verfügbar, werden Connector-IDs verwendet; für die Browserleistung ist die Tabelle pro ausgewählter Metrik begrenzt.",
+  "explorer.seriesMetricLabel": "{metric} · {aggregation}",
+  "explorer.seriesMetricSourceLabel": "{metric} · {source} · {aggregation}",
   "explorer.scopeActive": "Einzeln geladen: {metric}",
   "explorer.scopeClear": "Zurück zu allen Metriken",
   "explorer.colTimestamp": "Zeitstempel",
+  "explorer.colId": "ID",
+  "explorer.colIdempotencyKey": "Idempotenzschlüssel",
   "explorer.colMetric": "Metrik",
   "explorer.colMetadata": "Metadaten (JSON)",
   "explorer.colDetails": "Details",
@@ -603,7 +688,7 @@ export const de: Record<MessageKey, string> = {
 
   // ── Data explorer: metric overview ──────────────────────────────────────
   "explorer.overviewHint":
-    "Jeder Metriktyp dieses Workspace, gezählt über die gesamte Historie und nicht über die geladene Stichprobe. Öffne einen, um seine Rohdatenpunkte zu lesen.",
+    "Jeder Metriktyp dieses Workspace, gezählt über die gesamte Historie. Öffne einen, um seine neuesten Rohdatenpunkte zu lesen.",
   "explorer.overviewEmpty":
     "Noch keine Metriken gespeichert, also gibt es nichts zusammenzufassen.",
   "explorer.overviewFailed": "Die Metrikübersicht konnte nicht geladen werden.",
@@ -732,6 +817,8 @@ export const de: Record<MessageKey, string> = {
   "modal.importPeriod": "Import-Zeitraum",
   "modal.lastNDays": "Letzte {count} Tage",
   "modal.lastNDaysDefault": "Letzte {count} Tage (Standard)",
+  "modal.lastNHours": "Letzte {count} Stunden",
+  "modal.lastNHoursDefault": "Letzte {count} Stunden (Standard)",
   "modal.guide": "Anleitung",
   "modal.syncFrequency": "Sync-Frequenz",
   "modal.yazioTokenMode": "Bearer Token direkt eingeben",
@@ -778,11 +865,15 @@ export const de: Record<MessageKey, string> = {
   "analysis.disclaimer":
     "Jedes Ergebnis beschreibt einen statistischen Zusammenhang, keine Ursache und Wirkung. Nichts davon ist eine medizinische Empfehlung.",
   "analysis.minStrength": "Mindeststärke",
+  "analysis.source": "Quelle",
+  "analysis.allSources": "Alle Quellen",
   "analysis.all": "alle",
   "analysis.howToRead": "Wie diese Analysen zu lesen sind",
   "analysis.noData":
     "Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und importiere Daten für mindestens zwei Wochen.",
   "analysis.excludedForQuality": "{count} wegen zu dünner Datenlage ausgeblendet",
+  "analysis.ambiguousSources":
+    "{count} Metrik(en) kommen aus mehreren Connectoren. Sie bleiben ausgeblendet, bis eine Quelle ausgewählt ist, damit Werte nicht doppelt gezählt werden.",
   "analysis.allMetricsQualify": "alle Metriken erfüllen die Mindestanforderungen",
   "analysis.significantRelationships": "Signifikante Zusammenhänge",
   "analysis.ofPairsChecked": "von {count} geprüften Paaren",
@@ -791,7 +882,8 @@ export const de: Record<MessageKey, string> = {
   "analysis.noneMatchFilters":
     "Keine Zusammenhänge, die die gewählten Filter erfüllen. Das ist ein gültiges Ergebnis — nicht jede Metrik hängt mit einer anderen zusammen.",
   "analysis.laggedTitle": "Zeitversetzte Zusammenhänge",
-  "analysis.laggedTail": "später. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.",
+  "analysis.laggedTail":
+    "Ein Wert eines Tages wird einige Tage später mit einer anderen Metrik verglichen. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.",
   "analysis.lagDays": "+{count} Tage",
   "analysis.sameDirection": "gleichläufig",
   "analysis.oppositeDirection": "gegenläufig",
@@ -800,7 +892,7 @@ export const de: Record<MessageKey, string> = {
   "analysis.tooFewForNormalRange":
     "Zu wenige Tage, um einen persönlichen Normalbereich zu bestimmen.",
   "analysis.anomalyBasis":
-    "Grundlage: Median und mittlere absolute Abweichung über {days} Tage. Auffälligkeit bedeutet ungewöhnlich für dich, nicht",
+    "Grundlage: Median und mittlere absolute Abweichung über {days} Tage. Auffälligkeit bedeutet ungewöhnlich für dich, nicht automatisch medizinisch bedenklich.",
   "analysis.tooFewForWeekly": "Mindestens zwei Wochen Daten nötig, um Wochenmuster zu erkennen.",
   "analysis.colDays": "Tage",
   "analysis.sufficient": "ausreichend",
@@ -812,8 +904,26 @@ export const de: Record<MessageKey, string> = {
     "Farbskala von stark gegenläufig über kein Zusammenhang zu stark gleichläufig",
   "analysis.scaleEnds": "gegenläufig ← → gleichläufig",
   "analysis.matrixHint":
-    "Jede Zelle zeigt die Stärke des Zusammenhangs in Prozent. Leere Zellen bedeuten",
+    "Jede Zelle zeigt die Stärke des Zusammenhangs in Prozent. Leere Zellen bedeuten, dass es zu wenige gemeinsame Tage gibt.",
   "analysis.strongestTitle": "Auffälligste Zusammenhänge",
+  "analysis.matrixTitle": "Korrelationsmatrix",
+  "analysis.matrixAria": "Korrelationsmatrix der Metriken",
+  "analysis.interpretationTitle": "Interpretation",
+  "analysis.sharedDays": "Gemeinsame Tage: {count}",
+  "analysis.periodLabel": "Zeitraum:",
+  "analysis.coverageLabel": "Abdeckung:",
+  "analysis.calculationTitle": "Berechnung",
+  "analysis.pearsonLabel": "Pearson (linear):",
+  "analysis.spearmanLabel": "Spearman (Rang):",
+  "analysis.pValueLabel": "p-Wert:",
+  "analysis.analysisVersionLabel": "Analyseversion:",
+  "analysis.computedLabel": "Berechnet:",
+  "analysis.metricLabel": "Metrik",
+  "analysis.statusLabel": "Status",
+  "analysis.qualityHint":
+    "Analysen laufen nur auf Metriken mit ausreichender Datenbasis. Alles andere wird bewusst ausgeblendet statt schwach dargestellt.",
+  "analysis.provenanceSummary":
+    "Zeitraum {start} – {end} · Quellen: {sources} · Analyseversion {version} · berechnet {computed}",
   "analysis.provenanceTitle": "Datenbasis",
   "analysis.sources": "Datenquellen: {list}",
   "analysis.significant": "signifikant (α = 0,05)",
@@ -831,7 +941,7 @@ export const de: Record<MessageKey, string> = {
   "analysis.tabTrends": "Trends",
   "analysis.tabRoutines": "Routinen",
 
-  // ── KI-Chat ────────────────────────────────────────────────────────────────
+  // ── AI chat ─────────────────────────────────────────────────────────────────
   "chat.title": "KI-Chat",
   "chat.subtitle": "Stelle Fragen zu deinen persönlichen Messwerten und Mustern.",
   "chat.statusChecking": "Chat-Verfügbarkeit wird geprüft…",
@@ -866,5 +976,5 @@ export const de: Record<MessageKey, string> = {
   "chat.errorLoginRequired": "Verbinde dein ChatGPT-Abonnement, bevor du eine Nachricht sendest.",
   "chat.errorResponse": "Der Assistent konnte diese Antwort nicht abschließen.",
   "chat.errorStream": "Die Chat-Verbindung wurde unterbrochen.",
-  // --- Ende des Katalogs ---
+  // --- End of catalogue ---
 };

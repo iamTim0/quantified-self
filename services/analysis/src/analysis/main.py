@@ -30,7 +30,12 @@ from analysis.auth import resolve_tenant
 from analysis.chat_api import codex
 from analysis.chat_api import router as chat_router
 from analysis.config import settings
-from analysis.core_client import CoreClient, CoreUnavailable, MetricPoint
+from analysis.core_client import (
+    CoreClient,
+    CoreUnavailable,
+    MetricSeriesBucket,
+    MetricSeriesResponse,
+)
 from analysis.insights import (
     Provenance,
     compare_periods,
@@ -70,18 +75,16 @@ def _request_id(request: Request) -> str:
     return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
 
 
-def build_daily_series(points: list[MetricPoint]) -> dict[str, dict[str, float]]:
-    """Collapse points to one value per metric per day.
-
-    Last write wins within a day, matching the previous in-Core behaviour: the
-    metrics involved are daily summaries, so a day with several points is a
-    re-import rather than genuinely finer resolution.
-    """
+def build_daily_series(
+    buckets: list[MetricSeriesBucket],
+) -> dict[str, dict[str, float]]:
+    """Convert Core's daily buckets into the pure-analysis series shape."""
     series: dict[str, dict[str, float]] = {}
-    for point in sorted(points, key=lambda p: p.timestamp):
-        series.setdefault(point.metric_type, {})[point.timestamp.date().isoformat()] = (
-            float(point.value)
-        )
+    for bucket in buckets:
+        if bucket.value is None or bucket.sample_count == 0:
+            continue
+        day = bucket.bucket_start.astimezone(UTC).date().isoformat()
+        series.setdefault(bucket.metric_type, {})[day] = float(bucket.value)
     return series
 
 
@@ -104,6 +107,10 @@ async def get_insights(
         False,
         description="Also compare the window with the equally long window before it",
     ),
+    source_id: str | None = Query(
+        None,
+        description="Restrict analysis to one connector instance",
+    ),
     tenant_id: str = Depends(resolve_tenant),
 ) -> dict[str, Any]:
     """Full analysis bundle for the dashboard, with provenance on every result.
@@ -120,11 +127,16 @@ async def get_insights(
     window_start = now - timedelta(days=days)
 
     try:
-        points = await core_client.fetch_points(
-            tenant_id, start=window_start, end=now, request_id=request_id
+        series_response = await core_client.fetch_metric_series(
+            tenant_id,
+            start=window_start,
+            end=now,
+            request_id=request_id,
+            source_id=source_id,
         )
-        source_types = await core_client.fetch_source_types(
-            tenant_id, request_id=request_id
+        source_map = await core_client.fetch_source_map(
+            tenant_id,
+            request_id=request_id,
         )
     except CoreUnavailable as exc:
         logger.warning("[req_id=%s] %s", request_id, exc)
@@ -134,13 +146,56 @@ async def get_insights(
             status_code=503, detail="Analysis data is temporarily unavailable"
         ) from exc
 
-    series = build_daily_series([p for p in points if p.value is not None])
+    # A canonical metric can be reported by several connector instances. Core
+    # returns those source series separately and marks the metric ambiguous. Do
+    # not merge them here: summing two step counters would produce a plausible,
+    # wrong value, and averaging two overlapping sensors would change the sample
+    # weighting without the reader being able to tell.
+    if isinstance(series_response, MetricSeriesResponse):
+        buckets = series_response.buckets
+        source_issues = [
+            {
+                "code": issue.code,
+                "metric_type": issue.metric_type,
+                "source_ids": list(issue.source_ids),
+            }
+            for issue in series_response.issues
+        ]
+    else:
+        # Keep test doubles and older in-process callers readable during a
+        # rolling deployment where the new response wrapper is not available.
+        buckets = series_response
+        source_issues = []
+
+    ambiguous_metrics = {
+        issue["metric_type"]
+        for issue in source_issues
+        if issue["code"] == "AMBIGUOUS_METRIC_SOURCE"
+    }
+    usable_buckets = [
+        bucket for bucket in buckets if bucket.metric_type not in ambiguous_metrics
+    ]
+    series = build_daily_series(usable_buckets)
+    selected_source_ids: dict[str, list[str]] = {}
+    for bucket in usable_buckets:
+        if bucket.value is not None and bucket.sample_count > 0 and bucket.source_id:
+            selected_source_ids.setdefault(bucket.metric_type, [])
+            if bucket.source_id not in selected_source_ids[bucket.metric_type]:
+                selected_source_ids[bucket.metric_type].append(bucket.source_id)
+
+    contributing_source_types = sorted(
+        {
+            source_map.get(source_id, "unknown")
+            for source_ids in selected_source_ids.values()
+            for source_id in source_ids
+        }
+    )
 
     provenance = Provenance(
         computed_at=now.isoformat(),
         window_start=window_start.isoformat(),
         window_end=now.isoformat(),
-        sources=source_types,
+        sources=contributing_source_types,
     )
 
     quality = {
@@ -185,7 +240,7 @@ async def get_insights(
             ) is not None:
                 comparisons[metric] = cmp
 
-    excluded = sorted(set(series) - set(usable))
+    excluded = sorted((set(series) - set(usable)) | ambiguous_metrics)
 
     return {
         "tenant_id": tenant_id,
@@ -196,6 +251,8 @@ async def get_insights(
         ),
         "metrics_analysed": sorted(usable),
         "metrics_excluded_for_quality": excluded,
+        "metric_source_ids": selected_source_ids,
+        "source_issues": source_issues,
         "data_quality": quality,
         "correlations": correlations,
         "lagged_correlations": lagged_correlations(usable),

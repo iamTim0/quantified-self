@@ -19,6 +19,7 @@ from core.db.session import async_session_maker
 from core.scheduler import (
     DueConnector,
     acquire_tick_lock,
+    connector_lock_key,
     find_due_connectors,
     has_in_flight_run,
     is_due,
@@ -32,6 +33,16 @@ NOW = datetime(2026, 4, 1, 12, 0, tzinfo=timezone.utc)
 
 
 # ── Policy: pure, no database ────────────────────────────────────────────────
+
+
+def test_connector_lock_key_is_stable_and_connector_scoped():
+    """Verifies Fizzbee Invariant: SchedulerSingleFlight."""
+    tenant = str(uuid.uuid4())
+    source = str(uuid.uuid4())
+
+    assert connector_lock_key(tenant, source) == connector_lock_key(tenant, source)
+    assert connector_lock_key(tenant, source) != connector_lock_key(tenant, str(uuid.uuid4()))
+    assert connector_lock_key(tenant, source) != connector_lock_key(str(uuid.uuid4()), source)
 
 
 def test_a_connector_that_never_synced_is_due():

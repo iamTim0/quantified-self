@@ -7,8 +7,8 @@ services:
       POSTGRES_USER: qs_dev
       POSTGRES_PASSWORD: qs_dev_password
       POSTGRES_DB: quantified_self
-      # The HA image defaults to /home/postgres/pgdata/data. Keep the database
-      # inside the named volume instead of the disposable container layer.
+      # Keep the database inside the named volume instead of the disposable
+      # container layer, overriding the image's default data directory.
       PGDATA: /var/lib/postgresql/data
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -52,6 +52,12 @@ services:
     command: --jetstream --store_dir /data --http_port 8222
     volumes:
       - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     networks:
       - qs-network
 
@@ -98,12 +104,15 @@ services:
       core-migrate:
         condition: service_completed_successfully
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://qs_dev:qs_dev_password@postgres:5432/quantified_self
       - NATS_URL=nats://nats:4222
+      - CORE_ROLE=${CORE_ROLE:-all}
+      - SCHEDULER_ENABLED=${SCHEDULER_ENABLED:-true}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - INTERNAL_SERVICE_SECRETS=${INTERNAL_SERVICE_SECRETS:-}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - ENVIRONMENT=${ENVIRONMENT:-dev}

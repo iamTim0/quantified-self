@@ -24,7 +24,7 @@ loses data permanently.
 from __future__ import annotations
 
 import math
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from itertools import pairwise
@@ -91,6 +91,8 @@ class ImportPlan:
     confidence: str = "high"
     expected_interval_seconds: float | None = None
     total_points: int = 0
+    coverage_scope: str = "single_metric"
+    coverage_metrics: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {
@@ -103,6 +105,8 @@ class ImportPlan:
             "confidence": self.confidence,
             "expected_interval_seconds": self.expected_interval_seconds,
             "total_points": self.total_points,
+            "coverage_scope": self.coverage_scope,
+            "coverage_metrics": self.coverage_metrics,
             "skipped_ranges": [r.to_dict() for r in self.covered],
         }
 
@@ -128,21 +132,31 @@ def compute_sync_window(
     now: datetime,
     poll_interval_hours: float,
     lookback_days: int,
+    lookback_hours: float | None = None,
     last_success_end: datetime | None = None,
     earliest_known_gap: datetime | None = None,
 ) -> tuple[TimeRange, str]:
     """Decide the window for the next scheduled or manual sync.
 
-    Returns the window and a human-readable German reason, which is surfaced in the
-    UI and stored on the sync run so a later reader can tell why a range was chosen.
+    Returns the window and an English reason, which is surfaced in the UI and stored
+    on the sync run so a later reader can tell why a range was chosen.
     """
     now = _as_utc(now)
-    horizon = now - timedelta(days=max(1, lookback_days))
+    if lookback_hours is not None:
+        hours = max(1.0, float(lookback_hours))
+        duration = timedelta(hours=hours)
+        lookback_label = (
+            f"{hours / 24:g} days" if hours % 24 == 0 else f"{hours:g} hours"
+        )
+    else:
+        duration = timedelta(days=max(1, lookback_days))
+        lookback_label = f"{max(1, lookback_days)} days"
+    horizon = now - duration
 
     if last_success_end is None:
         return (
             TimeRange(horizon, now),
-            f"First import: the whole period of the last {lookback_days} days.",
+            f"First import: the whole period of the last {lookback_label}.",
         )
 
     last_success_end = _as_utc(last_success_end)
@@ -166,7 +180,7 @@ def compute_sync_window(
 
     if start < horizon:
         start = horizon
-        reason += f" Capped at the configured lookback of {lookback_days} days."
+        reason += f" Capped at the configured lookback of {lookback_label}."
 
     if start >= now:
         # The connector already has everything up to now; nothing sensible to do
@@ -179,6 +193,7 @@ def compute_sync_window(
 # ─── 2. Coverage analysis, coarse to fine ────────────────────
 
 BucketFetcher = Callable[[datetime, datetime, int], Awaitable[Sequence[BucketCount]]]
+MetricBucketFetchers = Mapping[str, BucketFetcher]
 
 
 def classify_buckets(
@@ -388,6 +403,69 @@ def _bucket_ending_at(
     return None
 
 
+def _intersect_ranges(
+    left: Sequence[TimeRange], right: Sequence[TimeRange]
+) -> list[TimeRange]:
+    """Return the ranges covered by both inputs."""
+    intersections: list[TimeRange] = []
+    for first in left:
+        for second in right:
+            start = max(first.start, second.start)
+            end = min(first.end, second.end)
+            if start < end:
+                intersections.append(TimeRange(start, end))
+    return merge_adjacent(intersections)
+
+
+async def analyse_metric_coverage(
+    fetchers: MetricBucketFetchers,
+    window: TimeRange,
+    *,
+    coarse_bucket_seconds: int | None = None,
+) -> tuple[list[TimeRange], list[TimeRange], str, float | None, int]:
+    """Analyse coverage for every metric and keep only their common ranges.
+
+    A connector is complete only where every supported canonical metric is complete.
+    The old aggregate counter could let a high-frequency metric hide a missing
+    low-frequency metric; intersecting the per-metric ranges makes that impossible.
+    """
+    if not fetchers:
+        return [], [window], "low", None, 0
+
+    common_covered: list[TimeRange] | None = None
+    total_points = 0
+    expectations: list[float] = []
+    confidences: list[str] = []
+
+    for metric_type in sorted(fetchers):
+        covered, _missing, confidence, expectation, total = await analyse_coverage(
+            fetchers[metric_type],
+            window,
+            coarse_bucket_seconds=coarse_bucket_seconds,
+        )
+        total_points += total
+        confidences.append(confidence)
+        if expectation:
+            expectations.append(expectation)
+        common_covered = (
+            list(covered)
+            if common_covered is None
+            else _intersect_ranges(common_covered, covered)
+        )
+
+    if "low" in confidences:
+        return [], [window], "low", None, total_points
+
+    covered = merge_adjacent(common_covered or [])
+    return (
+        covered,
+        subtract(window, covered),
+        "high",
+        expectations[0] if len(expectations) == 1 else None,
+        total_points,
+    )
+
+
 # ─── 3. Gap detection against observed cadence ───────────────
 
 
@@ -459,6 +537,11 @@ async def plan_import(
     *,
     mode: str = "smart",
     coarse_bucket_seconds: int | None = None,
+    metric_type: str | None = None,
+    require_metric_scope: bool = False,
+    metric_fetchers: MetricBucketFetchers | None = None,
+    coverage_scope: str | None = None,
+    coverage_reason: str | None = None,
 ) -> ImportPlan:
     """Turn a requested range into an actionable plan.
 
@@ -466,6 +549,10 @@ async def plan_import(
     whole range to be re-processed. Idempotency still applies, so this costs
     duplicate events rather than duplicate rows.
     """
+    coverage_metrics = sorted(metric_fetchers or {})
+    if metric_type and not coverage_metrics:
+        coverage_metrics = [metric_type]
+
     if mode == "force":
         return ImportPlan(
             requested=window,
@@ -479,11 +566,46 @@ async def plan_import(
                 "the run still costs the work."
             ),
             confidence="high",
+            coverage_scope=coverage_scope
+            or ("metric_set" if metric_fetchers is not None else "single_metric"),
+            coverage_metrics=coverage_metrics,
         )
 
-    covered, missing, confidence, expectation, total = await analyse_coverage(
-        fetch, window, coarse_bucket_seconds=coarse_bucket_seconds
-    )
+    if coverage_scope is None:
+        coverage_scope = "metric_set" if metric_fetchers is not None else "single_metric"
+
+    # A connector-level point count is not an authoritative completeness signal:
+    # one dense metric can hide a newly supported or entirely missing metric. The
+    # caller must identify either one metric or the complete supported metric set.
+    if coverage_scope == "unknown" or (
+        require_metric_scope and not metric_type and metric_fetchers is None
+    ):
+        return ImportPlan(
+            requested=window,
+            covered=[],
+            missing=[window],
+            recommended=window,
+            mode="smart",
+            reason=coverage_reason
+            or (
+                "No metric-scoped coverage manifest is available. The full requested "
+                "period will be imported to avoid hiding missing metrics."
+            ),
+            confidence="low",
+            coverage_scope="unknown",
+            coverage_metrics=coverage_metrics,
+        )
+
+    if coverage_scope == "metric_set":
+        covered, missing, confidence, expectation, total = await analyse_metric_coverage(
+            metric_fetchers or {},
+            window,
+            coarse_bucket_seconds=coarse_bucket_seconds,
+        )
+    else:
+        covered, missing, confidence, expectation, total = await analyse_coverage(
+            fetch, window, coarse_bucket_seconds=coarse_bucket_seconds
+        )
 
     if confidence == "low":
         # Irregular data: report what we saw but do not act on it.
@@ -500,6 +622,8 @@ async def plan_import(
             confidence="low",
             expected_interval_seconds=None,
             total_points=total,
+            coverage_scope=coverage_scope,
+            coverage_metrics=coverage_metrics,
         )
 
     if not missing:
@@ -516,6 +640,8 @@ async def plan_import(
             confidence=confidence,
             expected_interval_seconds=expectation or None,
             total_points=total,
+            coverage_scope=coverage_scope,
+            coverage_metrics=coverage_metrics,
         )
 
     recommended = TimeRange(missing[0].start, missing[-1].end)
@@ -541,6 +667,8 @@ async def plan_import(
         confidence=confidence,
         expected_interval_seconds=expectation or None,
         total_points=total,
+        coverage_scope=coverage_scope,
+        coverage_metrics=coverage_metrics,
     )
 
 

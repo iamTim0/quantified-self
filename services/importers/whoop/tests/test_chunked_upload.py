@@ -14,9 +14,11 @@ import io
 import zipfile
 from unittest.mock import AsyncMock, patch
 
+import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from whoop_importer.core_client import UploadTarget
-from whoop_importer.web import _uploads, app
+from whoop_importer.web import _spool_request, _uploads, app
 
 app.state.testing = True
 client = TestClient(app)
@@ -26,6 +28,15 @@ OTHER_TENANT = "99999999-9999-9999-9999-999999999999"
 SOURCE = "22222222-2222-2222-2222-222222222222"
 
 AUTH = {"Authorization": "Bearer session-token"}
+
+
+class _StreamingRequest:
+    def __init__(self, chunks: list[bytes]) -> None:
+        self.chunks = chunks
+
+    async def stream(self):
+        for chunk in self.chunks:
+            yield chunk
 
 CYCLES_CSV = (
     "Cycle start time,Day Strain,Energy burned (cal),Average HR (bpm),Recovery score %\n"
@@ -43,6 +54,21 @@ def _archive() -> bytes:
 def test_a_session_cannot_be_opened_without_one():
     assert client.post(f"/upload/begin?source_id={SOURCE}").status_code == 401
     assert client.post("/upload/chunk?upload_id=x&offset=0", content=b"abc").status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_single_request_body_is_streamed_to_a_private_spool():
+    """The direct route uses the same bounded disk spool as chunked uploads."""
+    from whoop_importer import web
+
+    chunks = [b"first", b" second", b" third"]
+    session = await _spool_request(_StreamingRequest(chunks), TENANT, SOURCE)
+    try:
+        assert session.path.read_bytes() == b"".join(chunks)
+        assert session.path.stat().st_mode & 0o777 == 0o600
+    finally:
+        session.path.unlink(missing_ok=True)
+        assert not any(item.source_id == SOURCE for item in web._uploads.sessions())
 
 
 @patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock)
@@ -80,7 +106,8 @@ def test_parts_reassemble_into_the_export_the_parser_reads(
 
     assert done.status_code == 202, done.text
     assert done.json()["sync_run_id"] == "run-1"
-    assert done.json()["points_expected"] > 0
+    assert done.json()["received"] == len(payload)
+    assert done.json()["points_expected"] is None
     # The run is opened when the archive is complete, not when the session opened: a
     # run open for the length of an upload marks the connector busy for that long.
     assert mock_open.await_count == 1
@@ -106,6 +133,27 @@ def test_the_assembled_file_does_not_outlive_the_import(mock_session, mock_targe
         mock_open.return_value = "run-2"
         client.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
 
+    assert not spooled.exists()
+
+
+@patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
+@patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
+def test_target_lookup_failure_still_removes_the_finished_archive(mock_session, mock_target):
+    """A finished upload remains disposable even when its connector disappeared."""
+    mock_session.return_value = TENANT
+    mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
+
+    payload = _archive()
+    upload_id = client.post(f"/upload/begin?source_id={SOURCE}", headers=AUTH).json()[
+        "upload_id"
+    ]
+    client.post(f"/upload/chunk?upload_id={upload_id}&offset=0", content=payload, headers=AUTH)
+    spooled = _uploads.session(upload_id, TENANT).path
+    mock_target.side_effect = HTTPException(status_code=404, detail="Connector not found")
+
+    completed = client.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
+
+    assert completed.status_code == 404
     assert not spooled.exists()
 
 

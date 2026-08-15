@@ -19,6 +19,9 @@ import {
 import { apiFetch } from "../lib/api";
 import { useI18n, type Translate } from "../lib/i18n/provider";
 import { uploadPercent, useUploads } from "../lib/uploads/provider";
+import { messageForRun, type SyncRun } from "./import-run";
+
+export type { SyncRun } from "./import-run";
 
 /**
  * Import dialog with an explicit time range, a smart/force choice and a preview of
@@ -47,25 +50,6 @@ export interface ImportPlan {
   window_reason?: string;
   total_points: number;
   docs_url?: string;
-}
-
-export interface SyncRun {
-  id: string;
-  request_id: string;
-  mode: string;
-  trigger: string;
-  status: string;
-  window_start: string | null;
-  window_end: string | null;
-  window_reason: string | null;
-  points_expected: number | null;
-  points_received: number;
-  points_accepted: number;
-  points_duplicate: number;
-  message: string | null;
-  started_at: string | null;
-  finished_at: string | null;
-  duration_seconds: number | null;
 }
 
 interface ImportDialogProps {
@@ -190,8 +174,7 @@ export default function ImportDialog({
           body: JSON.stringify(body),
         });
         if (!res.ok) {
-          const detail = await res.json().catch(() => null);
-          throw new Error(detail?.detail || t("import.planFailed"));
+          throw new Error(t("import.planFailed"));
         }
         const data: ImportPlan = await res.json();
         setPlan(data);
@@ -328,17 +311,14 @@ export default function ImportDialog({
         method: "POST",
         headers: authHeaders(),
         body: JSON.stringify({
-          source_type: sourceType,
+          source_id: sourceType,
           mode,
           start: start ? fromLocalInput(start) : undefined,
           end: end ? fromLocalInput(end) : undefined,
         }),
       });
       const data = await res.json().catch(() => null);
-      if (!res.ok) throw new Error(data?.detail || t("import.startFailed"));
-      if (data?.status === "error") {
-        throw new Error(data?.message || t("import.startFailed"));
-      }
+      if (!res.ok || data?.status === "error") throw new Error(t("import.startFailed"));
 
       setResult(data?.status === "skipped" ? t("import.nothingToDo") : t("import.queued"));
       onQueued?.();
@@ -492,7 +472,7 @@ export default function ImportDialog({
                       {upload.phase === "assembling" && t("upload.assembling")}
                       {upload.phase === "uploading" && t("import.uploadInParts")}
                       {upload.phase === "cancelled" && t("upload.cancelledBody")}
-                      {upload.phase === "error" && (upload.detail ?? t("import.uploadFailed"))}
+                      {upload.phase === "error" && t("import.uploadFailed")}
                     </span>
                     {uploading && (
                       <button
@@ -555,7 +535,7 @@ export default function ImportDialog({
               {plan?.window_reason && !rangeTouched && (
                 <p className="text-[11px] leading-relaxed text-slate-500">
                   <span className="font-semibold text-slate-600">{t("import.suggestion")}</span>{" "}
-                  {plan.window_reason}
+                  {t("import.windowSuggested")}
                 </p>
               )}
 
@@ -636,7 +616,8 @@ export default function ImportDialog({
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
               <div className="mb-2 flex items-center justify-between">
                 <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t("import.running")}
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
+                  {running.status === "loading" ? t("import.loadingCore") : t("import.running")}
                 </h3>
                 {typicalHint && <span className="text-[11px] text-emerald-700">{typicalHint}</span>}
               </div>
@@ -650,7 +631,7 @@ export default function ImportDialog({
                         width: `${Math.min(
                           100,
                           Math.round(
-                            ((running.points_accepted + running.points_duplicate) /
+                            (running.points_processed /
                               (running.points_expected ?? running.points_received)) *
                               100,
                           ),
@@ -660,14 +641,14 @@ export default function ImportDialog({
                   </div>
                   <p className="mt-1.5 text-[11px] text-emerald-900">
                     {t("import.progressOf", {
-                      done: running.points_accepted + running.points_duplicate,
+                      done: running.points_processed,
                       total: running.points_expected ?? running.points_received,
                     })}
                   </p>
                 </>
               ) : (
                 <p className="text-[11px] text-emerald-900">
-                  {t("import.progressCounted", { count: running.points_accepted })}
+                  {t("import.progressCounted", { count: running.points_processed })}
                 </p>
               )}
             </div>
@@ -773,9 +754,13 @@ export default function ImportDialog({
                       {t("import.runCounts", {
                         accepted: run.points_accepted,
                         duplicate: run.points_duplicate,
+                        rejected: run.points_rejected ?? 0,
+                        unsupported: run.unsupported_fields ?? 0,
                       })}
                     </p>
-                    {run.message && <p className="mt-0.5 text-slate-400">{run.message}</p>}
+                    {messageForRun(t, run) && (
+                      <p className="mt-0.5 text-slate-400">{messageForRun(t, run)}</p>
+                    )}
                   </li>
                 ))}
               </ul>

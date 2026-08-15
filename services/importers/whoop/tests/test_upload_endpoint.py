@@ -9,14 +9,16 @@ Maps to Fizzbee Invariants:
 """
 
 import io
+import json
 import zipfile
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from whoop_importer import web
 from whoop_importer.core_client import UploadTarget
-from whoop_importer.web import _publish, app
+from whoop_importer.web import _import_archive, _publish, app
 
 app.state.testing = True
 client = TestClient(app)
@@ -36,6 +38,17 @@ def _archive(files: dict[str, str] | None = None) -> bytes:
         for name, body in (files or {"physiological_cycles.csv": CYCLES_CSV}).items():
             archive.writestr(name, body)
     return buffer.getvalue()
+
+
+def _many_cycles(rows: int) -> str:
+    lines = [
+        "Cycle start time,Day Strain,Energy burned (cal),Average HR (bpm),Recovery score %"
+    ]
+    for index in range(rows):
+        day = index // 24 + 1
+        hour = index % 24
+        lines.append(f"2026-08-{day:02d} {hour:02d}:00:00,14.2,2450,62,71")
+    return "\n".join(lines) + "\n"
 
 
 class _FakeJetStream:
@@ -69,13 +82,12 @@ def test_an_upload_without_a_session_is_refused():
 
 
 @patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock)
-@patch("whoop_importer.web.report_sync_progress", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
-def test_an_upload_is_accepted_with_the_count_it_will_publish(
-    mock_session, mock_target, mock_progress, mock_open
+def test_an_upload_is_accepted_without_counting_points_up_front(
+    mock_session, mock_target, mock_open
 ):
-    """A CSV export is small enough to count up front, so the progress bar has a total."""
+    """Acceptance does not require materialising the archive to count its points."""
     mock_session.return_value = TENANT
     mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
     mock_open.return_value = "run-1"
@@ -89,7 +101,8 @@ def test_an_upload_is_accepted_with_the_count_it_will_publish(
     assert response.status_code == 202, response.text
     body = response.json()
     assert body["sync_run_id"] == "run-1"
-    assert body["points_expected"] == mock_progress.await_args.kwargs["points_expected"] > 0
+    assert body["received"] > 0
+    assert body["points_expected"] is None
 
 
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
@@ -111,10 +124,13 @@ def test_a_connector_belonging_to_somebody_else_is_a_404(mock_session, mock_targ
 @patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
 @patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock)
 @patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock)
-def test_a_file_that_is_not_a_whoop_export_says_so(mock_close, mock_open, mock_session, mock_target):
-    """A wrong file is a mistake to correct, not a silent import of nothing."""
+def test_a_file_that_is_not_a_whoop_export_says_so(
+    mock_close, mock_open, mock_session, mock_target
+):
+    """A wrong file becomes a failed run instead of blocking the upload response."""
     mock_session.return_value = TENANT
     mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
+    mock_open.return_value = "run-invalid"
 
     response = client.post(
         f"/upload?source_id={SOURCE}",
@@ -122,8 +138,8 @@ def test_a_file_that_is_not_a_whoop_export_says_so(mock_close, mock_open, mock_s
         headers={"Authorization": "Bearer session-token"},
     )
 
-    assert response.status_code == 400
-    assert "Whoop CSV" in response.json()["detail"]
+    assert response.status_code == 202
+    assert response.json()["sync_run_id"] == "run-invalid"
 
 
 @pytest.mark.asyncio
@@ -174,3 +190,69 @@ async def test_a_broker_failure_mid_publish_reaches_the_history(mock_close, mock
 
     assert mock_close.await_args.kwargs["status"] == "error"
     mock_report.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("whoop_importer.web.send_field_report", new_callable=AsyncMock)
+@patch("whoop_importer.web.report_sync_progress", new_callable=AsyncMock)
+@patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock)
+async def test_archive_publishing_never_exceeds_the_configured_batch(
+    mock_close, mock_progress, mock_report, tmp_path
+):
+    """A whole-history archive is transformed and published in bounded batches."""
+    path = tmp_path / "whoop-export.zip"
+    path.write_bytes(_archive({"physiological_cycles.csv": _many_cycles(300)}))
+    fake = _FakeNats()
+    batch_sizes: list[int] = []
+    original_publish_events = web._publish_events
+
+    async def record_batch_size(js, events, **kwargs):
+        batch_sizes.append(len(events))
+        return await original_publish_events(js, events, **kwargs)
+
+    with patch.object(web, "_publish_events", side_effect=record_batch_size):
+        await _import_archive(
+            path,
+            nc=fake,
+            tenant_id=TENANT,
+            source_id=SOURCE,
+            sync_run_id="run-bounded",
+            req_id="req-bounded",
+        )
+
+    assert batch_sizes
+    assert max(batch_sizes) <= web.PUBLISH_BATCH_SIZE
+    assert len(batch_sizes) > 1
+    assert len(fake.js.published) == len(batch_sizes)
+    assert sum(len(json.loads(payload)["events"]) for _, payload in fake.js.published) == 1_200
+    assert all(json.loads(payload)["schema_version"] == 2 for _, payload in fake.js.published)
+    assert not path.exists()
+    assert mock_close.await_args.kwargs["status"] == "idle"
+    assert mock_close.await_args.kwargs["points_received"] == 1_200
+    assert mock_progress.await_args.kwargs["points_received"] == 1_200
+    mock_report.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch("whoop_importer.web.send_field_report", new_callable=AsyncMock)
+@patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock)
+async def test_broker_loss_does_not_mark_a_real_import_as_successful(
+    mock_close, mock_report, tmp_path
+):
+    """A disconnected production broker closes the run as an error, never as a dry run."""
+    path = tmp_path / "whoop-export.zip"
+    path.write_bytes(_archive())
+
+    await _import_archive(
+        path,
+        nc=None,
+        tenant_id=TENANT,
+        source_id=SOURCE,
+        sync_run_id="run-broker-loss",
+        req_id="req-broker-loss",
+    )
+
+    assert not path.exists()
+    assert mock_close.await_args.kwargs["status"] == "error"
+    assert mock_close.await_args.kwargs["points_received"] == 0
+    mock_report.assert_awaited_once()

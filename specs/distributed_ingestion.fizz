@@ -11,7 +11,9 @@ IMPORTERS = ['oura_1', 'oura_2']
 # twice" and "the queue drains", and both are exercised by a single message
 # published twice.
 MAX_MESSAGES = 2
+MAX_QUEUE = 4
 METRIC_TYPES = ["steps", "sleep"]
+RESOLUTIONS = ["raw", "minute", "hour", "day"]
 
 
 action Init:
@@ -19,22 +21,27 @@ action Init:
     core_db = {}
     processed_count = 0
     duplicate_count = 0
+    acknowledged = []
     broker_available = True
     next_idempotency_key = 1
 
 atomic action ImporterPublish:
     require broker_available == True
     require next_idempotency_key <= MAX_MESSAGES
+    # A publisher must pause before the durable stream is full. It may publish a
+    # bounded pair atomically, but it must never rely on discard-old semantics.
+    require len(broker_queue) <= MAX_QUEUE - 2
     tenant_id = oneof(TENANTS)
     # Which importer published is not something any assertion here reads, and
     # branching on it multiplies the graph for nothing.
     importer = IMPORTERS[0]
     metric_type = oneof(METRIC_TYPES)
+    resolution = oneof(RESOLUTIONS)
 
     key = str(next_idempotency_key)
     next_idempotency_key = next_idempotency_key + 1
     
-    msg = {"tenant_id": tenant_id, "importer": importer, "metric_type": metric_type, "idempotency_key": key}
+    msg = {"tenant_id": tenant_id, "importer": importer, "metric_type": metric_type, "resolution": resolution, "idempotency_key": key}
     
     # Non-deterministically choose whether to publish once or twice
     times = oneof([1, 2])
@@ -77,9 +84,11 @@ atomic fair<strong> action CoreConsume:
     # Deduplication via idempotency_key
     if msg["idempotency_key"] in core_db:
         duplicate_count = duplicate_count + 1
+        acknowledged.append(msg["idempotency_key"])
     else:
         core_db[msg["idempotency_key"]] = msg
         processed_count = processed_count + 1
+        acknowledged.append(msg["idempotency_key"])
 
 atomic action CoreConsumeFailure:
     require len(broker_queue) > 0 and broker_available == True
@@ -112,6 +121,21 @@ always assertion IdempotencyKeyUnique:
     for key in core_db:
         value = core_db[key]
         if value.get("idempotency_key") != key:
+            return False
+    return True
+
+always assertion ResolutionBounded:
+    # Import-time aggregation may choose only a registry-approved resolution.
+    for value in core_db.values():
+        if value.get("resolution") not in RESOLUTIONS:
+            return False
+    return True
+
+always assertion AckAfterPersisted:
+    # A duplicate is acknowledged only because its idempotency key is already
+    # persisted; a newly accepted message is acknowledged after insertion.
+    for key in acknowledged:
+        if key not in core_db:
             return False
     return True
 

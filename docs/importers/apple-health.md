@@ -62,6 +62,27 @@ The importer does not write to the database. The Core service is the database's 
 deduplicates on the `idempotency_key`. Every import stays attached to the configured
 `tenant_id`.
 
+Archive and push events are sent in bounded version-2 NATS envelopes of at most 1,000 points and
+512 KiB. Core processes each envelope in one bounded database transaction and acknowledges it only
+after its children have been stored, deduplicated or recorded as rejected. If a broker
+acknowledgement is lost, the envelope may be retried; its deterministic child keys make that replay
+safe. This keeps a multi-year archive from creating one broker round trip and one in-memory task
+per point.
+
+## Resolution and completeness
+
+Before publishing, the importer asks Core for the tenant's effective metric policies. Continuous
+Apple Health samples are aggregated into minute buckets by default; provider-stated daily totals
+remain authoritative for day rollups. A derived bucket carries its operation and sample count in
+metadata, so the reduction is auditable without retaining the complete provider payload.
+
+Policies apply to future imports only. Change them under the Explorer's **Import resolution**
+control or through Core's ingest-policy API, then upload a deliberate archive again if historical
+data needs to be rebuilt. The import run shows how many points were published and which provider
+window was covered; the Data Quality Center names fields that arrived but are not stored. A
+successful upload therefore means "the accepted export was processed", not "Apple Health supplied
+every possible category or date".
+
 ## Imported metrics
 
 | `metric_type` | Meaning | Unit |
@@ -78,17 +99,27 @@ deduplicates on the `idempotency_key`. Every import stays attached to the config
 | `sleep_duration_deep` / `_rem` / `_light` / `_awake` / `_in_bed` | sleep stages | `min` |
 | `body_weight` | body weight | `kg` |
 | `workout_duration`, `workout_distance`, `workout_energy`, `workout_heart_rate_average`, `workout_heart_rate_max` | workout sessions | `min`, `km`, `kcal`, `bpm` |
+| `workout_speed_average`, `workout_speed_max`, `workout_cadence`, `workout_cycling_cadence`, `workout_cycling_power` | workout speed, cadence and cycling power | `km/h`, `spm`, `rpm`, `W` |
+| `workout_elevation_gain`, `workout_elevation_loss`, `workout_lap_length` | ascent, descent and swimming lap length | `m` |
+| `workout_swim_cadence`, `workout_swimming_strokes`, `workout_steps`, `workout_intensity` | swimming cadence, stroke count, workout steps and intensity | `spm`, `count`, `MET` |
 | `blood_pressure_systolic`, `blood_pressure_diastolic` | blood pressure | `mmHg` |
 | `location_point` | one point per GPS fix in a workout route | — |
+| `physical_effort`, `running_power`, `running_speed`, `running_stride_length`, `running_vertical_oscillation`, `running_ground_contact_time` | physical effort and running dynamics | `MET`, `W`, `km/h`, `m`, `mm`, `ms` |
+| `walking_step_length`, `walking_speed`, `walking_double_support`, `walking_asymmetry`, `walking_steadiness` | walking mobility measurements | `m`, `km/h`, `%`, `%`, `%` |
+| `stair_ascent_speed`, `stair_descent_speed`, `six_minute_walk_distance`, `daylight_duration`, `standing_events` | stair, mobility-test, daylight and standing measurements | `km/h`, `km/h`, `m`, `min`, `count` |
+| `audio_exposure_environmental`, `audio_exposure_headphone`, `audio_exposure_reduction`, `audio_exposure_events` | hearing exposure and exposure events | `dB`, `dB`, `dB`, `count` |
+| `nutrition_sugar`, `nutrition_sodium`, `nutrition_fat_saturated`, `nutrition_fat_monounsaturated`, `nutrition_fat_polyunsaturated`, `nutrition_potassium`, `nutrition_cholesterol`, `nutrition_calcium`, `nutrition_vitamin_c_intake`, `nutrition_iron`, `nutrition_caffeine`, `water_intake` | dietary details and water intake | `g`, `mg`, `g`, `g`, `g`, `mg`, `mg`, `mg`, `mg`, `mg`, `mg`, `mL` |
+| `body_height`, `body_mass_index`, `lean_body_mass`, `heart_rate_recovery` | body composition and recovery | `m`, `index`, `kg`, `bpm` |
+| `swimming_strokes`, `handwashing_events`, `mindful_session_duration`, `toothbrushing_events` | daily activity and wellbeing events | `count`, `count`, `min`, `count` |
 
 Health Auto Export sends the unit along with each metric, and that unit follows the phone's
 locale — miles or kilometres, hours or minutes. The importer reads it and converts to the
 registry's unit; the original value stays in `metadata.provider_value`, the reported unit in
 `metadata.units`.
 
-HealthKit types the catalog does not know land under the prefix `apple_health_` (for example
-`apple_health_dietary_water`). They are not lost, but they do not occupy a canonical name
-either.
+HealthKit types the catalog does not know land under the prefix `apple_health_`. They are not
+lost, but they do not occupy a canonical name either. The fields listed above are catalogued,
+so their canonical names are the ones to query.
 
 Queries always use the exact `metric_type` value.
 
@@ -106,6 +137,15 @@ share an `idempotency_key` and the second would be discarded by Core anyway.
 | `totalSleep`, or the older `asleep`, or the entry's own `qty` | `sleep_duration` |
 | `sleepStart`, `sleepEnd`, `inBedStart`, `inBedEnd` | metadata on that night's readings, normalised to UTC — which night a reading belongs to, a single timestamp cannot say |
 | `isIndoor`, `location`, `metadata` | metadata on the session's readings |
+| `temperature`, `humidity` | ambient conditions in the session metadata |
+| `elevationDown`, `lapLength`, `swimCadence`, `totalSwimmingStrokeCount` | scalar workout metrics after unit conversion |
+
+Apple archive metadata is retained field by field rather than as a raw payload. Indoor/user
+entered flags, timezone, weather context, sync identifiers, external UUID, swimming location
+and Fitness+ session markers travel with the workout points. Numeric metadata such as average
+METs, elevation, maximum speed, lap length and WHOOP strain becomes a normal metric point.
+Workout statistics for running dynamics, steps and swimming strokes follow the same registry
+and unit conversion rules.
 
 ### Time series inside a workout
 
@@ -116,6 +156,11 @@ reason to lose them: collapsed, a series states the same thing the scalar field 
 | --- | --- | --- |
 | `activeEnergy` **+** `basalEnergy` | sum of both — they are the two halves of the total | `workout_energy` |
 | `walkingAndRunningDistance`, `cyclingDistance` | sum | `workout_distance` |
+| `swimDistance` | sum | `workout_distance` |
+| `cyclingCadence` | mean | `workout_cycling_cadence` |
+| `cyclingPower` | mean | `workout_cycling_power` |
+| `cyclingSpeed` | mean | `workout_speed_average` |
+| `swimStroke` | sum | `workout_swimming_strokes` |
 | `heartRateData` | mean of the samples' averages, and the greatest of their maxima | `workout_heart_rate_average`, `workout_heart_rate_max` |
 
 A figure stated outright always wins: these are read only when the session sent no scalar for that
@@ -127,13 +172,12 @@ What such a series must **not** become is one data point per sample under the da
 `steps` and `distance` aggregate by sum over a day, and the day's own total already arrives from
 the phone; adding a workout's per-minute samples on top would make that day read roughly a third
 too high everywhere it is shown. Per-sample resolution needs a metric of its own before it can be
-stored — which is why `stepCount` is still only reported and not kept.
+stored. A provider-stated workout total always takes precedence over a derived series.
 
-Still unstored, for want of a registry metric rather than on purpose: `stepCount`, a workout's speed
-(`avgSpeed`, `maxSpeed`, `speed`), `stepCadence`, `elevationUp`, `flightsClimbed`, `intensity`, and
-the ambient `temperature` and `humidity` it records. Each is named in the
-[Data Quality Center](../features/data-quality.md) rather than dropped quietly, so a decision to
-store one starts from a name and a count. Adding any of them means adding the metric to the registry
+The remaining workout fields without a canonical metric are still named in the
+[Data Quality Center](../features/data-quality.md) rather than dropped quietly. This currently
+includes recovery time-series data and swimming descriptors such as `heartRateRecovery`,
+`strokeStyle`, `swolfScore` and `salinity`. Adding one means adding the metric to the registry
 first — one metric, one name, one unit; see [Metrics](../metrics.md).
 
 ## Retrieving the data

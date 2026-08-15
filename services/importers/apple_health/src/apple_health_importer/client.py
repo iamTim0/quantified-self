@@ -92,6 +92,33 @@ async def resolve_upload_target(tenant_id: str, source_id: str, *, req_id: str) 
     return UploadTarget(tenant_id=tenant_id, source_id=str(data["source_id"]), source_type=source_type)
 
 
+async def get_ingest_policies(
+    tenant_id: str, source_id: str, *, req_id: str
+) -> dict[str, dict[str, Any]]:
+    """Fetch tenant metric policies; registry defaults remain a safe fallback."""
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_id}/ingest-policy"
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            response = await client.get(url, headers=internal_headers(req_id, tenant_id))
+        if response.status_code == 200:
+            payload = response.json()
+            policies = payload.get("policies")
+            if isinstance(policies, dict):
+                return policies
+        logger.warning(
+            "[req_id=%s] Core did not return ingest policies (status=%s); using registry defaults.",
+            req_id,
+            response.status_code,
+        )
+    except Exception as exc:  # noqa: BLE001 - defaults keep import availability intact
+        logger.warning(
+            "[req_id=%s] Could not fetch ingest policies (%s); using registry defaults.",
+            req_id,
+            type(exc).__name__,
+        )
+    return {}
+
+
 async def get_connector_credentials_from_core(
     tenant_id: str,
     req_id: str = "req_apple_health_auth",
@@ -173,6 +200,12 @@ async def close_sync_run(
     status: str,
     message: str,
     points_received: int | None = None,
+    points_rejected: int | None = None,
+    unsupported_fields: int | None = None,
+    backlog: int | None = None,
+    provider_window_start: str | None = None,
+    provider_window_end: str | None = None,
+    provider_exported_at: str | None = None,
 ) -> None:
     """Close the run out so the history shows what happened."""
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_id}/status"
@@ -183,6 +216,18 @@ async def close_sync_run(
     }
     if points_received is not None:
         payload["points_received"] = points_received
+    if points_rejected is not None:
+        payload["points_rejected"] = points_rejected
+    if unsupported_fields is not None:
+        payload["unsupported_fields"] = unsupported_fields
+    if backlog is not None:
+        payload["backlog"] = backlog
+    if provider_window_start is not None:
+        payload["provider_window_start"] = provider_window_start
+    if provider_window_end is not None:
+        payload["provider_window_end"] = provider_window_end
+    if provider_exported_at is not None:
+        payload["provider_exported_at"] = provider_exported_at
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
@@ -199,6 +244,12 @@ async def report_sync_progress(
     req_id: str,
     points_expected: int | None = None,
     points_received: int | None = None,
+    points_rejected: int | None = None,
+    unsupported_fields: int | None = None,
+    backlog: int | None = None,
+    provider_window_start: str | None = None,
+    provider_window_end: str | None = None,
+    provider_exported_at: str | None = None,
     message: str | None = None,
 ) -> None:
     """Tell Core a known total without closing the still-running import."""
@@ -213,6 +264,18 @@ async def report_sync_progress(
         payload["points_expected"] = points_expected
     if points_received is not None:
         payload["points_received"] = points_received
+    if points_rejected is not None:
+        payload["points_rejected"] = points_rejected
+    if unsupported_fields is not None:
+        payload["unsupported_fields"] = unsupported_fields
+    if backlog is not None:
+        payload["backlog"] = backlog
+    if provider_window_start is not None:
+        payload["provider_window_start"] = provider_window_start
+    if provider_window_end is not None:
+        payload["provider_window_end"] = provider_window_end
+    if provider_exported_at is not None:
+        payload["provider_exported_at"] = provider_exported_at
     if message:
         payload["message"] = message[:512]
 

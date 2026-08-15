@@ -20,11 +20,13 @@
 #
 # Two deliberate differences from the file this replaces:
 #
-#   * Core no longer publishes 8001 and 50051 to the host. It serves
+#   * Core no longer publishes 8001 and 50051 to the host. Its API role serves
 #     `/api/v1/internal/*`, which hands out decrypted connector credentials, and
 #     docs/operations.md has said all along that it must not be publicly
 #     reachable. Traefik never routed it, so the ports were pure attack surface.
 #     Everything on the compose network still reaches it by service name.
+#     The same image runs as `core-ingest` and `core-scheduler`; their roles keep
+#     the high-volume consumer and the periodic planner independently scalable.
 #   * Traefik's dashboard is bound to loopback instead of every interface. It is
 #     served with `--api.insecure=true`, so on a public host it was an
 #     unauthenticated admin UI on port 8080.
@@ -54,8 +56,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-qs_dev}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-qs_dev_password}
       POSTGRES_DB: ${POSTGRES_DB:-quantified_self}
-      # The HA image defaults to /home/postgres/pgdata/data. Keep the database
-      # inside the named volume instead of the disposable container layer.
+      # Keep the database inside the named volume instead of the disposable
+      # container layer, overriding the image's default data directory.
       PGDATA: /var/lib/postgresql/data
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -96,6 +98,12 @@ services:
     command: --jetstream --store_dir /data --http_port 8222
     volumes:
       - natsdata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     networks:
       - qs-network
 
@@ -137,6 +145,9 @@ services:
     restart: always
     command:
       - "--api.insecure=true"
+      # Enable Traefik's private liveness endpoint on the internal admin
+      # entrypoint. It is not exposed through the public web entrypoint.
+      - "--ping=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
       - "--entrypoints.web.address=:80"
@@ -147,6 +158,14 @@ services:
       # Traefik dashboard, loopback only. Reach it over an SSH tunnel:
       #   ssh -L 8081:127.0.0.1:8081 user@host
       - "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080"
+    healthcheck:
+      # Coolify and Docker can use the native Traefik check without curl or
+      # wget. The default ping entrypoint is port 8080, which remains loopback-only.
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     environment:
       - DOCKER_API_VERSION=1.44
     volumes:
@@ -195,10 +214,12 @@ services:
       core-migrate:
         condition: service_completed_successfully
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
       - NATS_URL=nats://nats:4222
+      - CORE_ROLE=api
+      - SCHEDULER_ENABLED=false
       - ENVIRONMENT=${ENVIRONMENT:-production}
       # `:?` rather than `:-`. These previously defaulted to values printed in
       # this repository, so a deployment that never set them ran on secrets
@@ -211,6 +232,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY; re-encrypt stored credentials before changing it - see docs/operations.md}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET; generate with python -c "import secrets; print(secrets.token_urlsafe(48))"}
+      - INTERNAL_SERVICE_SECRETS=${INTERNAL_SERVICE_SECRETS:-}
       - ALLOW_REGISTRATION=${ALLOW_REGISTRATION:-false}
     healthcheck:
       # `/health` is a pure liveness check and touches no table. It stays that way
@@ -218,6 +240,69 @@ services:
       # that needed a table would make the first install depend on itself.
       #
       # python, not curl or wget: the image is python:3.12-slim and has neither.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - qs-network
+
+  # The API role publishes manual sync tasks. The ingest and scheduler roles
+  # below use the same image and database ownership, but do not expose gRPC or
+  # consume the data stream, so each workload can be scaled independently.
+  core-ingest:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
+      - NATS_URL=nats://nats:4222
+      - CORE_ROLE=ingest
+      - SCHEDULER_ENABLED=false
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - INTERNAL_SERVICE_SECRETS=${INTERNAL_SERVICE_SECRETS:-}
+      - ALLOW_REGISTRATION=false
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    networks:
+      - qs-network
+
+  core-scheduler:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/core:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      core-migrate:
+        condition: service_completed_successfully
+      nats:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
+      - NATS_URL=nats://nats:4222
+      - CORE_ROLE=scheduler
+      - SCHEDULER_ENABLED=true
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - INTERNAL_SERVICE_SECRETS=${INTERNAL_SERVICE_SECRETS:-}
+      - ALLOW_REGISTRATION=false
+    healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
       interval: 10s
       timeout: 5s
@@ -241,6 +326,12 @@ services:
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - CHAT_CREDENTIALS_STORE=file
       - CODEX_HOME=/run/qs-codex
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     tmpfs:
       - /run/qs-codex:mode=0700
     networks:
@@ -258,7 +349,7 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
@@ -325,6 +416,12 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/').then((response) => { if (!response.ok) process.exit(1); }).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     labels:
       # `workspace`, priority 1: the UI is whatever no other route claimed.
       - "traefik.enable=true"
@@ -351,6 +448,12 @@ services:
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
       - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
       - "traefik.http.routers.docs.middlewares=docs-stripprefix"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8003/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
     networks:
       - qs-network
 
@@ -373,12 +476,18 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -389,12 +498,18 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -405,13 +520,19 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8007
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8007/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     # Not published: the export upload is reached through the Gateway, which is
     # where the session is checked. The port exists for that hop alone.
     expose:
@@ -430,13 +551,19 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8005
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8005/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     networks:
       - qs-network
 
@@ -449,13 +576,19 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - PORT=8006
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8006/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     labels:
       # `ingest`, priority 30: the short URL an external tracker posts to,
       # without needing a second open port.
@@ -480,12 +613,18 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -496,12 +635,18 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -512,12 +657,18 @@ services:
       core:
         condition: service_healthy
       nats:
-        condition: service_started
+        condition: service_healthy
     environment:
       - NATS_URL=nats://nats:4222
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os,socket; from urllib.parse import urlparse; u=urlparse(os.getenv('NATS_URL','nats://localhost:4222')); s=socket.create_connection((u.hostname or 'localhost',u.port or 4222),3); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     networks:
       - qs-network
 
@@ -531,7 +682,8 @@ services:
       - TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN}
     command: tunnel --no-autoupdate run
     depends_on:
-      - traefik
+      traefik:
+        condition: service_healthy
     networks:
       - qs-network
 

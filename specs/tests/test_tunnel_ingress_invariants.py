@@ -30,6 +30,8 @@ def test_tunnel_targets_only_stack_proxy() -> None:
     """
     text = compose_text()
 
+    # Production always uses Cloudflare Tunnel and requires its token.
+    assert "TUNNEL_TOKEN=${TUNNEL_TOKEN:?set TUNNEL_TOKEN}" in text
     assert "command: tunnel --no-autoupdate run" in text
     assert "traefik:" in text
 

@@ -77,6 +77,7 @@ HEADER = """/**
  */
 
 export type Aggregation = "average" | "sum" | "last" | "max";
+export type IngestResolution = "raw" | "minute" | "hour" | "day";
 
 export interface MetricDefinition {
   key: string;
@@ -91,6 +92,8 @@ export interface MetricDefinition {
   plausibleMin: number | null;
   plausibleMax: number | null;
   precision: number;
+  ingestResolution: IngestResolution;
+  rawRetentionDays: number;
 }
 
 export interface MetricNamespace {
@@ -179,6 +182,8 @@ def render() -> str:
             + f"    plausibleMin: {_ts(d.plausible_min)},\n"
             + f"    plausibleMax: {_ts(d.plausible_max)},\n"
             + f"    precision: {_ts(d.precision)},\n"
+            + f"    ingestResolution: {_ts(d.default_ingest_resolution.value)},\n"
+            + f"    rawRetentionDays: {_ts(d.raw_retention_days)},\n"
             + "  },"
         )
 

@@ -20,6 +20,50 @@ message QueryDataPointsResponse {
   PaginationResponse pagination = 2;
 }
 
+// Resolution of a server-side metric series. Buckets are aligned to UTC hour
+// or UTC day boundaries.
+enum MetricSeriesResolution {
+  METRIC_SERIES_RESOLUTION_UNSPECIFIED = 0;
+  METRIC_SERIES_RESOLUTION_HOUR = 1;
+  METRIC_SERIES_RESOLUTION_DAY = 2;
+}
+
+// Query an explicitly bounded, source-scoped series. The interval is
+// [start_time, end_time), and the response contains one bucket for every
+// (metric, source, interval) combination even when no point exists. A gap has
+// sample_count == 0 and no value field. Without source_id, sources remain
+// separate; the response never adds the same metric across connectors.
+message QueryMetricSeriesRequest {
+  string tenant_id = 1;
+  repeated string metric_types = 2;
+  google.protobuf.Timestamp start_time = 3;
+  google.protobuf.Timestamp end_time = 4;
+  MetricSeriesResolution resolution = 5;
+  optional string source_id = 6;
+}
+
+message MetricSeriesBucket {
+  string metric_type = 1;
+  google.protobuf.Timestamp bucket_start = 2;
+  optional double value = 3;
+  uint64 sample_count = 4;
+  // The connector instance that produced this bucket. Buckets are never
+  // combined across source instances.
+  string source_id = 5;
+}
+
+message MetricSeriesIssue {
+  // Stable machine-readable code for a non-fatal series condition.
+  string code = 1;
+  string metric_type = 2;
+  repeated string source_ids = 3;
+}
+
+message QueryMetricSeriesResponse {
+  repeated MetricSeriesBucket buckets = 1;
+  repeated MetricSeriesIssue issues = 2;
+}
+
 message GetDataPointRequest {
   string tenant_id = 1;
   string data_point_id = 2;
@@ -68,12 +112,13 @@ message ValidateUserSessionRequest {
 
 message ValidateUserSessionResponse {
   bool valid = 1;
-  // Stable machine code: VALID, TOKEN_REVOKED, or SESSION_ENDED.
+  // Stable machine code: VALID, TOKEN_REVOKED, SESSION_ENDED, or USER_NOT_FOUND.
   string code = 2;
 }
 
 service CoreDataService {
   rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
+  rpc QueryMetricSeries(QueryMetricSeriesRequest) returns (QueryMetricSeriesResponse);
   rpc GetDataPoint(GetDataPointRequest) returns (DataPoint);
   rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
   rpc ListDataSources(ListDataSourcesRequest) returns (ListDataSourcesResponse);

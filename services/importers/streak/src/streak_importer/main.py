@@ -4,6 +4,7 @@ FastAPI REST Export Server & NATS JetStream Publisher for Streak 2.0 Gym Logs.
 Submits transformed IngestEvents to NATS subject 'qs.ingest.streak'.
 """
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -25,6 +26,23 @@ logging.basicConfig(
 )
 
 nc_client: nats.NATS | None = None
+PUBLISH_CONCURRENCY = 32
+
+
+async def _publish_events(js, events: list[dict], *, req_id: str, sync_run_id: str | None) -> int:
+    """Publish bounded batches concurrently; JetStream acks still apply backpressure."""
+    published = 0
+    for offset in range(0, len(events), PUBLISH_CONCURRENCY):
+        batch = events[offset : offset + PUBLISH_CONCURRENCY]
+        tasks = []
+        for event in batch:
+            event["request_id"] = req_id
+            if sync_run_id:
+                event["sync_run_id"] = sync_run_id
+            tasks.append(js.publish("qs.ingest.streak", json.dumps(event).encode("utf-8")))
+        await asyncio.gather(*tasks)
+        published += len(batch)
+    return published
 
 
 @asynccontextmanager
@@ -189,14 +207,9 @@ async def ingest_streak_payload(
         )
         if nc_client and nc_client.is_connected:
             js = nc_client.jetstream()
-            for event in events:
-                # AGENTS.md rule 13: correlation id travels with the event, not just the log.
-                event["request_id"] = x_request_id
-                if sync_run_id:
-                    event["sync_run_id"] = sync_run_id
-                raw_data = json.dumps(event).encode("utf-8")
-                await js.publish("qs.ingest.streak", raw_data)
-                published_count += 1
+            published_count = await _publish_events(
+                js, events, req_id=x_request_id, sync_run_id=sync_run_id
+            )
         else:
             published_count = len(events)
     except Exception as exc:  # noqa: BLE001 - provider payload failures need a safe response

@@ -40,7 +40,7 @@ def test_ui_connectors_page_modal_actions():
     selected_connector = None
     is_modal_open = False
 
-    # Simulate user clicking 'Konfigurieren' on YAZIO
+    # Simulate user selecting Configure for YAZIO
     selected_connector = catalog[0]
     is_modal_open = True
 
@@ -62,12 +62,12 @@ def test_ui_explorer_tab_custom_views():
         "metrics": ["oura_sleep_score", "whoop_strain"],
     }
 
-    # Simulate clicking 'Neue Ansicht speichern' button
+    # Simulate clicking the save-view button
     views.append({"id": "v_101", **new_view_input})
     assert len(views) == 1
     assert views[0]["title"] == "Sleep vs Strain"
 
-    # Simulate clicking 'Ansicht löschen' button
+    # Simulate clicking the delete-view button
     views = [v for v in views if v["id"] != "v_101"]
     assert len(views) == 0
 
@@ -106,11 +106,11 @@ def test_ui_profile_data_wipe_actions():
         "account_deleted": False,
     }
 
-    # Simulate clicking '1-Click Daten löschen' (Wipe Data Points)
+    # Simulate clicking the one-click data-delete button
     account_state["data_points_count"] = 0
     account_state["is_wiped"] = True
     assert account_state["is_wiped"] is True
 
-    # Simulate clicking 'Konto unwiderruflich löschen' (Full Account Wipe)
+    # Simulate clicking the irreversible account-delete button
     account_state["account_deleted"] = True
     assert account_state["account_deleted"] is True

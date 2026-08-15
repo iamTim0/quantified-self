@@ -14,15 +14,7 @@ import {
   Filler,
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
-import {
-  RefreshCw,
-  BarChart2,
-  TrendingUp,
-  AreaChart,
-  Flame,
-  Moon,
-  Calendar,
-} from "lucide-react";
+import { RefreshCw, BarChart2, TrendingUp, AreaChart, Flame, Moon, Calendar } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 
@@ -273,7 +265,7 @@ export default function TrendChart({
               position: "left" as const,
               title: {
                 display: true,
-                text: "Kalorien (kcal)",
+                text: t("chart.calories"),
                 color: "#0d5c3a",
                 font: { family: "var(--font-outfit), sans-serif", size: 11, weight: 700 },
               },

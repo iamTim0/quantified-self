@@ -9,6 +9,7 @@ Maps to Fizzbee Invariants:
 - SmartSkipOnlyWhenComplete
 """
 
+import asyncio
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -16,7 +17,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from core.db.models import ApiKey, DataPoint, DataSource, SyncRun
 from core.db.session import async_session_maker
-from core.main import app
+from core.events.consumer import _tally, _tally_rejected_event
+from core.main import _coverage_marker, _source_coverage_contract, app
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
@@ -40,6 +42,31 @@ class MockNATSClient:
         self.published.append((subject, payload))
 
 
+def test_static_source_uses_registry_manifest_when_config_is_legacy():
+    """Verifies Fizzbee Invariant: UnknownCoverageImports."""
+    source = DataSource(
+        id=str(uuid.uuid4()),
+        source_type="whoop",
+        config={},
+    )
+
+    contract = _source_coverage_contract(source)
+
+    assert contract is not None
+    assert "whoop_recovery_score" in contract[0]
+
+
+def test_dynamic_source_without_manifest_remains_conservative():
+    """Verifies Fizzbee Invariant: UnknownCoverageImports."""
+    source = DataSource(
+        id=str(uuid.uuid4()),
+        source_type="home_assistant",
+        config={},
+    )
+
+    assert _source_coverage_contract(source) is None
+
+
 @pytest.fixture
 def mock_nats():
     nc = MockNATSClient()
@@ -49,8 +76,15 @@ def mock_nats():
 
 async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> str:
     source_id = str(uuid.uuid4())
-    cfg = {"status": "active", "encrypted_token": "x", "poll_interval_hours": 6,
-           "lookback_days": 30}
+    display_name = config.pop("display_name", source_type)
+    cfg = {
+        "status": "active",
+        "encrypted_token": "x",
+        "poll_interval_hours": 6,
+        "lookback_days": 30,
+        "supported_metrics": ["whoop_recovery_score"],
+        "transform_version": "test-v1",
+    }
     cfg.update(config)
     async with async_session_maker() as session:
         session.add(
@@ -58,7 +92,7 @@ async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> 
                 id=source_id,
                 tenant_id=tenant_id,
                 source_type=source_type,
-                display_name=source_type,
+                display_name=display_name,
                 config=cfg,
             )
         )
@@ -66,7 +100,13 @@ async def _seed_source(tenant_id: str, source_type: str = "whoop", **config) -> 
     return source_id
 
 
-async def _seed_hourly_days(tenant_id: str, source_id: str, days: range) -> None:
+async def _seed_hourly_days(
+    tenant_id: str,
+    source_id: str,
+    days: range,
+    *,
+    metric_type: str = "whoop_recovery_score",
+) -> None:
     """One point per hour for each named day offset from BASE."""
     async with async_session_maker() as session:
         for day in days:
@@ -77,7 +117,7 @@ async def _seed_hourly_days(tenant_id: str, source_id: str, days: range) -> None
                         id=str(uuid.uuid4()),
                         tenant_id=tenant_id,
                         source_id=source_id,
-                        metric_type="recovery_score",
+                        metric_type=metric_type,
                         timestamp=ts,
                         value=float(hour),
                         idempotency_key=f"seed-{day}-{hour}-{uuid.uuid4().hex[:6]}",
@@ -181,6 +221,48 @@ async def test_import_plan_narrows_to_the_missing_tail():
 
 
 @pytest.mark.asyncio
+async def test_import_plan_requires_each_manifest_metric():
+    """Verifies Fizzbee Invariant: NeverSkipIncompleteMetric."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(
+            tenant_id,
+            "whoop",
+            supported_metrics=["recovery_score", "steps"],
+        )
+        await _seed_hourly_days(tenant_id, source_id, range(5))
+        await _seed_hourly_days(
+            tenant_id,
+            source_id,
+            range(3),
+            metric_type="steps",
+        )
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            res = await ac.post(
+                "/api/v1/data/sources/whoop/import-plan",
+                json={
+                    "start": BASE.isoformat(),
+                    "end": (BASE + timedelta(days=5)).isoformat(),
+                    "mode": "smart",
+                },
+                headers=auth_headers(tenant_id),
+            )
+
+        assert res.status_code == 200, res.text
+        plan = res.json()
+        assert plan["coverage_scope"] == "metric_set"
+        assert plan["coverage_metrics"] == ["steps", "whoop_recovery_score"]
+        recommended = plan["recommended_range"]
+        assert recommended is not None
+        assert datetime.fromisoformat(recommended["start"]) >= BASE + timedelta(days=3)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_import_plan_force_skips_nothing():
     """Force mode must propose the whole requested range and warn about the cost."""
     tenant_id = await create_test_tenant()
@@ -243,9 +325,43 @@ async def test_sync_publishes_a_window_and_records_a_run(mock_nats):
             )
             run = runs.scalars().first()
             assert run is not None
-            assert run.status == "queued"
+            assert run.status == "running"
             assert run.window_start is not None
             assert run.window_reason
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_concurrent_sync_requests_create_only_one_in_flight_run(mock_nats):
+    """Verifies Fizzbee Invariant: SchedulerSingleFlight."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed_source(tenant_id, "whoop")
+
+        async def trigger():
+            async with AsyncClient(
+                transport=ASGITransport(app=app), base_url="http://testserver"
+            ) as ac:
+                return await ac.post(
+                    "/api/v1/data/sources/sync",
+                    json={
+                        "source_type": "whoop",
+                        "mode": "force",
+                        "start": BASE.isoformat(),
+                        "end": (BASE + timedelta(hours=1)).isoformat(),
+                    },
+                    headers=auth_headers(tenant_id),
+                )
+
+        responses = await asyncio.gather(trigger(), trigger())
+
+        assert {response.status_code for response in responses} == {202}
+        assert {response.json()["status"] for response in responses} == {
+            "sync_queued",
+            "skipped",
+        }
+        assert len(mock_nats.published) == 1
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -402,6 +518,305 @@ async def test_sync_history_includes_duration_and_expected_points():
 
 
 @pytest.mark.asyncio
+async def test_all_sync_history_exposes_core_loading_and_is_tenant_scoped():
+    """Verifies Fizzbee Invariant: StrictTenantIsolationOnRead."""
+    tenant_a = await create_test_tenant()
+    tenant_b = await create_test_tenant()
+    try:
+        source_a = await _seed_source(tenant_a, "whoop", display_name="Night tracker")
+        source_b = await _seed_source(tenant_b, "whoop", display_name="Other tracker")
+        started = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            session.add_all(
+                [
+                    SyncRun(
+                        tenant_id=tenant_a,
+                        source_id=source_a,
+                        source_type="whoop",
+                        request_id="req-loading",
+                        mode="force",
+                        trigger="upload",
+                        status="loading",
+                        points_expected=3,
+                        points_received=3,
+                        points_processed=1,
+                        points_accepted=1,
+                        started_at=started,
+                    ),
+                    SyncRun(
+                        tenant_id=tenant_b,
+                        source_id=source_b,
+                        source_type="whoop",
+                        request_id="req-other-tenant",
+                        mode="smart",
+                        trigger="scheduled",
+                        status="success",
+                        points_expected=1,
+                        points_received=1,
+                        points_processed=1,
+                        started_at=started,
+                        finished_at=started,
+                    ),
+                ]
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get(
+                "/api/v1/data/sync-runs", headers=auth_headers(tenant_a)
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert len(body["runs"]) == 1
+        run = body["runs"][0]
+        assert run["connector_name"] == "Night tracker"
+        assert run["status"] == "loading"
+        assert run["points_processed"] == 1
+        assert run["points_received"] == 3
+    finally:
+        await cleanup_test_tenant(tenant_a)
+        await cleanup_test_tenant(tenant_b)
+
+
+@pytest.mark.asyncio
+async def test_importer_completion_waits_for_core_to_drain_events():
+    """Verifies Fizzbee Invariant: ImportCompletionAfterCoreProcessing."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop")
+        run_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    id=run_id,
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-drain",
+                    mode="force",
+                    trigger="upload",
+                    status="running",
+                    points_expected=2,
+                    started_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.post(
+                f"/api/v1/internal/data/sources/{source_id}/status",
+                json={
+                    "sync_status": "idle",
+                    "last_sync_message": "2 data points published.",
+                    "sync_run_id": run_id,
+                    "points_received": 2,
+                },
+                headers=service_headers(tenant_id),
+            )
+
+        assert response.status_code == 200
+        async with async_session_maker() as session:
+            run = (
+                await session.execute(
+                    select(SyncRun).where(
+                        SyncRun.id == run_id, SyncRun.tenant_id == tenant_id
+                    )
+                )
+            ).scalar_one()
+            assert run.status == "loading"
+            assert run.finished_at is None
+            assert run.points_expected == 2
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_core_marks_run_success_only_on_the_last_processed_event():
+    """Verifies Fizzbee Invariants: ImportCompletionAfterCoreProcessing and SyncRunProgressAtMostOnce."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop")
+        run_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    id=run_id,
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-core-drain",
+                    mode="force",
+                    trigger="upload",
+                    status="loading",
+                    points_expected=2,
+                    points_received=2,
+                    started_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-1",
+                inserted=True,
+            )
+            await session.commit()
+            first = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert first.status == "loading"
+            assert first.points_processed == 1
+
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-2",
+                inserted=False,
+            )
+            await session.commit()
+            last = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert last.status == "success"
+            assert last.points_processed == 2
+            assert last.points_accepted == 1
+            assert last.points_duplicate == 1
+            assert last.finished_at is not None
+
+            await _tally(
+                session,
+                tenant_id,
+                run_id,
+                source_id=source_id,
+                event_key="event-2",
+                inserted=False,
+            )
+            await session.commit()
+            redelivered = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert redelivered.points_processed == 2
+            assert redelivered.points_duplicate == 1
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_transform_contract_change_forces_conservative_replan():
+    """Verifies Fizzbee Invariant: RevisionChangeInvalidatesCoverage."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop", transform_version="v1")
+        await _seed_hourly_days(tenant_id, source_id, range(5))
+
+        async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == source_id,
+                        DataSource.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one()
+            old_contract = _source_coverage_contract(source)
+            assert old_contract is not None
+            source.config = {**(source.config or {}), "transform_version": "v2"}
+            session.add(
+                SyncRun(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-old-contract",
+                    mode="smart",
+                    trigger="manual",
+                    window_start=BASE,
+                    window_end=BASE + timedelta(days=5),
+                    provider_window_start=BASE,
+                    provider_window_end=BASE + timedelta(days=5),
+                    window_reason=_coverage_marker(old_contract[1]),
+                    status="success",
+                    started_at=BASE,
+                    finished_at=BASE + timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.post(
+                "/api/v1/data/sources/whoop/import-plan",
+                json={
+                    "start": BASE.isoformat(),
+                    "end": (BASE + timedelta(days=5)).isoformat(),
+                    "mode": "smart",
+                },
+                headers=auth_headers(tenant_id),
+            )
+
+        assert response.status_code == 200, response.text
+        plan = response.json()
+        assert plan["coverage_scope"] == "unknown"
+        assert plan["recommended_range"] == plan["requested"]
+        assert "contract changed" in plan["reason"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_permanent_rejection_drains_a_run_counter():
+    """Verifies Fizzbee Invariant: ImportCompletionAfterCoreProcessing."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id, "whoop")
+        run_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    id=run_id,
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="whoop",
+                    request_id="req-rejected-event",
+                    mode="force",
+                    trigger="upload",
+                    status="loading",
+                    points_expected=1,
+                    points_received=1,
+                    started_at=datetime.now(timezone.utc),
+                )
+            )
+            await session.commit()
+
+        await _tally_rejected_event(
+            tenant_id=tenant_id,
+            source_id=source_id,
+            sync_run_id=run_id,
+            event_key="rejected-event-1",
+        )
+
+        async with async_session_maker() as session:
+            run = (
+                await session.execute(select(SyncRun).where(SyncRun.id == run_id))
+            ).scalar_one()
+            assert run.status == "success"
+            assert run.points_processed == 1
+            assert run.points_rejected == 1
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_rejected_known_api_key_is_attributed_to_its_connector():
     """Verifies Fizzbee Invariant: WebhookMappedToCorrectTenant."""
     tenant_id = await create_test_tenant()
@@ -455,13 +870,23 @@ async def test_rejected_known_api_key_is_attributed_to_its_connector():
 
 @pytest.mark.asyncio
 async def test_adaptive_window_resumes_from_the_last_successful_run(mock_nats):
-    """A completed run moves the resume point; the next window starts near it."""
+    """Verifies Fizzbee Invariant: NeverSkipIncompleteData."""
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id, "whoop", poll_interval_hours=1)
         last_end = datetime.now(timezone.utc) - timedelta(hours=3)
 
         async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == source_id,
+                        DataSource.tenant_id == tenant_id,
+                    )
+                )
+            ).scalar_one()
+            contract = _source_coverage_contract(source)
+            assert contract is not None
             session.add(
                 SyncRun(
                     tenant_id=tenant_id,
@@ -471,7 +896,12 @@ async def test_adaptive_window_resumes_from_the_last_successful_run(mock_nats):
                     mode="smart",
                     trigger="manual",
                     window_start=last_end - timedelta(hours=6),
-                    window_end=last_end,
+                    # The provider returned less than the requested window. The
+                    # next run must resume from provider_window_end, not window_end.
+                    window_end=last_end + timedelta(hours=3),
+                    provider_window_start=last_end - timedelta(hours=6),
+                    provider_window_end=last_end,
+                    window_reason=_coverage_marker(contract[1]),
                     status="success",
                 )
             )

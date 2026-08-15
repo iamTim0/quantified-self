@@ -98,8 +98,7 @@ export default function DashboardPage() {
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("member");
-  // Derived from the signed-in user; the workspace name has no separate endpoint yet.
-  const tenantName = userName ? `${userName}'s Workspace` : "";
+  const [tenantName, setTenantName] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const [summary, setSummary] = useState<SummaryMetrics>({});
@@ -145,6 +144,7 @@ export default function DashboardPage() {
     if (user.name) setUserName(user.name);
     if (user.email) setUserEmail(user.email);
     if (user.role) setUserRole(user.role);
+    setTenantName(user.workspaceName);
     setIsAuthenticated(true);
   }, []);
 
@@ -153,6 +153,7 @@ export default function DashboardPage() {
     setUserName("");
     setUserEmail("");
     setUserRole("member");
+    setTenantName("");
     setIsAuthenticated(false);
   }, []);
 
@@ -239,7 +240,8 @@ export default function DashboardPage() {
         status: "active",
         masked_token: "••••••••",
         poll_interval_hours: 6,
-        lookback_days: 30,
+        lookback_days: 7,
+        lookback_hours: 168,
       });
     } else {
       setSelectedModalConnector(undefined);
@@ -459,12 +461,13 @@ export default function DashboardPage() {
                 userEmail={userEmail}
                 userRole={userRole}
                 tenantName={tenantName}
-                onUpdateProfile={(name: string, email: string) => {
+                onUpdateProfile={(name: string, email: string, workspaceName: string) => {
                   // React state only. These used to be mirrored into localStorage
                   // to survive a reload; the reload now asks /auth/me instead, so
                   // the copy had nothing left reading it.
                   setUserName(name);
                   setUserEmail(email);
+                  setTenantName(workspaceName);
                 }}
                 onLogout={handleLogout}
               />
@@ -482,7 +485,13 @@ export default function DashboardPage() {
               initialSourceId={selectedModalConnector?.id}
               initialDisplayName={selectedModalConnector?.display_name}
               initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
-              initialLookbackDays={selectedModalConnector?.lookback_days || 30}
+              initialLookbackDays={selectedModalConnector?.lookback_days || 7}
+              initialLookbackHours={
+                selectedModalConnector?.lookback_hours ||
+                (selectedModalConnector?.lookback_days
+                  ? selectedModalConnector.lookback_days * 24
+                  : 168)
+              }
               // Which kind of connector this is, so editing one fed by uploads does
               // not silently turn it back into a polled one.
               initialImportMode={selectedModalConnector?.import_mode}

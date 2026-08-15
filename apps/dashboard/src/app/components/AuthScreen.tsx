@@ -142,6 +142,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
       // Signup already establishes a session, so there is no second login round
       // trip: the cookies are set by the signup response itself.
       const fallbackName = isLogin ? email.split("@")[0] : name;
+      const fallbackWorkspace = t("profile.defaultWorkspace", { name: data.name || fallbackName });
       onLogin({
         user: {
           userId: data.user_id,
@@ -149,8 +150,9 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           email: data.email || email,
           name: data.name || fallbackName,
           role: data.role || "owner",
+          workspaceName: data.workspace_name || fallbackWorkspace,
         },
-        tenantName: `${data.name || fallbackName}'s Workspace`,
+        tenantName: data.workspace_name || fallbackWorkspace,
       });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

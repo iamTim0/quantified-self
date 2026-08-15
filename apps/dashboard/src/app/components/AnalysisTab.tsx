@@ -22,7 +22,7 @@ import { useI18n, useT, type MessageKey } from "../lib/i18n/provider";
  *
  * **Nothing is presented as causal.** Correlations are labelled as associations,
  * every card repeats the sample size and significance, and the heading copy says
- * "hängt zusammen mit", never "wirkt auf". A correlation shown without its
+ * "is associated with", never "causes". A correlation shown without its
  * uncertainty is worse than no correlation at all.
  *
  * **Colour follows polarity, so the scale is diverging.** Blue↔red with a neutral
@@ -135,6 +135,8 @@ interface Insights {
   disclaimer: string;
   metrics_analysed: string[];
   metrics_excluded_for_quality: string[];
+  metric_source_ids?: Record<string, string[]>;
+  source_issues?: { code: string; metric_type: string; source_ids: string[] }[];
   data_quality: Record<string, Quality>;
   correlations: Correlation[];
   lagged_correlations: LaggedCorrelation[];
@@ -143,6 +145,12 @@ interface Insights {
   routines: Record<string, Routine>;
   period_comparisons: Record<string, unknown>;
   docs_url?: string;
+}
+
+interface AnalysisSource {
+  id: string;
+  source_type: string;
+  display_name?: string;
 }
 
 type Section = "overview" | "correlations" | "trends" | "anomalies" | "routines" | "quality";
@@ -158,6 +166,7 @@ const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[]
 
 export default function AnalysisTab({
   apiBase,
+  tenantId,
   refreshTrigger,
 }: {
   apiBase: string;
@@ -174,6 +183,8 @@ export default function AnalysisTab({
   const [minStrength, setMinStrength] = useState(0.2);
   const [onlySignificant, setOnlySignificant] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [sources, setSources] = useState<AnalysisSource[]>([]);
+  const [selectedSource, setSelectedSource] = useState("all");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -184,8 +195,18 @@ export default function AnalysisTab({
         min_strength: String(minStrength),
         compare_to_previous: "true",
       });
-      const res = await apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`);
+      if (selectedSource !== "all") params.set("source_id", selectedSource);
+      const [res, sourceRes] = await Promise.all([
+        apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`),
+        apiFetch(`${apiBase}/api/v1/data/sources`, {
+          headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
+        }),
+      ]);
       if (!res.ok) throw new Error(t("analysis.loadFailed"));
+      if (sourceRes.ok) {
+        const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
+        setSources(sourceData.connectors ?? []);
+      }
       setData(await res.json());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -194,7 +215,7 @@ export default function AnalysisTab({
     }
     // `t` belongs here: without it the error message keeps the language captured at
     // first render, so switching to German left this one string in English.
-  }, [apiBase, windowDays, minStrength, t]);
+  }, [apiBase, minStrength, selectedSource, t, tenantId, windowDays]);
 
   useEffect(() => {
     let cancelled = false;
@@ -295,6 +316,23 @@ export default function AnalysisTab({
             ))}
           </select>
         </label>
+        {sources.length > 0 && (
+          <label className="text-xs font-semibold text-slate-600">
+            {t("analysis.source")}
+            <select
+              value={selectedSource}
+              onChange={(e) => setSelectedSource(e.target.value)}
+              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            >
+              <option value="all">{t("analysis.allSources")}</option>
+              {sources.map((source) => (
+                <option key={source.id} value={source.id}>
+                  {source.display_name || source.source_type}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600">
           <input
             type="checkbox"
@@ -363,6 +401,14 @@ export default function AnalysisTab({
             />
           </div>
 
+          {(data.source_issues?.length ?? 0) > 0 && (
+            <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
+              {t("analysis.ambiguousSources", {
+                count: data.source_issues?.length ?? 0,
+              })}
+            </p>
+          )}
+
           {/*
             The service still sends `disclaimer`, in English, for consumers that are not
             this interface. Rendering it verbatim left the warning English even with the
@@ -408,10 +454,7 @@ export default function AnalysisTab({
                   <h2 className="mb-1 text-sm font-bold text-slate-900">
                     {t("analysis.laggedTitle")}
                   </h2>
-                  <p className="mb-2 text-xs text-slate-500">
-                    Werte eines Tages im Vergleich mit einer anderen Metrik einige Tage
-                    {t("analysis.laggedTail")}
-                  </p>
+                  <p className="mb-2 text-xs text-slate-500">{t("analysis.laggedTail")}</p>
                   <div className="space-y-1.5">
                     {data.lagged_correlations.slice(0, 8).map((l) => (
                       <div
@@ -504,7 +547,7 @@ export default function AnalysisTab({
                   </ul>
                 )}
                 <p className="mt-2 text-[11px] text-slate-400">
-                  {t("analysis.anomalyBasis", { days: a.sample_size })} gesundheitlich bedenklich.
+                  {t("analysis.anomalyBasis", { days: a.sample_size })}
                 </p>
               </article>
             ))
@@ -532,20 +575,23 @@ export default function AnalysisTab({
 
       {data && section === "quality" && (
         <div className="space-y-3">
-          <p className="text-xs text-slate-500">
-            Analysen laufen nur auf Metriken mit ausreichender Datenbasis. Alles andere wird bewusst
-            ausgeblendet statt schwach dargestellt.
-          </p>
+          <p className="text-xs text-slate-500">{t("analysis.qualityHint")}</p>
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-xs">
               <thead className="bg-slate-50 text-left">
                 <tr>
-                  <th className="px-3 py-2 font-semibold text-slate-600">Metrik</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">
+                    {t("analysis.metricLabel")}
+                  </th>
                   <th className="px-3 py-2 font-semibold text-slate-600">
                     {t("analysis.colDays")}
                   </th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">Abdeckung</th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">Status</th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">
+                    {t("analysis.coverageLabel")}
+                  </th>
+                  <th className="px-3 py-2 font-semibold text-slate-600">
+                    {t("analysis.statusLabel")}
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -656,18 +702,16 @@ function Heatmap({ metrics, lookup }: { metrics: string[]; lookup: Map<string, C
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-4">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-900">Korrelationsmatrix</h2>
+        <h2 className="text-sm font-bold text-slate-900">{t("analysis.matrixTitle")}</h2>
         <HeatmapLegend />
       </div>
-      <p className="mb-3 text-xs text-slate-500">
-        {t("analysis.matrixHint")} zu wenige gemeinsame Tage.
-      </p>
+      <p className="mb-3 text-xs text-slate-500">{t("analysis.matrixHint")}</p>
       <div className="overflow-x-auto">
         <svg
           width={labelW + size}
           height={size + 90}
           role="img"
-          aria-label="Korrelationsmatrix der Metriken"
+          aria-label={t("analysis.matrixAria")}
         >
           {metrics.map((m, col) => (
             <text
@@ -831,7 +875,7 @@ function CorrelationCard({
           </span>
           {!c.significant && (
             <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
-              nicht signifikant
+              {t("analysis.notSignificant")}
             </span>
           )}
           <ChevronDown
@@ -843,37 +887,45 @@ function CorrelationCard({
       {expanded && (
         <div className="space-y-3 border-t border-slate-100 p-4 text-xs">
           <div>
-            <h4 className="font-bold text-slate-700">Interpretation</h4>
+            <h4 className="font-bold text-slate-700">{t("analysis.interpretationTitle")}</h4>
             <p className="mt-0.5 leading-relaxed text-slate-600">{c.interpretation}</p>
           </div>
 
           <div>
             <h4 className="font-bold text-slate-700">{t("analysis.provenanceTitle")}</h4>
             <ul className="mt-0.5 space-y-0.5 text-slate-600">
-              <li>Gemeinsame Tage: {c.sample_size}</li>
+              <li>{t("analysis.sharedDays", { count: c.sample_size })}</li>
               <li>
-                Zeitraum: {formatDate(provenance.window_start)} –{" "}
+                {t("analysis.periodLabel")} {formatDate(provenance.window_start)} –{" "}
                 {formatDate(provenance.window_end)}
               </li>
               <li>{t("analysis.sources", { list: provenance.sources.join(", ") || "—" })}</li>
               <li>
-                Abdeckung: {quality[c.metric_a]?.coverage_pct ?? "?"} % /{" "}
+                {t("analysis.coverageLabel")} {quality[c.metric_a]?.coverage_pct ?? "?"} % /{" "}
                 {quality[c.metric_b]?.coverage_pct ?? "?"} %
               </li>
             </ul>
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700">Berechnung</h4>
+            <h4 className="font-bold text-slate-700">{t("analysis.calculationTitle")}</h4>
             <ul className="mt-0.5 space-y-0.5 text-slate-600">
-              <li>Pearson (linear): {c.pearson}</li>
-              <li>Spearman (Rang): {c.spearman}</li>
               <li>
-                p-Wert: {c.p_value} —{" "}
+                {t("analysis.pearsonLabel")} {c.pearson}
+              </li>
+              <li>
+                {t("analysis.spearmanLabel")} {c.spearman}
+              </li>
+              <li>
+                {t("analysis.pValueLabel")} {c.p_value} —{" "}
                 {c.significant ? t("analysis.significant") : t("analysis.notSignificant")}
               </li>
-              <li>Analyseversion: {provenance.analysis_version}</li>
-              <li>Berechnet: {formatDateTime(provenance.computed_at)}</li>
+              <li>
+                {t("analysis.analysisVersionLabel")} {provenance.analysis_version}
+              </li>
+              <li>
+                {t("analysis.computedLabel")} {formatDateTime(provenance.computed_at)}
+              </li>
             </ul>
           </div>
 
@@ -960,9 +1012,13 @@ function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
   const { t, formatDate, formatDateTime } = useI18n();
   return (
     <p className="text-[11px] text-slate-400">
-      Zeitraum {formatDate(provenance.window_start)} – {formatDate(provenance.window_end)} ·
-      {t("analysis.footerSources", { list: provenance.sources.join(", ") || "—" })}{" "}
-      {provenance.analysis_version} · berechnet {formatDateTime(provenance.computed_at)}
+      {t("analysis.provenanceSummary", {
+        start: formatDate(provenance.window_start),
+        end: formatDate(provenance.window_end),
+        sources: provenance.sources.join(", ") || "—",
+        version: provenance.analysis_version,
+        computed: formatDateTime(provenance.computed_at),
+      })}
     </p>
   );
 }

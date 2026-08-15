@@ -49,8 +49,10 @@ async def test_the_retry_loop_keeps_going_and_backs_off(monkeypatch):
     """A broker that is down must not stop the loop, and must not be hammered."""
     attempts = 0
     slept: list[float] = []
+    connected: list = []
+    real_sleep = asyncio.sleep
 
-    async def flaky():
+    async def flaky(*, connection_lost):
         nonlocal attempts
         attempts += 1
         if attempts < 3:
@@ -59,14 +61,25 @@ async def test_the_retry_loop_keeps_going_and_backs_off(monkeypatch):
 
     async def fake_sleep(seconds):
         slept.append(seconds)
+        await real_sleep(0)
 
     monkeypatch.setattr(consumer_module, "start_consumer", flaky)
     monkeypatch.setattr(consumer_module.asyncio, "sleep", fake_sleep)
 
-    connected: list = []
-    await consumer_module.run_consumer_forever(connected.append)
+    task = asyncio.create_task(
+        consumer_module.run_consumer_forever(connected.append)
+    )
+    try:
+        for _ in range(50):
+            if attempts == 3:
+                break
+            await real_sleep(0)
+        assert attempts == 3
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
 
-    assert attempts == 3
     assert connected == ["connection"]
     # Backs off rather than spinning: a tight loop against a restarting broker is
     # its own denial of service.
@@ -78,7 +91,7 @@ async def test_backoff_is_capped(monkeypatch):
     """Otherwise a long outage pushes the retry interval to hours."""
     slept: list[float] = []
 
-    async def always_fails():
+    async def always_fails(*, connection_lost):
         raise OSError("Connection refused")
 
     async def fake_sleep(seconds):

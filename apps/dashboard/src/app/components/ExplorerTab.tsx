@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import dynamic from "next/dynamic";
 import {
   Search,
@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n/provider";
-import { describeMetric } from "../lib/metrics/catalog";
+import { describeMetric, type Aggregation } from "../lib/metrics/catalog";
 import ExplorerMetricSelect, { type MetricOption } from "./ExplorerMetricSelect";
 import ExplorerRawTable from "./ExplorerRawTable";
 import ExplorerMetricOverview, { type MetricSummaryEntry } from "./ExplorerMetricOverview";
@@ -40,7 +40,12 @@ export interface DataPointItem {
   value: number;
   metadata?: Record<string, any>;
   idempotency_key?: string;
+  sample_count?: number;
+  is_derived?: boolean;
+  resolution?: string;
 }
+
+type Resolution = "auto" | "raw" | "minute" | "hour" | "day";
 
 /** Which of the three views is on screen. Part of a saved view, so one restores it. */
 type ExplorerView = "chart" | "raw" | "overview";
@@ -49,6 +54,7 @@ export interface BackendSavedView {
   id: string;
   name: string;
   query_config: {
+    /** Connector instance ID; legacy views may still contain a source type. */
     source?: string;
     metrics?: string[];
     aggregation?: "sum" | "avg" | "max" | "raw";
@@ -56,6 +62,7 @@ export interface BackendSavedView {
     dateRangePreset?: "7d" | "14d" | "30d" | "90d" | "all" | "custom";
     searchQuery?: string;
     view?: ExplorerView;
+    importResolution?: Exclude<Resolution, "auto">;
   };
   is_shared?: boolean;
   created_at?: string;
@@ -77,14 +84,8 @@ const COLOR_PALETTE = [
   "#eab308",
 ];
 
-/**
- * Points fetched for the chart and the table. It is the endpoint's ceiling, and it is
- * a *sample* — the newest N points across every metric. The note under the filter bar
- * says so, and opening one metric from the overview loads that metric on its own
- * instead, which is the honest way to read a metric whose history is longer than the
- * sample.
- */
-const POINT_LIMIT = 1000;
+const SERIES_POINT_LIMIT = 10000;
+const RAW_POINT_LIMIT = 10000;
 
 /** Metrics preselected on first load, so the chart is not empty on arrival. */
 const INITIAL_METRICS = 3;
@@ -95,6 +96,13 @@ const VIEW_TABS: Array<{ id: ExplorerView; labelKey: MessageKey; icon: React.Ele
   { id: "overview", labelKey: "explorer.tabOverview", icon: List },
 ];
 
+const AGGREGATION_LABEL_KEYS: Record<Aggregation, MessageKey> = {
+  average: "explorer.aggAverage",
+  sum: "explorer.aggSum",
+  last: "explorer.aggLast",
+  max: "explorer.aggMax",
+};
+
 /** `YYYY-MM-DD` in UTC, the bucket every day-wise comparison here is made in. */
 function dayOf(isoString?: string): string {
   if (!isoString) return "";
@@ -102,23 +110,109 @@ function dayOf(isoString?: string): string {
   return Number.isNaN(date.getTime()) ? "" : date.toISOString().split("T")[0];
 }
 
+function queryWindow(
+  preset: "7d" | "14d" | "30d" | "90d" | "all" | "custom",
+  customStart: string,
+  customEnd: string,
+): { start?: string; end?: string } {
+  if (preset === "all") return {};
+  if (preset === "custom") {
+    return {
+      start: customStart ? new Date(`${customStart}T00:00:00Z`).toISOString() : undefined,
+      end: customEnd ? new Date(`${customEnd}T23:59:59.999Z`).toISOString() : undefined,
+    };
+  }
+  const days = Number.parseInt(preset, 10);
+  const now = new Date();
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999),
+  );
+  const start = new Date(end);
+  start.setUTCDate(start.getUTCDate() - days + 1);
+  start.setUTCHours(0, 0, 0, 0);
+  return { start: start.toISOString(), end: end.toISOString() };
+}
+
+function dayKeysBetween(start: string, end: string): string[] {
+  const first = new Date(start);
+  const last = new Date(end);
+  if (Number.isNaN(first.getTime()) || Number.isNaN(last.getTime()) || first > last) return [];
+
+  const keys: string[] = [];
+  const cursor = new Date(first);
+  while (cursor <= last && keys.length < SERIES_POINT_LIMIT) {
+    keys.push(cursor.toISOString().split("T")[0]);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return keys;
+}
+
+function queryLimit(
+  preset: "7d" | "14d" | "30d" | "90d" | "all" | "custom",
+  customStart: string,
+  customEnd: string,
+): number {
+  if (preset === "all") return SERIES_POINT_LIMIT;
+  if (preset === "custom" && customStart && customEnd) {
+    const start = new Date(`${customStart}T00:00:00.000Z`);
+    const end = new Date(`${customEnd}T00:00:00.000Z`);
+    const days = Math.floor((end.getTime() - start.getTime()) / 86_400_000) + 1;
+    return Math.min(SERIES_POINT_LIMIT, Math.max(1, days));
+  }
+  return Number.parseInt(preset, 10);
+}
+
+function pointResolution(point: DataPointItem): string {
+  return point.resolution || point.metadata?.resolution || "raw";
+}
+
+function pointBucket(point: DataPointItem): string {
+  return pointResolution(point) === "day" ? dayOf(point.timestamp) : point.timestamp;
+}
+
+function chartAggregation(aggregation: Aggregation): "sum" | "avg" | "max" | "raw" {
+  if (aggregation === "sum") return "sum";
+  if (aggregation === "average") return "avg";
+  if (aggregation === "max") return "max";
+  return "raw";
+}
+
+function mergePoints(pointSets: DataPointItem[][]): DataPointItem[] {
+  const byId = new Map<string, DataPointItem>();
+  pointSets.flat().forEach((point) => byId.set(point.id, point));
+  return Array.from(byId.values()).sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+}
+
+interface ExplorerSource {
+  id: string;
+  source_type: string;
+  display_name?: string;
+}
+
 export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   // `locale` because a metric carries both its labels in the registry, and
   // `describeMetric` defaults to German — which showed an English reader every
   // metric name in the other language.
-  const { t, locale, formatNumber } = useI18n();
+  const { t, locale } = useI18n();
 
   const [view, setView] = useState<ExplorerView>("chart");
-  const [dataPoints, setDataPoints] = useState<DataPointItem[]>([]);
+  const [chartPoints, setChartPoints] = useState<DataPointItem[]>([]);
+  const [rawPoints, setRawPoints] = useState<DataPointItem[]>([]);
   const [summary, setSummary] = useState<Record<string, MetricSummaryEntry>>({});
+  const [knownMetricTypes, setKnownMetricTypes] = useState<string[]>([]);
+  const [metricDefinitions, setMetricDefinitions] = useState<
+    Record<string, NonNullable<MetricSummaryEntry["definition"]>>
+  >({});
+  const [sources, setSources] = useState<ExplorerSource[]>([]);
   const [summaryFailed, setSummaryFailed] = useState(false);
   const [loading, setLoading] = useState(true);
 
   /**
-   * Set to a metric name when the points on screen were fetched for that metric
-   * alone (`?metric_type=`), rather than sampled across all of them. This is what
-   * makes the overview's drill-down show a metric's real history instead of
-   * whichever of its points happened to survive in the shared sample.
+   * Set to a metric name when the overview drill-down has narrowed the query to one
+   * metric (`?metric_type=`). The query is still per metric everywhere; this state
+   * only controls the explanatory banner and the way back to the full selection.
    */
   const [metricScope, setMetricScope] = useState<string | null>(null);
 
@@ -131,7 +225,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
    */
   const [chosenMetrics, setChosenMetrics] = useState<string[] | null>(null);
   const [selectedSource, setSelectedSource] = useState("all");
-  const [aggregation, setAggregation] = useState<"sum" | "avg" | "max" | "raw">("sum");
+  const [importResolution, setImportResolution] = useState<Resolution>("auto");
   const [chartType, setChartType] = useState<"area" | "line" | "bar">("area");
   const [dateRangePreset, setDateRangePreset] = useState<
     "7d" | "14d" | "30d" | "90d" | "all" | "custom"
@@ -150,54 +244,188 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   const [newViewName, setNewViewName] = useState("");
   const [isSavingView, setIsSavingView] = useState(false);
 
+  const chartRequestId = useRef(0);
+  const rawRequestId = useRef(0);
+
   /**
-   * Newest first, because this is a log: the previous version took the endpoint's
-   * default ascending order, so the "raw data" on screen were the *oldest* 500
-   * points the workspace had ever stored.
+   * Fetch one metric at a time. Core applies the metric registry's aggregation to
+   * rollups; the dashboard never combines different metric types with one operator.
    */
-  const loadPoints = useCallback(
-    async (scope: string | null) => {
+  const requestMetricPoints = useCallback(
+    async (
+      metric: string,
+      resolution: "day" | "raw",
+      sourceRef: string,
+    ): Promise<DataPointItem[]> => {
+      const query = new URLSearchParams({
+        metric_type: metric,
+        limit: String(
+          resolution === "day"
+            ? queryLimit(dateRangePreset, customStartDate, customEndDate)
+            : RAW_POINT_LIMIT,
+        ),
+        // Each metric is queried independently, so descending order returns its
+        // newest complete series instead of letting busy metrics consume a shared cap.
+        sort: "desc",
+        resolution,
+      });
+
+      if (sourceRef !== "all") {
+        const source = sources.find((item) => item.id === sourceRef);
+        query.set(source ? "source_id" : "source_type", sourceRef);
+      }
+
+      const window = queryWindow(dateRangePreset, customStartDate, customEndDate);
+      if (window.start) query.set("start_time", window.start);
+      if (window.end) query.set("end_time", window.end);
+
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
+        headers: { "X-Tenant-ID": tenantId },
+      });
+      if (!res.ok) return [];
+
+      const data = (await res.json()) as {
+        data_points?: DataPointItem[];
+        resolution?: string;
+      };
+      return (data.data_points || []).map((point) => ({
+        ...point,
+        // The response resolution is important for legacy data where Core has to
+        // fall back to raw points because no rollup covers that interval.
+        resolution: point.resolution || point.metadata?.resolution || data.resolution || resolution,
+      }));
+    },
+    [apiBase, tenantId, sources, dateRangePreset, customStartDate, customEndDate],
+  );
+
+  const loadChartPoints = useCallback(
+    async (metrics: string[]) => {
+      const requestId = ++chartRequestId.current;
+      if (metrics.length === 0) {
+        setChartPoints([]);
+        return;
+      }
+
       setLoading(true);
+      setChartPoints([]);
       try {
-        const query = new URLSearchParams({ limit: String(POINT_LIMIT), sort: "desc" });
-        if (scope) query.set("metric_type", scope);
-        const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
-          headers: { "X-Tenant-ID": tenantId },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setDataPoints(data.data_points || []);
-        }
+        const sourceRefs =
+          selectedSource === "all" && sources.length > 0
+            ? sources.map((source) => source.id)
+            : [selectedSource];
+        const pointSets = await Promise.all(
+          metrics.flatMap((metric) =>
+            sourceRefs.map((sourceRef) => requestMetricPoints(metric, "day", sourceRef)),
+          ),
+        );
+        if (requestId === chartRequestId.current) setChartPoints(mergePoints(pointSets));
       } catch (err) {
-        console.error("Failed to fetch data points for the raw explorer:", err);
+        if (requestId === chartRequestId.current) {
+          console.error("Failed to fetch metric series for the explorer:", err);
+          setChartPoints([]);
+        }
       } finally {
-        setLoading(false);
+        if (requestId === chartRequestId.current) setLoading(false);
       }
     },
-    [apiBase, tenantId],
+    [requestMetricPoints, selectedSource, sources],
+  );
+
+  const loadRawPoints = useCallback(
+    async (metrics: string[]) => {
+      const requestId = ++rawRequestId.current;
+      if (metrics.length === 0) {
+        setRawPoints([]);
+        return;
+      }
+
+      setLoading(true);
+      setRawPoints([]);
+      try {
+        const sourceRefs =
+          selectedSource === "all" && sources.length > 0
+            ? sources.map((source) => source.id)
+            : [selectedSource];
+        const pointSets = await Promise.all(
+          metrics.flatMap((metric) =>
+            sourceRefs.map((sourceRef) => requestMetricPoints(metric, "raw", sourceRef)),
+          ),
+        );
+        if (requestId === rawRequestId.current) setRawPoints(mergePoints(pointSets));
+      } catch (err) {
+        if (requestId === rawRequestId.current) {
+          console.error("Failed to fetch raw metric points for the explorer:", err);
+          setRawPoints([]);
+        }
+      } finally {
+        if (requestId === rawRequestId.current) setLoading(false);
+      }
+    },
+    [requestMetricPoints, selectedSource, sources],
   );
 
   /**
    * Counts, ranges and latest timestamps over the tenant's whole history, grouped in
-   * SQL. The overview needs this rather than the loaded sample: a metric that stopped
+   * SQL. The overview needs this rather than the loaded chart series: a metric that stopped
    * arriving a year ago is exactly the one someone opens that view to find, and it is
-   * nowhere in the newest thousand points.
+   * not guaranteed to occur in a recent chart series.
    */
-  const loadSummary = useCallback(async () => {
+  const loadSummary = useCallback(async (): Promise<Record<string, MetricSummaryEntry>> => {
     try {
       const res = await apiFetch(`${apiBase}/api/v1/data/metrics/summary`, {
         headers: { "X-Tenant-ID": tenantId },
       });
       if (!res.ok) {
         setSummaryFailed(true);
-        return;
+        return {};
       }
       const data = await res.json();
-      setSummary(data.metrics || {});
+      const metrics = (data.metrics || {}) as Record<string, MetricSummaryEntry>;
+      setSummary(metrics);
+      setMetricDefinitions((previous) => ({
+        ...previous,
+        ...Object.fromEntries(
+          Object.entries(metrics).flatMap(([key, entry]) =>
+            entry.definition ? [[key, entry.definition]] : [],
+          ),
+        ),
+      }));
       setSummaryFailed(false);
+      return metrics;
     } catch (err) {
       console.error("Failed to fetch the metric summary:", err);
       setSummaryFailed(true);
+      return {};
+    }
+  }, [apiBase, tenantId]);
+
+  const loadMetricTypes = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics/types`, {
+        headers: { "X-Tenant-ID": tenantId },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        metric_types?: string[];
+        definitions?: Record<string, NonNullable<MetricSummaryEntry["definition"]>>;
+      };
+      setKnownMetricTypes(data.metric_types || []);
+      setMetricDefinitions((previous) => ({ ...previous, ...data.definitions }));
+    } catch (err) {
+      console.error("Failed to fetch the metric types:", err);
+    }
+  }, [apiBase, tenantId]);
+
+  const loadSources = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${apiBase}/api/v1/data/sources`, {
+        headers: { "X-Tenant-ID": tenantId },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { connectors?: ExplorerSource[] };
+      setSources(data.connectors || []);
+    } catch (err) {
+      console.error("Failed to fetch the connector list:", err);
     }
   }, [apiBase, tenantId]);
 
@@ -226,13 +454,16 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     void (async () => {
       await Promise.resolve();
       if (cancelled) return;
-      await Promise.all([loadPoints(null), loadSummary(), loadSavedViews()]);
+      await Promise.all([loadSummary(), loadMetricTypes(), loadSources(), loadSavedViews()]);
+      if (!cancelled) setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [tenantId, loadPoints, loadSummary, loadSavedViews]);
+  }, [tenantId, loadSummary, loadMetricTypes, loadSources, loadSavedViews]);
+
+  const visiblePoints = view === "raw" ? rawPoints : chartPoints;
 
   /** Every metric the workspace holds, most-recorded first. */
   const metricOptions = useMemo<MetricOption[]>(() => {
@@ -242,12 +473,17 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     }));
     if (fromSummary.length > 0) return fromSummary.sort((a, b) => b.count - a.count);
 
-    // Only until the summary answers, or if it fails: the sample still names the
-    // metrics it contains, which is better than an empty picker.
+    // The type endpoint keeps the picker useful even when summary statistics are
+    // temporarily unavailable; it does not require a broad data-point query.
+    if (knownMetricTypes.length > 0) {
+      return knownMetricTypes.map((key) => ({ key, count: 0 }));
+    }
+
+    // Last-resort fallback for older deployments that do not expose the type route.
     const counts = new Map<string, number>();
-    dataPoints.forEach((p) => counts.set(p.metric_type, (counts.get(p.metric_type) || 0) + 1));
+    visiblePoints.forEach((p) => counts.set(p.metric_type, (counts.get(p.metric_type) || 0) + 1));
     return Array.from(counts, ([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
-  }, [summary, dataPoints]);
+  }, [summary, knownMetricTypes, visiblePoints]);
 
   /** The reader's choice, or the busiest few metrics so the chart arrives populated. */
   const selectedMetrics = useMemo(
@@ -255,13 +491,70 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     [chosenMetrics, metricOptions],
   );
 
-  const availableSources = useMemo(() => {
-    const set = new Set<string>();
-    dataPoints.forEach((p) => {
-      set.add(p.source_type || p.metadata?.source_type || "unknown");
+  const metricAggregation = useCallback(
+    (metric: string): Aggregation =>
+      metricDefinitions[metric]?.aggregation ||
+      summary[metric]?.definition?.aggregation ||
+      describeMetric(metric, locale).aggregation,
+    [metricDefinitions, summary, locale],
+  );
+
+  /** ExplorerChart accepts one tooltip mode; only expose it when all series agree. */
+  const chartTooltipAggregation = useMemo(() => {
+    const aggregations = new Set(selectedMetrics.map((metric) => metricAggregation(metric)));
+    return aggregations.size === 1
+      ? chartAggregation(Array.from(aggregations)[0])
+      : ("raw" as const);
+  }, [selectedMetrics, metricAggregation]);
+
+  useEffect(() => {
+    if (!tenantId || view !== "chart") return;
+    void loadChartPoints(selectedMetrics);
+  }, [tenantId, view, selectedMetrics, loadChartPoints]);
+
+  useEffect(() => {
+    if (!tenantId || view !== "raw") return;
+    void loadRawPoints(selectedMetrics);
+  }, [tenantId, view, selectedMetrics, loadRawPoints]);
+
+  const saveImportResolution = useCallback(
+    async (resolution: Resolution) => {
+      if (resolution === "auto" || selectedMetrics.length === 0) return;
+      await Promise.all(
+        selectedMetrics.map((metric) =>
+          apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
+            body: JSON.stringify({ resolution, raw_retention_days: 90 }),
+          }),
+        ),
+      );
+      if (view === "raw") await loadRawPoints(selectedMetrics);
+      else await loadChartPoints(selectedMetrics);
+    },
+    [apiBase, tenantId, selectedMetrics, loadChartPoints, loadRawPoints, view],
+  );
+
+  const availableSources = useMemo<ExplorerSource[]>(() => {
+    if (sources.length > 0) {
+      if (selectedSource !== "all" && !sources.some((source) => source.id === selectedSource)) {
+        return [{ id: selectedSource, source_type: selectedSource }, ...sources];
+      }
+      return sources;
+    }
+
+    const byId = new Map<string, ExplorerSource>();
+    visiblePoints.forEach((point) => {
+      const id = point.source_id || point.source_type || "unknown";
+      byId.set(id, {
+        id,
+        source_type: point.source_type || point.metadata?.source_type || "unknown",
+      });
     });
-    return Array.from(set).sort();
-  }, [dataPoints]);
+    return Array.from(byId.values()).sort((a, b) =>
+      `${a.source_type}:${a.id}`.localeCompare(`${b.source_type}:${b.id}`),
+    );
+  }, [sources, visiblePoints, selectedSource]);
 
   const handleSaveCurrentView = async () => {
     if (!newViewName.trim()) return;
@@ -274,11 +567,12 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           query_config: {
             source: selectedSource,
             metrics: selectedMetrics,
-            aggregation,
+            aggregation: chartTooltipAggregation,
             chartType,
             dateRangePreset,
             searchQuery,
             view,
+            importResolution: importResolution === "auto" ? undefined : importResolution,
           },
           is_shared: false,
         }),
@@ -316,25 +610,28 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     const cfg = saved.query_config || {};
     if (cfg.source) setSelectedSource(cfg.source);
     if (cfg.metrics) setChosenMetrics(cfg.metrics);
-    if (cfg.aggregation) setAggregation(cfg.aggregation);
     if (cfg.chartType) setChartType(cfg.chartType);
     if (cfg.dateRangePreset) setDateRangePreset(cfg.dateRangePreset);
     if (cfg.searchQuery !== undefined) setSearchQuery(cfg.searchQuery);
     if (cfg.view) setView(cfg.view);
+    if (cfg.importResolution) setImportResolution(cfg.importResolution);
     // A saved view describes a query across all metrics, so a single-metric scope
     // left over from a drill-down would silently contradict it.
     if (metricScope !== null) {
       setMetricScope(null);
-      void loadPoints(null);
     }
   };
 
-  /** Changing the selection by hand leaves the drill-down's single-metric fetch. */
+  const handleImportResolutionChange = (resolution: Resolution) => {
+    setImportResolution(resolution);
+    void saveImportResolution(resolution);
+  };
+
+  /** Changing the selection triggers one fresh request per selected metric. */
   const handleMetricChange = (next: string[]) => {
     setChosenMetrics(next);
     if (metricScope !== null && (next.length !== 1 || next[0] !== metricScope)) {
       setMetricScope(null);
-      void loadPoints(null);
     }
   };
 
@@ -354,12 +651,10 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     setSelectedSource("all");
     setDateRangePreset("all");
     setView("raw");
-    void loadPoints(metricType);
   };
 
   const clearScope = () => {
     setMetricScope(null);
-    void loadPoints(null);
   };
 
   const matchesSearch = useCallback(
@@ -380,72 +675,121 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   const matchesSource = useCallback(
     (point: DataPointItem) => {
       if (selectedSource === "all") return true;
+      if (point.source_id === selectedSource) return true;
+      // Keep old saved views usable when they stored a source type rather than
+      // the connector instance ID now used by the picker.
+      if (sources.some((source) => source.id === selectedSource)) return false;
       return (point.source_type || point.metadata?.source_type || "unknown") === selectedSource;
     },
-    [selectedSource],
+    [selectedSource, sources],
   );
 
   const timelineData = useMemo(() => {
-    if (selectedMetrics.length === 0 || dataPoints.length === 0) return { dates: [], series: [] };
-
-    const filtered = dataPoints.filter(
-      (p) => matchesSource(p) && selectedMetrics.includes(p.metric_type) && matchesSearch(p),
-    );
-
-    let dates = Array.from(new Set(filtered.map((p) => dayOf(p.timestamp)).filter(Boolean))).sort();
-
-    if (dateRangePreset === "7d") dates = dates.slice(Math.max(0, dates.length - 7));
-    else if (dateRangePreset === "14d") dates = dates.slice(Math.max(0, dates.length - 14));
-    else if (dateRangePreset === "30d") dates = dates.slice(Math.max(0, dates.length - 30));
-    else if (dateRangePreset === "90d") dates = dates.slice(Math.max(0, dates.length - 90));
-    else if (dateRangePreset === "custom") {
-      dates = dates.filter((d) => {
-        if (customStartDate && d < customStartDate) return false;
-        if (customEndDate && d > customEndDate) return false;
-        return true;
-      });
+    if (selectedMetrics.length === 0 || chartPoints.length === 0) {
+      return { dates: [], series: [] };
     }
 
-    const series = selectedMetrics.map((metric, idx) => {
-      const points = filtered.filter((p) => p.metric_type === metric);
-      const values = dates.map((day) => {
-        const forDay = points.filter((p) => dayOf(p.timestamp) === day);
-        if (forDay.length === 0) return 0;
-        if (aggregation === "sum") return forDay.reduce((acc, p) => acc + (p.value || 0), 0);
-        if (aggregation === "avg") {
-          const sum = forDay.reduce((acc, p) => acc + (p.value || 0), 0);
-          return Math.round((sum / forDay.length) * 100) / 100;
-        }
-        if (aggregation === "max") return Math.max(...forDay.map((p) => p.value || 0));
-        return forDay[0].value || 0;
-      });
+    const filtered = chartPoints.filter(
+      (p) => matchesSource(p) && selectedMetrics.includes(p.metric_type) && matchesSearch(p),
+    );
+    if (filtered.length === 0) return { dates: [], series: [] };
 
-      // The legend reads the metric's name in the reader's language; the key stays
-      // the series identity, because that is what the data are keyed by.
-      const { label, unit } = describeMetric(metric, locale);
-      return {
-        metric,
-        label: unit ? `${label} (${unit})` : label,
-        color: COLOR_PALETTE[idx % COLOR_PALETTE.length],
-        values,
-      };
+    const allPointsAreDaily = filtered.every((point) => pointResolution(point) === "day");
+    const window = queryWindow(dateRangePreset, customStartDate, customEndDate);
+    let dates: string[];
+    if (allPointsAreDaily) {
+      const pointDays = filtered
+        .map((point) => dayOf(point.timestamp))
+        .filter(Boolean)
+        .sort();
+      const firstDay = pointDays[0];
+      const lastDay = pointDays[pointDays.length - 1];
+      const start = window.start || (firstDay ? `${firstDay}T00:00:00.000Z` : undefined);
+      const end = window.end || (lastDay ? `${lastDay}T23:59:59.999Z` : undefined);
+      dates = start && end ? dayKeysBetween(start, end) : [];
+    } else {
+      // If a deployment has no rollup for a legacy interval, Core explicitly
+      // returns raw fallback points. Keep their timestamps instead of pretending
+      // that the browser performed an aggregation it did not perform.
+      dates = Array.from(new Set(filtered.map(pointBucket).filter(Boolean))).sort();
+    }
+
+    const sourceById = new Map(sources.map((source) => [source.id, source]));
+    let colorIndex = 0;
+    const series = selectedMetrics.flatMap((metric) => {
+      const metricPoints = filtered.filter((point) => point.metric_type === metric);
+      const sourceKeys = Array.from(
+        new Set(metricPoints.map((point) => point.source_id || point.source_type || "")),
+      );
+      if (sourceKeys.length === 0) sourceKeys.push("");
+
+      return sourceKeys.map((sourceKey) => {
+        const sourcePoints = metricPoints.filter(
+          (point) => (point.source_id || point.source_type || "") === sourceKey,
+        );
+        const pointsByBucket = new Map<string, DataPointItem>();
+        sourcePoints.forEach((point) => {
+          const bucket = pointBucket(point);
+          const previous = pointsByBucket.get(bucket);
+          if (
+            !previous ||
+            (pointResolution(point) === "day" && pointResolution(previous) !== "day") ||
+            (point.is_derived === false && previous.is_derived !== false)
+          ) {
+            pointsByBucket.set(bucket, point);
+          }
+        });
+
+        const values = dates.map((date) => pointsByBucket.get(date)?.value ?? null);
+        const { label, unit } = describeMetric(metric, locale);
+        const aggregation = metricAggregation(metric);
+        const metricLabel = unit ? `${label} (${unit})` : label;
+        const source = sourceById.get(sourceKey);
+        const sourcePoint = sourcePoints[0];
+        const sourceType = source?.source_type || sourcePoint?.source_type || sourceKey;
+        const sourceLabel =
+          source?.display_name?.trim() ||
+          (sourceType === "unknown" ? t("common.unknown") : sourceType.toUpperCase());
+        const aggregationLabel = t(AGGREGATION_LABEL_KEYS[aggregation]);
+        const seriesLabel = sourceKey
+          ? t("explorer.seriesMetricSourceLabel", {
+              metric: metricLabel,
+              source: sourceLabel,
+              aggregation: aggregationLabel,
+            })
+          : t("explorer.seriesMetricLabel", {
+              metric: metricLabel,
+              aggregation: aggregationLabel,
+            });
+
+        const seriesItem = {
+          metric: sourceKey ? `${metric}:${sourceKey}` : metric,
+          label: seriesLabel,
+          color: COLOR_PALETTE[colorIndex % COLOR_PALETTE.length],
+          values: values as unknown as number[],
+        };
+        colorIndex += 1;
+        return seriesItem;
+      });
     });
 
     return { dates, series };
   }, [
-    dataPoints,
+    chartPoints,
     selectedMetrics,
     matchesSource,
     matchesSearch,
-    aggregation,
     dateRangePreset,
     customStartDate,
     customEndDate,
     locale,
+    metricAggregation,
+    sources,
+    t,
   ]);
 
   const tableData = useMemo(() => {
-    return dataPoints.filter((p) => {
+    return rawPoints.filter((p) => {
       if (!matchesSource(p)) return false;
       if (selectedMetrics.length > 0 && !selectedMetrics.includes(p.metric_type)) return false;
 
@@ -458,7 +802,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       return matchesSearch(p);
     });
   }, [
-    dataPoints,
+    rawPoints,
     matchesSource,
     matchesSearch,
     selectedMetrics,
@@ -468,8 +812,11 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   ]);
 
   const refresh = () => {
-    void loadPoints(metricScope);
+    if (view === "raw") void loadRawPoints(selectedMetrics);
+    else if (view === "chart") void loadChartPoints(selectedMetrics);
     void loadSummary();
+    void loadMetricTypes();
+    void loadSources();
   };
 
   const sourceFilter = (
@@ -483,11 +830,34 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-[#0d5c3a]"
       >
         <option value="all">{t("explorer.allSources")}</option>
-        {availableSources.map((src) => (
-          <option key={src} value={src}>
-            {src === "unknown" ? t("common.unknown") : src.toUpperCase()}
+        {availableSources.map((source) => (
+          <option key={source.id} value={source.id}>
+            {source.display_name?.trim() ||
+              (source.source_type === "unknown"
+                ? t("common.unknown")
+                : source.source_type.toUpperCase())}
           </option>
         ))}
+      </select>
+    </div>
+  );
+
+  const importResolutionFilter = (
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
+        {t("explorer.importResolution")}
+      </span>
+      <select
+        value={importResolution}
+        onChange={(event) => handleImportResolutionChange(event.target.value as Resolution)}
+        title={t("explorer.importResolutionHint")}
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-[#0d5c3a]"
+      >
+        <option value="auto">{t("explorer.resolutionAuto")}</option>
+        <option value="raw">{t("explorer.resolutionRaw")}</option>
+        <option value="minute">{t("explorer.resolutionMinute")}</option>
+        <option value="hour">{t("explorer.resolutionHour")}</option>
+        <option value="day">{t("explorer.resolutionDay")}</option>
       </select>
     </div>
   );
@@ -553,18 +923,10 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     </div>
   );
 
-  /*
-    A cap the reader is told about. The sample is the newest POINT_LIMIT points across
-    every metric, so a chart over a busy workspace can end earlier than the data do —
-    and a cap nobody mentions reads as "this is everything".
-  */
-  const sampleNote =
-    metricScope === null && dataPoints.length >= POINT_LIMIT ? (
+  const seriesQueryNote =
+    selectedMetrics.length > 0 ? (
       <p className="text-[11px] leading-relaxed text-slate-400">
-        {t("explorer.sampleNote", {
-          count: formatNumber(POINT_LIMIT),
-          tab: t("explorer.tabOverview"),
-        })}
+        {t(view === "chart" ? "explorer.seriesQueryNote" : "explorer.rawSeriesQueryNote")}
       </p>
     ) : null;
 
@@ -711,35 +1073,10 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   onChange={handleMetricChange}
                 />
                 {sourceFilter}
+                {importResolutionFilter}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
-                  <span className="px-2 text-[10px] font-bold text-slate-400">
-                    {t("explorer.aggregation")}
-                  </span>
-                  {(
-                    [
-                      { id: "sum", label: "SUM", titleKey: "explorer.dailySum" },
-                      { id: "avg", label: "Ø AVG", titleKey: "explorer.dailyAverage" },
-                      { id: "max", label: "MAX", titleKey: "explorer.dailyMax" },
-                    ] as const
-                  ).map((mode) => (
-                    <button
-                      key={mode.id}
-                      onClick={() => setAggregation(mode.id)}
-                      title={t(mode.titleKey)}
-                      className={`rounded-xl px-2.5 py-1 font-bold transition-all ${
-                        aggregation === mode.id
-                          ? "bg-[#0d5c3a] text-white shadow-xs"
-                          : "text-slate-500 hover:text-slate-900"
-                      }`}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-
                 <div className="flex rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
                   {(
                     [
@@ -771,14 +1108,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
             {periodFilter}
             {scopeBanner}
-            {sampleNote}
+            {seriesQueryNote}
           </div>
 
           <ExplorerChart
             dates={timelineData.dates}
             series={timelineData.series}
             chartType={chartType}
-            aggregation={aggregation}
+            aggregation={chartTooltipAggregation}
           />
         </>
       )}
@@ -793,11 +1130,12 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 onChange={handleMetricChange}
               />
               {sourceFilter}
+              {importResolutionFilter}
             </div>
             {periodFilter}
             {fullTextSearch}
             {scopeBanner}
-            {sampleNote}
+            {seriesQueryNote}
           </div>
 
           <ExplorerRawTable points={tableData} onInspect={setInspectPoint} />
@@ -847,7 +1185,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
             <div className="space-y-2 font-mono text-xs">
               <div className="flex justify-between gap-4 text-slate-500">
-                <span>ID</span>
+                <span>{t("explorer.colId")}</span>
                 <span className="truncate font-bold text-slate-900">{inspectPoint.id}</span>
               </div>
               <div className="flex justify-between gap-4 text-slate-500">
@@ -872,7 +1210,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 <span className="text-slate-700">{inspectPoint.timestamp}</span>
               </div>
               <div className="flex justify-between gap-4 text-slate-500">
-                <span>Idempotency key</span>
+                <span>{t("explorer.colIdempotencyKey")}</span>
                 <span className="max-w-50 truncate text-[10px] text-slate-400">
                   {inspectPoint.idempotency_key}
                 </span>

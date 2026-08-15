@@ -175,7 +175,10 @@ def test_what_is_not_stored_is_named_rather_than_dropped():
     assert not any(name.startswith("apple_health_abdominal") for name in stored)
     assert "export.Record.abdominal_cramps" in unmapped
     assert "export.ClinicalRecord" in unmapped
-    assert "export.Workout.metadata.HKIndoorWorkout" in unmapped
+    assert "export.Workout.metadata.HKIndoorWorkout" not in unmapped
+    assert "export.Workout.metadata.HKIndoorWorkout" in {
+        sighting.path for sighting in report.build().mapped
+    }
 
 
 def test_the_report_never_carries_a_value():
@@ -218,3 +221,163 @@ def test_an_archive_that_expands_without_end_is_refused(monkeypatch):
 
     with pytest.raises(ArchiveTooLarge):
         list(read_export(io.BytesIO(data), tenant_id=TENANT, source_id=SOURCE))
+
+
+def test_apple_health_mobility_nutrition_hearing_and_workout_fields_are_usable():
+    """Verifies AGENTS.md Rule 19: every listed provider field is stored or named."""
+    quantity_records = [
+        ("PhysicalEffort", "MET", "4.5"),
+        ("DistanceCycling", "km", "12.5"),
+        ("EnvironmentalAudioExposure", "dBASPL", "68"),
+        ("WalkingStepLength", "m", "0.72"),
+        ("WalkingSpeed", "m/s", "1.4"),
+        ("WalkingDoubleSupportPercentage", "%", "28"),
+        ("HeadphoneAudioExposure", "dBASPL", "75"),
+        ("RunningPower", "W", "280"),
+        ("RunningSpeed", "m/s", "3.2"),
+        ("WalkingAsymmetryPercentage", "%", "2.1"),
+        ("TimeInDaylight", "min", "90"),
+        ("RunningVerticalOscillation", "mm", "85"),
+        ("RunningStrideLength", "m", "1.2"),
+        ("RunningGroundContactTime", "ms", "240"),
+        ("StairDescentSpeed", "m/s", "0.6"),
+        ("StairAscentSpeed", "m/s", "0.4"),
+        ("EnvironmentalSoundReduction", "dBASPL", "18"),
+        ("BasalEnergyBurned", "kcal", "120"),
+        ("DietaryCarbohydrates", "g", "80"),
+        ("DietaryProtein", "g", "45"),
+        ("DietaryFatTotal", "g", "25"),
+        ("DietarySugar", "g", "18"),
+        ("DietarySodium", "mg", "900"),
+        ("DietaryFatSaturated", "g", "7"),
+        ("DietaryPotassium", "mg", "1200"),
+        ("DietaryFiber", "g", "12"),
+        ("DietaryCholesterol", "mg", "80"),
+        ("DietaryFatMonounsaturated", "g", "9"),
+        ("DietaryFatPolyunsaturated", "g", "5"),
+        ("DietaryCalcium", "mg", "400"),
+        ("DietaryVitaminC", "mg", "60"),
+        ("DietaryIron", "mg", "8"),
+        ("DietaryCaffeine", "mg", "120"),
+        ("BodyMassIndex", "count", "23.4"),
+        ("LeanBodyMass", "kg", "62"),
+        ("SixMinuteWalkTestDistance", "m", "540"),
+        ("AppleWalkingSteadiness", "%", "0.72"),
+        ("DistanceDownhillSnowSports", "km", "3"),
+        ("SwimmingStrokeCount", "count", "600"),
+        ("DistanceSwimming", "km", "1"),
+        ("DietaryWater", "mL", "750"),
+        ("Height", "cm", "178"),
+        ("HeartRateRecoveryOneMinute", "count/min", "32"),
+    ]
+    records = "\n".join(
+        f'<Record type="HKQuantityTypeIdentifier{name}" sourceName="Watch" '
+        f'unit="{unit}" startDate="2026-08-06 06:{index:02d}:00 +0000" '
+        f'endDate="2026-08-06 06:{index:02d}:01 +0000" value="{value}"/>'
+        for index, (name, unit, value) in enumerate(quantity_records)
+    )
+    categories = (
+        '<Record type="HKCategoryTypeIdentifierAppleStandHour" '
+        'startDate="2026-08-06 08:00:00 +0000" endDate="2026-08-06 09:00:00 +0000" '
+        'value="HKCategoryValueAppleStandHourStood"/>\n'
+        '<Record type="HKCategoryTypeIdentifierHandwashingEvent" '
+        'startDate="2026-08-06 08:05:00 +0000" endDate="2026-08-06 08:05:01 +0000" '
+        'value="HKCategoryValueHandwashingEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierMindfulSession" '
+        'startDate="2026-08-06 09:00:00 +0000" endDate="2026-08-06 09:20:00 +0000" '
+        'value="Mindfulness"/>\n'
+        '<Record type="HKCategoryTypeIdentifierToothbrushingEvent" '
+        'startDate="2026-08-06 09:30:00 +0000" endDate="2026-08-06 09:30:01 +0000" '
+        'value="HKCategoryValueToothbrushingEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierAudioExposureEvent" '
+        'startDate="2026-08-06 10:00:00 +0000" endDate="2026-08-06 10:00:01 +0000" '
+        'value="HKCategoryValueAudioExposureEvent"/>\n'
+        '<Record type="HKCategoryTypeIdentifierHeadphoneAudioExposureEvent" '
+        'startDate="2026-08-06 10:05:00 +0000" endDate="2026-08-06 10:05:01 +0000" '
+        'value="HKCategoryValueHeadphoneAudioExposureEvent"/>\n'
+    )
+    workout_metadata = "\n".join(
+        f'<MetadataEntry key="{key}" value="{value}"/>'
+        for key, value in (
+            ("HKIndoorWorkout", "0"),
+            ("HKTimeZone", "Europe/Berlin"),
+            ("HKAverageMETs", "7.5"),
+            ("HKElevationAscended", "120 m"),
+            ("HKWeatherHumidity", "65 %"),
+            ("HKWeatherTemperature", "21 °C"),
+            ("HKElevationDescended", "110 m"),
+            ("HKMaximumSpeed", "5 m/s"),
+            ("HKWasUserEntered", "1"),
+            ("HKMetadataKeySyncIdentifier", "sync-1"),
+            ("HKMetadataKeySyncVersion", "2"),
+            ("WHOOP Strain", "11.2"),
+            ("HKExternalUUID", "workout-1"),
+            ("HKSwimmingLocationType", "openWater"),
+            ("HKLapLength", "25 m"),
+            ("HKMetadataKeyAppleFitnessPlusSession", "true"),
+        )
+    )
+    workout_statistics = "\n".join(
+        f'<WorkoutStatistics type="HKQuantityTypeIdentifier{kind}" '
+        f'average="{average}" maximum="{maximum}" sum="{total}" unit="{unit}"/>'
+        for kind, average, maximum, total, unit in (
+            ("RunningSpeed", "3.1", "3.4", "", "m/s"),
+            ("RunningGroundContactTime", "220", "240", "", "ms"),
+            ("RunningPower", "250", "300", "", "W"),
+            ("RunningStrideLength", "1.1", "1.3", "", "m"),
+            ("RunningVerticalOscillation", "80", "90", "", "mm"),
+            ("DistanceDownhillSnowSports", "", "", "3", "km"),
+            ("SwimmingStrokeCount", "", "", "600", "count"),
+            ("StepCount", "", "", "2000", "count"),
+        )
+    )
+    xml = f'''<?xml version="1.0"?>
+<HealthData>
+{records}
+{categories}
+<Workout workoutActivityType="HKWorkoutActivityTypeRunning" startDate="2026-08-06 18:00:00 +0000"
+         duration="45" durationUnit="min">
+ {workout_metadata}
+ {workout_statistics}
+</Workout>
+</HealthData>'''
+
+    points, report = _points({"apple_health_export/export.xml": xml})
+    mapped = {sighting.path for sighting in report.build().mapped}
+    unmapped = {sighting.path for sighting in report.build().unmapped}
+    expected_paths = {
+        *(f"export.Record.{provider_name(name)}" for name, _, _ in quantity_records),
+        "export.Record.apple_stand_hour",
+        "export.Record.handwashing_event",
+        "export.Record.mindful_session",
+        "export.Record.toothbrushing_event",
+        "export.Record.audio_exposure_event",
+        "export.Record.headphone_audio_exposure_event",
+        *(f"export.Workout.metadata.{key}" for key, _ in (
+            ("HKIndoorWorkout", "0"), ("HKTimeZone", "Europe/Berlin"),
+            ("HKAverageMETs", "7.5"), ("HKElevationAscended", "120 m"),
+            ("HKWeatherHumidity", "65 %"), ("HKWeatherTemperature", "21 °C"),
+            ("HKElevationDescended", "110 m"), ("HKMaximumSpeed", "5 m/s"),
+            ("HKWasUserEntered", "1"), ("HKMetadataKeySyncIdentifier", "sync-1"),
+            ("HKMetadataKeySyncVersion", "2"), ("WHOOP Strain", "11.2"),
+            ("HKExternalUUID", "workout-1"), ("HKSwimmingLocationType", "openWater"),
+            ("HKLapLength", "25 m"), ("HKMetadataKeyAppleFitnessPlusSession", "true"),
+        )),
+        "export.Workout.statistics.running_speed",
+        "export.Workout.statistics.running_ground_contact_time",
+        "export.Workout.statistics.running_power",
+        "export.Workout.statistics.running_stride_length",
+        "export.Workout.statistics.running_vertical_oscillation",
+        "export.Workout.statistics.distance_downhill_snow_sports",
+        "export.Workout.statistics.swimming_stroke_count",
+        "export.Workout.statistics.step_count",
+    }
+
+    assert expected_paths <= mapped
+    assert not expected_paths & unmapped
+    by_metric = _by_metric(points)
+    assert by_metric["walking_steadiness"][0]["value"] == pytest.approx(72)
+    assert by_metric["body_height"][0]["value"] == pytest.approx(1.78)
+    assert by_metric["walking_speed"][0]["value"] == pytest.approx(5.04)
+    assert by_metric["audio_exposure_environmental"][0]["value"] == 68
+    assert by_metric["mindful_session_duration"][0]["value"] == 20
