@@ -287,6 +287,29 @@ read through it while Starlette is already sending. Closing it on the way out of
     anywhere. So buffering was not the cause. The browser tests continue to run against a production
     build, which is what gets deployed anyway.
 
+## What a request is allowed to cost
+
+Every expensive mistake this service has made was invisible to a correctness test. The connector
+list returned the right connectors while running one `max(created_at)` over the largest table per
+connector — on the endpoint the dashboard refreshes every ten seconds. The metric summary returned
+the right totals while scanning the workspace's entire history to compensate for data that was not
+there. Both were correct, so nothing failed.
+
+`services/core/tests/test_query_cost.py` pins the two properties that were actually violated:
+
+- **Cost must not grow with what the reader did not ask for.** One query per row in a list is the
+  classic shape — fine with two rows in a test, ruinous with fifty in production. The test asks one
+  workspace with one connector and one with six, and requires the same number of statements.
+- **Work proven unnecessary must stop happening.** The summary's compatibility scan is allowed to
+  run once, to establish that a workspace holds no point outside a day rollup, and must not run
+  again (see [Data resolution](features/data-resolution.md)).
+
+The assertions are on the SQL statements a request issues, not on milliseconds. A time budget
+either flakes on a loaded runner or is set so high it never fires, whereas what an endpoint asks
+the database to do is exactly reproducible — and it is what changed in every one of these
+regressions. Wall-clock time is measured and held to a deliberately loose ceiling as well, which
+is a smoke alarm rather than a benchmark.
+
 ## Known limitations
 
 - Analyses may be skipped when the data is very thin. That is deliberate: a weakly supported

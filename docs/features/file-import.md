@@ -93,7 +93,7 @@ has finished. A failed upload is still recorded against the connector, including
 the archive could be parsed.
 
 The history is connector-specific and tenant-protected, and the Connectors page also offers a
-tenant-wide **All import runs** view. It includes the trigger (`upload`), status, request id, start
+tenant-wide view behind its **Import runs** button. It includes the trigger (`upload`), status, request id, start
 and finish times, duration, expected/published/processed points, accepted points, duplicates and the
 last message. An upload moves from `running` to `loading` after the importer has published its
 events; Core marks it `success` only after those events have been consumed. An importer crash is

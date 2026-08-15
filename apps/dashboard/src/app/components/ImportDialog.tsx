@@ -17,6 +17,7 @@ import {
   Zap,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/polling";
 import { useI18n, type Translate } from "../lib/i18n/provider";
 import { uploadPercent, useUploads } from "../lib/uploads/provider";
 import { messageForRun, type SyncRun } from "./import-run";
@@ -246,12 +247,7 @@ export default function ImportDialog({
   // running, so an idle dialog costs nothing.
   const running = activeRun(runs);
   const typicalHint = durationHint(t, typicalSeconds);
-  useEffect(() => {
-    if (!isOpen || !running) return;
-    const timer = setInterval(() => void loadRuns(), PROGRESS_POLL_MS);
-    return () => clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, Boolean(running), sourceType]);
+  usePolling(() => void loadRuns(), isOpen && running ? PROGRESS_POLL_MS : null);
 
   /**
    * Hand the archive to the upload that runs above this dialog.

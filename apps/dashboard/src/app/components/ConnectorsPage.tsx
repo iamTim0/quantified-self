@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
 import ImportRunsOverview from "./ImportRunsOverview";
@@ -25,8 +24,11 @@ import {
   HousePlug,
   CalendarDays,
   BookOpen,
+  Clock3,
+  X,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/polling";
 
 export interface ConnectorItem {
   id: string;
@@ -59,6 +61,8 @@ interface ConnectorsPageProps {
   /** Refresh data without remounting an open import dialog. */
   refreshTrigger: number;
   onOpenConfigureModal: (connector?: ConnectorItem, sourceType?: string) => void;
+  /** Set by the `/connectors/[connectorId]` route: show that instance in detail. */
+  connectorId?: string;
 }
 
 interface CatalogConnector {
@@ -152,13 +156,22 @@ export default function ConnectorsPage({
   tenantId,
   refreshTrigger,
   onOpenConfigureModal,
+  connectorId,
 }: ConnectorsPageProps) {
   const { t, formatDateTime } = useI18n();
-  const pathname = usePathname();
   const [connectors, setConnectors] = useState<ConnectorItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<ConnectorTab>("current");
   const [deletingSource, setDeletingSource] = useState<string | null>(null);
+  /*
+    The run history is behind this, and mounted only while it is true.
+
+    It used to sit above the connector table, which put a page of history between
+    the reader and the thing the page is named after — and, worse, kept polling
+    `/sync-runs` every 2.5 s for as long as anything was running, on a tab nobody
+    was looking at the history on. Unmounted means not polling.
+  */
+  const [runsOpen, setRunsOpen] = useState(false);
   // Which connector the import dialog is open for, if any.
   const [importDialogFor, setImportDialogFor] = useState<{
     id: string;
@@ -194,23 +207,21 @@ export default function ConnectorsPage({
 
   // Live refresh of queue status and last-sync timestamps. The badge above the
   // table states this interval, and reads it from here so the two cannot drift.
-  useEffect(() => {
-    if (!tenantId) return;
-    const interval = setInterval(() => {
-      fetchConnectors();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [apiBase, tenantId]);
+  usePolling(fetchConnectors, tenantId ? POLL_INTERVAL_MS : null);
 
-  const detailId = (() => {
-    const match = pathname.match(/^\/connectors\/([^/]+)\/?$/);
-    if (!match) return null;
-    try {
-      return decodeURIComponent(match[1]);
-    } catch {
-      return null;
-    }
-  })();
+  /*
+    How many connectors are mid-import, for the badge on the history button.
+
+    Derived from the connector list this page already loads rather than from the
+    run endpoint: the point of moving the history behind a button was to stop
+    querying it on a page that is not showing it, and a badge that reintroduced
+    that query would have undone exactly that.
+  */
+  const busyCount = connectors.filter((connector) =>
+    ["queued", "running", "loading"].includes(connector.sync_status ?? ""),
+  ).length;
+
+  const detailId = connectorId ?? null;
   const detailConnector = detailId
     ? connectors.find((connector) => connector.id === detailId)
     : null;
@@ -284,13 +295,28 @@ export default function ConnectorsPage({
           <p className="text-xs text-slate-500 mt-1">{t("connectors.subtitle")}</p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchConnectors}
             className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm transition-all"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
             <span>{t("header.refresh")}</span>
+          </button>
+          <button
+            onClick={() => setRunsOpen(true)}
+            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm transition-all"
+          >
+            <Clock3 className="w-3.5 h-3.5 text-slate-500" />
+            <span>{t("connectors.showRuns")}</span>
+            {busyCount > 0 && (
+              <span
+                title={t("connectors.runsActiveHint", { count: busyCount })}
+                className="rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[10px] font-bold text-amber-800"
+              >
+                {busyCount}
+              </span>
+            )}
           </button>
           <button
             onClick={() => setActiveTab("available")}
@@ -337,11 +363,6 @@ export default function ConnectorsPage({
 
       {activeTab === "current" ? (
         <>
-          <ImportRunsOverview
-            apiBase={apiBase}
-            tenantId={tenantId}
-            refreshTrigger={refreshTrigger}
-          />
           {/* Main Connected Sources & Queue Status Table */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
             <div className="flex justify-between items-center">
@@ -654,6 +675,36 @@ export default function ConnectorsPage({
             })}
           </div>
         </section>
+      )}
+
+      {runsOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t("importOverview.title")}
+            className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
+          >
+            {/* Only the close button: the run overview carries its own heading,
+                and a second copy of it in a title bar said the same thing twice. */}
+            <div className="flex justify-end border-b border-slate-100 px-4 py-2">
+              <button
+                onClick={() => setRunsOpen(false)}
+                aria-label={t("common.close")}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="overflow-y-auto p-4">
+              <ImportRunsOverview
+                apiBase={apiBase}
+                tenantId={tenantId}
+                refreshTrigger={refreshTrigger}
+              />
+            </div>
+          </div>
+        </div>
       )}
 
       {importDialogFor && (

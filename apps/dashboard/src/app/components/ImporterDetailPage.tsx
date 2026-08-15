@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
+import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
@@ -83,10 +84,7 @@ export default function ImporterDetailPage({
     void loadRuns();
   }, [loadRuns, refreshTrigger]);
 
-  useEffect(() => {
-    const interval = setInterval(() => void loadRuns(), RUN_REFRESH_MS);
-    return () => clearInterval(interval);
-  }, [loadRuns]);
+  usePolling(() => void loadRuns(), RUN_REFRESH_MS);
 
   const loadMore = async () => {
     setLoadingMore(true);

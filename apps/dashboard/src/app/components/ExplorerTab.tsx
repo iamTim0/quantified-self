@@ -250,6 +250,17 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   /**
    * Fetch one metric at a time. Core applies the metric registry's aggregation to
    * rollups; the dashboard never combines different metric types with one operator.
+   *
+   * One request per metric, and not one per metric *and* connector. The fan-out
+   * was there to stop connectors sharing a single limit; what it actually did was
+   * multiply the query count by the number of configured connectors — eight
+   * connectors and three selected metrics meant twenty-four concurrent queries,
+   * each of them allowed ten thousand raw points. Drilling into a metric over its
+   * whole history therefore asked Core for up to eighty thousand rows at once, and
+   * both ends stalled: the database on the scans, the browser on the parse.
+   *
+   * A day-resolution bucket is per connector, so the budget is scaled by how many
+   * connectors can answer rather than paid for in extra round trips.
    */
   const requestMetricPoints = useCallback(
     async (
@@ -257,13 +268,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       resolution: "day" | "raw",
       sourceRef: string,
     ): Promise<DataPointItem[]> => {
+      const seriesCount = sourceRef === "all" ? Math.max(1, sources.length) : 1;
+      const dayLimit = Math.min(
+        SERIES_POINT_LIMIT,
+        queryLimit(dateRangePreset, customStartDate, customEndDate) * seriesCount,
+      );
       const query = new URLSearchParams({
         metric_type: metric,
-        limit: String(
-          resolution === "day"
-            ? queryLimit(dateRangePreset, customStartDate, customEndDate)
-            : RAW_POINT_LIMIT,
-        ),
+        limit: String(resolution === "day" ? dayLimit : RAW_POINT_LIMIT),
         // Each metric is queried independently, so descending order returns its
         // newest complete series instead of letting busy metrics consume a shared cap.
         sort: "desc",
@@ -309,14 +321,8 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       setLoading(true);
       setChartPoints([]);
       try {
-        const sourceRefs =
-          selectedSource === "all" && sources.length > 0
-            ? sources.map((source) => source.id)
-            : [selectedSource];
         const pointSets = await Promise.all(
-          metrics.flatMap((metric) =>
-            sourceRefs.map((sourceRef) => requestMetricPoints(metric, "day", sourceRef)),
-          ),
+          metrics.map((metric) => requestMetricPoints(metric, "day", selectedSource)),
         );
         if (requestId === chartRequestId.current) setChartPoints(mergePoints(pointSets));
       } catch (err) {
@@ -328,7 +334,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         if (requestId === chartRequestId.current) setLoading(false);
       }
     },
-    [requestMetricPoints, selectedSource, sources],
+    [requestMetricPoints, selectedSource],
   );
 
   const loadRawPoints = useCallback(
@@ -342,14 +348,8 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       setLoading(true);
       setRawPoints([]);
       try {
-        const sourceRefs =
-          selectedSource === "all" && sources.length > 0
-            ? sources.map((source) => source.id)
-            : [selectedSource];
         const pointSets = await Promise.all(
-          metrics.flatMap((metric) =>
-            sourceRefs.map((sourceRef) => requestMetricPoints(metric, "raw", sourceRef)),
-          ),
+          metrics.map((metric) => requestMetricPoints(metric, "raw", selectedSource)),
         );
         if (requestId === rawRequestId.current) setRawPoints(mergePoints(pointSets));
       } catch (err) {
@@ -361,7 +361,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         if (requestId === rawRequestId.current) setLoading(false);
       }
     },
-    [requestMetricPoints, selectedSource, sources],
+    [requestMetricPoints, selectedSource],
   );
 
   /**

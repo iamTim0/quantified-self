@@ -54,6 +54,7 @@ from core.db.models import (
     User,
 )
 from core.db.session import async_session_maker
+from core.rollup_coverage import may_hold_points_outside_day_rollups
 from core.security.tokens import TokenError, verify_service_credential
 from core.tracing import get_current_request_id, set_current_request_id
 
@@ -488,37 +489,50 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                         last_timestamp=row.last_timestamp,
                     )
 
-                raw_filters = [
-                    DataPoint.tenant_id == tenant_id,
-                    DataPoint.timestamp >= start,
-                    DataPoint.timestamp < end,
-                    ~_rollup_covers_point(resolution),
-                ]
-                if requested_source_id is not None:
-                    raw_filters.append(DataPoint.source_id == requested_source_id)
-                if metric_types:
-                    raw_filters.append(DataPoint.metric_type.in_(metric_types))
-
-                bucket_expr = func.date_trunc(resolution, DataPoint.timestamp).label(
-                    "bucket_start"
+                # Skipped only for a day series over a workspace already proven to
+                # hold no point outside a day rollup: the coverage test below is
+                # applied to every point in the window, and there is nothing for it
+                # to find. At minute and hour resolution the raw points *are* the
+                # answer — an ordinary point is rolled up into a day and nothing
+                # else — so the proof says nothing there. See `core.rollup_coverage`.
+                covered = resolution == "day" and not may_hold_points_outside_day_rollups(
+                    tenant_id
                 )
-                raw_stmt = (
-                    select(
-                        DataPoint.metric_type,
-                        DataPoint.source_id,
-                        bucket_expr,
-                        func.count(DataPoint.value).label("sample_count"),
-                        func.sum(DataPoint.value).label("sum_value"),
-                        func.max(DataPoint.value).label("max_value"),
-                        func.max(DataPoint.timestamp)
-                        .filter(DataPoint.value.is_not(None))
-                        .label("last_timestamp"),
+                if not covered:
+                    raw_filters = [
+                        DataPoint.tenant_id == tenant_id,
+                        DataPoint.timestamp >= start,
+                        DataPoint.timestamp < end,
+                        ~_rollup_covers_point(resolution),
+                    ]
+                    if requested_source_id is not None:
+                        raw_filters.append(DataPoint.source_id == requested_source_id)
+                    if metric_types:
+                        raw_filters.append(DataPoint.metric_type.in_(metric_types))
+
+                    bucket_expr = func.date_trunc(resolution, DataPoint.timestamp).label(
+                        "bucket_start"
                     )
-                    .where(*raw_filters)
-                    .group_by(DataPoint.metric_type, DataPoint.source_id, bucket_expr)
-                )
+                    raw_stmt = (
+                        select(
+                            DataPoint.metric_type,
+                            DataPoint.source_id,
+                            bucket_expr,
+                            func.count(DataPoint.value).label("sample_count"),
+                            func.sum(DataPoint.value).label("sum_value"),
+                            func.max(DataPoint.value).label("max_value"),
+                            func.max(DataPoint.timestamp)
+                            .filter(DataPoint.value.is_not(None))
+                            .label("last_timestamp"),
+                        )
+                        .where(*raw_filters)
+                        .group_by(DataPoint.metric_type, DataPoint.source_id, bucket_expr)
+                    )
+                    raw_series_rows = (await session.execute(raw_stmt)).all()
+                else:
+                    raw_series_rows = []
 
-                for row in (await session.execute(raw_stmt)).all():
+                for row in raw_series_rows:
                     bucket = _series_bucket_start(row.bucket_start, resolution)
                     accumulator(row.metric_type, str(row.source_id), bucket).add(
                         sample_count=int(row.sample_count),

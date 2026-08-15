@@ -1,0 +1,365 @@
+"use client";
+
+import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import Sidebar, { TabType } from "../components/Sidebar";
+import TopHeader from "../components/TopHeader";
+import ConnectorModal from "../components/ConnectorModal";
+import { ConnectorItem } from "../components/ConnectorsPage";
+import AuthScreen, { UserAuthData } from "../components/AuthScreen";
+import LegalFooter from "../components/LegalFooter";
+import SystemWarnings from "../components/SystemWarnings";
+import UploadBanner from "../components/UploadBanner";
+import { UploadProvider } from "../lib/uploads/provider";
+import { SessionUser, endSession, fetchSession } from "../lib/session";
+import { ShellProvider } from "./shell";
+
+const getApiBase = (): string => {
+  if (process.env.NEXT_PUBLIC_API_URL) return process.env.NEXT_PUBLIC_API_URL;
+  if (typeof window !== "undefined" && window.location.origin) {
+    return window.location.origin;
+  }
+  return "http://127.0.0.1:8000";
+};
+
+// There is deliberately no default tenant. A hardcoded seed tenant here is what
+// gave the dev-token bootstrap something to silently sign into.
+
+/**
+ * Read and clear the `next` parameter the route guard leaves behind.
+ *
+ * `src/proxy.ts` redirects a signed-out deep link to `/?next=<path>`; this sends
+ * the user on once they are signed in, instead of dropping them on the overview.
+ *
+ * Only a path on this origin is accepted. `//evil.example` and `/\evil.example`
+ * are both read as protocol-relative URLs by browsers, so a plain "starts with a
+ * slash" test is the standard way an open redirect gets in.
+ *
+ * Reads `window.location.search` rather than `useSearchParams` on purpose: this
+ * layout wraps every dashboard route, and a `useSearchParams` call in it would
+ * force a Suspense boundary around all of them.
+ */
+function consumeNextParam(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const raw = new URLSearchParams(window.location.search).get("next");
+  if (!raw) return null;
+
+  // Clear it either way: a rejected value must not survive a reload.
+  const url = new URL(window.location.href);
+  url.searchParams.delete("next");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) {
+    return null;
+  }
+  return raw;
+}
+
+/**
+ * The application shell: sidebar, header, warnings, connector dialog.
+ *
+ * This is a **layout** rather than a page, and that is the whole point. Every
+ * dashboard route used to be its own page component rendering the same shell, so
+ * moving between two menu entries unmounted the entire tree and built it again:
+ * a fresh session check, a fresh warning query, a fresh metric summary and a
+ * fresh thousand-point metric query, on every click, whether or not the tab the
+ * user landed on had any use for them. The App Router keeps a layout mounted
+ * across navigations within its segment — so this now runs once per session, and
+ * a page loads only what that page shows.
+ */
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const API_BASE = getApiBase();
+  const [mounted, setMounted] = useState(false);
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const getTabFromPathname = (path: string): TabType => {
+    if (path.startsWith("/explorer")) return "explorer";
+    if (path.startsWith("/connectors")) return "connectors";
+    if (path.startsWith("/quality")) return "quality";
+    if (path.startsWith("/analysis")) return "analysis";
+    if (path.startsWith("/chat")) return "chat";
+    if (path.startsWith("/profile") || path.startsWith("/settings")) return "profile";
+    return "overview";
+  };
+
+  const activeTab = getTabFromPathname(pathname);
+
+  const handleTabChange = useCallback(
+    (tab: TabType) => {
+      if (tab === "explorer") router.push("/explorer");
+      else if (tab === "connectors") router.push("/connectors");
+      else if (tab === "quality") router.push("/quality");
+      else if (tab === "analysis") router.push("/analysis");
+      else if (tab === "chat") router.push("/chat");
+      else if (tab === "profile") router.push("/profile");
+      else router.push("/");
+    },
+    [router],
+  );
+
+  // No access token in component state: the credential is an httpOnly cookie the
+  // browser attaches itself, and nothing here can (or should) read it.
+  const [tenantId, setTenantId] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userEmail, setUserEmail] = useState("");
+  const [userRole, setUserRole] = useState("member");
+  const [tenantName, setTenantName] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorItem | undefined>(
+    undefined,
+  );
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
+
+  // Refreshed when the tab comes back into the foreground, and not on a timer.
+  //
+  // There was a 30s interval here. Nothing on this page changes every 30 seconds:
+  // the scheduler checks for due connectors every five minutes, and an import that
+  // lands writes history, not a live figure. So the interval mostly re-fetched the
+  // same numbers, moved the page under whoever was reading it, and kept a signed-in
+  // tab talking to the API all day for nothing.
+  //
+  // Coming back to the tab is the moment the data might actually be stale, which is
+  // why that half stays. A sync you trigger yourself already calls triggerRefresh.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") triggerRefresh();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [isAuthenticated, triggerRefresh]);
+
+  const applySession = useCallback((user: SessionUser) => {
+    setTenantId(user.tenantId);
+    if (user.name) setUserName(user.name);
+    if (user.email) setUserEmail(user.email);
+    if (user.role) setUserRole(user.role);
+    setTenantName(user.workspaceName);
+    setIsAuthenticated(true);
+  }, []);
+
+  const resetToSignedOut = useCallback(() => {
+    setTenantId("");
+    setUserName("");
+    setUserEmail("");
+    setUserRole("member");
+    setTenantName("");
+    setIsAuthenticated(false);
+  }, []);
+
+  // Bootstrap: ask the server whether the cookies we may or may not have amount
+  // to a session. There is no local state to consult and nothing here mints a
+  // token — `fetchSession` returning null means signed out, full stop.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const user = await fetchSession(API_BASE);
+      if (cancelled) return;
+      if (user) {
+        applySession(user);
+        // The guard sent us here from a protected URL but the session turned out
+        // to be live after all (the marker cookie can be cleared on its own).
+        const returnTo = consumeNextParam();
+        if (returnTo) router.replace(returnTo);
+      } else {
+        resetToSignedOut();
+      }
+      setMounted(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [API_BASE, applySession, resetToSignedOut, router]);
+
+  // Logging out in one tab must sign the others out too. The cookie is shared
+  // across tabs but its removal fires no event, so a tab that regains focus
+  // re-checks with the server rather than trusting what it last rendered.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const recheck = async () => {
+      if (document.visibilityState !== "visible") return;
+      const user = await fetchSession(API_BASE);
+      if (!user) resetToSignedOut();
+    };
+    document.addEventListener("visibilitychange", recheck);
+    return () => document.removeEventListener("visibilitychange", recheck);
+  }, [API_BASE, isAuthenticated, resetToSignedOut]);
+
+  const handleLogin = (data: UserAuthData) => {
+    applySession(data.user);
+    triggerRefresh();
+    // Send them where they were originally headed, if the guard recorded it.
+    const returnTo = consumeNextParam();
+    if (returnTo) router.replace(returnTo);
+  };
+
+  const handleLogout = useCallback(async () => {
+    // Sign out locally first so the UI cannot keep rendering protected content
+    // while the network call is still in flight.
+    const signOut = resetToSignedOut;
+    let endSessionUrl: string | null = null;
+    try {
+      endSessionUrl = await endSession(API_BASE);
+    } finally {
+      signOut();
+      if (endSessionUrl) {
+        // The user signed in through an identity provider, whose session is
+        // still live. A full navigation, not a client route: the next hop is
+        // the provider's origin, and it redirects back here afterwards.
+        window.location.assign(endSessionUrl);
+      } else {
+        router.push("/");
+      }
+    }
+  }, [API_BASE, resetToSignedOut, router]);
+
+  const handleOpenConfigureModal = useCallback(
+    (connector?: ConnectorItem, sourceType?: string) => {
+      if (connector) {
+        setSelectedModalConnector(connector);
+      } else if (sourceType) {
+        // A blank stand-in that only carries the chosen type. `id: ""` is what makes
+        // `isEditing` false downstream, so this opens as "create a new instance"
+        // rather than as an edit of something that does not exist yet.
+        setSelectedModalConnector({
+          id: "",
+          tenant_id: tenantId,
+          source_type: sourceType,
+          display_name: "",
+          status: "active",
+          masked_token: "••••••••",
+          poll_interval_hours: 6,
+          lookback_days: 7,
+          lookback_hours: 168,
+        });
+      } else {
+        setSelectedModalConnector(undefined);
+      }
+      setIsModalOpen(true);
+    },
+    [tenantId],
+  );
+
+  const applyProfileUpdate = useCallback((name: string, email: string, workspaceName: string) => {
+    // React state only. These used to be mirrored into localStorage to survive a
+    // reload; the reload now asks /auth/me instead, so the copy had nothing left
+    // reading it.
+    setUserName(name);
+    setUserEmail(email);
+    setTenantName(workspaceName);
+  }, []);
+
+  const shellValue = useMemo(
+    () => ({
+      apiBase: API_BASE,
+      tenantId,
+      userName,
+      userEmail,
+      userRole,
+      tenantName,
+      refreshTrigger,
+      triggerRefresh,
+      openConfigureModal: handleOpenConfigureModal,
+      applyProfileUpdate,
+      logout: handleLogout,
+      onUnauthorized: resetToSignedOut,
+    }),
+    [
+      API_BASE,
+      tenantId,
+      userName,
+      userEmail,
+      userRole,
+      tenantName,
+      refreshTrigger,
+      triggerRefresh,
+      handleOpenConfigureModal,
+      applyProfileUpdate,
+      handleLogout,
+      resetToSignedOut,
+    ],
+  );
+
+  if (!mounted) {
+    return <div className="min-h-screen bg-slate-200/60" />;
+  }
+
+  if (!isAuthenticated) {
+    return <AuthScreen onLogin={handleLogin} apiBase={API_BASE} />;
+  }
+
+  return (
+    // Export uploads run here, above every tab and outside every dialog: an archive
+    // takes minutes to send, and closing the dialog that started it used to cancel
+    // the transfer. `UploadBanner` is what a minimised upload looks like.
+    <UploadProvider>
+      <ShellProvider value={shellValue}>
+        <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
+          {/* Main Outer App Window Shell */}
+          <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
+            {/* Sidebar Navigation with URL Sync */}
+            <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onLogout={handleLogout} />
+
+            {/* Main Content Area */}
+            <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+              <TopHeader
+                userName={userName}
+                userEmail={userEmail}
+                onOpenConfigureModal={() => handleOpenConfigureModal()}
+                onNavigateToProfile={() => handleTabChange("profile")}
+                onRefresh={triggerRefresh}
+              />
+
+              {/* Configuration and credential problems, on every tab. Previously
+                these lived only in a startup log and docs/operations.md. */}
+              <SystemWarnings apiBase={API_BASE} />
+
+              {children}
+
+              <ConnectorModal
+                isOpen={isModalOpen}
+                onClose={() => {
+                  setIsModalOpen(false);
+                  setSelectedModalConnector(undefined);
+                }}
+                initialSourceType={selectedModalConnector?.source_type}
+                // Which instance is being edited. Without it the modal would create a
+                // new connector every time, instead of updating the one clicked.
+                initialSourceId={selectedModalConnector?.id}
+                initialDisplayName={selectedModalConnector?.display_name}
+                initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
+                initialLookbackDays={selectedModalConnector?.lookback_days || 7}
+                initialLookbackHours={
+                  selectedModalConnector?.lookback_hours ||
+                  (selectedModalConnector?.lookback_days
+                    ? selectedModalConnector.lookback_days * 24
+                    : 168)
+                }
+                // Which kind of connector this is, so editing one fed by uploads does
+                // not silently turn it back into a polled one.
+                initialImportMode={selectedModalConnector?.import_mode}
+                isEditing={Boolean(selectedModalConnector?.id)}
+                tenantId={tenantId}
+                onSaved={triggerRefresh}
+              />
+
+              <LegalFooter />
+            </main>
+          </div>
+
+          <UploadBanner />
+        </div>
+      </ShellProvider>
+    </UploadProvider>
+  );
+}
