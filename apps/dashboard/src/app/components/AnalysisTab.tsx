@@ -14,6 +14,9 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { useI18n, useT, type MessageKey } from "../lib/i18n/provider";
+import { useReport, type ReportParams } from "../lib/reports";
+import MetricSourcePicker from "./MetricSourcePicker";
+import ReportStatus from "./ReportStatus";
 
 /**
  * Analysis dashboard.
@@ -136,7 +139,15 @@ interface Insights {
   metrics_analysed: string[];
   metrics_excluded_for_quality: string[];
   metric_source_ids?: Record<string, string[]>;
-  source_issues?: { code: string; metric_type: string; source_ids: string[] }[];
+  source_issues?: {
+    code: string;
+    metric_type: string;
+    source_ids: string[];
+    /** Which source answers. Empty from a Core that could not resolve it. */
+    primary_source_id?: string;
+    /** PREFERENCE or COVERAGE — an identifier the client branches on (rule 17). */
+    primary_reason?: string;
+  }[];
   data_quality: Record<string, Quality>;
   correlations: Correlation[];
   lagged_correlations: LaggedCorrelation[];
@@ -174,63 +185,78 @@ export default function AnalysisTab({
   refreshTrigger?: number;
 }) {
   const { t, formatDate } = useI18n();
-  const [data, setData] = useState<Insights | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [section, setSection] = useState<Section>("overview");
 
-  const [windowDays, setWindowDays] = useState(90);
   const [minStrength, setMinStrength] = useState(0.2);
   const [onlySignificant, setOnlySignificant] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sources, setSources] = useState<AnalysisSource[]>([]);
-  const [selectedSource, setSelectedSource] = useState("all");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({
-        days: String(windowDays),
-        min_strength: String(minStrength),
-        compare_to_previous: "true",
-      });
-      if (selectedSource !== "all") params.set("source_id", selectedSource);
-      const [res, sourceRes] = await Promise.all([
-        apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`),
-        apiFetch(`${apiBase}/api/v1/data/sources`, {
-          headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
-        }),
-      ]);
-      if (!res.ok) throw new Error(t("analysis.loadFailed"));
-      if (sourceRes.ok) {
-        const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
-        setSources(sourceData.connectors ?? []);
-      }
-      setData(await res.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+  /**
+   * The bundle comes from a scheduled run, not from this page opening.
+   *
+   * It is a paged read of the whole window followed by correlations, lagged
+   * correlations, trends, anomalies, weekday patterns and period comparisons —
+   * so its cost grew with the amount of data a workspace held, and two readers
+   * opening this tab paid it twice for one answer. Core queues a run when the
+   * data changes; the Analysis Service computes it; this reads the result.
+   *
+   * `windowDays` and `selectedSource` change what is computed, so they ask for a
+   * new run. `minStrength` does not: the coefficients are all in the payload, so
+   * it filters what is already here and applies instantly.
+   */
+  const report = useReport<Insights>(apiBase, "insights");
+  const data = report.result;
+  const loading = report.loading || report.running;
+  // The window and connector the stored run used. Read from the run rather than
+  // held in state, so the selectors always show what is on screen rather than
+  // what was last clicked.
+  const windowDays = Number(report.params?.days ?? 90);
+  const selectedSource = String(report.params?.source_id ?? "all");
+
+  const requestRun = useCallback(
+    (days: number, sourceId: string) => {
+      const params: ReportParams = { days, compare_to_previous: true };
+      if (sourceId !== "all") params.source_id = sourceId;
+      void report.refresh(params);
+    },
+    [report],
+  );
+
+  const loadSources = useCallback(async () => {
+    const sourceRes = await apiFetch(`${apiBase}/api/v1/data/sources`, {
+      headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
+    });
+    if (sourceRes.ok) {
+      const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
+      setSources(sourceData.connectors ?? []);
     }
-    // `t` belongs here: without it the error message keeps the language captured at
-    // first render, so switching to German left this one string in English.
-  }, [apiBase, minStrength, selectedSource, t, tenantId, windowDays]);
+  }, [apiBase, tenantId]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
-      if (!cancelled) await load();
+      if (!cancelled) await loadSources();
     })();
     return () => {
       cancelled = true;
     };
-  }, [load, refreshTrigger]);
+  }, [loadSources, refreshTrigger]);
 
   const correlations = useMemo(
-    () => (data?.correlations ?? []).filter((c) => !onlySignificant || c.significant),
-    [data, onlySignificant],
+    () =>
+      (data?.correlations ?? []).filter(
+        (c) =>
+          (!onlySignificant || c.significant) &&
+          // Applied here, not sent to the server. The stored bundle is computed
+          // with no strength floor so that changing this filters instantly
+          // instead of queueing a run — but the filter has to actually exist:
+          // for a while the selector was bound to state nothing read, so picking
+          // "moderate" changed nothing and two comments claimed otherwise.
+          Math.abs(c.coefficient) >= minStrength,
+      ),
+    [data, minStrength, onlySignificant],
   );
 
   // Square matrix over the metrics that actually appear in a shown pair.
@@ -254,10 +280,20 @@ export default function AnalysisTab({
     );
   }
 
-  if (error) {
+  // No run has ever finished for this workspace. Not an error — the bundle is
+  // computed after an import, and this is what a reader sees before the first
+  // one has run. The button is the way out, so it is offered rather than hidden.
+  if (report.status === "never_computed" && !report.loading) {
     return (
-      <section className="rounded-3xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-        {error}
+      <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6">
+        <p className="text-sm text-slate-600">{t("report.pendingFirstRun")}</p>
+        <ReportStatus
+          computedAt={null}
+          stale={false}
+          running={report.running}
+          neverComputed
+          onRefresh={() => requestRun(windowDays, selectedSource)}
+        />
       </section>
     );
   }
@@ -291,8 +327,11 @@ export default function AnalysisTab({
           {t("analysis.window")}
           <select
             value={windowDays}
-            onChange={(e) => setWindowDays(Number(e.target.value))}
-            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            // A different window is a different bundle, so this queues a run.
+            // `minStrength` below is not: it filters coefficients already here.
+            onChange={(e) => requestRun(Number(e.target.value), selectedSource)}
+            disabled={report.running}
+            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none disabled:opacity-50"
           >
             {[30, 90, 180, 365].map((days) => (
               <option key={days} value={days}>
@@ -321,8 +360,9 @@ export default function AnalysisTab({
             {t("analysis.source")}
             <select
               value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+              onChange={(e) => requestRun(windowDays, e.target.value)}
+              disabled={report.running}
+              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none disabled:opacity-50"
             >
               <option value="all">{t("analysis.allSources")}</option>
               {sources.map((source) => (
@@ -401,12 +441,35 @@ export default function AnalysisTab({
             />
           </div>
 
+          {/*
+            Two different situations, and conflating them is what made the old
+            single notice misleading. A metric with a primary source *is* being
+            analysed, attributed to one connector; a metric without one is still
+            left out. Only the second is a gap the reader has to act on.
+          */}
           {(data.source_issues?.length ?? 0) > 0 && (
-            <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
-              {t("analysis.ambiguousSources", {
-                count: data.source_issues?.length ?? 0,
-              })}
-            </p>
+            <div className="space-y-3">
+              {(() => {
+                const issues = data.source_issues ?? [];
+                const resolved = issues.filter((issue) => issue.primary_source_id);
+                const unresolved = issues.length - resolved.length;
+                return (
+                  <>
+                    {resolved.length > 0 && (
+                      <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
+                        {t("analysis.ambiguousSources", { count: resolved.length })}
+                      </p>
+                    )}
+                    {unresolved > 0 && (
+                      <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
+                        {t("analysis.ambiguousUnresolved", { count: unresolved })}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+              <MetricSourcePicker apiBase={apiBase} />
+            </div>
           )}
 
           {/*

@@ -1,0 +1,597 @@
+# Fizzbee specification for precomputed derived reports.
+#
+# Three things the dashboard shows -- the daily gap scan, the cross-source
+# conflict scan and the analysis insights bundle -- are derivations over a
+# tenant's whole history. All three were recomputed on every request, and the
+# quality page re-ran two of them every fifteen seconds. They are computed once
+# per data change now and read from `report_runs`, which turns a page load into
+# one indexed row and no scan.
+#
+# That is a cache in the sense that the answer is stored, and not a cache in the
+# sense that matters here: what fills it is a scheduler running on every Core
+# replica feeding a pool of workers in another service. It is a new distributed
+# interaction, so it gets a specification (rule 5).
+#
+# **The shape is forced, not chosen.** `gaps` and `conflicts` are computed inside
+# Core, which owns the database (rule 1). `insights` cannot be: data science
+# lives in the Analysis Service (rule 3), and that service may not write to the
+# database (rule 1 again). The two constraints leave exactly one arrangement --
+# Core queues a run, the Analysis worker claims it over the gRPC contract the two
+# services already share, computes, and hands the result back for Core to store.
+# Nothing new is introduced, and neither service reaches into the other's
+# territory.
+#
+# **What is being ruled out.** Four things, each with an analogue that has
+# already happened somewhere in this repository:
+#
+#   * Several Core replicas tick on their own timers. Without a lock each would
+#     recompute every due report, and for `insights` each would queue the same
+#     work -- so a bundle costing minutes of CPU would be computed once per
+#     replica per tick instead of once per data change.
+#   * Several Analysis workers poll for work. Two claiming the same queued run
+#     would compute the same bundle twice, and the loser's result would land on a
+#     run the winner had already finished.
+#   * A worker that dies mid-bundle leaves a run in flight. With nothing to clean
+#     it up, `has_in_flight_report` refuses to start a replacement and the kind is
+#     frozen forever -- the failure the sync scheduler already learned, which is
+#     why `core.scheduler.STALE_RUN_AFTER` exists and `core.reports` copies it.
+#   * A worker Core has already timed out comes back with its result. That result
+#     is older than the run which replaced it, and applying it would move a
+#     reader's report backwards.
+#
+# Models: services/core/src/core/reports.py, the `ListDueAnalysisReports` and
+# `PutAnalysisReport` methods of services/core/src/core/grpc/server.py, and
+# services/analysis/src/analysis/report_worker.py.
+
+TENANTS = ["tenant_a", "tenant_b"]
+
+# Three (tenant, kind) pairs, not six. `conflicts` behaves exactly as `gaps`
+# does -- both are computed inside Core, in the same function, through the same
+# dispatch -- so a second Core-computed kind multiplies the graph and expresses
+# nothing the first does not. What the third pair buys is a second tenant with
+# insight work of its own, which is what makes a cross-tenant write something the
+# model can attempt rather than something it cannot say.
+PAIRS = ["tenant_a/gaps", "tenant_a/insights", "tenant_b/insights"]
+PAIR_TENANT = {
+    "tenant_a/gaps": "tenant_a",
+    "tenant_a/insights": "tenant_a",
+    "tenant_b/insights": "tenant_b",
+}
+PAIR_KIND = {
+    "tenant_a/gaps": "gaps",
+    "tenant_a/insights": "insights",
+    "tenant_b/insights": "insights",
+}
+
+# `core.reports.CORE_COMPUTED_KINDS`. A kind outside this list is queued for the
+# Analysis Service instead of computed where it was scheduled.
+CORE_COMPUTED = ["gaps"]
+
+# `core.reports.IN_FLIGHT_STATUSES` and its complement. A run is in exactly one
+# of the two sets at any moment, and which one decides everything: an in-flight
+# run blocks a second, a terminal run refuses a late result.
+IN_FLIGHT = ["queued", "running"]
+TERMINAL = ["success", "error"]
+
+# Two Core replicas, because one makes the advisory lock unfalsifiable: the whole
+# reason `REPORT_TICK_LOCK_KEY` and `acquire_report_lock` exist is that every
+# replica ticks on its own timer knowing nothing of the others.
+REPLICAS = ["core_1", "core_2"]
+
+# Two Analysis workers, for the same reason. `worker_enabled()` states outright
+# that running the worker on every replica is safe "because claiming is
+# single-flight"; that sentence is what WORKERS is here to test.
+WORKERS = ["worker_1", "worker_2"]
+
+# The high-water mark is a count of finished imports rather than a timestamp:
+# nothing compares it against a clock, only against itself, and integers keep the
+# state space finite. Two is enough for the only transition that matters -- a
+# report that was current goes stale because an import finished after it.
+MAX_IMPORTS = 2
+
+# Faults are budgeted, for the reason tenant_isolation bounds `next_data`: an
+# injection that can repeat forever is a counter that never closes, and the
+# checker holds its state graph in memory. Two is what the longest story needs --
+# a worker abandoning a run and the timeout that then fails it.
+MAX_FAULTS = 2
+
+# The run counter is bounded by the work rather than by a cap of its own, the way
+# export_upload bounds `accepted`: a run is created only for a stale pair, and a
+# pair goes stale only at Init, on an import, or on a fault. Both of those are
+# bounded above, so the counter closes.
+
+
+action Init:
+    # Every tenant starts with one finished import. `find_due_reports` skips a
+    # workspace whose high-water mark is None outright -- there is nothing to
+    # report on, and an empty gap scan every twelve hours is work that can only
+    # ever produce the same nothing -- so a model starting at zero would spend
+    # actions out of a six-action budget getting to the first interesting state.
+    high_water = {"tenant_a": 1, "tenant_b": 1}
+
+    # run id -> {pair, status, covers, snapshot, payload_from}. A dict of runs
+    # rather than one slot per pair, deliberately: "at most one run per pair is in
+    # flight" is the property being checked, and a model that can hold only one
+    # cannot express its violation.
+    runs = {}
+    next_run = 1
+
+    # What a reader is served: the `covers_data_through` of the newest
+    # *successful* run for that pair, 0 for a pair that has never produced one. A
+    # failed run never touches it, which is `latest_successful_report`'s filter on
+    # `status = success` restated as state.
+    served_covers = {"tenant_a/gaps": 0, "tenant_a/insights": 0, "tenant_b/insights": 0}
+
+    # Which tenant's data the served payload was computed from. Equal to the
+    # pair's own tenant, or isolation has been broken; separate state because a
+    # payload carries no tenant of its own once it has been stored.
+    served_by = {"tenant_a/gaps": "", "tenant_a/insights": "", "tenant_b/insights": ""}
+
+    # The highest value ever served for a pair, only ever raised. "The report went
+    # backwards" is a claim about two moments in time, and this is what makes it a
+    # property of a single state.
+    served_high = {"tenant_a/gaps": 0, "tenant_a/insights": 0, "tenant_b/insights": 0}
+
+    # The pair a replica's last scan found due. Decided in one transaction and
+    # acted on in another, which is exactly where the race lives.
+    replica_target = {"core_1": "", "core_2": ""}
+
+    # The run a worker has claimed and not yet handed back; 0 for idle.
+    worker_claim = {"worker_1": 0, "worker_2": 0}
+
+    faults = 0
+
+    # Three counters that record a guard doing its job. They are not part of the
+    # mechanism; they exist so the reachability assertions at the bottom can say
+    # that the dangerous path was actually taken. An invariant that holds because
+    # the model never reaches the interesting state is the same mistake as an
+    # assertion whose body is `return True`.
+    skipped_starts = 0        # the locked re-check found a run already in flight
+    refused_results = 0       # RUN_ALREADY_FINISHED
+    misdirected_results = 0   # RUN_NOT_FOUND: a result named another tenant's run
+
+
+atomic action ImportFinishes:
+    # `max(SyncRun.finished_at)` moving is the only thing that makes a report
+    # stale here. Read from `sync_runs` and not from `data_points`: asking the
+    # large table for its newest row would reintroduce the whole-history scan this
+    # mechanism exists to remove.
+    tenant = oneof(TENANTS)
+    require high_water[tenant] < MAX_IMPORTS
+    high_water[tenant] = high_water[tenant] + 1
+
+
+atomic action ScanForDueReports:
+    replica = oneof(REPLICAS)
+    require replica_target[replica] == ""
+
+    # Two of the three staleness tests are modelled: no successful run at all, and
+    # a high-water mark later than the one the last run recorded. The third,
+    # MAX_REPORT_AGE, is a wall-clock backstop for inputs that change without an
+    # import -- an adopted mapping rule, a deleted connector. It is a timer rather
+    # than a race, and modelling it would leave every pair permanently due.
+    due_pairs = []
+    for pair in PAIRS:
+        in_flight = False
+        for rid in runs:
+            if runs[rid]["pair"] == pair and runs[rid]["status"] in IN_FLIGHT:
+                in_flight = True
+        if not in_flight and served_covers[pair] < high_water[PAIR_TENANT[pair]]:
+            due_pairs.append(pair)
+    require len(due_pairs) > 0
+
+    # A tick handles every due pair, each in its own session, so two replicas can
+    # be at different points in their own loops. Picking non-deterministically is
+    # the faithful model of that -- and it is also what keeps the insights path
+    # reachable inside a six-action budget, because `REPORT_KINDS` puts `gaps`
+    # first and a model that always took the first due pair could not reach a
+    # queued insight run until the gap scan had been served three actions later.
+    #
+    # The choice lands in a local before the assignment because
+    # `replica_target[replica] = oneof(due_pairs)` does not work: Fizzbee accepts
+    # it, reports no error, and simply never fires the action. The whole model
+    # collapsed to four states -- only `ImportFinishes` firing -- until this was
+    # split in two.
+    chosen = oneof(due_pairs)
+    replica_target[replica] = chosen
+
+
+# The scan and the start are separate transactions, and that gap is the whole
+# difficulty: by the time a replica acts on what it saw, another replica may
+# already have started the same pair. Both may therefore hold the same target,
+# and that is not a defect -- it is what a scan in its own transaction means.
+atomic action StartDueReport:
+    replica = oneof(REPLICAS)
+    pair = replica_target[replica]
+    require pair != ""
+    replica_target[replica] = ""
+
+    # Everything below runs under `pg_advisory_xact_lock(report_lock_key(...))`
+    # inside one transaction, which is why it is one atomic action: PostgreSQL
+    # offers no interleaving here to model. The lock *waits* rather than trying
+    # and skipping, for the same reason `acquire_connector_lock` waits -- the
+    # second caller has to re-read the guard after the first has committed,
+    # instead of concluding from a failed try that there is nothing to do.
+    in_flight = False
+    for rid in runs:
+        if runs[rid]["pair"] == pair and runs[rid]["status"] in IN_FLIGHT:
+            in_flight = True
+
+    # This re-check is the load-bearing line of the whole scheduler. Delete it and
+    # the two scans above both produce a run for the same pair; ReportSingleFlight
+    # names the counterexample in four actions.
+    if in_flight:
+        skipped_starts = skipped_starts + 1
+    else:
+        status = "queued"
+        if PAIR_KIND[pair] in CORE_COMPUTED:
+            status = "running"
+        runs[next_run] = {
+            "pair": pair,
+            "status": status,
+            # `covers_data_through` is stamped from the tenant's high-water mark
+            # *now*, as the run opens, and not when it finishes. `snapshot` is
+            # what the computation will be able to read. They hold the same value
+            # because `open_report_run` and `enqueue_report_run` take both from
+            # one call to `tenant_data_high_water`; ReportNeverServesFutureData is
+            # what forbids moving the stamp to the end, where it would claim every
+            # import that landed during a long scan, including the points that
+            # scan never saw.
+            "covers": high_water[PAIR_TENANT[pair]],
+            "snapshot": high_water[PAIR_TENANT[pair]],
+            # Whose data the stored payload was computed from; empty until stored.
+            "payload_from": "",
+        }
+        next_run = next_run + 1
+
+
+# `run_core_report` opens, computes and finishes inside one transaction on the
+# tick path, while the manual refresh path opens the run, answers the caller, and
+# computes in a background task with the lock already released. The finer of the
+# two grains is modelled: it admits every interleaving the coarser one does, plus
+# two the coarser one hides -- a timeout landing mid-computation, and an import
+# finishing while the scan is still reading.
+atomic action FinishCoreReport:
+    target = 0
+    for rid in runs:
+        if runs[rid]["status"] == "running" and PAIR_KIND[runs[rid]["pair"]] in CORE_COMPUTED:
+            if target == 0 or rid < target:
+                target = rid
+    require target != 0
+
+    run = runs[target]
+    pair = run["pair"]
+    runs[target] = {
+        "pair": pair,
+        "status": "success",
+        "covers": run["covers"],
+        "snapshot": run["snapshot"],
+        "payload_from": PAIR_TENANT[pair],
+    }
+    served_covers[pair] = run["covers"]
+    served_by[pair] = PAIR_TENANT[pair]
+    if run["covers"] > served_high[pair]:
+        served_high[pair] = run["covers"]
+
+
+# Atomic, and that is the point rather than a convenience. This is
+# `SELECT ... FOR UPDATE SKIP LOCKED`, which moves the row to `running` in the
+# same transaction that selected it. Let the action yield between the guard and
+# the write and both workers pass the `queued` test, both spend a minute
+# computing the same bundle, and the loser's result lands on a run the winner has
+# already finished. PostgreSQL does not permit that interleaving, so the model
+# must not invent it.
+atomic action ClaimQueuedRun:
+    worker = oneof(WORKERS)
+    require worker_claim[worker] == 0
+
+    # Oldest first (`ORDER BY started_at`), with monotonic run ids standing in for
+    # the timestamps. Deliberately not scoped to a tenant: this is a worker asking
+    # for work across the deployment, the way the sync scheduler looks at every
+    # connector. Each run it receives names its own tenant, and everything the
+    # worker reads afterwards is scoped to that tenant (rule 2).
+    target = 0
+    for rid in runs:
+        if runs[rid]["status"] == "queued" and PAIR_KIND[runs[rid]["pair"]] not in CORE_COMPUTED:
+            if target == 0 or rid < target:
+                target = rid
+    require target != 0
+
+    run = runs[target]
+    runs[target] = {
+        "pair": run["pair"],
+        "status": "running",
+        "covers": run["covers"],
+        "snapshot": run["snapshot"],
+        "payload_from": run["payload_from"],
+    }
+    worker_claim[worker] = target
+
+
+atomic action ReturnAnalysisReport:
+    worker = oneof(WORKERS)
+    held = worker_claim[worker]
+    require held != 0
+    worker_claim[worker] = 0
+
+    # The worker names a run id and the workspace it computed for. It names one of
+    # the runs it was handed -- which is why the candidates are insight runs and
+    # not every row in the table -- but naming the *wrong* one of those is a
+    # mistake with a way to happen: `CLAIM_LIMIT` is 3, so a worker holds several
+    # runs at once and computes them one after another.
+    #
+    # (`PutAnalysisReport` scopes its lookup by tenant and run id and checks that
+    # the run is not already terminal. It does not check the kind. That is safe
+    # only because `ListDueAnalysisReports` hands out insight runs and nothing
+    # else, which is the restriction this candidate list mirrors.)
+    candidates = []
+    for rid in runs:
+        if PAIR_KIND[runs[rid]["pair"]] not in CORE_COMPUTED:
+            candidates.append(rid)
+    target = oneof(candidates)
+    presented = PAIR_TENANT[runs[held]["pair"]]
+
+    run = runs[target]
+    pair = run["pair"]
+
+    # `WHERE tenant_id = :tenant AND id = :run_id`. Scoped by both, so naming
+    # another workspace's run is a RUN_NOT_FOUND and not a write. Drop the tenant
+    # from that clause and TenantIsolation produces the trace in which one
+    # workspace's bundle is stored as another's.
+    if PAIR_TENANT[pair] != presented:
+        misdirected_results = misdirected_results + 1
+    elif run["status"] in TERMINAL:
+        # RUN_ALREADY_FINISHED. The ordinary cause is a run Core timed out while
+        # this worker was still computing it: the timeout may have queued a
+        # replacement that has already succeeded, so a late result is refused
+        # rather than applied. Remove this test and ServedReportNeverRegresses
+        # produces the trace in which a reader's report moves backwards.
+        refused_results = refused_results + 1
+    else:
+        runs[target] = {
+            "pair": pair,
+            "status": "success",
+            "covers": run["covers"],
+            "snapshot": run["snapshot"],
+            "payload_from": presented,
+        }
+        served_covers[pair] = run["covers"]
+        served_by[pair] = presented
+        if run["covers"] > served_high[pair]:
+            served_high[pair] = run["covers"]
+
+
+atomic action WorkerAbandonsRun:
+    # The worker died, or Core became unreachable while it was computing -- in
+    # which case `_compute_one` has nowhere to report the failure and says so: the
+    # run is deliberately left in flight for Core's own timeout to fail.
+    worker = oneof(WORKERS)
+    require worker_claim[worker] != 0
+    require faults < MAX_FAULTS
+    faults = faults + 1
+    worker_claim[worker] = 0
+
+
+atomic action ExpireInFlightRun:
+    require faults < MAX_FAULTS
+
+    # `expire_stale_report_runs` does not know whether anybody is still working on
+    # a run; it knows only that STALE_RUN_AFTER has passed. It therefore fails a
+    # healthy slow run as readily as an abandoned one -- which is precisely why
+    # `PutAnalysisReport` must refuse a terminal run instead of assuming that a
+    # result arriving late is a result nobody has replaced.
+    #
+    # The claim is not released here. A timed-out run whose worker is still
+    # computing is the case worth reaching, and releasing it would hide it.
+    target = 0
+    for rid in runs:
+        if runs[rid]["status"] in IN_FLIGHT and (target == 0 or rid < target):
+            target = rid
+    require target != 0
+
+    faults = faults + 1
+    run = runs[target]
+    # `fail_report_run`: a terminal error, and `served_covers` untouched. The
+    # reader keeps the last good answer, correctly labelled with when it was
+    # computed, rather than being shown an empty page.
+    runs[target] = {
+        "pair": run["pair"],
+        "status": "error",
+        "covers": run["covers"],
+        "snapshot": run["snapshot"],
+        "payload_from": run["payload_from"],
+    }
+
+
+# SAFETY
+
+always assertion ReportSingleFlight:
+    # At most one run per (tenant, kind) is queued or running at any moment.
+    #
+    # A second one corrupts nothing -- it would simply store its result over the
+    # first -- and that is exactly why nothing downstream would ever report it.
+    # The bundle is minutes of CPU on the Analysis Service, and spending that once
+    # per data change rather than once per replica per tick is the only reason
+    # this scheduler exists. Silent, expensive and invisible is the combination
+    # that stays in a system for a year.
+    for pair in PAIRS:
+        in_flight = 0
+        for rid in runs:
+            if runs[rid]["pair"] == pair and runs[rid]["status"] in IN_FLIGHT:
+                in_flight = in_flight + 1
+        if in_flight > 1:
+            return False
+    return True
+
+
+always assertion RunIsClaimedOnce:
+    # Single flight restated one layer down, for the second race. The assertion
+    # above is about two schedulers creating the work twice; this is about two
+    # workers doing it twice once it exists. A claimed run is also always
+    # `running`: a worker holding a `queued` row would mean the select and the
+    # status update had come apart, which is the transaction split `SKIP LOCKED`
+    # is there to prevent.
+    for rid in runs:
+        holders = 0
+        for worker in WORKERS:
+            if worker_claim[worker] == rid:
+                holders = holders + 1
+        if holders > 1:
+            return False
+        if holders == 1 and runs[rid]["status"] == "queued":
+            return False
+    return True
+
+
+always assertion ReportNeverServesFutureData:
+    # A served report never claims to cover data that arrived after it was
+    # computed. The reader is shown `covers_data_through` beside the number, and
+    # that date is the entire basis on which a precomputed number can be trusted:
+    # a stored figure with no honest statement of what it saw is worse than an
+    # on-the-fly one, because nothing about it looks wrong.
+    #
+    # The second clause is the one with a future. `covers` is stamped when the run
+    # opens and `snapshot` is what the computation can read; they are equal only
+    # because `open_report_run` and `enqueue_report_run` take both from the same
+    # call to `tenant_data_high_water`. Move the stamp into `finish_report_run` --
+    # which reads like a tidy-up, since that is where the payload is written -- and
+    # a run that took an hour claims every import that landed while it ran.
+    for pair in PAIRS:
+        if served_covers[pair] > high_water[PAIR_TENANT[pair]]:
+            return False
+    for rid in runs:
+        if runs[rid]["covers"] > runs[rid]["snapshot"]:
+            return False
+    return True
+
+
+always assertion TenantIsolation:
+    # A run is read and written scoped to its own tenant, and the payload a reader
+    # is served was computed from that reader's data and nobody else's (rule 2).
+    #
+    # The worker is the only actor here holding several workspaces' work at once:
+    # it claims across the deployment, because a scheduler that had to be asked
+    # per tenant is a scheduler that has to know the tenant list. That makes
+    # `PutAnalysisReport`'s tenant-scoped lookup the one point where a confusion
+    # between two claimed runs would become a cross-workspace write, and
+    # `MisdirectedResultIsRefused` below is what shows the model attempts it.
+    for pair in PAIRS:
+        if served_covers[pair] > 0 and served_by[pair] != PAIR_TENANT[pair]:
+            return False
+    for rid in runs:
+        if runs[rid]["payload_from"] != "":
+            if runs[rid]["payload_from"] != PAIR_TENANT[runs[rid]["pair"]]:
+                return False
+    return True
+
+
+always assertion FailedRunIsNeverServed:
+    # Whatever a reader is looking at came from a run that succeeded. A failure
+    # does not replace the last good answer, does not blank the page, and does not
+    # surface as a report with nothing in it: `latest_successful_report` filters on
+    # `status = success`, and this says what that filter is worth.
+    for pair in PAIRS:
+        if served_covers[pair] > 0:
+            found = False
+            for rid in runs:
+                if runs[rid]["pair"] == pair and runs[rid]["status"] == "success":
+                    if runs[rid]["covers"] == served_covers[pair]:
+                        found = True
+            if not found:
+                return False
+    return True
+
+
+always assertion ServedReportNeverRegresses:
+    # What a reader is served never moves backwards. The way it could is specific:
+    # Core times out a run, a replacement is queued and succeeds, and then the
+    # original worker returns with a bundle computed against older data.
+    # RUN_ALREADY_FINISHED is the refusal that prevents it, and this is the
+    # property that refusal buys.
+    #
+    # Honest about what is proved: that trace is about ten actions deep -- start,
+    # claim, time out, import, start again, claim, return, return late -- so at
+    # six actions the checker never stages it, and deleting the refusal from
+    # `ReturnAnalysisReport` does not produce a counterexample here. What the
+    # bound does reach is `LateResultIsRefused` below, which fails the moment the
+    # refusal stops happening at all. The two together are what this bound allows:
+    # the guard is exercised, its worst consequence is stated.
+    for pair in PAIRS:
+        if served_covers[pair] < served_high[pair]:
+            return False
+    return True
+
+
+# LIVENESS, AND WHY IT IS STATED AS REACHABILITY
+#
+# The two properties this pattern wants are liveness: a claimed-but-never-returned
+# run is *eventually* failed and re-queued, and a stale report is *eventually*
+# recomputed. Neither can be written as `eventually always` in this directory.
+#
+# `fizz.yaml` bounds exploration at six actions, and a state first reached at that
+# horizon has no successors, so the checker treats it as terminal and any property
+# demanding unfinished work be finished is false there. Serving all three pairs
+# takes eleven actions (scan and start for each, plus a finish for the Core kind
+# and a claim and a return for each insight kind), so the `eventually always` form
+# fails on a counterexample that is entirely an artifact of the bound: two imports
+# and a scheduler mid-flight at action six. Measured, not assumed -- an
+# eight-action counter with a fair step and that same bound fails the identical
+# way, and export_upload passes only because everything it starts finishes inside
+# six actions.
+#
+# `exists` is the strongest form the bound leaves, and it is not nothing: it fails
+# with "Expected states never reached" when the state is unreachable. So each one
+# below asserts that the recovery actually happens somewhere in the explored
+# space -- that the timeout can free a wedged kind, that the refusal fires, that a
+# stale pair does get recomputed. What it does not claim is inevitability. Raising
+# maxActions is not a local fix: Fizzbee reads one `fizz.yaml` per directory, and
+# `verify_specs.py` globs `specs/*.fizz` without recursing, so a spec moved into a
+# subdirectory for its own bound would stop being checked at all.
+
+exists assertion StaleReportIsRecomputed:
+    # A pair that was stale is serving a report covering the newest import. This
+    # is the ordinary path, and asserting it is reachable is what distinguishes
+    # the safety invariants above from a set that holds because nothing ever
+    # succeeds.
+    for pair in PAIRS:
+        if high_water[PAIR_TENANT[pair]] == MAX_IMPORTS:
+            if served_covers[pair] == high_water[PAIR_TENANT[pair]]:
+                return True
+    return False
+
+
+exists assertion TimedOutRunIsFailedAndReplaced:
+    # One lost run does not block its kind forever. A failed run with a later run
+    # for the same pair is the whole recovery: `expire_stale_report_runs` ends the
+    # first, which clears `has_in_flight_report`, which lets the next tick start
+    # the second. Unreachable would mean a crashed worker takes a report kind down
+    # with it until somebody notices, which is the failure mode this timeout was
+    # copied from the sync scheduler to avoid.
+    for rid in runs:
+        if runs[rid]["status"] == "error":
+            for other in runs:
+                if other > rid and runs[other]["pair"] == runs[rid]["pair"]:
+                    return True
+    return False
+
+
+exists assertion LateResultIsRefused:
+    # The worker returns after Core has already timed its run out, and Core says
+    # no. Without this being reachable, ServedReportNeverRegresses would hold for
+    # the uninteresting reason that nothing ever arrives late.
+    return refused_results > 0
+
+
+exists assertion MisdirectedResultIsRefused:
+    # A result named against another workspace's run is refused rather than
+    # stored, and the model does attempt it. Without this, TenantIsolation would
+    # hold because no cross-workspace write is ever tried.
+    return misdirected_results > 0
+
+
+exists assertion SecondSchedulerFindsTheWorkStarted:
+    # Both replicas scanned the same pair as due and the loser's re-check under
+    # the lock found the run already in flight. This is the state ReportSingleFlight
+    # exists for; if it were unreachable that invariant would be describing a race
+    # the model cannot stage.
+    return skipped_starts > 0

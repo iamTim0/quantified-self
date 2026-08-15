@@ -57,6 +57,19 @@ message MetricSeriesIssue {
   string code = 1;
   string metric_type = 2;
   repeated string source_ids = 3;
+  // For AMBIGUOUS_METRIC_SOURCE: which of `source_ids` answers for this metric.
+  //
+  // Resolved here rather than by the reader, because the two things the choice
+  // needs live here — the tenant's stated preference and how much each connector
+  // actually covered the window. A reader that had to choose could only guess,
+  // which is why the analysis service used to drop the metric instead.
+  //
+  // Never a merge: two connectors reporting `steps` cannot be added (rule 19's
+  // double count) and averaging them would silently reweight the samples. One
+  // source answers, and this field says which, so the result can be attributed.
+  string primary_source_id = 4;
+  // How the primary was arrived at: PREFERENCE or COVERAGE.
+  string primary_reason = 5;
 }
 
 message QueryMetricSeriesResponse {
@@ -116,6 +129,51 @@ message ValidateUserSessionResponse {
   string code = 2;
 }
 
+// The insights bundle is a derivation over a tenant's whole window, and it used
+// to be recomputed on every page load. It is now computed once per data change
+// and stored — but Core may not compute it (rule 3: Core owns no data science)
+// and Analysis may not store it (rule 1: Core owns the database). So the work is
+// handed out and handed back over this contract, which is the only channel the
+// two services share.
+//
+// Core queues a run when a tenant's data has moved on; Analysis claims it,
+// computes, and returns the result. A claimed run that never comes back is
+// failed by Core's own timeout, so a crashed Analysis blocks nothing.
+message DueAnalysisReport {
+  string run_id = 1;
+  string tenant_id = 2;
+  // What was asked for, as stored on the run: window length, metric filter.
+  string params_json = 3;
+  string request_id = 4;
+}
+
+message ListDueAnalysisReportsRequest {
+  // Upper bound on how many runs one worker takes at a time. Core clamps it.
+  int32 limit = 1;
+}
+
+message ListDueAnalysisReportsResponse {
+  // Claimed by returning them: each is marked running, so a second worker
+  // polling at the same moment receives a different set.
+  repeated DueAnalysisReport reports = 1;
+}
+
+message PutAnalysisReportRequest {
+  string run_id = 1;
+  string tenant_id = 2;
+  // The finished bundle, exactly as the dashboard should receive it.
+  string payload_json = 3;
+  // Set when the computation failed. Core stores the failure and keeps serving
+  // the previous successful run rather than showing the reader an empty page.
+  string error_code = 4;
+}
+
+message PutAnalysisReportResponse {
+  bool stored = 1;
+  // STORED, RUN_NOT_FOUND, or RUN_ALREADY_FINISHED.
+  string code = 2;
+}
+
 service CoreDataService {
   rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
   rpc QueryMetricSeries(QueryMetricSeriesRequest) returns (QueryMetricSeriesResponse);
@@ -123,4 +181,6 @@ service CoreDataService {
   rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
   rpc ListDataSources(ListDataSourcesRequest) returns (ListDataSourcesResponse);
   rpc ValidateUserSession(ValidateUserSessionRequest) returns (ValidateUserSessionResponse);
+  rpc ListDueAnalysisReports(ListDueAnalysisReportsRequest) returns (ListDueAnalysisReportsResponse);
+  rpc PutAnalysisReport(PutAnalysisReportRequest) returns (PutAnalysisReportResponse);
 }

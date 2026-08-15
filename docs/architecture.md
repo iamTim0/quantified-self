@@ -183,6 +183,8 @@ and the importer, and appears in every log as `[req_id=…]`.
 | `data_points` | The time series, a TimescaleDB hypertable |
 | `metric_rollups` | Tenant/source-scoped minute, hour and day aggregates |
 | `metric_ingest_policies` | Workspace resolution overrides for future imports |
+| `metric_source_preferences` | Which connector answers for a metric several of them report. A missing row means the choice is made by coverage — see [Metrics from several connectors](features/metric-source-selection.md) |
+| `report_runs` | One row per computation of a derived report (`gaps`, `conflicts`, `insights`), holding the stored payload and the newest import it saw — see [Precomputed reports](features/precomputed-reports.md) |
 | `sync_runs` | Import and audit log, the basis for adaptive windows |
 | `api_keys` | Tenant-bound inbound keys, stored only as a hash |
 | `refresh_tokens`, `revoked_access_tokens` | Sessions and revocation |
@@ -221,7 +223,9 @@ new importer is covered the day it is added, rather than the day somebody writes
 to a `(metric_type, source_id)` pair. It reads existing rollups and only falls back to uncovered raw
 points, so Analysis does not transfer or re-aggregate millions of samples for a daily insight. If
 several connector instances report the same metric, Core returns separate series and the stable
-`AMBIGUOUS_METRIC_SOURCE` issue; Analysis excludes that metric until a source is selected. The interface calls
+`AMBIGUOUS_METRIC_SOURCE` issue, naming the connector that answers in `primary_source_id`; Analysis
+uses that one series rather than dropping the metric, and never merges them
+([Metric source selection](features/metric-source-selection.md)). The interface calls
 `/api/v1/analysis/insights`; the Gateway proxies it through.
 Analysis also owns the internal `POST /mcp` endpoint. It accepts only the sessionless
 MCP `2026-07-28` revision, authenticates every request independently, and derives the

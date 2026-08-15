@@ -388,6 +388,11 @@ the connector credentials is worthless.
 - Manual and scheduled planning also take a connector-scoped transaction lock around the in-flight
   check and `SyncRun` insert. Two simultaneous **Sync now** requests therefore produce one queued
   run and one transparent `sync_in_flight` history entry instead of two provider calls.
+- The report tick that keeps the derived reports current is single-flight the same way, on its
+  own advisory-lock key, and runs in the `all` and `scheduler` roles only. Insight runs are handed
+  to the Analysis workers with `SKIP LOCKED`, so every Analysis replica may keep
+  `REPORT_WORKER_ENABLED` on without two of them computing the same bundle. See
+  [Precomputed reports](features/precomputed-reports.md).
 - Analysis holds no database connection. Deterministic analysis and the MCP endpoint
   scale independently of Core without sticky routing. Codex chat threads are ephemeral
   process state, so `/api/v1/chat/turn` needs sticky routing when Analysis has multiple

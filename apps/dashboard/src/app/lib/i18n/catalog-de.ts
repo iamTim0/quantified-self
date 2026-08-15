@@ -875,7 +875,30 @@ export const de: Record<MessageKey, string> = {
     "Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und importiere Daten für mindestens zwei Wochen.",
   "analysis.excludedForQuality": "{count} wegen zu dünner Datenlage ausgeblendet",
   "analysis.ambiguousSources":
-    "{count} Metrik(en) kommen aus mehreren Connectoren. Sie bleiben ausgeblendet, bis eine Quelle ausgewählt ist, damit Werte nicht doppelt gezählt werden.",
+    "{count} Metrik(en) werden von mehreren Connectoren gemeldet. Eine davon antwortet, weil eine Addition denselben Wert doppelt zählen würde.",
+  "analysis.ambiguousUnresolved":
+    "{count} Metrik(en) kommen aus mehreren Connectoren und haben keine Primärquelle, deshalb bleiben sie ausgeblendet.",
+  "analysis.primaryByCoverage": "automatisch gewählt — vollständigste Quelle",
+  "analysis.primaryByPreference": "deine Auswahl",
+  "analysis.chooseSource": "Quelle wählen",
+
+  // ─── Precomputed reports ──────────────────────────────────
+  "report.computedAt": "Berechnet {timestamp}",
+  "report.neverComputed": "Noch nicht berechnet",
+  "report.running": "Wird berechnet…",
+  "report.stale": "Neue Daten seitdem",
+  "report.recompute": "Neu berechnen",
+  "report.pendingFirstRun":
+    "Das wird nach einem Import im Hintergrund berechnet. Jetzt starten, um es sofort zu sehen.",
+
+  // ─── Primary source selection ─────────────────────────────
+  "sources.title": "Metriken aus mehreren Connectoren",
+  "sources.intro":
+    "Diese Metriken kommen von mehr als einem Connector. Werte werden nie addiert — ein Connector antwortet, und du kannst festlegen, welcher.",
+  "sources.none": "Keine Metrik wird von mehr als einem Connector gemeldet.",
+  "sources.automatic": "Automatisch (vollständigste Quelle)",
+  "sources.saveFailed": "Konnte nicht gespeichert werden. Bitte erneut versuchen.",
+  "sources.samples": "{count} Werte",
   "analysis.allMetricsQualify": "alle Metriken erfüllen die Mindestanforderungen",
   "analysis.significantRelationships": "Signifikante Zusammenhänge",
   "analysis.ofPairsChecked": "von {count} geprüften Paaren",

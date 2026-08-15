@@ -10,9 +10,11 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import ImportDialog from "./ImportDialog";
+import ReportStatus from "./ReportStatus";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
+import { useReport } from "../lib/reports";
 import { CANONICAL_KEYS } from "../lib/metrics/catalog";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
@@ -37,6 +39,18 @@ type Connector = {
 type CadenceGap = {
   metric_type: string;
   missing_ranges: { start: string; end: string }[];
+};
+
+/** The stored result of a scheduled gap run. */
+type GapReport = {
+  gaps: Gap[];
+  cadence_gaps: CadenceGap[];
+  missing_count: number;
+};
+
+/** The stored result of a scheduled cross-source conflict run. */
+type ConflictReport = {
+  conflicts: unknown[];
 };
 
 /**
@@ -129,10 +143,19 @@ const gapRecommendation = (t: Translate, missingDays: number): string => {
 
 export default function DataQualityTab({ apiBase }: Props) {
   const { t, formatDate, formatNumber } = useI18n();
-  const [gaps, setGaps] = useState<Gap[]>([]);
-  const [conflicts, setConflicts] = useState<number>(0);
+
+  // The two expensive scans, read from their scheduled run rather than computed
+  // on arrival. `windowDays` is the window the *run* used, not a live query
+  // parameter: changing it here would ask for a different report, not re-filter
+  // this one, so the selector is driven from the run's own params.
+  const gapReport = useReport<GapReport>(apiBase, "gaps");
+  const conflictReport = useReport<ConflictReport>(apiBase, "conflicts");
+  const gaps: Gap[] = gapReport.result?.gaps ?? [];
+  const cadenceGaps: CadenceGap[] = gapReport.result?.cadence_gaps ?? [];
+  const conflicts = conflictReport.result?.conflicts?.length ?? 0;
+  const windowDays = Number(gapReport.params?.window_days ?? 30);
+
   const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [windowDays, setWindowDays] = useState(30);
   const [loading, setLoading] = useState(true);
   // Fields a connector is being given and this platform does not store. Shapes
   // only — the response carries a path and a value *kind*, never a value.
@@ -141,7 +164,6 @@ export default function DataQualityTab({ apiBase }: Props) {
   const [quarantineCapacity, setQuarantineCapacity] = useState<QuarantineCapacity[]>([]);
   const [mappingDrafts, setMappingDrafts] = useState<Record<string, MappingDraft>>({});
   const [savingMapping, setSavingMapping] = useState<string | null>(null);
-  const [cadenceGaps, setCadenceGaps] = useState<CadenceGap[]>([]);
   const [copied, setCopied] = useState(false);
   const [backfill, setBackfill] = useState<{
     sourceId: string;
@@ -149,31 +171,23 @@ export default function DataQualityTab({ apiBase }: Props) {
     sourceName: string;
   } | null>(null);
 
+  /**
+   * The three lists that are *state*, not derivation.
+   *
+   * Quarantine, mapping rules and unsupported fields are small indexed reads and
+   * have to be right the instant a user saves a rule, so they stay live. The two
+   * expensive scans — gaps and cross-source conflicts — come from a scheduled
+   * run instead (`useReport` above), because they walk the workspace's history
+   * and cannot answer differently until an import has changed it.
+   */
   const load = useCallback(async () => {
     setLoading(true);
-    const end = new Date();
-    const start = new Date(end);
-    start.setDate(end.getDate() - (windowDays - 1));
-
     try {
-      const [gapRes, conflictRes, connectorRes, unsupportedRes, quarantineRes] = await Promise.all([
-        apiFetch(
-          `${apiBase}/api/v1/data/quality/gaps?start_date=${start
-            .toISOString()
-            .slice(0, 10)}&end_date=${end.toISOString().slice(0, 10)}` +
-            `&offset_minutes=${-new Date().getTimezoneOffset()}`,
-        ),
-        apiFetch(`${apiBase}/api/v1/data/quality/conflicts`),
+      const [connectorRes, unsupportedRes, quarantineRes] = await Promise.all([
         apiFetch(`${apiBase}/api/v1/data/sources`),
         apiFetch(`${apiBase}/api/v1/data/quality/unsupported-fields`),
         apiFetch(`${apiBase}/api/v1/data/quality/quarantine`),
       ]);
-      if (gapRes.ok) {
-        const data = await gapRes.json();
-        setGaps(data.gaps ?? []);
-        setCadenceGaps(data.cadence_gaps ?? []);
-      }
-      if (conflictRes.ok) setConflicts(((await conflictRes.json()).conflicts ?? []).length);
       if (connectorRes.ok) setConnectors((await connectorRes.json()).connectors ?? []);
       if (unsupportedRes.ok) setUnsupported((await unsupportedRes.json()).fields ?? []);
       if (quarantineRes.ok) {
@@ -184,7 +198,7 @@ export default function DataQualityTab({ apiBase }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [apiBase, windowDays]);
+  }, [apiBase]);
 
   const draftFor = (metric: QuarantinedMetric): MappingDraft => {
     const key = `${metric.source_id}:${metric.raw_metric_type}`;
@@ -250,7 +264,12 @@ export default function DataQualityTab({ apiBase }: Props) {
     };
   }, [load]);
 
-  usePolling(() => void load(), 15000);
+  // Not polled. Nothing on this page changes on its own: the quarantine and
+  // mapping lists are reloaded by the action that changes them, and the two
+  // expensive derivations are recomputed by a report run rather than by looking
+  // at the page. A timer here re-ran a full-history gap scan and a 5,000-row
+  // conflict scan every fifteen seconds to redraw identical content.
+  usePolling(() => void load(), null);
 
   const quarantineWarningKey = (code: QuarantineWarningCode) => {
     switch (code) {
@@ -355,10 +374,19 @@ export default function DataQualityTab({ apiBase }: Props) {
     },
     {
       title: t("quality.conflictsTitle"),
-      value: conflicts,
+      // "—", not 0, until the scan has actually run. A zero here read as
+      // "checked, nothing found" when the truth was "never checked", and
+      // nothing else on the card distinguished the two. A wrong number is worse
+      // than a missing one, because nothing marks it as wrong.
+      value: conflictReport.status === "ready" ? conflicts : "—",
       icon: AlertTriangle,
       detail: t("quality.conflictsDetail"),
-      help: conflicts === 0 ? t("quality.conflictsNone") : t("quality.conflictsHelp"),
+      help:
+        conflictReport.status !== "ready"
+          ? t("report.neverComputed")
+          : conflicts === 0
+            ? t("quality.conflictsNone")
+            : t("quality.conflictsHelp"),
     },
   ];
 
@@ -377,8 +405,16 @@ export default function DataQualityTab({ apiBase }: Props) {
             {t("quality.window")}
             <select
               value={windowDays}
-              onChange={(e) => setWindowDays(Number(e.target.value))}
-              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none"
+              // Another window is another report, not a filter over this one, so
+              // this queues a run rather than re-rendering what is already here.
+              onChange={(e) =>
+                void gapReport.refresh({
+                  window_days: Number(e.target.value),
+                  offset_minutes: -new Date().getTimezoneOffset(),
+                })
+              }
+              disabled={gapReport.running}
+              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none disabled:opacity-50"
             >
               {[7, 30, 90, 180, 365].map((days) => (
                 <option key={days} value={days}>
@@ -390,6 +426,22 @@ export default function DataQualityTab({ apiBase }: Props) {
           {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
         </div>
       </div>
+
+      <ReportStatus
+        computedAt={gapReport.computed_at}
+        stale={gapReport.stale || conflictReport.stale}
+        running={gapReport.running || conflictReport.running}
+        neverComputed={
+          gapReport.status === "never_computed" && !gapReport.loading
+        }
+        onRefresh={() => {
+          void gapReport.refresh({
+            window_days: windowDays,
+            offset_minutes: -new Date().getTimezoneOffset(),
+          });
+          void conflictReport.refresh();
+        }}
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         {cards.map(({ title, value, icon: Icon, detail, help }) => (

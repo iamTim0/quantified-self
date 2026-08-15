@@ -8,9 +8,15 @@ for analysis.
 | Indicator | Meaning | Recommendation |
 | --- | --- | --- |
 | Data gaps | Days without a value, for metrics that are expected daily (see below) | Check the connector, renew the token, or start the sync again. |
-| Source conflicts | Values for the same metric differ noticeably between sources | Pick a primary source, or check the units. |
+| Source conflicts | Values for the same metric differ noticeably between sources | [Pick a primary source](metric-source-selection.md), or check the units. |
 | Not yet supported | Fields a connector receives and this platform does not store | Copy the shape-only report, or resolve a held metric below. |
 | Held for decision | Point values whose metric name is not yet recognised | Map, adopt, discard or keep the connector-specific name. |
+
+The gap scan and the conflict scan walk the workspace's history, so they are not computed
+when the page opens: the Data Quality Center reads the last scheduled run and shows when it
+was computed, whether newer data has arrived since, and a **Recompute** button. The other
+three lists on the page are small indexed reads and stay live, because a mapping rule has to
+take effect the instant it is saved. See [Precomputed reports](precomputed-reports.md).
 
 ## How to read it
 

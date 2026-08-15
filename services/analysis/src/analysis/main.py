@@ -18,9 +18,10 @@ trusting the hop, for the same reason Core stopped trusting X-Tenant-ID.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -48,6 +49,7 @@ from analysis.insights import (
     weekday_pattern,
 )
 from analysis.mcp_server import mcp_asgi_app
+from analysis.report_worker import run_report_worker, worker_enabled
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,9 +62,20 @@ logger = logging.getLogger(__name__)
 async def lifespan(_app: FastAPI):
     """Run the mounted MCP transport manager with the Analysis application."""
     async with mcp_asgi_app.lifespan():
+        # The insights bundle is computed here but scheduled by Core, which owns
+        # the sync history that says when a tenant's data has changed. The worker
+        # claims that queued work over the same gRPC contract this service
+        # already reads through. See `analysis.report_worker`.
+        worker_task = (
+            asyncio.create_task(run_report_worker()) if worker_enabled() else None
+        )
         try:
             yield
         finally:
+            if worker_task is not None:
+                worker_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await worker_task
             await codex.close()
 
 
@@ -115,16 +128,54 @@ async def get_insights(
     ),
     tenant_id: str = Depends(resolve_tenant),
 ) -> dict[str, Any]:
-    """Full analysis bundle for the dashboard, with provenance on every result.
+    """Full analysis bundle for one caller's parameters, computed now.
 
-    One endpoint rather than several because the analyses share the same aligned
+    The dashboard does not use this: it reads the scheduled run through Core's
+    `/api/v1/data/reports/insights`, which is this same bundle computed once per
+    data change. This endpoint stays because the parameters are real — a caller
+    may ask for a window, a metric or a connector the scheduled run did not.
+    """
+    try:
+        return await build_insights_bundle(
+            tenant_id,
+            days=days,
+            metric_type=metric_type,
+            min_strength=min_strength,
+            compare_to_previous=compare_to_previous,
+            source_id=source_id,
+            request_id=_request_id(request),
+        )
+    except CoreUnavailable as exc:
+        # 503, not an empty result set: "no correlations found" and "we could not
+        # read the data" must not look the same to the dashboard.
+        raise HTTPException(
+            status_code=503, detail="Analysis data is temporarily unavailable"
+        ) from exc
+
+
+async def build_insights_bundle(
+    tenant_id: str,
+    *,
+    days: int = 90,
+    metric_type: str | None = None,
+    min_strength: float = 0.0,
+    compare_to_previous: bool = False,
+    source_id: str | None = None,
+    request_id: str,
+) -> dict[str, Any]:
+    """Full analysis bundle for a tenant, with provenance on every result.
+
+    One function rather than several because the analyses share the same aligned
     daily series; recomputing it per call would be wasteful and could return
     mutually inconsistent windows.
+
+    Called both by the HTTP endpoint above and by the background worker in
+    `analysis.report_worker`, so that a scheduled bundle and an ad-hoc one cannot
+    drift apart — there is one implementation and two ways to reach it.
 
     Everything reported is an *association*. Nothing here establishes causation,
     and analyses whose input is too thin are omitted rather than shown weakly.
     """
-    request_id = _request_id(request)
     now = datetime.now(UTC)
     window_start = now - timedelta(days=days)
 
@@ -140,13 +191,15 @@ async def get_insights(
             tenant_id,
             request_id=request_id,
         )
-    except CoreUnavailable as exc:
-        logger.warning("[req_id=%s] %s", request_id, exc)
-        # 503, not an empty result set: "no correlations found" and "we could not
-        # read the data" must not look the same to the dashboard.
-        raise HTTPException(
-            status_code=503, detail="Analysis data is temporarily unavailable"
-        ) from exc
+    except CoreUnavailable:
+        # Raised on, not translated here. This function has two callers and only
+        # one of them is an HTTP request: turning an unreachable Core into a 503
+        # in here meant the background worker could never recognise the condition
+        # it has a branch for, so it wrote every run back as a permanent failure
+        # and hammered a Core that was merely restarting. The HTTP concern belongs
+        # at the HTTP edge — see `get_insights`.
+        logger.warning("[req_id=%s] Core unavailable while building insights", request_id)
+        raise
 
     # A canonical metric can be reported by several connector instances. Core
     # returns those source series separately and marks the metric ambiguous. Do
@@ -160,6 +213,8 @@ async def get_insights(
                 "code": issue.code,
                 "metric_type": issue.metric_type,
                 "source_ids": list(issue.source_ids),
+                "primary_source_id": issue.primary_source_id,
+                "primary_reason": issue.primary_reason,
             }
             for issue in series_response.issues
         ]
@@ -169,13 +224,37 @@ async def get_insights(
         buckets = series_response
         source_issues = []
 
-    ambiguous_metrics = {
+    # A metric several connectors report is answered by one of them, not dropped.
+    #
+    # Dropping was the safe half of a correct observation: the two series must not
+    # be merged, because adding two step counters double counts and averaging two
+    # overlapping sensors reweights the samples invisibly. But "do not merge" does
+    # not imply "do not answer" — it implies "say which one". Core makes that
+    # choice, because it holds the tenant's stated preference and the coverage
+    # figures the choice needs, and names it in `primary_source_id`.
+    #
+    # A metric stays excluded only when Core named no primary — an older Core that
+    # does not send the field. Picking one here would be a guess, and a guess about
+    # which of two step counters is real is exactly the wrong thing to hide.
+    primary_by_metric = {
+        issue["metric_type"]: issue["primary_source_id"]
+        for issue in source_issues
+        if issue["code"] == "AMBIGUOUS_METRIC_SOURCE" and issue.get("primary_source_id")
+    }
+    unresolved_metrics = {
         issue["metric_type"]
         for issue in source_issues
         if issue["code"] == "AMBIGUOUS_METRIC_SOURCE"
+        and not issue.get("primary_source_id")
     }
     usable_buckets = [
-        bucket for bucket in buckets if bucket.metric_type not in ambiguous_metrics
+        bucket
+        for bucket in buckets
+        if bucket.metric_type not in unresolved_metrics
+        and (
+            bucket.metric_type not in primary_by_metric
+            or bucket.source_id == primary_by_metric[bucket.metric_type]
+        )
     ]
     series = build_daily_series(usable_buckets)
     selected_source_ids: dict[str, list[str]] = {}
@@ -242,7 +321,7 @@ async def get_insights(
             ) is not None:
                 comparisons[metric] = cmp
 
-    excluded = sorted((set(series) - set(usable)) | ambiguous_metrics)
+    excluded = sorted((set(series) - set(usable)) | unresolved_metrics)
 
     return {
         "tenant_id": tenant_id,

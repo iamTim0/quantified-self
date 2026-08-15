@@ -65,6 +65,16 @@ class CoreDataServiceStub:
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
                 response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
                 _registered_method=True)
+        self.ListDueAnalysisReports = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/ListDueAnalysisReports',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.FromString,
+                _registered_method=True)
+        self.PutAnalysisReport = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/PutAnalysisReport',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.FromString,
+                _registered_method=True)
 
 
 class CoreDataServiceServicer:
@@ -106,6 +116,18 @@ class CoreDataServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListDueAnalysisReports(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PutAnalysisReport(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CoreDataServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -138,6 +160,16 @@ def add_CoreDataServiceServicer_to_server(servicer, server):
                     servicer.ValidateUserSession,
                     request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.FromString,
                     response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.SerializeToString,
+            ),
+            'ListDueAnalysisReports': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDueAnalysisReports,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.SerializeToString,
+            ),
+            'PutAnalysisReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.PutAnalysisReport,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -302,6 +334,60 @@ class CoreDataService:
             '/quantified_self.v1.CoreDataService/ValidateUserSession',
             quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
             quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListDueAnalysisReports(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/ListDueAnalysisReports',
+            quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PutAnalysisReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/PutAnalysisReport',
+            quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.FromString,
             options,
             channel_credentials,
             insecure,

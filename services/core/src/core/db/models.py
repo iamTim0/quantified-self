@@ -774,3 +774,104 @@ class ExplorerView(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class ReportRun(Base):
+    """One computation of a derived report — the analysis counterpart of `SyncRun`.
+
+    The gap scan, the cross-source conflict scan and the insights bundle are
+    derivations over a tenant's whole history, and they were recomputed on every
+    page load: the quality page additionally re-ran both scans every fifteen
+    seconds. None of them can answer differently until an import has changed the
+    data underneath, so the answer is computed once per change and read from here.
+
+    Modelled on `SyncRun` deliberately, down to `message_code`/`message_params`
+    (rule 17) — a report is an attempt that can be queued, can fail, and whose
+    history is worth keeping. `payload` holds the finished result exactly as the
+    endpoint returns it, so a read is one indexed row and no computation.
+    """
+
+    __tablename__ = "report_runs"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="queued")
+    trigger: Mapped[str] = mapped_column(String(24), nullable=False, default="scheduled")
+    request_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # The newest finished import this run saw. A later import moves the tenant's
+    # own high-water mark past this value, which is what makes the report stale —
+    # a comparison of two timestamps rather than a recomputation.
+    covers_data_through: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    # What was asked for. A gap report over 30 days is not the same answer as one
+    # over 365, so the window is part of the run's identity, not of its reader.
+    params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    message_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    message_params: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "id", name="uq_report_runs_tenant_id_id"),
+    )
+
+
+class MetricSourcePreference(Base):
+    """Which connector answers for a metric that several of them report.
+
+    Two connectors reporting `steps` cannot be added together — that is rule 19's
+    double count — and the analysis service used to drop such a metric from every
+    result rather than choose. Dropping is only the right answer for the reader
+    who never gets to state a preference; this is where they state one.
+
+    A missing row is not "no opinion recorded but needed": it means the choice is
+    made by coverage, which is a defensible default and the common case. Only a
+    deliberate override is stored.
+    """
+
+    __tablename__ = "metric_source_preferences"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    primary_source_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "metric_type", name="uq_metric_source_preferences_tenant_metric"
+        ),
+        # Composite, so a preference cannot name another tenant's connector (rule 2).
+        ForeignKeyConstraint(
+            ["tenant_id", "primary_source_id"],
+            ["data_sources.tenant_id", "data_sources.id"],
+            name="fk_metric_source_preferences_tenant_source",
+            ondelete="CASCADE",
+        ),
+    )

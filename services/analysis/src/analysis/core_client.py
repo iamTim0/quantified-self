@@ -18,6 +18,7 @@ Two things this has to get right that a naive client would not:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -77,6 +78,21 @@ class MetricSeriesIssue:
     code: str
     metric_type: str
     source_ids: list[str] = field(default_factory=list)
+    # For AMBIGUOUS_METRIC_SOURCE: which source answers, and how Core decided.
+    # Empty from a Core too old to send it, which is the one case this service
+    # still has to drop the metric rather than pick a source at random.
+    primary_source_id: str = ""
+    primary_reason: str = ""
+
+
+@dataclass(frozen=True)
+class DueAnalysisReport:
+    """One insight run Core has queued and this service has claimed."""
+
+    run_id: str
+    tenant_id: str
+    params: dict[str, object] = field(default_factory=dict)
+    request_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -274,6 +290,8 @@ class CoreClient:
                     code=issue.code,
                     metric_type=issue.metric_type,
                     source_ids=list(issue.source_ids),
+                    primary_source_id=issue.primary_source_id,
+                    primary_reason=issue.primary_reason,
                 )
                 for issue in response.issues
             ],
@@ -352,3 +370,74 @@ class CoreClient:
                 f"Core gRPC session validation failed: {exc.code().name}"
             ) from exc
         return response.valid, response.code
+
+    async def claim_due_analysis_reports(
+        self, *, limit: int, request_id: str
+    ) -> list[DueAnalysisReport]:
+        """Take queued insight runs off Core's work list.
+
+        Claiming and listing are one call on purpose: Core marks each run
+        `running` in the transaction that returns it, so two Analysis replicas
+        polling at the same moment cannot both compute the same tenant's bundle.
+        """
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                response = await stub.ListDueAnalysisReports(
+                    pb.ListDueAnalysisReportsRequest(limit=limit),
+                    metadata=_metadata(request_id),
+                )
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC report claim failed: {exc.code().name}"
+            ) from exc
+
+        claimed: list[DueAnalysisReport] = []
+        for report in response.reports:
+            try:
+                params = json.loads(report.params_json or "{}")
+            except ValueError:
+                params = {}
+            claimed.append(
+                DueAnalysisReport(
+                    run_id=report.run_id,
+                    tenant_id=report.tenant_id,
+                    params=params if isinstance(params, dict) else {},
+                    request_id=report.request_id or request_id,
+                )
+            )
+        return claimed
+
+    async def put_analysis_report(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        payload: dict[str, object] | None,
+        error_code: str = "",
+        request_id: str,
+    ) -> str:
+        """Hand a finished bundle back to Core, which owns the storage (rule 1).
+
+        Returns Core's machine code: STORED, RUN_NOT_FOUND, or
+        RUN_ALREADY_FINISHED. The last is not an error — it means Core timed the
+        run out while this one was still computing, and refusing the late result
+        is correct because a replacement may already have been queued.
+        """
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                response = await stub.PutAnalysisReport(
+                    pb.PutAnalysisReportRequest(
+                        run_id=run_id,
+                        tenant_id=tenant_id,
+                        payload_json=json.dumps(payload or {}),
+                        error_code=error_code,
+                    ),
+                    metadata=_metadata(request_id),
+                )
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC report write failed: {exc.code().name}"
+            ) from exc
+        return response.code

@@ -91,8 +91,10 @@ returns one explicit bucket per `(metric_type, source_id, interval)`, with `samp
 absent value for gaps. It reads the matching rollup resolution first and aggregates only raw points
 not already covered by a rollup. When several connector instances report the same canonical metric,
 Core returns separate source series and an `AMBIGUOUS_METRIC_SOURCE` issue; it never adds them
-together. Analysis excludes that metric until a source is selected. This keeps large analyses
-bounded without silently treating a missing day as zero or a second connector as extra activity.
+together. The issue names the connector that answers for the metric in `primary_source_id`, and
+Analysis uses that series rather than dropping the metric — see
+[Metric source selection](metric-source-selection.md). This keeps large analyses bounded without
+silently treating a missing day as zero or a second connector as extra activity.
 
 The Explorer requests each selected metric separately, and keeps the raw table query independent
 from the chart query, so a chart is not truncated by the table's page size. It does **not** split
@@ -104,8 +106,10 @@ thousand raw points, which is what made a whole-history drill-down stall the bro
 database at once. The selected range is sent to Core as an explicit start/end window; it is not
 hardcoded to a week.
 The Analysis view offers the same connector-instance selection and sends its `source_id` to the
-Analysis service. Leaving the selector on all sources is intentionally conservative: ambiguous
-metrics are reported as unavailable instead of being guessed or combined.
+Analysis service. Leaving the selector on all sources is safe: a metric several connectors report
+is answered by one of them — the workspace's stated preference, or otherwise the connector with the
+most coverage — and the result names which. Values are never combined, because adding two step
+counters counts the same walk twice. See [Metric source selection](metric-source-selection.md).
 
 `/api/v1/data/metrics/summary` combines day-rollup aggregates with uncovered legacy
 points when both exist and reports `contains_legacy_raw=true`. Data imported before

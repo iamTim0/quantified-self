@@ -50,10 +50,19 @@ from core.db.models import (
     DataPoint,
     DataSource,
     MetricRollup,
+    ReportRun,
     RevokedAccessToken,
     User,
 )
 from core.db.session import async_session_maker
+from core.reports import (
+    claim_due_analysis_runs,
+    fail_report_run,
+    finish_report_run,
+    metric_source_coverage,
+    primary_source_preferences,
+    resolve_primary_source,
+)
 from core.rollup_coverage import may_hold_points_outside_day_rollups
 from core.security.tokens import TokenError, verify_service_credential
 from core.tracing import get_current_request_id, set_current_request_id
@@ -612,12 +621,44 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             if series_count * len(buckets) > MAX_SERIES_BUCKETS:
                 raise ValueError("Metric series is too large")
 
+            # Only fetched when something is actually ambiguous. Most tenants have
+            # one connector per metric and pay nothing for this.
+            ambiguous = [
+                metric_type
+                for metric_type in metric_order
+                if len(metric_sources.get(metric_type, ())) > 1
+            ]
+            preferences: dict[str, str] = {}
+            coverage: dict[tuple[str, str], int] = {}
+            if ambiguous:
+                # Whole-history coverage, not the window's. A primary source is a
+                # property of the workspace, so resolving it from whatever window
+                # this call happens to ask for would make the analysed series
+                # change identity between two views — and would disagree with the
+                # picker card, which counts everything. See `metric_source_coverage`.
+                async with async_session_maker() as pref_session:
+                    preferences = await primary_source_preferences(
+                        pref_session, tenant_id
+                    )
+                    coverage = await metric_source_coverage(pref_session, tenant_id)
+
             response = pb.QueryMetricSeriesResponse()
             for metric_type in metric_order:
                 source_ids = sorted(metric_sources.get(metric_type, ()))
                 if len(source_ids) > 1:
+                    primary, reason = resolve_primary_source(
+                        source_ids,
+                        preference=preferences.get(metric_type),
+                        coverage={
+                            source_id: coverage.get((metric_type, source_id), 0)
+                            for source_id in source_ids
+                        },
+                    )
                     issue = response.issues.add(
-                        code="AMBIGUOUS_METRIC_SOURCE", metric_type=metric_type
+                        code="AMBIGUOUS_METRIC_SOURCE",
+                        metric_type=metric_type,
+                        primary_source_id=primary,
+                        primary_reason=reason,
                     )
                     issue.source_ids.extend(source_ids)
                 for source_id in source_ids:
@@ -747,6 +788,93 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             if cutoff is not None and issued_at < cutoff:
                 return pb.ValidateUserSessionResponse(valid=False, code="SESSION_ENDED")
             return pb.ValidateUserSessionResponse(valid=True, code="VALID")
+
+    async def ListDueAnalysisReports(
+        self, request: pb.ListDueAnalysisReportsRequest, context: grpc.aio.ServicerContext
+    ) -> pb.ListDueAnalysisReportsResponse:
+        """Hand out queued insight runs, claiming them in the same transaction.
+
+        Deliberately not tenant-scoped in the request: this is a worker asking for
+        work across the deployment, in the same way the sync scheduler looks at
+        every connector. Each run it receives names its own tenant, and everything
+        the worker then reads is scoped to that tenant (rule 2).
+        """
+        async with _guard(context):
+            limit = max(1, min(int(request.limit or 10), 50))
+            async with async_session_maker() as session:
+                runs = await claim_due_analysis_runs(session, limit=limit)
+                reports = [
+                    pb.DueAnalysisReport(
+                        run_id=str(run.id),
+                        tenant_id=str(run.tenant_id),
+                        params_json=json.dumps(run.params or {}),
+                        request_id=run.request_id or "",
+                    )
+                    for run in runs
+                ]
+                await session.commit()
+            return pb.ListDueAnalysisReportsResponse(reports=reports)
+
+    async def PutAnalysisReport(
+        self, request: pb.PutAnalysisReportRequest, context: grpc.aio.ServicerContext
+    ) -> pb.PutAnalysisReportResponse:
+        """Store a finished insights bundle against the run it was claimed for.
+
+        Scoped by tenant *and* run id, so a worker cannot write a result into
+        another tenant's report by presenting the wrong identifier.
+        """
+        async with _guard(context):
+            tenant_id = _require_tenant(request.tenant_id)
+            if not request.run_id:
+                raise ValueError("run_id is required")
+
+            async with async_session_maker() as session:
+                run = (
+                    await session.execute(
+                        select(ReportRun).where(
+                            ReportRun.tenant_id == tenant_id,
+                            ReportRun.id == request.run_id,
+                            # The kind too, not only the identifier. Scoping by
+                            # tenant and id alone let an insights bundle be
+                            # stored into the same tenant's `gaps` run, and it
+                            # was safe only because `ListDueAnalysisReports`
+                            # happens to hand out insights runs exclusively —
+                            # a guarantee held by the caller, which is the kind
+                            # that stops holding when someone adds a second one.
+                            ReportRun.kind == "insights",
+                        )
+                    )
+                ).scalars().first()
+                if run is None:
+                    return pb.PutAnalysisReportResponse(
+                        stored=False, code="RUN_NOT_FOUND"
+                    )
+                if run.status in ("success", "error"):
+                    # A retry after Core already timed the run out. Refused rather
+                    # than applied: the timeout may have queued a replacement, and
+                    # a late result must not overwrite a newer one.
+                    return pb.PutAnalysisReportResponse(
+                        stored=False, code="RUN_ALREADY_FINISHED"
+                    )
+
+                if request.error_code:
+                    # `message` is the operator's English fallback, so it has to
+                    # say something the code does not already say on its own.
+                    fail_report_run(
+                        run,
+                        request.error_code,
+                        f"The Analysis Service could not compute this report ({request.error_code}).",
+                    )
+                else:
+                    try:
+                        payload = json.loads(request.payload_json or "{}")
+                    except ValueError:
+                        raise ValueError("payload_json is not valid JSON") from None
+                    if not isinstance(payload, dict):
+                        raise ValueError("payload_json must encode an object")
+                    finish_report_run(run, payload)
+                await session.commit()
+            return pb.PutAnalysisReportResponse(stored=True, code="STORED")
 
 
 class _guard:

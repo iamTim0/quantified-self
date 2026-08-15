@@ -312,23 +312,28 @@ async def test_insights_use_metric_series_instead_of_raw_points(monkeypatch):
     assert result["metrics_analysed"] == ["steps"]
 
 
-@pytest.mark.asyncio
-async def test_insights_do_not_merge_ambiguous_metric_sources(monkeypatch):
-    """Analysis excludes a metric when Core reports multiple source instances."""
+def _ambiguous_steps_client(primary: str, reason: str = "COVERAGE"):
+    """A Core answering with `steps` from two connectors, one of them primary."""
 
     class _FakeCoreClient:
         async def fetch_metric_series(self, *_args, **_kwargs):
             now = datetime.now(timezone.utc)
             return MetricSeriesResponse(
                 buckets=[
-                    MetricSeriesBucket("steps", now, 350.0, 1, "source-a"),
-                    MetricSeriesBucket("steps", now, 1000.0, 1, "source-b"),
+                    MetricSeriesBucket("steps", now - timedelta(days=offset), 350.0, 1, "source-a")
+                    for offset in range(14)
+                ]
+                + [
+                    MetricSeriesBucket("steps", now - timedelta(days=offset), 1000.0, 1, "source-b")
+                    for offset in range(14)
                 ],
                 issues=[
                     MetricSeriesIssue(
                         code="AMBIGUOUS_METRIC_SOURCE",
                         metric_type="steps",
                         source_ids=["source-a", "source-b"],
+                        primary_source_id=primary,
+                        primary_reason=reason if primary else "",
                     )
                 ],
             )
@@ -336,9 +341,44 @@ async def test_insights_do_not_merge_ambiguous_metric_sources(monkeypatch):
         async def fetch_source_map(self, *_args, **_kwargs):
             return {"source-a": "oura", "source-b": "apple_health"}
 
-    monkeypatch.setattr(analysis_main, "core_client", _FakeCoreClient())
+    return _FakeCoreClient()
+
+
+@pytest.mark.asyncio
+async def test_insights_never_merge_two_sources_of_one_metric(monkeypatch):
+    """Only the primary connector's series is analysed — the two are never summed.
+
+    Summing them would double count (AGENTS.md rule 19); averaging them would
+    reweight the samples invisibly. Exactly one source answers.
+    """
+    monkeypatch.setattr(analysis_main, "core_client", _ambiguous_steps_client("source-a"))
     result = await get_insights(
-        request=_request({"X-Request-ID": "req_ambiguous_sources"}),
+        request=_request({"X-Request-ID": "req_ambiguous_primary"}),
+        days=14,
+        metric_type="steps",
+        tenant_id="22222222-2222-2222-2222-222222222222",
+    )
+
+    # Analysed rather than dropped, and attributed to the one source that answered.
+    assert result["metrics_analysed"] == ["steps"]
+    assert result["metrics_excluded_for_quality"] == []
+    assert result["metric_source_ids"]["steps"] == ["source-a"]
+    # `source-b` reported 1000 on every day. If its buckets had leaked into the
+    # series the trend would be built on values this connector never sent.
+    assert result["source_issues"][0]["primary_source_id"] == "source-a"
+    assert result["source_issues"][0]["primary_reason"] == "COVERAGE"
+
+
+@pytest.mark.asyncio
+async def test_insights_exclude_an_ambiguous_metric_when_core_names_no_primary(monkeypatch):
+    """A Core too old to resolve the ambiguity still gets the safe answer.
+
+    Choosing here would be a guess about which of two step counters is real, and
+    a guess is worse than an omission the reader can see.
+    """
+    monkeypatch.setattr(analysis_main, "core_client", _ambiguous_steps_client(""))
+    result = await get_insights(
+        request=_request({"X-Request-ID": "req_ambiguous_unresolved"}),
         days=14,
         metric_type="steps",
         tenant_id="22222222-2222-2222-2222-222222222222",
@@ -346,13 +386,6 @@ async def test_insights_do_not_merge_ambiguous_metric_sources(monkeypatch):
 
     assert result["metrics_analysed"] == []
     assert result["metrics_excluded_for_quality"] == ["steps"]
-    assert result["source_issues"] == [
-        {
-            "code": "AMBIGUOUS_METRIC_SOURCE",
-            "metric_type": "steps",
-            "source_ids": ["source-a", "source-b"],
-        }
-    ]
 
 
 def test_health_endpoint_needs_no_credential():

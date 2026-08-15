@@ -864,7 +864,30 @@ export const en = {
     "There is no data to analyse yet. Set up a connector and import at least two weeks.",
   "analysis.excludedForQuality": "{count} hidden because the data is too thin",
   "analysis.ambiguousSources":
-    "{count} metric(s) use more than one connector. They were left out until one source is selected, so values are not counted twice.",
+    "{count} metric(s) are reported by more than one connector. One of them answers, because adding two would count the same value twice.",
+  "analysis.ambiguousUnresolved":
+    "{count} metric(s) come from several connectors and no primary source is set, so they were left out.",
+  "analysis.primaryByCoverage": "chosen automatically — most complete",
+  "analysis.primaryByPreference": "your choice",
+  "analysis.chooseSource": "Choose source",
+
+  // ─── Precomputed reports ──────────────────────────────────
+  "report.computedAt": "Computed {timestamp}",
+  "report.neverComputed": "Not computed yet",
+  "report.running": "Computing…",
+  "report.stale": "New data since",
+  "report.recompute": "Recompute",
+  "report.pendingFirstRun":
+    "This is computed in the background after an import. Start it now to see it straight away.",
+
+  // ─── Primary source selection ─────────────────────────────
+  "sources.title": "Metrics from several connectors",
+  "sources.intro":
+    "These metrics arrive from more than one connector. Values are never added together — one connector answers, and you can say which.",
+  "sources.none": "No metric is reported by more than one connector.",
+  "sources.automatic": "Automatic (most complete)",
+  "sources.saveFailed": "Could not be saved. Please try again.",
+  "sources.samples": "{count} values",
   "analysis.allMetricsQualify": "every metric meets the minimum requirements",
   "analysis.significantRelationships": "Significant relationships",
   "analysis.ofPairsChecked": "of {count} pairs checked",
