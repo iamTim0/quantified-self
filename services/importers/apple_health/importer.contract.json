@@ -5,7 +5,12 @@
   "ingest_subject": "qs.ingest.apple_health",
   "task_subject": null,
   "entrypoint": "apple_health_importer.main",
-  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "required_modules": [
+    "client.py",
+    "config.py",
+    "main.py",
+    "transformer.py"
+  ],
   "communication": {
     "ingest": "nats_jetstream",
     "credentials": "core_internal_http",
@@ -119,6 +124,7 @@
     "workout_elevation_loss",
     "workout_energy",
     "workout_energy_resting",
+    "workout_heart_rate",
     "workout_heart_rate_average",
     "workout_heart_rate_max",
     "workout_intensity",
@@ -129,7 +135,9 @@
     "workout_swim_cadence",
     "workout_swimming_strokes"
   ],
-  "dynamic_namespaces": ["apple_health_"],
+  "dynamic_namespaces": [
+    "apple_health_"
+  ],
   "capabilities": {
     "scheduled_sync": false,
     "webhook": true,

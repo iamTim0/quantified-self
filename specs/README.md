@@ -120,6 +120,10 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `UnhealthyDependencyIsVisible` | `test_unhealthy_dependency_is_visible` | API Gateway health aggregation |
 | `VersionComesFromObservedService` | `test_gateway_health_reports_observed_metadata` | API Gateway health aggregation |
 | `LivenessDoesNotWaitForDependencies` | `test_liveness_is_independent_from_aggregate_readiness` | API Gateway / Compose |
+| `SessionGroupingIsStable` | `test_tagged_and_untagged_points_never_share_a_group` | Core workout sessions |
+| `SessionGroupsAreDisjoint` | `test_one_workout_split_by_the_migration_never_doubles_a_row` | Core workout sessions |
+| `SessionDetailIsTenantScoped` | `test_a_forged_session_key_returns_the_callers_own_empty_result` | Core workout sessions |
+| `BoundedSessionRead` | `test_a_three_hour_workout_returns_a_bounded_payload` | Core workout sessions |
 
 ## Adding New Specs
 

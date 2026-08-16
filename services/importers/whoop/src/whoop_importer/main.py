@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 import nats
 import uvicorn
+from shared_schemas import FieldReportCollector
 
 from whoop_importer.client import (
     WhoopApiError,
@@ -22,6 +23,7 @@ from whoop_importer.client import (
     WhoopUnauthorizedError,
 )
 from whoop_importer.config import settings
+from whoop_importer.core_client import send_field_report
 from whoop_importer.internal_auth import internal_headers
 from whoop_importer.sync_task import SyncTask, parse_sync_task, resolve_window
 from whoop_importer.transformer import transform_whoop_records
@@ -167,11 +169,21 @@ async def fetch_and_publish(
         sleeps = await client.get_sleeps(start=start_time, end=end_time)
         workouts = await client.get_workouts(start=start_time, end=end_time)
 
+        # One collector across all four record kinds. The polled path used to pass
+        # none at all, so every WHOOP field this importer does not read vanished
+        # unless somebody happened to upload the emailed export instead — and the
+        # polled path is the one that runs every six hours (rule 19).
+        field_report = FieldReportCollector()
         all_points = []
-        all_points.extend(transform_whoop_records("cycle", cycles, tenant_id, source_id))
-        all_points.extend(transform_whoop_records("recovery", recoveries, tenant_id, source_id))
-        all_points.extend(transform_whoop_records("sleep", sleeps, tenant_id, source_id))
-        all_points.extend(transform_whoop_records("workout", workouts, tenant_id, source_id))
+        for kind, records in (
+            ("cycle", cycles),
+            ("recovery", recoveries),
+            ("sleep", sleeps),
+            ("workout", workouts),
+        ):
+            all_points.extend(
+                transform_whoop_records(kind, records, tenant_id, source_id, report=field_report)
+            )
 
         published_count = 0
         for dp in all_points:
@@ -188,6 +200,13 @@ async def fetch_and_publish(
             "[req_id=%s] Published %d WHOOP DataPoints to 'qs.ingest.whoop'.",
             task.request_id,
             published_count,
+        )
+        await send_field_report(
+            tenant_id,
+            source_id,
+            field_report.build(),
+            req_id=task.request_id,
+            sync_run_id=task.sync_run_id,
         )
         await report_sync_result_to_core(
             task,

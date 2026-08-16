@@ -7,10 +7,57 @@ sample makes the importer, JetStream and Explorer do work that is not useful for
 longer periods. The platform therefore applies a tenant-scoped resolution policy
 before an importer publishes an event.
 
-The default policy is metric-specific. Continuous measurements such as heart rate
-use minute values; accumulating metrics such as energy, steps and distance use the
-metric registry's safe aggregation rules. Provider totals always take precedence over
-values derived from their component samples.
+The default policy is metric-specific. Accumulating metrics such as energy, steps
+and distance use the metric registry's safe aggregation rules; heart rate is stored
+per second (below). Provider totals always take precedence over values derived from
+their component samples.
+
+## The second tier
+
+`IngestResolution` has five members — `raw`, `second`, `minute`, `hour`, `day` — and
+`heart_rate` defaults to **`second`**.
+
+A minute mean is the wrong summary of the one span where a pulse actually moves: an
+interval session averages to a flat line that no reading of it can undo. So the
+default is finer, and **it costs almost nothing**, because a second bucket is not
+86,400 rows a day — it is *exactly what the device sent, with duplicates inside one
+second collapsed*. A watch samples every few seconds under load and every few
+minutes at rest, so second resolution preserves the workout and adds nothing at all
+to the idle hours. Expect on the order of 2–4× the rows a minute default produces,
+bounded by the device rather than by the clock.
+
+It is deliberately **not** used for:
+
+- `steps`, `distance`, `energy_active`, `energy_resting` — `SUM` metrics whose day
+  total the provider already states. Sixty times the rows, no extra information, and
+  a standing invitation to the double count rule 19 forbids.
+- the `weather_*` family — continuous, but from an hourly forecast API, so a second
+  bucket would be sixty copies of one number.
+
+**There is no `second` rollup tier and there will not be one.** A rollup exists to
+make a *long-range* query cheap, and a second rollup has the same cardinality as
+`data_points` — it would double the storage to answer nothing faster. Second
+resolution data *is* `data_points`, which is what a short-window query reads.
+
+## Buckets keep their spread
+
+A bucketed point carries `bucket_min` and `bucket_max` in its metadata alongside its
+collapsed value, for momentary (`average` and `max`) metrics.
+
+Without them the rollups were wrong in two ways at once. Core fills a rollup's
+min/max columns from the single value it is handed, so a day's "maximum heart rate"
+was in fact the highest minute *average* of that day — a sprint peaking at 186
+showed as 171, with nothing saying so. And a rollup's mean was an unweighted mean of
+bucket means, so a minute holding one sample counted for as much as a minute holding
+sixty. `sample_count` now weights the sum, and the stated spread widens the min/max.
+
+A spread an event already declares is folded in rather than replaced: an Apple Health
+workout sample states the phone's own Min and Max for the interval it covers, and
+collapsing to `min([its average])` would report a narrower range than the one that
+was measured.
+
+`GET /api/v1/data/metrics` returns `min` and `max` beside `value` at any non-raw
+resolution, so a chart can draw the range a mean hides.
 
 ## Data flow
 
@@ -64,9 +111,14 @@ With `auto`, the Explorer selects:
 
 | Requested period | Resolution |
 | --- | --- |
-| Up to 24 hours | minute |
+| Up to 2 hours | raw (which for heart rate is per second) |
+| More than 2 hours and up to 24 hours | minute |
 | More than 24 hours and up to 90 days | hour |
 | More than 90 days | day |
+
+The two-hour row is what makes a workout-length window rich without a caller passing
+anything. `resolution=second` is also accepted explicitly and reads `data_points`
+directly, there being no second rollup to read.
 
 **Rollup buckets are UTC.** `date_trunc('day')` runs in UTC and `/api/v1/data/metrics` takes
 no timezone parameter, so a "day" here is a UTC day: for a reader at UTC+2 it runs from
@@ -164,9 +216,33 @@ python -m core.retention --tenant-id <tenant-id> --dry-run
 python -m core.retention --tenant-id <tenant-id>
 ```
 
-The command removes only points marked as raw (or legacy points without a resolution marker),
-keeps minute/hour/day rollups, and never runs automatically during service startup. Schedule it
-per tenant through the operator's job runner after reviewing the dry-run count.
+The command removes only fine-grained points — those marked `raw` or `second`, and
+legacy rows without a marker — keeps minute/hour/day rollups, and never runs
+automatically during service startup. Schedule it per tenant through the operator's
+job runner after reviewing the dry-run count.
+
+### Some metrics are never purged
+
+`raw_retention_days` may be `null`, which means *never*, and it is the default for
+every `workout_*`, `strength_*` and `location_*` metric
+(`shared_schemas.metrics.NEVER_PURGED_CATEGORIES`).
+
+The principle: **a rollup substitutes for a fine-grained point only when the metric
+is a quantity over time.** A day rollup of `strength_set_weight` is "the heaviest
+thing lifted that day", which is not the workout. A `location_point` rollup is a
+count, so purging the fixes would leave the aggregate cheerfully reporting how many
+there were while the coordinates they carried were gone. Purging either is not
+keeping the aggregate — it is deleting the measurement.
+
+It is a category rule rather than thirty repeated settings, so a *new* workout or
+strength metric inherits it; written thirty times, the next one added would quietly
+get ninety days and nobody would notice until the data was gone. `workout_heart_rate`
+states 365 explicitly, being the one genuinely large series, and its mean and maximum
+survive permanently in `workout_heart_rate_average` and `_max`.
+
+The dry run **names** the metrics it exempted, because a metric kept forever is a
+decision somebody should be able to see — without that, its count could not
+distinguish "nothing was old enough" from "these are never deleted at all".
 
 ## Interpretation and limitations
 

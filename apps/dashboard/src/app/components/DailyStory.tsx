@@ -82,7 +82,7 @@ export type DayStory = {
  * is that a key which exists in neither language is a compile error rather
  * than an empty element at runtime.
  */
-const LANE_LABEL: Record<string, MessageKey> = {
+export const LANE_LABEL: Record<string, MessageKey> = {
   sleep: "day.laneSleep",
   activity: "day.laneActivity",
   workout: "day.laneWorkout",

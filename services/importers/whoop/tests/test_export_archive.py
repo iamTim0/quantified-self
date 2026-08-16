@@ -62,13 +62,27 @@ def test_an_export_never_spells_a_quantity_differently_from_the_api():
     things the API's score objects do not — the four sleep stages, a session's duration —
     so it is legitimately the larger set. What it must never do is give a quantity both
     paths carry two different names, because that is what makes one quantity two series.
+
+    The allowance below is the shape a deliberate divergence takes here: named, with
+    a reason, so adding one is a decision rather than a set that quietly stopped
+    matching.
     """
+    #: Quantities the API states and the emailed export does not. WHOOP sends
+    #: `altitude_gain_meter` on every v2 workout; the export's workout CSV has no
+    #: column for it, and guessing at a header spelling would be worse than
+    #: recording the gap. Remove the entry once a real export is seen to carry it.
+    api_only = {"workout_elevation_gain"}
+
     api_names = {m.metric_type for mappings in METRICS.values() for m in mappings}
     export_names = {m.metric_type for mappings in EXPORT_METRICS.values() for m in mappings}
 
-    assert api_names <= export_names, api_names - export_names
+    assert api_names - api_only <= export_names, api_names - api_only - export_names
+    # The allowance must stay honest: an entry that the export *does* carry is a
+    # stale exception, and a stale exception is how a tripwire stops firing.
+    assert api_only.isdisjoint(export_names), api_only & export_names
     # And nothing invented on the way: every name is the registry's.
     assert export_names <= set(CANONICAL_KEYS), export_names - set(CANONICAL_KEYS)
+    assert api_names <= set(CANONICAL_KEYS), api_names - set(CANONICAL_KEYS)
 
 
 #: Verbatim from a German account's export: Whoop localises the file names and the column

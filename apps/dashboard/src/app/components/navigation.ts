@@ -2,6 +2,7 @@ import {
   BrainCircuit,
   LayoutDashboard,
   LineChart,
+  Dumbbell,
   MessagesSquare,
   Plug,
   ScanSearch,
@@ -26,6 +27,7 @@ import type { MessageKey } from "../lib/i18n/provider";
 export type TabType =
   | "overview"
   | "explorer"
+  | "workouts"
   | "quality"
   | "analysis"
   | "chat"
@@ -42,8 +44,12 @@ export interface NavEntry {
 export const NAV: Record<TabType, NavEntry> = {
   overview: { labelKey: "sidebar.overview", icon: LayoutDashboard, group: "primary" },
   explorer: { labelKey: "sidebar.explorer", icon: LineChart, group: "primary" },
+  // Primary, and `chat` moves to "More" to make room. The docstring above calls
+  // this split "a claim about frequency, not importance": a training log is
+  // opened after every session, an AI chat when there is a question.
+  workouts: { labelKey: "sidebar.workouts", icon: Dumbbell, group: "primary" },
   analysis: { labelKey: "sidebar.analysis", icon: BrainCircuit, group: "primary" },
-  chat: { labelKey: "sidebar.chat", icon: MessagesSquare, group: "primary" },
+  chat: { labelKey: "sidebar.chat", icon: MessagesSquare, group: "secondary" },
   quality: { labelKey: "sidebar.quality", icon: ScanSearch, group: "secondary" },
   connectors: { labelKey: "sidebar.connectors", icon: Plug, group: "secondary" },
   profile: { labelKey: "sidebar.settings", icon: User, group: "secondary" },
@@ -58,6 +64,7 @@ export const NAV: Record<TabType, NavEntry> = {
 export const NAV_ORDER = [
   "overview",
   "explorer",
+  "workouts",
   "quality",
   "analysis",
   "chat",

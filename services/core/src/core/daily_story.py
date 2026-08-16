@@ -50,6 +50,7 @@ from core.reports import (
     primary_source_preferences,
     resolve_primary_source,
 )
+from core.sessions import END_FIELDS, STREAM_METRICS, session_group_key, session_title
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,8 @@ def day_window(day: date, offset_minutes: int) -> DayWindow:
 
 
 def _is_event_metric(metric_type: str) -> bool:
+    if metric_type in STREAM_METRICS:
+        return False
     return metric_type in EVENT_METRICS or metric_type.startswith(EVENT_PREFIXES)
 
 
@@ -147,6 +150,19 @@ def _event_metric_predicate():
     )
 
 
+def _stream_metric_predicate():
+    """Intra-session series, which belong to neither half of a day story.
+
+    `workout_heart_rate` begins with `workout_`, so the prefix rule above would
+    call it an event — and a 90-minute workout at second resolution is 5,400 rows
+    against `MAX_EVENT_ROWS`, so the timeline would come back truncated for anyone
+    who trains, with `event_limit_reached` set and nothing else to show for it.
+
+    Exact names, not a prefix, so the `_`-is-a-wildcard trap does not arise.
+    """
+    return DataPoint.metric_type.in_(sorted(STREAM_METRICS))
+
+
 def _category_of(metric_type: str) -> str:
     try:
         return describe(metric_type).category.value
@@ -154,15 +170,49 @@ def _category_of(metric_type: str) -> str:
         return MetricCategory.CUSTOM.value
 
 
-async def _lane_totals(
-    session: AsyncSession, tenant_id: str, window: DayWindow
+def _collapse(metric_type: str, values: list[float]) -> float:
+    """Several readings of one metric within one session, as a single figure.
+
+    By the registry's own aggregation, because the right answer differs per metric
+    and guessing produces a plausible wrong one: the heaviest set is a `max`, the
+    session's reps are a `sum`, its pulse is an `average`. A metric the registry
+    does not know averages, which is the choice that invents the least.
+    """
+    if not values:
+        return 0.0
+    try:
+        aggregation = describe(metric_type).aggregation
+    except ValueError:
+        return sum(values) / len(values)
+    if aggregation is Aggregation.SUM:
+        return sum(values)
+    if aggregation is Aggregation.MAX:
+        return max(values)
+    if aggregation is Aggregation.LAST:
+        return values[-1]
+    return sum(values) / len(values)
+
+
+async def metric_totals(
+    session: AsyncSession,
+    tenant_id: str,
+    start: datetime,
+    end: datetime,
+    *,
+    exclude=None,
 ) -> dict[str, dict[str, Any]]:
-    """One number per metric for the day, aggregated in SQL.
+    """One number per metric over a window, aggregated in SQL.
 
     Grouped by source as well as metric, because two connectors reporting the
     same metric must not be added together — that is rule 19's double count. The
     winner is picked afterwards by the same rule the analysis uses.
+
+    Takes a bare window rather than a `DayWindow` so the workout detail can ask
+    the same question about a 45-minute run that the day story asks about a day.
+    Sharing the function is the point: the two pages must not name different
+    connectors for the same number, and they cannot if there is one query.
     """
+    predicates = list(exclude or ())
     rows = (
         await session.execute(
             select(
@@ -185,13 +235,10 @@ async def _lane_totals(
             )
             .where(
                 DataPoint.tenant_id == tenant_id,
-                DataPoint.timestamp >= window.start,
-                DataPoint.timestamp < window.end,
+                DataPoint.timestamp >= start,
+                DataPoint.timestamp < end,
                 DataPoint.value.is_not(None),
-                # Events belong on the timeline, not in a lane total: summing a
-                # day's `workout_duration` across three sessions and printing it
-                # as a lane figure says something the reader did not ask.
-                ~_event_metric_predicate(),
+                *predicates,
             )
             .group_by(DataPoint.metric_type, DataPoint.source_id)
         )
@@ -241,6 +288,7 @@ async def _events(
                 # than MAX_EVENTS had been *grouped*. A quietly truncated timeline
                 # is indistinguishable from a quiet day.
                 _event_metric_predicate(),
+                ~_stream_metric_predicate(),
             )
             .order_by(DataPoint.timestamp)
             # One more than the budget, so the caller can tell a scan that hit
@@ -249,46 +297,54 @@ async def _events(
         )
     ).all()
 
-    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
         metadata = row.metadata_ or {}
-        title = (
-            metadata.get("workout_name")
-            or metadata.get("activity_name")
-            or metadata.get("summary")
-            or metadata.get("food_name")
-            or metadata.get("meal_category")
-            or ""
-        )
-        key = (row.timestamp.isoformat(), title, _category_of(row.metric_type))
+        title = session_title(metadata)
+        category = _category_of(row.metric_type)
+        # One rule, in `core.sessions`, so the day timeline and the workout list
+        # cannot disagree about what a session is. A point that carries a session
+        # id groups by it; one that does not falls back to the timestamp-and-title
+        # key this function has always used, unchanged.
+        key = session_group_key(row.timestamp, metadata, category)
         event = grouped.setdefault(
             key,
             {
                 "at": row.timestamp.isoformat(),
                 "title": title,
-                "category": _category_of(row.metric_type),
+                "category": category,
                 "source_id": str(row.source_id),
                 "measures": {},
-                # How many points each figure stands on, so a summed measure is
+                # How many points each figure stands on, so a collapsed measure is
                 # auditable rather than indistinguishable from a stated one.
                 "measure_counts": {},
+                "_values": defaultdict(list),
             },
         )
         if row.value is not None:
-            # Summed, not overwritten. Two items logged at the same minute under
-            # the same metric are two things that happened; keeping only the last
-            # is a value that arrived and vanished.
-            existing = event["measures"].get(row.metric_type)
-            event["measures"][row.metric_type] = (existing or 0.0) + float(row.value)
+            # Collected, then collapsed by the registry's own aggregation below.
+            #
+            # This used to add them up unconditionally, which was defensible while
+            # a group was one instant — two foods logged in the same minute are two
+            # things that happened. A group is now a whole session, and summing
+            # eighteen `strength_set_weight` rows reports 1,850 kg as a set weight.
+            # A wrong number is worse than a missing one, because nothing
+            # distinguishes it from a right one (rule 19).
+            event["_values"][row.metric_type].append(float(row.value))
             event["measure_counts"][row.metric_type] = (
                 event["measure_counts"].get(row.metric_type, 0) + 1
             )
-        # `end` is the one metadata field that changes what the timeline draws:
-        # it is the difference between a point and a span.
-        for field in ("end", "end_time", "workout_end_time", "sleep_end"):
+        # The end of the span, which is the difference between a moment and a
+        # duration on the timeline. `session_end` leads: it is the provider's
+        # statement about the session, where the others are per-point echoes of it.
+        for field in END_FIELDS:
             if isinstance(metadata.get(field), str) and "until" not in event:
                 event["until"] = metadata[field]
                 break
+
+    for event in grouped.values():
+        for metric_type, values in event.pop("_values").items():
+            event["measures"][metric_type] = _collapse(metric_type, values)
 
     events = sorted(grouped.values(), key=lambda item: item["at"])
     truncated = len(rows) > MAX_EVENT_ROWS or len(events) > MAX_EVENTS
@@ -328,7 +384,24 @@ async def build_day_story(
     """Everything one day holds, grouped into lanes and a timeline."""
     window = day_window(day, offset_minutes)
 
-    totals = await _lane_totals(session, tenant_id, window)
+    totals = await metric_totals(
+        session,
+        tenant_id,
+        window.start,
+        window.end,
+        exclude=(
+            # Events belong on the timeline, not in a lane total: summing a day's
+            # `workout_duration` across three sessions and printing it as a lane
+            # figure says something the reader did not ask.
+            ~_event_metric_predicate(),
+            # Stated separately rather than folded into `_event_metric_predicate`.
+            # Folding it in would invert to `not (event or stream)` there and to
+            # `not event or not stream` here — true for every stream metric, so the
+            # exclusion would silently do nothing and a workout's per-second pulse
+            # would land in the heart lane as a daily average.
+            ~_stream_metric_predicate(),
+        ),
+    )
     events, events_truncated = await _events(session, tenant_id, window)
     last_import_by_source = await _lane_completeness(session, tenant_id)
 

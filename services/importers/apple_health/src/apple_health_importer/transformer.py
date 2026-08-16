@@ -35,12 +35,17 @@ from shared_schemas.metrics import (
     canonical_metric_type,
     convert,
 )
+from shared_schemas.sessions import session_metadata
 
 logger = logging.getLogger(__name__)
 
 #: Prefix for HealthKit types the catalog does not know. Registered as a dynamic
 #: namespace in the registry, so these are legal without being catalogued.
 NAMESPACE = "apple_health_"
+
+#: The per-sample pulse series inside a workout. Resolved once, so a typo is an
+#: import-time error rather than a metric nobody can find.
+METRIC_WORKOUT_HEART_RATE = canonical_metric_type("workout_heart_rate")
 
 
 #: SHA256(tenant_id:source_id:metric_type:timestamp) — AGENTS.md rule 4, defined once
@@ -553,6 +558,99 @@ def _series_figure(samples: list[Any], how: str) -> tuple[float | None, str, int
     return sum(values) / len(values), units, len(values)
 
 
+#: The field a `heartRateData` sample states its moment in. Health Auto Export has
+#: used all three across versions, and a renamed field is a series that silently
+#: stops arriving — the failure rule 19 catalogues.
+_SAMPLE_TIME_FIELDS = ("date", "timestamp", "startDate")
+
+
+def heart_rate_series_points(
+    samples: list[Any],
+    tenant_id: str,
+    source_id: str,
+    workout_metadata: dict[str, Any],
+    report: FieldReportCollector,
+) -> list[dict[str, Any]]:
+    """One `workout_heart_rate` point per sample inside a workout.
+
+    Until now this array was collapsed to a mean and a maximum and then thrown
+    away, which is the whole of what a workout's pulse looked like from outside:
+    two numbers for ninety minutes. The two aggregates are still emitted — a
+    provider-stated scalar still beats them — and the samples are now kept as well.
+
+    Written to `workout_heart_rate`, never to `heart_rate`, even though both are
+    bpm. Apple sends `metrics[].heart_rate` interval summaries *and* this array
+    covering overlapping wall-clock time in separate pushes; under one name they
+    interleave without aligning, so `sample_count` and the min/max envelope would
+    stop meaning anything and the two could not be retained differently.
+
+    A sample carrying no usable moment is skipped rather than stamped with the
+    session start: they would then all share one timestamp, hence one idempotency
+    key, and Core would keep exactly one of them.
+    """
+    points: list[dict[str, Any]] = []
+    skipped = 0
+    for sample in samples:
+        if not isinstance(sample, dict):
+            skipped += 1
+            continue
+
+        moment = ""
+        for field in _SAMPLE_TIME_FIELDS:
+            if sample.get(field):
+                moment = str(sample[field])
+                break
+        sample_ts = parse_timestamp(moment) if moment else None
+
+        # `Avg` is the sample's own figure; `qty` is the older spelling. Both are
+        # read because a phone that has not been updated is not a reason to lose
+        # somebody's workout.
+        value = _extract_numeric_value(_member_value(sample, "Avg"))
+        if value is None:
+            value = _extract_numeric_value(sample.get("qty"))
+        if sample_ts is None or value is None:
+            skipped += 1
+            continue
+
+        units = str(sample.get("units") or "bpm")
+        metadata: dict[str, Any] = {
+            **workout_metadata,
+            **provenance(METRIC_WORKOUT_HEART_RATE, value, units),
+        }
+        # The sample's own spread, where the phone stated one. Kept under the same
+        # names the ingest bucketing uses, so a second bucket holding one sample
+        # and one holding four describe themselves the same way.
+        low = _extract_numeric_value(_member_value(sample, "Min"))
+        high = _extract_numeric_value(_member_value(sample, "Max"))
+        if low is not None:
+            metadata["bucket_min"] = low
+        if high is not None:
+            metadata["bucket_max"] = high
+
+        points.append(
+            {
+                "tenant_id": tenant_id,
+                "source_id": source_id,
+                "metric_type": METRIC_WORKOUT_HEART_RATE,
+                "timestamp": sample_ts,
+                "value": value,
+                "metadata": metadata,
+                "idempotency_key": generate_idempotency_key(
+                    tenant_id, source_id, METRIC_WORKOUT_HEART_RATE, sample_ts
+                ),
+                "source_type": "apple_health",
+            }
+        )
+
+    if points:
+        report.mapped("workouts.heartRateData[]", samples[0], METRIC_WORKOUT_HEART_RATE)
+    if skipped:
+        # Named rather than silently dropped: a payload whose samples carry no
+        # timestamp is a shape change worth seeing in the Data Quality Center.
+        report.unmapped("workouts.heartRateData[].date", None, times=skipped)
+    return points
+
+
 def _extract_numeric_value(val: Any) -> float | None:
     if isinstance(val, (int, float)) and not isinstance(val, bool):
         return float(val)
@@ -814,15 +912,35 @@ def transform_health_auto_export_json(
             continue
         workout_name = str(workout.get("name") or workout.get("workoutName") or "Workout")
 
+        workout_end = parse_timestamp(str(workout.get("end") or workout.get("endDate") or ""))
+        workout_id = str(workout.get("id") or "")
+
+        # One session block for the whole workout. This used to be read and then
+        # handed only to `route_points()`, so a workout's GPS trace knew which
+        # session it belonged to and the workout's own measurements did not.
+        #
+        # Where Health Auto Export sends no id, the digest falls back to the start
+        # and the activity name — which is what the archive path derives from too,
+        # so a workout imported both ways is one workout rather than two.
+        session = session_metadata(
+            source_type="apple_health",
+            source_id=source_id,
+            provider_session_id=workout_id or None,
+            start=ts,
+            end=workout_end,
+            label=workout_name,
+            derived_from=("start", "name"),
+        )
+
         workout_metadata = {
             "source_type": "apple_health",
             "workout_name": workout_name,
             # Metadata, not part of the key -- absent rather than invented when the
             # provider does not send an end.
-            "end_time": parse_timestamp(str(workout.get("end") or workout.get("endDate") or "")),
+            "end_time": workout_end,
+            **session,
         }
 
-        workout_id = str(workout.get("id") or "")
         handled_workout_keys: set[str] = {
             "id", "name", "workoutName", "start", "startDate", "end", "endDate",
         }
@@ -919,6 +1037,17 @@ def transform_health_auto_export_json(
                 )
                 report.mapped(f"workouts.{field_key}.{member}", val, w_metric_type)
 
+        # The pulse series itself, kept as well as collapsed. The aggregates below
+        # still run and a provider-stated scalar still beats them; this is the
+        # detail underneath them, which used to be read and discarded.
+        raw_heart_rate = workout.get("heartRateData")
+        if isinstance(raw_heart_rate, list) and raw_heart_rate:
+            data_points.extend(
+                heart_rate_series_points(
+                    raw_heart_rate, tenant_id, source_id, workout_metadata, report
+                )
+            )
+
         # Time series, interpreted rather than dropped. Read after the scalar fields, so
         # a figure the provider stated outright always wins over one derived here.
         collected: dict[str, dict[str, Any]] = {}
@@ -1013,7 +1142,7 @@ def transform_health_auto_export_json(
         if isinstance(route, list) and route:
             handled_workout_keys.add("route")
             data_points.extend(
-                route_points(route, tenant_id, source_id, workout_id, workout_name, report)
+                route_points(route, tenant_id, source_id, session, workout_name, report)
             )
 
         for key, value in workout.items():
@@ -1028,7 +1157,7 @@ def route_points(
     route: list[Any],
     tenant_id: str,
     source_id: str,
-    workout_id: str,
+    session: dict[str, Any],
     workout_name: str,
     report: FieldReportCollector,
 ) -> list[dict[str, Any]]:
@@ -1067,9 +1196,10 @@ def route_points(
             # coordinates above. The provenance pair still travels, so that every point
             # in the platform can answer the same question the same way (rule 19).
             **provenance("location_point", 1.0),
+            # The same block the workout's own measurements carry, so the trace and
+            # the session it belongs to join on one key rather than on a name.
+            **session,
         }
-        if workout_id:
-            metadata["workout_id"] = workout_id
         for optional, key in (
             ("altitude", "altitude"),
             ("speed", "speed"),

@@ -40,6 +40,7 @@ export const de: Record<MessageKey, string> = {
   "sidebar.quality": "Datenqualität",
   "sidebar.analysis": "Analysen",
   "sidebar.chat": "KI-Chat",
+  "sidebar.workouts": "Trainings",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Dokumentation",
   "sidebar.docsTitle": "Zentrale Plattform-Dokumentation öffnen",
@@ -298,6 +299,9 @@ export const de: Record<MessageKey, string> = {
   "map.privacyLead":
     "Es werden keine Standortdaten an Kartenanbieter übertragen. Beim Laden der Kacheln wird der betrachtete Kartenausschnitt für den Anbieter sichtbar.",
   "map.empty": "Keine GPS-Punkte im gewählten Zeitraum.",
+  "map.pointCount": "{count} Punkte",
+  "map.simplifiedTo": "auf {count} vereinfacht",
+  "map.vectorMode": "Vektor-Darstellung",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
   "map.privacyDetail":
@@ -1034,5 +1038,76 @@ export const de: Record<MessageKey, string> = {
   "chat.errorLoginRequired": "Verbinde dein ChatGPT-Abonnement, bevor du eine Nachricht sendest.",
   "chat.errorResponse": "Der Assistent konnte diese Antwort nicht abschließen.",
   "chat.errorStream": "Die Chat-Verbindung wurde unterbrochen.",
+  // ── Trainings ───────────────────────────────────────────────────────────
+  "workouts.title": "Trainings",
+  "workouts.subtitle":
+    "Jede Einheit und alles, was die anderen Connectoren währenddessen aufgezeichnet haben.",
+  "workouts.loading": "Einheiten werden geladen …",
+  "workouts.empty": "Keine Einheiten in diesem Zeitraum.",
+  "workouts.emptyHint":
+    "Trainings kommen von Apple Health, WHOOP und Streak. Ein Connector, der noch nicht gelaufen ist, ist etwas anderes als ein Ruhetag.",
+  "workouts.filterAll": "Alle",
+  "workouts.filterWorkout": "Ausdauer",
+  "workouts.filterStrength": "Kraft",
+  "workouts.range30": "Letzte 30 Tage",
+  "workouts.range90": "Letzte 90 Tage",
+  "workouts.range365": "Letztes Jahr",
+  "workouts.approximate": "Nach Zeit und Name gruppiert",
+  "workouts.approximateHint":
+    "Diese Einheit wurde importiert, bevor Trainings eine Kennung trugen. Ihre Punkte sind über Zeitstempel und Titel gruppiert: zwei gleich gestempelte Einheiten können als eine erscheinen, eine Einheit als zwei.",
+  "workouts.scanTruncated":
+    "Dieser Zeitraum enthält mehr Zeilen, als ein Durchlauf liest. Wähle einen kürzeren Zeitraum, um alles zu sehen.",
+  "workouts.back": "Alle Trainings",
+  "workouts.exercises_one": "{count} Übung",
+  "workouts.exercises_other": "{count} Übungen",
+  "workouts.sets_one": "{count} Satz",
+  "workouts.sets_other": "{count} Sätze",
+  "workouts.notFound": "Diese Einheit gibt es in diesem Workspace nicht.",
+  "workouts.clamped":
+    "Diese Einheit nennt ein Ende mehr als 12 Stunden nach ihrem Beginn; das gezeigte Fenster ist deshalb begrenzt.",
+  "workouts.measures": "Was die Einheit angibt",
+  "workouts.derived": "Aus {fields} berechnet, nicht vom Anbieter angegeben",
+  "workouts.providerValue": "Anbieter nannte {value} {unit}",
+  "workouts.route": "Strecke",
+  "workouts.routeMeasured": "Entlang der Spur gemessen: {distance}",
+  "workouts.routeFixes_one": "{count} GPS-Punkt",
+  "workouts.routeFixes_other": "{count} GPS-Punkte",
+  "workouts.routeFallback":
+    "Aus den gespeicherten Koordinaten gezeichnet; diese Punkte sind älter als die Geometriespalte.",
+  "workouts.streams": "Während der Einheit",
+  "workouts.streamBucket": "Ein Punkt je {seconds} s",
+  "workouts.streamRange": "Spanne {min}–{max}",
+  "workouts.streamTruncated": "Für die Darstellung gekürzt.",
+  "workouts.strength": "Sätze",
+  "workouts.strengthTruncated": "Mehr Sätze, als eine Antwort zurückgibt.",
+  "workouts.topSet": "Bester Satz",
+  "workouts.totalVolume": "Volumen",
+  "workouts.totalReps": "Wiederholungen",
+  "workouts.setNumber": "Satz",
+  "workouts.weight": "Gewicht",
+  "workouts.reps": "Wdh.",
+  "workouts.volume": "Volumen",
+  "workouts.surroundings": "Zur selben Zeit aufgezeichnet",
+  "workouts.surroundingsHint":
+    "Diese Connectoren wissen nichts vom Training. Sie stehen hier, weil ihre Messwerte hineinfallen.",
+  "workouts.noStreams": "Keine sekundengenaue Reihe für diese Einheit.",
+  "workouts.noStrength": "Keine Sätze für diese Einheit erfasst.",
+
+  // ── Muskelgruppen ───────────────────────────────────────────────────────
+  "muscle.chest": "Brust",
+  "muscle.back": "Rücken",
+  "muscle.shoulders": "Schultern",
+  "muscle.biceps": "Bizeps",
+  "muscle.triceps": "Trizeps",
+  "muscle.forearms": "Unterarme",
+  "muscle.quads": "Oberschenkel",
+  "muscle.hamstrings": "Beinbeuger",
+  "muscle.glutes": "Gesäß",
+  "muscle.calves": "Waden",
+  "muscle.core": "Rumpf",
+  "muscle.full_body": "Ganzkörper",
+  "muscle.cardio": "Ausdauer",
+  "muscle.other": "Sonstiges",
+
   // --- End of catalogue ---
 };

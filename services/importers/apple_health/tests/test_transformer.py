@@ -816,3 +816,136 @@ def test_category_health_export_entries_become_counts_or_durations():
     values = {point["metric_type"]: point["value"] for point in points}
     assert values["mindful_session_duration"] == 20
     assert values["handwashing_events"] == 1
+
+
+# ── Sessions and the intra-workout pulse series ──────────────────────────────
+
+
+def test_every_point_of_one_workout_shares_a_session_id():
+    """Verifies Fizzbee Invariant: SessionGroupingIsStable."""
+    points = _workout(
+        {
+            "end": "2026-08-05 07:45:00 +0000",
+            "totalDistance": {"qty": 8.2, "units": "km"},
+            "activeEnergy": [{"date": "2026-08-05 07:01:00 +0000", "qty": 300, "units": "kcal"}],
+            "route": [
+                {"latitude": 52.52, "longitude": 13.40, "timestamp": "2026-08-05 07:01:00 +0000"},
+            ],
+        }
+    )
+
+    ids = {p["metadata"].get("session_id") for p in points}
+    assert len(ids) == 1, f"one workout, one session — got {ids}"
+    assert next(iter(ids)).startswith("apple_health:")
+    # Both the measurements and the GPS trace: the route used to be the only part
+    # that knew which workout it belonged to.
+    assert {p["metric_type"] for p in points} >= {"workout_distance", "location_point"}
+
+
+def test_a_stated_workout_id_makes_the_session_provider_stated():
+    points = _workout({"totalDistance": {"qty": 8.2, "units": "km"}})
+    assert points[0]["metadata"]["session_origin"] == "provider"
+
+
+def test_a_workout_without_an_id_derives_one_and_says_so():
+    points = transform_health_auto_export_json(
+        {"data": {"workouts": [{"name": "Run", "start": "2026-08-05 07:00:00 +0000",
+                                "totalDistance": {"qty": 5.0, "units": "km"}}]}},
+        tenant_id=TENANT,
+        source_id=SOURCE,
+    )
+    metadata = points[0]["metadata"]
+    assert metadata["session_origin"] == "derived"
+    assert metadata["session_derived_from"] == ["start", "name"]
+
+
+def test_the_session_carries_the_end_the_provider_stated():
+    points = _workout(
+        {"end": "2026-08-05 07:45:00 +0000", "totalDistance": {"qty": 8.2, "units": "km"}}
+    )
+    assert points[0]["metadata"]["session_end"] == "2026-08-05T07:45:00+00:00"
+
+
+def test_heart_rate_data_yields_a_series_and_still_yields_the_average():
+    """The samples are kept *as well as* collapsed, not instead of."""
+    points = _workout(
+        {
+            "heartRateData": [
+                {"date": "2026-08-05 07:01:00 +0000", "Min": 138, "Avg": 140, "Max": 150,
+                 "units": "bpm"},
+                {"date": "2026-08-05 07:02:00 +0000", "Min": 145, "Avg": 150, "Max": 176,
+                 "units": "bpm"},
+            ]
+        }
+    )
+    series = [p for p in points if p["metric_type"] == "workout_heart_rate"]
+    by_metric = {p["metric_type"]: p for p in points}
+
+    assert len(series) == 2, "one point per sample"
+    assert [p["value"] for p in series] == [140, 150]
+    assert [p["timestamp"] for p in series] == [
+        "2026-08-05T07:01:00+00:00",
+        "2026-08-05T07:02:00+00:00",
+    ]
+    # The phone's own spread for each sample survives beside the value.
+    assert series[0]["metadata"]["bucket_min"] == 138
+    assert series[1]["metadata"]["bucket_max"] == 176
+    # And the two aggregates are unchanged.
+    assert by_metric["workout_heart_rate_average"]["value"] == 145
+    assert by_metric["workout_heart_rate_max"]["value"] == 176
+
+
+def test_per_sample_heart_rate_is_never_written_to_heart_rate():
+    """`heart_rate` also arrives as interval summaries in the same push.
+
+    Under one name the two interleave without aligning, so `sample_count` and the
+    min/max envelope would stop meaning anything.
+    """
+    points = _workout(
+        {
+            "heartRateData": [
+                {"date": "2026-08-05 07:01:00 +0000", "Avg": 140, "units": "bpm"},
+            ]
+        }
+    )
+    assert not any(p["metric_type"] == "heart_rate" for p in points)
+
+
+def test_a_sample_without_a_usable_moment_is_skipped_not_stamped():
+    """Stamping them all with the session start gives them one idempotency key.
+
+    Core would then keep exactly one of them, silently.
+    """
+    points = _workout(
+        {
+            "heartRateData": [
+                {"Avg": 140, "units": "bpm"},
+                {"date": "2026-08-05 07:02:00 +0000", "Avg": 150, "units": "bpm"},
+            ]
+        }
+    )
+    series = [p for p in points if p["metric_type"] == "workout_heart_rate"]
+    assert len(series) == 1
+    assert series[0]["value"] == 150
+
+
+def test_the_older_qty_spelling_of_a_sample_is_read():
+    points = _workout(
+        {"heartRateData": [{"date": "2026-08-05 07:01:00 +0000", "qty": 132, "units": "bpm"}]}
+    )
+    series = [p for p in points if p["metric_type"] == "workout_heart_rate"]
+    assert [p["value"] for p in series] == [132]
+
+
+def test_each_sample_gets_its_own_idempotency_key():
+    """Verifies Fizzbee Invariant: NoDuplicateData."""
+    points = _workout(
+        {
+            "heartRateData": [
+                {"date": "2026-08-05 07:01:00 +0000", "Avg": 140, "units": "bpm"},
+                {"date": "2026-08-05 07:02:00 +0000", "Avg": 150, "units": "bpm"},
+            ]
+        }
+    )
+    series = [p for p in points if p["metric_type"] == "workout_heart_rate"]
+    assert len({p["idempotency_key"] for p in series}) == 2

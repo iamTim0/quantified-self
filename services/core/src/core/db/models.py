@@ -180,7 +180,16 @@ class MetricIngestPolicy(Base):
     )
     metric_type: Mapped[str] = mapped_column(String(128), nullable=False)
     resolution: Mapped[str] = mapped_column(String(16), nullable=False)
-    raw_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
+    #: NULL means never purge. It belongs to the metrics whose fine-grained form
+    #: *is* the data — a `location_point` rollup is a count, not a route — see
+    #: `shared_schemas.metrics.NEVER_PURGED_CATEGORIES`.
+    #:
+    #: No Python-side `default=`. SQLAlchemy applies one whenever the attribute is
+    #: `None` at flush time, and it cannot tell "unset" from "deliberately never" —
+    #: so a workspace asking to keep a metric forever silently got ninety days.
+    #: The column keeps its server default for a row inserted without it; every
+    #: write path here states the value.
+    raw_retention_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

@@ -37,6 +37,11 @@ def bucket_timestamp(timestamp: Any, resolution: IngestResolution | str) -> date
     """Return the UTC start of an ingestion bucket."""
     ts = _as_datetime(timestamp)
     resolved = IngestResolution(resolution)
+    if resolved is IngestResolution.SECOND:
+        # Sub-second precision only, so this is close to a passthrough. What it
+        # does buy is a guarantee the caller can rely on: at most one point per
+        # metric per second, whatever the device's sampling jitter.
+        return ts.replace(microsecond=0)
     if resolved is IngestResolution.MINUTE:
         return ts.replace(second=0, microsecond=0)
     if resolved is IngestResolution.HOUR:
@@ -110,6 +115,16 @@ def _provider_total_event(
     return result
 
 
+def _stated_bounds(events: list[dict[str, Any]], key: str) -> list[float]:
+    """Spreads the incoming events already carry, if any."""
+    bounds: list[float] = []
+    for event in events:
+        value = (event.get("metadata") or {}).get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            bounds.append(float(value))
+    return bounds
+
+
 def _aggregate_group(events: list[dict[str, Any]], aggregation: Aggregation) -> dict[str, Any]:
     """Collapse one metric/bucket group and add auditable derivation metadata."""
     ordered = sorted(events, key=lambda item: _as_datetime(item["timestamp"]))
@@ -144,9 +159,41 @@ def _aggregate_group(events: list[dict[str, Any]], aggregation: Aggregation) -> 
             "derived_from": [ordered[0].get("metric_type")],
             "derived_by": aggregation.value,
             "sample_count": len(ordered),
+            # The same number under a name that means only one thing.
+            #
+            # `sample_count` is rule 19 provenance — "how many values this
+            # derivation stands on" — and importers set it for figures that are not
+            # bucket means at all: WHOOP's zone shares carry the number of zone
+            # fields the payload held. Core weighted its rollup averages by
+            # `sample_count`, so a zone share was weighted by how many zones WHOOP
+            # sent, which is not a quantity of anything. A bucket says so under its
+            # own key, and only a bucket is weighted.
+            "bucket_samples": len(ordered),
             "ingest_resolution": metadata.get("ingest_resolution") or "bucket",
         }
     )
+    # The bucket's spread, kept beside its collapsed value.
+    #
+    # Without this, a minute of heart rate arrives at Core as a single averaged
+    # number, and `update_rollups_for_point` — which has min/max columns and fills
+    # both from the one value it is given — records a minute whose minimum and
+    # maximum are its mean. The hour and day rollups inherit that, so the "maximum
+    # heart rate" of a day was in fact the highest minute *average* of that day: a
+    # sprint that peaked at 186 showed as 171, and nothing said so.
+    #
+    # Only for momentary metrics. A bucket of `steps` has no meaningful minimum —
+    # its parts are pieces of a total, not readings of a level — and reporting one
+    # would invite it onto a chart as if it were.
+    if values and aggregation in (Aggregation.AVERAGE, Aggregation.MAX):
+        # Spreads the incoming events already declared are folded in, not replaced.
+        # An Apple Health `heartRateData` sample arrives with the phone's own Min
+        # and Max for the interval it covers; collapsing to `min([its average])`
+        # would throw those away and report a spread narrower than the one that was
+        # measured — a value that arrived and vanished (rule 19).
+        lows = [*values, *_stated_bounds(ordered, "bucket_min")]
+        highs = [*values, *_stated_bounds(ordered, "bucket_max")]
+        metadata["bucket_min"] = min(lows)
+        metadata["bucket_max"] = max(highs)
     result["metadata"] = metadata
     timestamp = _as_datetime(result["timestamp"])
     result["timestamp"] = timestamp.isoformat()

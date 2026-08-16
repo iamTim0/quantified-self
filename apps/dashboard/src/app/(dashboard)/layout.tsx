@@ -77,6 +77,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const getTabFromPathname = (path: string): TabType => {
     if (path.startsWith("/explorer")) return "explorer";
+    // Matches the detail route too, so the tab stays lit while a session is open.
+    if (path.startsWith("/workouts")) return "workouts";
     if (path.startsWith("/connectors")) return "connectors";
     if (path.startsWith("/quality")) return "quality";
     if (path.startsWith("/analysis")) return "analysis";

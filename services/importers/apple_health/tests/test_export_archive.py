@@ -381,3 +381,34 @@ def test_apple_health_mobility_nutrition_hearing_and_workout_fields_are_usable()
     assert by_metric["walking_speed"][0]["value"] == pytest.approx(5.04)
     assert by_metric["audio_exposure_environmental"][0]["value"] == 68
     assert by_metric["mindful_session_duration"][0]["value"] == 20
+
+
+def test_archive_workout_points_and_their_route_share_one_session():
+    """Verifies Fizzbee Invariant: SessionGroupingIsStable.
+
+    The GPX file lives beside `export.xml` and is matched back to its workout by
+    filename. Before a session block it carried only `workout_id`, so the trace
+    and the workout's own figures had no common key to join on.
+    """
+    points, _ = _points()
+    sessions = {p["metadata"].get("session_id") for p in points if p["metadata"].get("session_id")}
+
+    assert len(sessions) == 1, f"one workout and its route are one session — got {sessions}"
+    assert next(iter(sessions)).startswith("apple_health:")
+
+    grouped = _by_metric(points)
+    assert "location_point" in grouped
+    for fix in grouped["location_point"]:
+        assert fix["metadata"]["session_id"] in sessions
+
+
+def test_an_archive_workout_declares_its_session_derived():
+    """Apple's export states no workout id, so the digest is derived and says so."""
+    points, _ = _points()
+    workout_points = [
+        p for p in points if p["metadata"].get("session_id")
+    ]
+    metadata = workout_points[0]["metadata"]
+
+    assert metadata["session_origin"] == "derived"
+    assert metadata["session_derived_from"] == ["startDate", "workoutActivityType"]

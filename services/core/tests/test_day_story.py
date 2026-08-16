@@ -472,3 +472,151 @@ def test_a_day_report_goes_stale_at_the_readers_midnight():
     # A run from before the day was recorded cannot be trusted to be current.
     legacy = ReportRun(kind="day", params={})
     assert day_report_has_rolled_over(legacy) is True
+
+
+@pytest.mark.asyncio
+async def test_points_with_a_session_id_group_by_it_not_by_timestamp():
+    """Verifies Fizzbee Invariant: SessionGroupingIsStable.
+
+    Eighteen sets logged a minute apart used to be eighteen timeline entries,
+    because the only join was an exact timestamp. Sharing a session id they are
+    one workout, which is what a reader would call them.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "streak")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        base = day_window(yesterday, 0).start + timedelta(hours=18)
+        session_meta = {"session_id": "streak:abc123", "workout_name": "Push day"}
+
+        for index, weight in enumerate((100.0, 105.0, 110.0)):
+            await _point(
+                tenant_id, source_id, "strength_set_weight",
+                base + timedelta(minutes=index * 3), weight, session_meta,
+            )
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        strength = [e for e in body["events"] if e["category"] == "strength"]
+        assert len(strength) == 1, "three sets of one session are one event"
+        assert strength[0]["title"] == "Push day"
+        # `strength_set_weight` aggregates by MAX, so the session's figure is the
+        # heaviest set — not 315 kg, which is what summing them would report.
+        assert strength[0]["measures"]["strength_set_weight"] == 110.0
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_untagged_points_still_group_the_way_they_always_did():
+    """Legacy rows cannot gain a session id, so their grouping must not change."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        at = day_window(yesterday, 0).start + timedelta(hours=9)
+
+        await _point(tenant_id, source_id, "workout_duration", at, 45.0,
+                     {"workout_name": "Running"})
+        await _point(tenant_id, source_id, "workout_distance", at, 8.2,
+                     {"workout_name": "Running"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        workouts = [e for e in body["events"] if e["category"] == "workout"]
+        assert len(workouts) == 1
+        assert workouts[0]["measures"] == {"workout_duration": 45.0, "workout_distance": 8.2}
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_tagged_and_untagged_points_never_share_a_group():
+    """Verifies Fizzbee Invariant: SessionGroupsAreDisjoint.
+
+    A workout whose rows straddle the change shows as two sessions. That is the
+    honest outcome of a migration that cannot complete — what must never happen
+    is one row landing in both, because its measures would then be counted twice.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        at = day_window(yesterday, 0).start + timedelta(hours=9)
+
+        await _point(tenant_id, source_id, "workout_duration", at, 45.0,
+                     {"workout_name": "Running"})
+        await _point(tenant_id, source_id, "workout_distance", at, 8.2,
+                     {"workout_name": "Running", "session_id": "apple_health:deadbeef"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        workouts = [e for e in body["events"] if e["category"] == "workout"]
+        assert len(workouts) == 2, "one tagged, one not — two groups, never one merged"
+        measured = [set(e["measures"]) for e in workouts]
+        assert {"workout_duration"} in measured
+        assert {"workout_distance"} in measured
+        # Disjoint: no metric appears in both groups.
+        assert measured[0].isdisjoint(measured[1])
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_stream_metric_is_neither_a_lane_nor_an_event():
+    """`workout_heart_rate` is a series inside a session, not a figure about a day.
+
+    It begins with `workout_`, so without an explicit exclusion the prefix rule
+    would make it event-shaped and a second-resolution workout would exhaust the
+    timeline's whole row budget.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        base = day_window(yesterday, 0).start + timedelta(hours=9)
+
+        for index in range(30):
+            await _point(
+                tenant_id, source_id, "workout_heart_rate",
+                base + timedelta(seconds=index), 140.0 + index,
+                {"session_id": "apple_health:cafe"},
+            )
+        await _point(tenant_id, source_id, "workout_duration", base, 45.0,
+                     {"session_id": "apple_health:cafe", "workout_name": "Running"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        for lane in body["lanes"]:
+            for metric in lane["metrics"]:
+                assert metric["metric_type"] != "workout_heart_rate"
+        for event in body["events"]:
+            assert "workout_heart_rate" not in event["measures"]
+        # The session's own figures are still there.
+        assert any(e["measures"].get("workout_duration") == 45.0 for e in body["events"])
+    finally:
+        await cleanup_test_tenant(tenant_id)

@@ -1,0 +1,251 @@
+# Fizzbee specification for reading a workout back out of flat data points.
+#
+# A workout is not stored as a workout. It is a fan of rows in `data_points`
+# sharing a timestamp and a metadata title, and `core.daily_story` says so
+# outright: "the stored points carry no session identifier". That join fails in
+# both directions -- two sessions a provider stamped alike merge into one, one
+# session whose points differ by a second splits into two.
+#
+# The importers now write a `session_id`, so the join has a real key. What makes
+# this worth model-checking is not the key; it is the *migration*, which can
+# never complete:
+#
+#   Rule 4 fixes the idempotency key at SHA256(tenant:source:metric:timestamp),
+#   and Core inserts with ON CONFLICT DO NOTHING. Adding metadata changes no key,
+#   so a re-import does not touch an existing row -- an already-stored point can
+#   never gain a `session_id` by being imported again. A workspace therefore
+#   holds tagged and untagged points side by side, indefinitely, and the reader
+#   has to group both without ever mixing them.
+#
+# That is a read reconstructing an entity the database does not store, over data
+# in two incompatible shapes at once. Rule 5 does not strictly demand a spec --
+# nothing new crosses a service boundary -- but the property being relied on is
+# exactly the kind that looks obvious and is not: if a workout's points landed in
+# two overlapping groups, its volume would be counted twice, and nothing
+# downstream distinguishes a doubled number from a right one (rule 19).
+#
+# **What is being ruled out.**
+#
+#   * A point reachable through two different session keys. Its measures would be
+#     added into two sessions, which is the double-count above.
+#   * A tagged point falling back into a timestamp+title group, or an untagged
+#     one being claimed by a session id. Either would make one workout look like
+#     two overlapping ones rather than two disjoint ones.
+#   * A session key minted in one workspace addressing another workspace's rows.
+#     The key is client-supplied and deliberately unsigned (every query is
+#     tenant-scoped, rule 2), so "forging one is uninteresting" is a claim that
+#     has to be demonstrated rather than asserted.
+#   * A detail response that grows with the session. A three-hour ride holds tens
+#     of thousands of fixes and samples; the endpoint caps and *reports* the cap,
+#     the same posture `MAX_EVENTS` / `event_limit_reached` already take.
+#
+# Models: services/core/src/core/sessions.py (session_group_key, encode/decode)
+# and services/core/src/core/workouts.py (build_workout_list, build_workout_detail).
+
+TENANTS = ['tenant_a', 'tenant_b']
+
+# One workout per tenant is enough. Every property is about how *one* session's
+# points are partitioned and who may read them; a second workout per tenant only
+# adds a bystander and multiplies the graph.
+TITLE = 'Morning Run'
+
+# The instant the provider stamped this workout with. Both epochs use it, which
+# is the whole point: the tagged and untagged rows of one workout are
+# indistinguishable except for the tag.
+START = 1
+
+# Two epochs of one workout, bounded. Two untagged points is enough to show a
+# legacy group holding more than one row; two tagged is enough to show the same
+# for a session group. More only deepens the trace.
+MAX_LEGACY = 2
+MAX_TAGGED = 2
+
+# Stream samples are counted rather than enumerated: the property is about the
+# *cap*, not about which sample survives. Three against a cap of two is the
+# smallest pair that can distinguish "bounded and said so" from "returned
+# everything".
+MAX_SAMPLES = 3
+STREAM_CAP = 2
+
+
+action Init:
+    # Mutable state must be created in Init; a top-level assignment is a frozen
+    # constant and appending to one fails at model-check time.
+    #
+    # A point is {tenant, session_id, title, start, epoch}. `session_id` is ""
+    # for a row stored before the importers wrote one -- the shape that can never
+    # be upgraded in place.
+    points = []
+    legacy_count = 0
+    tagged_count = 0
+    samples = 0
+
+    # The last detail read: who asked, which key, what came back.
+    last_reader = ""
+    last_key = ""
+    last_rows = []
+    last_stream_returned = 0
+    last_stream_truncated = False
+    # How many samples existed *when the read ran*. Judging the response against
+    # the live counter instead produced a counterexample in 3796 nodes: read at
+    # two samples, import a third, and a response that was correct when it was
+    # built starts failing. That is the invariant asking for something no
+    # implementation can provide -- the same error `tenant_isolation` records
+    # against a live `shares` list -- not a defect in the endpoint.
+    last_samples_seen = 0
+    read_happened = False
+
+
+# `session_id` is namespaced per tenant because the digest takes `source_id`,
+# and a connector belongs to exactly one workspace. Two workspaces therefore
+# cannot mint the same id even for an identically-stamped workout.
+def session_id_for(tenant):
+    return tenant + ':sid'
+
+
+# core.sessions.session_group_key. A tagged point groups on its id; an untagged
+# one on the same (timestamp, title) pair `daily_story._events` has always used.
+# The two key spaces are disjoint by construction -- that is what the 's'/'t'
+# discriminator is for, and it is what SessionGroupingIsStable checks.
+def group_key_of(point):
+    if point['session_id'] != '':
+        return 's|' + point['session_id']
+    return 't|' + str(point['start']) + '|' + point['title']
+
+
+atomic action ImportLegacyPoint:
+    # The first epoch: a point stored before the importers wrote a session block.
+    require legacy_count < MAX_LEGACY
+    tenant = oneof(TENANTS)
+    points.append({
+        'tenant': tenant,
+        'session_id': '',
+        'title': TITLE,
+        'start': START,
+        'epoch': 'legacy',
+    })
+    legacy_count = legacy_count + 1
+
+
+atomic action ImportTaggedPoint:
+    # The second epoch: same workout, same instant, same title -- now tagged.
+    # ON CONFLICT DO NOTHING means this never rewrites the legacy rows above; it
+    # adds rows beside them, which is precisely the mixed state to reason about.
+    require tagged_count < MAX_TAGGED
+    tenant = oneof(TENANTS)
+    points.append({
+        'tenant': tenant,
+        'session_id': session_id_for(tenant),
+        'title': TITLE,
+        'start': START,
+        'epoch': 'tagged',
+    })
+    tagged_count = tagged_count + 1
+
+
+atomic action ImportStreamSamples:
+    # Per-second heart rate arriving for the session. Counted, not enumerated.
+    require samples < MAX_SAMPLES
+    samples = samples + 1
+
+
+atomic action ReadWorkoutDetail:
+    # A reader presents a session key. `key_tenant` is whose workout the key
+    # names, `reader` is who is asking -- and the two are deliberately allowed to
+    # differ, because the key is unsigned and a client can type anything.
+    reader = oneof(TENANTS)
+    key_tenant = oneof(TENANTS)
+    key_kind = oneof(['s', 't'])
+
+    if key_kind == 's':
+        key = 's|' + session_id_for(key_tenant)
+    else:
+        key = 't|' + str(START) + '|' + TITLE
+
+    last_reader = reader
+    last_key = key
+    last_rows = []
+    read_happened = True
+
+    # The tenant filter is applied in SQL on every query (rule 2). It is written
+    # first here for the same reason it is written first there: it is not a
+    # refinement of the group match, it is the precondition of looking at a row
+    # at all.
+    for point in points:
+        if point['tenant'] == reader and group_key_of(point) == key:
+            last_rows.append(point)
+
+    # Decimation. The response carries at most STREAM_CAP points and says when it
+    # cut something, rather than returning a shortened series that reads as a
+    # complete one.
+    last_samples_seen = samples
+    if samples > STREAM_CAP:
+        last_stream_returned = STREAM_CAP
+        last_stream_truncated = True
+    else:
+        last_stream_returned = samples
+        last_stream_truncated = False
+
+
+always assertion SessionGroupingIsStable:
+    # Every point lands in exactly one group, and the two key spaces never meet.
+    #
+    # This is the double-count guard. A tagged point that could also be reached
+    # through its timestamp+title key would have its measures summed into two
+    # sessions, and a wrong number is worse than a missing one because nothing
+    # distinguishes it from a right one (rule 19).
+    for point in points:
+        key = group_key_of(point)
+        if point['session_id'] != '':
+            # A tagged point is reachable only through its session key.
+            if key != 's|' + point['session_id']:
+                return False
+            if key.startswith('t|'):
+                return False
+        else:
+            # An untagged point is reachable only through the legacy key, and
+            # never through a session id it does not carry.
+            if not key.startswith('t|'):
+                return False
+    return True
+
+
+always assertion SessionGroupsAreDisjoint:
+    # The two epochs of one workout form two groups, and they share no row.
+    # Disjoint is the honest outcome of a migration that cannot complete: the
+    # reader may show one workout as two, and must never show one row as two.
+    legacy_rows = 0
+    tagged_rows = 0
+    for point in points:
+        key = group_key_of(point)
+        if key.startswith('t|'):
+            legacy_rows = legacy_rows + 1
+        if key.startswith('s|'):
+            tagged_rows = tagged_rows + 1
+    return legacy_rows + tagged_rows == len(points)
+
+
+always assertion SessionDetailIsTenantScoped:
+    # A key minted in one workspace, presented by another, resolves to the
+    # *presenter's* rows -- which for a key naming somebody else's session means
+    # none at all. Forging a key is uninteresting because the tenant filter runs
+    # before the key is ever consulted.
+    for row in last_rows:
+        if row['tenant'] != last_reader:
+            return False
+    return True
+
+
+always assertion BoundedSessionRead:
+    # What comes back does not grow with the session. A three-hour workout and a
+    # twenty-minute one produce the same shape and the same ceiling, and a
+    # response that hit the ceiling says so.
+    if last_stream_returned > STREAM_CAP:
+        return False
+    if last_stream_truncated and last_stream_returned != STREAM_CAP:
+        return False
+    if read_happened and last_samples_seen > STREAM_CAP and not last_stream_truncated:
+        return False
+    if read_happened and last_samples_seen <= STREAM_CAP and last_stream_returned != last_samples_seen:
+        return False
+    return True

@@ -397,3 +397,36 @@ the connector credentials is worthless.
   scale independently of Core without sticky routing. Codex chat threads are ephemeral
   process state, so `/api/v1/chat/turn` needs sticky routing when Analysis has multiple
   replicas; see [AI chat](features/ai-chat.md#known-limitations).
+
+
+## Rebuilding a workspace from scratch
+
+Session identifiers, and the resolution a point was stored at, are written at ingest
+and are **not** retrofitted: rule 4 keys a point on `(tenant, source, metric,
+timestamp)` and Core inserts `ON CONFLICT DO NOTHING`, so a re-import never rewrites
+an existing row's metadata. Where the history is not worth keeping, a wipe and a
+re-import is cleaner and faster than any backfill.
+
+1. **Drain the broker first.** The JetStream `ingestion` stream must be running
+   `WORK_QUEUE` retention; under the old `limits` policy an acked message still
+   occupied bytes until `max_age`, which is what filled 4 GiB and made every publish
+   fail. Delete the stream and restart `core-ingest` after deploying.
+2. **Wipe the workspace.** `POST /api/v1/data/wipe` removes `data_points`, the
+   rollups, the quarantine and the field reports together. `DELETE
+   /api/v1/data/account` goes further and removes the account.
+3. **Migrate.** `uv run --directory services/core alembic upgrade head`.
+4. **Re-import.** Upload the Apple Health `export.zip`, run **Sync now** on each
+   connector, and re-post the Streak history. Everything then arrives with a session
+   block and at the current resolution from the start.
+5. **Adjust policies if you want to.** For example
+   `PUT /api/v1/data/metrics/ingest-policy/heart_rate` with
+   `{"resolution": "second", "raw_retention_days": null}`. `second` is already the
+   registry default for heart rate, and `null` means never purge — see
+   [Data resolution and rollups](features/data-resolution.md#some-metrics-are-never-purged).
+
+The retention command reports what it will not touch, so a dry run is worth reading
+before the real one:
+
+```bash
+uv run --directory services/core python -m core.retention --tenant-id <uuid> --dry-run
+```

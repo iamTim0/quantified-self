@@ -525,7 +525,11 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
-            body: JSON.stringify({ resolution, raw_retention_days: 90 }),
+            // Resolution only. Sending a retention here wrote ninety days onto
+            // whatever metric was selected, including the workout, strength and
+            // location metrics the registry keeps forever — and the next purge
+            // deleted them.
+            body: JSON.stringify({ resolution }),
           }),
         ),
       );

@@ -35,14 +35,16 @@ metadata, which is the honest answer when the unit is only known at runtime.
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 __all__ = [
     "CANONICAL_KEYS",
     "DYNAMIC_NAMESPACES",
     "METRIC_ALIASES",
     "METRIC_CATALOG",
+    "NEVER_PURGED_CATEGORIES",
     "Aggregation",
     "IngestResolution",
     "MetricCategory",
@@ -133,9 +135,26 @@ class Aggregation(StrEnum):
 
 
 class IngestResolution(StrEnum):
-    """The finest resolution an importer is allowed to persist."""
+    """The finest resolution an importer is allowed to persist.
+
+    ``SECOND`` is not a smaller ``MINUTE``; it is close to "keep what the device
+    sent". A watch samples heart rate every few seconds during a workout and every
+    few minutes at rest, so a second bucket is bounded by the device rather than by
+    the clock — it is not 86,400 rows a day, it is the sample count with duplicates
+    inside one second collapsed. Minute buckets discarded exactly the part of that
+    which mattered: a minute mean over an interval session is a flat line.
+
+    It is deliberately *not* used for accumulating (``SUM``) metrics. The provider
+    already states the day's total for steps, distance and energy, so sixty times
+    the rows buys no information and risks the double count rule 19 forbids.
+
+    ``metric_rollups`` has no second tier and is not getting one: a rollup exists to
+    make a long-range query cheap, and a second rollup has the same cardinality as
+    ``data_points``. Second-resolution data *is* ``data_points``.
+    """
 
     RAW = "raw"
+    SECOND = "second"
     MINUTE = "minute"
     HOUR = "hour"
     DAY = "day"
@@ -179,6 +198,27 @@ class Cadence(StrEnum):
     EVENT = "event"
 
 
+#: Categories whose fine-grained points *are* the measurement, rather than samples
+#: of a quantity over time — so a rollup is not a substitute and the raw purge must
+#: not touch them by default.
+#:
+#: A day rollup of ``strength_set_weight`` (``MAX``) is "the heaviest thing lifted
+#: that day", which is not the workout. A ``location_point`` rollup is a count,
+#: which is not the route — purging those would leave the coordinates
+#: unrecoverable, with the rollup still cheerfully reporting how many there were.
+#:
+#: Expressed as a category rule rather than repeated on thirty definitions so that
+#: a *new* workout or strength metric inherits it. Written thirty times, the next
+#: metric someone adds would quietly get ninety days and nobody would notice until
+#: the data was gone. A definition that wants a limit anyway states one explicitly,
+#: as ``workout_heart_rate`` does.
+NEVER_PURGED_CATEGORIES: frozenset[MetricCategory] = frozenset({
+    MetricCategory.WORKOUT,
+    MetricCategory.STRENGTH,
+    MetricCategory.LOCATION,
+})
+
+
 class MetricDefinition(BaseModel):
     """What one metric key means, in the only place it is defined."""
 
@@ -211,8 +251,32 @@ class MetricDefinition(BaseModel):
     #: Importers use this value before publishing. ``None`` derives a safe default:
     #: continuous metrics are minute data, event/daily metrics remain raw.
     ingest_resolution: IngestResolution | None = None
-    #: Only raw points are subject to this retention period. Rollups are retained.
-    raw_retention_days: int = 90
+    #: Only fine-grained points (``raw`` and ``second``) are subject to this
+    #: retention period; rollups are always retained. ``None`` means **never
+    #: purge**, and it is a declaration rather than an omission: it belongs to the
+    #: metrics whose fine-grained form *is* the data, where a rollup is not a
+    #: substitute. A day rollup of ``strength_set_weight`` is "the heaviest thing
+    #: lifted that day", which is not the workout; a ``location_point`` rollup is a
+    #: count, which is not the route. Purging those is not keeping the aggregate,
+    #: it is deleting the measurement.
+    raw_retention_days: int | None = 90
+
+    @model_validator(mode="before")
+    @classmethod
+    def _never_purge_session_shaped_metrics(cls, data: Any) -> Any:
+        """Apply :data:`NEVER_PURGED_CATEGORIES` where no limit was stated.
+
+        ``"raw_retention_days" not in data`` is what separates *defaulted* from
+        *deliberately set*, which is why this runs before validation fills the
+        default in. A definition that names a number keeps it.
+        """
+        if (
+            isinstance(data, dict)
+            and "raw_retention_days" not in data
+            and data.get("category") in NEVER_PURGED_CATEGORIES
+        ):
+            return {**data, "raw_retention_days": None}
+        return data
 
     @property
     def default_ingest_resolution(self) -> IngestResolution:
@@ -823,7 +887,12 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=250,
         precision=0,
         cadence=Cadence.CONTINUOUS,
-        ingest_resolution=IngestResolution.MINUTE,
+        # Second, not minute. A minute mean is the wrong summary of the one span
+        # where the pulse actually moves: an interval session averages to a flat
+        # line that no reading of it can undo. The cost is bounded by the device —
+        # a watch sends every few seconds under load and every few minutes at
+        # rest, so this preserves the workout and adds nothing to the idle hours.
+        ingest_resolution=IngestResolution.SECOND,
     ),
     MetricDefinition(
         key="heart_rate_average",
@@ -1657,6 +1726,38 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=230,
         precision=0,
     ),
+    # The series the two figures above summarise. Health Auto Export sends a
+    # workout's `heartRateData` as an array of samples, and until now that array
+    # was collapsed to a mean and a max and then discarded -- which is the whole
+    # of what a workout's pulse looked like from the outside.
+    #
+    # Keyed apart from `heart_rate` even though both are bpm, and that is a rule 15
+    # judgement rather than an oversight. Apple sends `metrics[].heart_rate`
+    # (interval summaries) *and* `workouts[].heartRateData` (per sample) covering
+    # overlapping wall-clock time in separate pushes. Under one name they interleave
+    # without aligning, so `sample_count` and the min/max envelope stop meaning
+    # anything, and the two cannot be given different retention. Session twins are
+    # already keyed apart here for exactly this reason -- see `workout_steps`.
+    MetricDefinition(
+        key="workout_heart_rate",
+        unit=MetricUnit.BPM,
+        aggregation=Aggregation.AVERAGE,
+        category=MetricCategory.WORKOUT,
+        label_de="Trainingspuls (Verlauf)",
+        label_en="Workout heart rate (series)",
+        sources=("apple_health",),
+        plausible_min=20,
+        plausible_max=250,
+        precision=0,
+        cadence=Cadence.CONTINUOUS,
+        # Second rather than raw: a predictable ceiling of 3,600 points an hour,
+        # and it routes every sample through the bucket path so it carries
+        # `bucket_min`/`bucket_max`/`sample_count` like everything else.
+        ingest_resolution=IngestResolution.SECOND,
+        # A year, not forever: this is the one genuinely large series here, and
+        # its mean and max survive permanently in the two metrics above.
+        raw_retention_days=365,
+    ),
     MetricDefinition(
         key="workout_heart_rate_max",
         unit=MetricUnit.BPM,
@@ -1817,7 +1918,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         category=MetricCategory.WORKOUT,
         label_de="Höhenmeter (Aufstieg)",
         label_en="Elevation gain",
-        sources=("apple_health",),
+        # WHOOP sends `altitude_gain_meter` on every v2 workout and it was simply
+        # never read.
+        sources=("apple_health", "whoop"),
         plausible_min=0,
         plausible_max=15_000,
         precision=0,

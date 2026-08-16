@@ -34,9 +34,18 @@ export interface GpsPoint {
 }
 
 interface LocationMapProps {
-  apiBase: string;
-  tenantId: string;
-  refreshTrigger: number;
+  apiBase?: string;
+  tenantId?: string;
+  refreshTrigger?: number;
+  /**
+   * A track supplied by the caller. When present nothing is fetched and the date
+   * filter is hidden: the workout detail already knows which fixes belong to the
+   * session, and re-deriving that from a calendar filter would draw a different
+   * route from the one the endpoint resolved.
+   */
+  points?: GpsPoint[];
+  /** Heading and privacy note, which a page that has its own heading suppresses. */
+  showHeader?: boolean;
 }
 
 type TileProvider = "osm" | "carto";
@@ -102,13 +111,22 @@ export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): 
   return kept;
 }
 
-export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProps) {
-  const { t, formatDateTime } = useI18n();
+export default function LocationMap({
+  apiBase,
+  refreshTrigger,
+  points: suppliedPoints,
+  showHeader = true,
+}: LocationMapProps) {
+  const { t, formatDateTime, formatNumber } = useI18n();
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
-  const [points, setPoints] = useState<GpsPoint[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [fetchedPoints, setFetchedPoints] = useState<GpsPoint[]>([]);
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
+  // A caller-supplied track is ready on the first render, so there is nothing to
+  // wait for and the spinner would be a frame of noise.
+  const controlled = suppliedPoints !== undefined;
+  const [loading, setLoading] = useState(!controlled);
+  const points = suppliedPoints ?? fetchedPoints;
 
   // Vector is the default. Tiles are only ever loaded on an explicit request.
   const [showTiles, setShowTiles] = useState(false);
@@ -151,7 +169,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
         })
         .filter(Boolean) as GpsPoint[];
 
-      setPoints(parsed);
+      setFetchedPoints(parsed);
     } catch (err) {
       console.error("Error fetching GPS points:", err);
     } finally {
@@ -160,6 +178,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
   }, [apiBase, dateFilter]);
 
   useEffect(() => {
+    if (controlled) return;
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
@@ -168,7 +187,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
     return () => {
       cancelled = true;
     };
-  }, [fetchLocationData, refreshTrigger]);
+  }, [controlled, fetchLocationData, refreshTrigger]);
 
   const isToday = (isoString?: string) => {
     if (!isoString) return false;
@@ -182,8 +201,11 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
   };
 
   const filteredPoints = useMemo(
-    () => (dateFilter === "today" ? points.filter((p) => isToday(p.timestamp)) : points),
-    [points, dateFilter],
+    () =>
+      controlled || dateFilter !== "today"
+        ? points
+        : points.filter((p) => isToday(p.timestamp)),
+    [controlled, points, dateFilter],
   );
 
   const renderPoints = useMemo(() => simplifyTrack(filteredPoints), [filteredPoints]);
@@ -300,15 +322,18 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
   return (
     <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
       <div className="flex flex-col items-start justify-between gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
-        <div>
-          <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-            <MapPin className="h-5 w-5 text-[#0d5c3a]" />
-            <span>{t("map.headline")}</span>
-          </h3>
-          <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
-        </div>
+        {showHeader && (
+          <div>
+            <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+              <MapPin className="h-5 w-5 text-[#0d5c3a]" />
+              <span>{t("map.headline")}</span>
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
+          {!controlled && (
           <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
             {(["today", "7d", "30d"] as const).map((f) => (
               <button
@@ -327,6 +352,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
               </button>
             ))}
           </div>
+          )}
 
           <button
             onClick={() => {
@@ -428,17 +454,17 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5">
           <Navigation className="h-3.5 w-3.5 text-[#0d5c3a]" />
-          {filteredPoints.length} Punkte
+          {t("map.pointCount", { count: formatNumber(filteredPoints.length) })}
           {simplified && (
             <span className="flex items-center gap-1 text-slate-400">
               <Layers className="h-3 w-3" />
-              auf {renderPoints.length} vereinfacht
+              {t("map.simplifiedTo", { count: formatNumber(renderPoints.length) })}
             </span>
           )}
         </span>
         <span className="flex items-center gap-1.5">
           <RefreshCw className="h-3 w-3" />
-          {showTiles ? TILE_PROVIDERS[tileProvider].label : "Vektor-Darstellung"}
+          {showTiles ? TILE_PROVIDERS[tileProvider].label : t("map.vectorMode")}
         </span>
       </div>
     </div>

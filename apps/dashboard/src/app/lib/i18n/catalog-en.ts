@@ -42,6 +42,7 @@ export const en = {
   "sidebar.quality": "Data quality",
   "sidebar.analysis": "Analysis",
   "sidebar.chat": "AI chat",
+  "sidebar.workouts": "Workouts",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Documentation",
   "sidebar.docsTitle": "Open the platform documentation",
@@ -296,6 +297,9 @@ export const en = {
   "map.privacyLead":
     "No location data is sent to a map provider. Loading the tiles makes the part of the map you are looking at visible to that provider.",
   "map.empty": "No GPS points in the selected period.",
+  "map.pointCount": "{count} points",
+  "map.simplifiedTo": "simplified to {count}",
+  "map.vectorMode": "Vector view",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
   "map.privacyDetail":
@@ -1022,6 +1026,77 @@ export const en = {
   "chat.errorLoginRequired": "Connect your ChatGPT subscription before sending a message.",
   "chat.errorResponse": "The assistant could not complete this response.",
   "chat.errorStream": "The chat connection was interrupted.",
+  // ── Workouts ────────────────────────────────────────────────────────────
+  "workouts.title": "Workouts",
+  "workouts.subtitle":
+    "Every session, and everything the other connectors recorded while it was happening.",
+  "workouts.loading": "Loading sessions…",
+  "workouts.empty": "No sessions in this period.",
+  "workouts.emptyHint":
+    "Workouts arrive from Apple Health, WHOOP and Streak. A connector that has not run yet is not the same as a rest day.",
+  "workouts.filterAll": "All",
+  "workouts.filterWorkout": "Endurance",
+  "workouts.filterStrength": "Strength",
+  "workouts.range30": "Last 30 days",
+  "workouts.range90": "Last 90 days",
+  "workouts.range365": "Last year",
+  "workouts.approximate": "Grouped by time and name",
+  "workouts.approximateHint":
+    "This session was imported before workouts carried an identifier, so its points are grouped by timestamp and title. Two sessions stamped alike can appear as one, and one session can appear as two.",
+  "workouts.scanTruncated":
+    "This period holds more rows than one scan reads. Narrow the range to see everything.",
+  "workouts.back": "All workouts",
+  "workouts.exercises_one": "{count} exercise",
+  "workouts.exercises_other": "{count} exercises",
+  "workouts.sets_one": "{count} set",
+  "workouts.sets_other": "{count} sets",
+  "workouts.notFound": "That session is not in this workspace.",
+  "workouts.clamped":
+    "This session states an end more than 12 hours after its start, so the window shown is capped.",
+  "workouts.measures": "What the session states",
+  "workouts.derived": "Worked out from {fields}, not stated by the provider",
+  "workouts.providerValue": "Provider stated {value} {unit}",
+  "workouts.route": "Route",
+  "workouts.routeMeasured": "Measured along the track: {distance}",
+  "workouts.routeFixes_one": "{count} GPS fix",
+  "workouts.routeFixes_other": "{count} GPS fixes",
+  "workouts.routeFallback":
+    "Drawn from the stored coordinates; these fixes predate the spatial column.",
+  "workouts.streams": "During the session",
+  "workouts.streamBucket": "One point per {seconds} s",
+  "workouts.streamRange": "Range {min}–{max}",
+  "workouts.streamTruncated": "Shortened to fit the chart.",
+  "workouts.strength": "Sets",
+  "workouts.strengthTruncated": "More sets than one response returns.",
+  "workouts.topSet": "Best set",
+  "workouts.totalVolume": "Volume",
+  "workouts.totalReps": "Repetitions",
+  "workouts.setNumber": "Set",
+  "workouts.weight": "Weight",
+  "workouts.reps": "Reps",
+  "workouts.volume": "Volume",
+  "workouts.surroundings": "Recorded at the same time",
+  "workouts.surroundingsHint":
+    "These connectors know nothing about the workout. They are here because their readings fall inside it.",
+  "workouts.noStreams": "No second-by-second series for this session.",
+  "workouts.noStrength": "No sets logged for this session.",
+
+  // ── Muscle groups ───────────────────────────────────────────────────────
+  "muscle.chest": "Chest",
+  "muscle.back": "Back",
+  "muscle.shoulders": "Shoulders",
+  "muscle.biceps": "Biceps",
+  "muscle.triceps": "Triceps",
+  "muscle.forearms": "Forearms",
+  "muscle.quads": "Quadriceps",
+  "muscle.hamstrings": "Hamstrings",
+  "muscle.glutes": "Glutes",
+  "muscle.calves": "Calves",
+  "muscle.core": "Core",
+  "muscle.full_body": "Full body",
+  "muscle.cardio": "Cardio",
+  "muscle.other": "Other",
+
   // --- end of catalogue ---
 } satisfies Record<string, string>;
 

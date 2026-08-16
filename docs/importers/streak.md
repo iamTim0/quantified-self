@@ -59,5 +59,25 @@ endurance sessions from Apple Health and WHOOP. `strength_set_heart_rate_max` is
 heart rate of **one set**, `workout_heart_rate_max` that of an entire session — two
 different quantities that looked like variants of each other under a shared prefix.
 
+## Sessions, exercises and muscle groups
+
+Every point a Streak import produces carries a `session_id` derived from the workout
+id Streak states, so a session's sets and its summary are one workout rather than
+twenty unrelated events — see [Workout detail](../features/workout-detail.md).
+
+`exercise.category` **is** the muscle group, and it is not stored as the canonical
+value. The provider's own word is kept verbatim in `exercise_category`, and a
+canonical `muscle_group` is stored beside it, so a renamed or localised category list
+cannot silently split one group into two. An unrecognised category becomes `other`
+*and* is named in the [Data Quality Center](../features/data-quality.md).
+
+Streak is a webhook source with no published schema, so it now carries a field report
+like every other importer. That is what makes "Streak sends this and we do not keep
+it" answerable at all — it is also how anything richer than a category will be found.
+
+Two defects were fixed alongside: a bodyweight session (reps, no weight) used to emit
+**no** session points, because the set counter only advanced when both a weight and a
+rep count were numeric; and a rep total was accumulated and never used.
+
 The full definition of every metric — its unit, its aggregation and the former names that
 still point at it — is in [Metrics](../metrics.md).

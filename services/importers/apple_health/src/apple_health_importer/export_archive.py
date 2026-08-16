@@ -33,6 +33,7 @@ from typing import IO, Any
 from defusedxml.ElementTree import iterparse
 from shared_schemas import FieldReportCollector, aggregate_stream
 from shared_schemas.metrics import METRIC_CATALOG, MetricUnit
+from shared_schemas.sessions import session_metadata
 
 from apple_health_importer.transformer import (
     CATEGORY_RECORD_METRICS,
@@ -324,7 +325,7 @@ def _read_export_raw(
             )
 
         budget = [MAX_EXTRACTED_BYTES]
-        routes: dict[str, tuple[str, str]] = {}
+        routes: dict[str, tuple[dict[str, Any], str]] = {}
         seen = 0
 
         with archive.open(export) as handle:
@@ -479,7 +480,7 @@ def _workout_points(
     tenant_id: str,
     source_id: str,
     report: FieldReportCollector,
-    routes: dict[str, tuple[str, str]],
+    routes: dict[str, tuple[dict[str, Any], str]],
 ) -> Iterator[dict[str, Any]]:
     """One `<Workout>`: its totals, its per-statistic children, and its route file."""
     start = elem.attrib.get("startDate", "")
@@ -492,10 +493,33 @@ def _workout_points(
     # one session from the next, and it is already what the idempotency key is built
     # from, so nothing is invented by using it here.
     workout_id = ts
+    # Derived, always: an Apple archive states no workout id anywhere.
+    #
+    # This does **not** produce the same digest the webhook path derives for the
+    # same workout, and it cannot: the webhook usually has an id to state, and
+    # where it does not, its label is Health Auto Export's activity name while
+    # this one is Apple's own type snake-cased (`running`, not `Run`).
+    #
+    # That costs nothing, because a workout imported both ways is still one
+    # workout. Both paths key each reading on (tenant, source, metric, timestamp),
+    # so the second import collides and `ON CONFLICT DO NOTHING` drops it — the
+    # stored point keeps whichever session id arrived first, and there is exactly
+    # one. What would be a problem is two *stored* copies, and rule 4 is what makes
+    # that impossible.
+    session = session_metadata(
+        source_type="apple_health",
+        source_id=source_id,
+        provider_session_id=None,
+        start=ts,
+        end=parse_timestamp(elem.attrib.get("endDate", "")),
+        label=activity,
+        derived_from=("startDate", "workoutActivityType"),
+    )
     metadata_base: dict[str, Any] = {
         "source_type": "apple_health",
         "workout_name": activity,
         "workout_id": workout_id,
+        **session,
     }
     if elem.attrib.get("sourceName"):
         metadata_base["device_source"] = elem.attrib["sourceName"]
@@ -536,7 +560,7 @@ def _workout_points(
             for reference in child:
                 path = reference.attrib.get("path", "")
                 if path:
-                    routes[path.rsplit("/", 1)[-1]] = (workout_id, activity)
+                    routes[path.rsplit("/", 1)[-1]] = (session, activity)
 
     emitted_metrics: set[str] = set()
     for attribute, unit_attribute, metric_type in (
@@ -656,7 +680,7 @@ def _statistics_points(
 def _route_file_points(
     archive: zipfile.ZipFile,
     budget: list[int],
-    routes: dict[str, tuple[str, str]],
+    routes: dict[str, tuple[dict[str, Any], str]],
     tenant_id: str,
     source_id: str,
     report: FieldReportCollector,
@@ -672,7 +696,7 @@ def _route_file_points(
             continue
 
         name = info.filename.rsplit("/", 1)[-1]
-        workout_id, workout_name = routes.get(name, ("", "route"))
+        session, workout_name = routes.get(name, ({}, "route"))
 
         fixes: list[dict[str, Any]] = []
         with archive.open(info) as handle:
@@ -709,4 +733,4 @@ def _route_file_points(
                 fixes.append(fix)
                 elem.clear()
 
-        yield from route_points(fixes, tenant_id, source_id, workout_id, workout_name, report)
+        yield from route_points(fixes, tenant_id, source_id, session, workout_name, report)

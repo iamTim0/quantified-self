@@ -196,10 +196,24 @@ from core.security.tokens import (
     decode_access_token,
     hash_token,
 )
+from core.sessions import decode_session_key
 from core.tracing import (
     RequestTracingMiddleware,
     get_current_request_id,
     setup_tracing_logger,
+)
+from core.workouts import (
+    DEFAULT_PAD_SECONDS,
+    DEFAULT_ROUTE_POINTS,
+    DEFAULT_STREAM_POINTS,
+    MAX_LIST_DAYS,
+    MAX_LIST_SESSIONS,
+    MAX_PAD_SECONDS,
+    MAX_ROUTE_POINTS,
+    MAX_STREAM_POINTS,
+    SessionNotFound,
+    build_workout_detail,
+    build_workout_list,
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -1999,7 +2013,11 @@ def _ingest_policy_payload(
                 else IngestResolution.RAW.value
             )
         aggregation = definition.get("aggregation", "average")
-        retention = int(definition.get("raw_retention_days", 90))
+        stated = definition.get("raw_retention_days", 90)
+        # `None` is a value here, not a missing key: it means never purge. Coercing
+        # it with `int()` raised, and defaulting it to 90 would have quietly put an
+        # expiry on the metrics whose fine-grained form is the data.
+        retention = None if stated is None else int(stated)
     else:
         default_resolution = IngestResolution.RAW.value
         aggregation = "average"
@@ -2058,8 +2076,8 @@ async def query_metrics(
     end_time: str | None = Query(None, description="ISO end timestamp"),
     source_id: str | None = Query(None, description="Filter by connector instance"),
     source_type: str | None = Query(None, description="Filter by connector type"),
-    resolution: Literal["auto", "raw", "minute", "hour", "day"] = Query(
-        "raw", description="Raw points or a server-side rollup resolution"
+    resolution: Literal["auto", "raw", "second", "minute", "hour", "day"] = Query(
+        "raw", description="Stored points or a server-side rollup resolution"
     ),
     limit: int = Query(100, ge=1, le=10000, description="Max points or buckets to return"),
     sort: Literal["asc", "desc"] = Query("asc", description="Sort by timestamp"),
@@ -2084,13 +2102,24 @@ async def query_metrics(
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
     effective_resolution = resolution
+    # `second` is not a rollup tier and never will be: a second bucket has the same
+    # cardinality as `data_points`, so storing one would double the storage to answer
+    # nothing faster. The stored points already *are* the second-resolution answer,
+    # so the request reads them directly.
+    if effective_resolution == "second":
+        effective_resolution = "raw"
+
     if resolution == "auto":
         if not start_dt or not end_dt:
             effective_resolution = "raw"
         else:
             duration = end_dt - start_dt
             effective_resolution = (
-                "minute" if duration <= timedelta(hours=24)
+                # A workout-length window gets whatever was stored, which for heart
+                # rate is now per second. Bucketing an interval session by the minute
+                # is what turned it into a flat line.
+                "raw" if duration <= timedelta(hours=2)
+                else "minute" if duration <= timedelta(hours=24)
                 else "hour" if duration <= timedelta(days=90)
                 else "day"
             )
@@ -2206,6 +2235,12 @@ async def query_metrics(
                     "derived": not rollup.is_provider_total,
                 },
                 "sample_count": rollup.sample_count,
+                # The bucket's spread, so a chart can draw the range a mean hides.
+                # A minute of heart rate averaging 162 says nothing about whether it
+                # was flat or ran from 140 to 186, and the second is a different
+                # workout.
+                "min": rollup.min_value,
+                "max": rollup.max_value,
                 "is_derived": not rollup.is_provider_total,
                 "_sort_timestamp": rollup.bucket_start,
             }
@@ -2310,7 +2345,25 @@ class MetricIngestPolicyRequest(BaseModel):
     """Tenant-owned resolution override used by future imports."""
 
     resolution: IngestResolution
-    raw_retention_days: int = Field(90, ge=0, le=3650)
+    #: Explicit `null` means never purge. **Omitting the field keeps whatever the
+    #: registry says**, which is not the same thing and is why this defaults to
+    #: `None` rather than to 90.
+    #:
+    #: A default of 90 meant that changing a metric's *resolution* silently wrote a
+    #: ninety-day expiry onto it. For a `workout_*`, `strength_*` or `location_*`
+    #: metric — the ones `NEVER_PURGED_CATEGORIES` exists to protect — the next
+    #: retention run then deleted the GPS fixes and the sets, and reported nothing
+    #: unusual, because a policy row of 90 is indistinguishable from a workspace
+    #: asking for 90.
+    raw_retention_days: int | None = Field(None, ge=0, le=3650)
+
+    def retention_for(self, definition: MetricDefinition | None) -> int | None:
+        """The retention to store: the caller's if they stated one, else the registry's."""
+        if "raw_retention_days" in self.model_fields_set:
+            return self.raw_retention_days
+        if isinstance(definition, MetricDefinition):
+            return definition.raw_retention_days
+        return 90
 
 
 async def _effective_ingest_policies(
@@ -2354,11 +2407,12 @@ async def set_ingest_policy(
         raise HTTPException(status_code=422, detail="metric_type must be canonical")
 
     definition = describe(canonical)
+    retention = req.retention_for(definition)
     statement = pg_insert(MetricIngestPolicy).values(
         tenant_id=tenant_id,
         metric_type=canonical,
         resolution=req.resolution.value,
-        raw_retention_days=req.raw_retention_days,
+        raw_retention_days=retention,
         updated_at=datetime.now(timezone.utc),
     )
     statement = statement.on_conflict_do_update(
@@ -2371,11 +2425,23 @@ async def set_ingest_policy(
     )
     await session.execute(statement)
     await session.commit()
+    stored = (
+        await session.execute(
+            select(MetricIngestPolicy).where(
+                MetricIngestPolicy.tenant_id == tenant_id,
+                MetricIngestPolicy.metric_type == canonical,
+            )
+        )
+    ).scalar_one_or_none()
     return {
         "tenant_id": tenant_id,
-        "policy": _ingest_policy_payload(canonical, definition=definition),
+        # With the override, so the echoed policy is the one that was stored.
+        # Without it this reported the registry default while the sibling field and
+        # the database said something else — the response contradicted itself on the
+        # one field that decides whether data is deleted.
+        "policy": _ingest_policy_payload(canonical, definition=definition, override=stored),
         "resolution": req.resolution.value,
-        "raw_retention_days": req.raw_retention_days,
+        "raw_retention_days": retention,
         "applies_to": "future_imports",
     }
 
@@ -2868,6 +2934,97 @@ async def get_day_story(
     return await build_day_story(
         session, tenant_id, day=target, offset_minutes=offset_minutes
     )
+
+
+# ─── Workouts ───────────────────────────────────────────────
+
+
+@app.get("/api/v1/data/workouts")
+async def list_workouts(
+    start_date: date | None = Query(None, description="First calendar day, reader's zone"),
+    end_date: date | None = Query(None, description="Last calendar day, reader's zone"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the range is bounded in it",
+    ),
+    category: Literal["all", "workout", "strength"] = Query("all"),
+    limit: int = Query(50, ge=1, le=MAX_LIST_SESSIONS),
+    session: AsyncSession = Depends(get_session),
+):
+    """Every workout and strength session in a range, newest first.
+
+    A session is a group of points, not a row: see `core.workouts`. The reader's
+    offset bounds the range through the same `day_window` the daily story uses,
+    because a reader whose day starts at a different moment on two pages of one
+    product is being told two different things about one dataset.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date()
+    last = end_date or reader_today
+    first = start_date or (last - timedelta(days=30))
+    if first > last:
+        raise HTTPException(status_code=400, detail="start_date is after end_date")
+    if (last - first).days > MAX_LIST_DAYS:
+        raise HTTPException(
+            status_code=400, detail=f"At most {MAX_LIST_DAYS} days can be listed at once"
+        )
+
+    return await build_workout_list(
+        session,
+        tenant_id,
+        start_date=first,
+        end_date=last,
+        offset_minutes=offset_minutes,
+        category=category,
+        limit=limit,
+    )
+
+
+@app.get("/api/v1/data/workouts/{session_key}")
+async def get_workout_detail(
+    session_key: str,
+    pad_seconds: int = Query(
+        DEFAULT_PAD_SECONDS,
+        ge=0,
+        le=MAX_PAD_SECONDS,
+        description="Seconds of slack at each end, for fixes just outside the session",
+    ),
+    stream_points: int = Query(DEFAULT_STREAM_POINTS, ge=1, le=MAX_STREAM_POINTS),
+    route_points: int = Query(DEFAULT_ROUTE_POINTS, ge=1, le=MAX_ROUTE_POINTS),
+    session: AsyncSession = Depends(get_session),
+):
+    """One session, and every reading any connector took while it was happening.
+
+    The key is unsigned on purpose. Every query behind this filters on the tenant
+    the Gateway injected (rule 2), so a forged key can only ever address the
+    caller's own workspace — which is what makes it uninteresting to forge, and
+    what `SessionDetailIsTenantScoped` model-checks.
+    """
+    tenant_id = get_current_tenant_id()
+    try:
+        ref = decode_session_key(session_key)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_session_key", "message": "That is not a session key."},
+        ) from None
+
+    try:
+        return await build_workout_detail(
+            session,
+            tenant_id,
+            ref,
+            pad_seconds=pad_seconds,
+            stream_points=stream_points,
+            route_points=route_points,
+        )
+    except SessionNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "session_not_found", "message": "No such session in this workspace."},
+        ) from None
 
 
 # ─── Precomputed Reports ────────────────────────────────────

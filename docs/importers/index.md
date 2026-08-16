@@ -87,7 +87,7 @@ from the day's items because the provider stated none — three more fields say 
 | Field | Meaning |
 | --- | --- |
 | `derived_from` | the provider fields it was built from |
-| `derived_by` | the operation: `sum`, `average`, `max`, `product`, `count`, `difference` |
+| `derived_by` | the operation: `sum`, `average`, `max`, `product`, `count`, `difference`, `share` |
 | `sample_count` | how many values it stands on |
 
 A figure the provider stated outright is never replaced by a derived one, and a derived figure

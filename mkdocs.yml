@@ -35,6 +35,7 @@ nav:
       - Calendar: importers/calendar.md
   - Features:
       - The daily story: features/daily-story.md
+      - Workout detail: features/workout-detail.md
       - Smart and force import: features/smart-import.md
       - Data resolution and rollups: features/data-resolution.md
       - Data quality: features/data-quality.md

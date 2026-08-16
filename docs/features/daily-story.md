@@ -187,13 +187,23 @@ else describes the day rather than a moment in it, and belongs in a lane.
 `until` is the one metadata field that changes what the timeline draws — it is the
 difference between a moment and a span.
 
-!!! warning "The join key is a timestamp and a string"
-    Stored points carry **no session identifier**. Nothing in `data_points` records that
-    these twelve rows are one workout, so the timestamp plus a metadata title is all there
-    is to group on, and it fails in both directions: two sessions of the same activity that
-    a provider stamped with the same start time merge into one event, and one session whose
-    points were stamped a second apart splits into two. Neither is recoverable at read time.
-    Carrying a session id would have to happen at ingest, in the importers and the schema.
+!!! info "Points carry a session identifier now — but not all of them"
+    Every importer that emits a workout writes a `session_id` at ingest
+    (`shared_schemas.sessions`), and this endpoint groups on it through the shared
+    `core.sessions.session_group_key`. Eighteen sets logged a minute apart are one
+    event rather than eighteen.
+
+    **Rows stored before that cannot gain one.** Rule 4 keys a point on
+    `(tenant, source, metric, timestamp)` and Core inserts `ON CONFLICT DO NOTHING`,
+    so a re-import does not touch an existing row's metadata. Those rows still group
+    on the timestamp plus a metadata title, which fails in both directions: two
+    sessions a provider stamped alike merge into one event, and one session whose
+    points were stamped a second apart splits into two.
+
+    A workout whose rows straddle the change therefore appears as **two** events.
+    That is bounded and deliberate — what never happens is one row in both, because
+    its measures would then be counted twice. See
+    [Workout detail](workout-detail.md) and `specs/workout_sessions.fizz`.
 
 ## Reading it through the API
 
@@ -305,6 +315,15 @@ unlike the three whole-history derivations in [Precomputed reports](precomputed-
   `workout_*` and `strength_*` key is event-shaped, so those categories are usually empty as
   lanes; summing three sessions' `workout_duration` into one daily figure would answer a
   question nobody asked. `whoop_workout_strain` is the exception and does appear as a lane.
+- **`workout_heart_rate` is neither.** It is a series *inside* a session, not a figure
+  about one, and at second resolution a 90-minute workout is 5,400 rows against a
+  4,000-row scan budget — so the timeline would come back truncated for anyone who
+  trains. It is excluded from both halves (`core.sessions.STREAM_METRICS`) and read
+  through [Workout detail](workout-detail.md) instead.
+- **A session's measures are collapsed by the registry's aggregation**, not summed.
+  Grouping eighteen sets into one event and adding their `strength_set_weight` would
+  report 1,850 kg as a set weight; `MAX` reports the heaviest set, which is what the
+  registry says that metric means.
 - **The primary source is resolved from whole-history coverage** (looked up only when a
   metric actually has more than one source that day), among the connectors that reported it. On a day where a new device recorded everything and an old one
   contributed a single stray reading, the old one can still answer if it has more history

@@ -66,12 +66,55 @@ async def update_rollups_for_point(
     resolutions = (
         ("day",)
         if provider_total
+        # `second` joins `minute` here rather than falling through to day-only.
+        # A second-resolution metric is the finest thing the platform stores, so
+        # if it does not build the minute and hour buckets nothing does, and a
+        # chart wider than a day would have no rollup to read.
         else ("minute", "hour", "day")
-        if ingest_resolution == "minute"
+        if ingest_resolution in ("second", "minute")
         else ("hour", "day")
         if ingest_resolution == "hour"
         else ("day",)
     )
+
+    # What this point actually stands on. A minute bucket carrying the mean of
+    # twelve samples is not one reading, and the spread it declares is not the
+    # spread of its own average.
+    #
+    # Without this the rollups were wrong in two ways at once: a day's "maximum
+    # heart rate" was the highest minute *average* of that day, and its mean was an
+    # unweighted mean of bucket means, so a minute holding one sample counted for
+    # as much as a minute holding sixty.
+    # `bucket_samples`, not `sample_count`. Only the bucket aggregator writes the
+    # first, and only it means "readings this mean averages". `sample_count` is rule
+    # 19 provenance that importers also set on figures which are not means — WHOOP's
+    # zone shares carry the number of zone fields the payload held — and weighting a
+    # rollup by that produces an average nobody can account for.
+    stated_count = point_metadata.get("bucket_samples")
+    samples = (
+        int(stated_count)
+        if isinstance(stated_count, (int, float))
+        and not isinstance(stated_count, bool)
+        and int(stated_count) > 0
+        else 1
+    )
+    stated_min = point_metadata.get("bucket_min")
+    stated_max = point_metadata.get("bucket_max")
+    bucket_min = (
+        float(stated_min)
+        if isinstance(stated_min, (int, float)) and not isinstance(stated_min, bool)
+        else float(value)
+    )
+    bucket_max = (
+        float(stated_max)
+        if isinstance(stated_max, (int, float)) and not isinstance(stated_max, bool)
+        else float(value)
+    )
+    # `sum_value` feeds the weighted mean, so for an averaging metric it has to be
+    # the bucket's total rather than its mean. For a summing metric the value
+    # already *is* the total, and multiplying it by the sample count would report a
+    # day of steps as a day of steps times the number of buckets in it.
+    weighted_sum = float(value) * samples if aggregation is Aggregation.AVERAGE else float(value)
     for resolution in resolutions:
         bucket = _bucket(timestamp, resolution)
         rollup_metadata = (
@@ -80,7 +123,7 @@ async def update_rollups_for_point(
             else {
                 "derived_from": derived_from,
                 "derived_by": aggregation.value,
-                "sample_count": 1,
+                "sample_count": samples,
                 "rollup_resolution": resolution,
             }
         )
@@ -95,10 +138,10 @@ async def update_rollups_for_point(
             resolution=resolution,
             bucket_start=bucket,
             value=float(value),
-            sample_count=1,
-            sum_value=float(value),
-            min_value=float(value),
-            max_value=float(value),
+            sample_count=samples,
+            sum_value=weighted_sum,
+            min_value=bucket_min,
+            max_value=bucket_max,
             first_value=float(value),
             last_value=float(value),
             first_timestamp=timestamp,
