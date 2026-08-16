@@ -1143,5 +1143,7 @@ export const de: Record<MessageKey, string> = {
   "weekday.saturday": "Samstag",
   "weekday.sunday": "Sonntag",
 
+  "nav.skipToContent": "Zum Inhalt springen",
+
   // --- End of catalogue ---
 };

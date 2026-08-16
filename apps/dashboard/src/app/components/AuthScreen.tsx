@@ -227,11 +227,13 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                   <input
                     id="auth-name"
+                    name="name"
                     type="text"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                     placeholder="Jane Doe"
                   />
                 </div>
@@ -249,11 +251,15 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input
                   id="auth-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  // An address is not a word; the red squiggle under it is noise.
+                  spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                   placeholder="you@example.com"
                 />
               </div>
@@ -270,11 +276,15 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
                 <input
                   id="auth-password"
+                  name="password"
                   type="password"
+                  // The distinction a manager acts on: offer the stored
+                  // password, or offer to generate one.
+                  autoComplete={isLogin ? "current-password" : "new-password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                   placeholder="••••••••"
                 />
               </div>
@@ -283,7 +293,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 transition-all flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+              className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
             >
               {loading ? t("common.pleaseWait") : isLogin ? t("auth.signIn") : t("auth.signUp")}
               {!loading && (

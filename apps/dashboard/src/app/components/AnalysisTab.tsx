@@ -514,7 +514,7 @@ export default function AnalysisTab({
             // `minStrength` below is not: it filters coefficients already here.
             onChange={(e) => requestRun(Number(e.target.value), selectedSource)}
             disabled={report.running}
-            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none disabled:opacity-50"
+            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50"
           >
             {[30, 90, 180, 365].map((days) => (
               <option key={days} value={days}>
@@ -528,7 +528,7 @@ export default function AnalysisTab({
           <select
             value={minStrength}
             onChange={(e) => setMinStrength(Number(e.target.value))}
-            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring"
           >
             <option value={0}>{t("analysis.all")}</option>
             {[20, 40, 60].map((percent) => (
@@ -545,7 +545,7 @@ export default function AnalysisTab({
               value={selectedSource}
               onChange={(e) => requestRun(windowDays, e.target.value)}
               disabled={report.running}
-              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none disabled:opacity-50"
+              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50"
             >
               <option value="all">{t("analysis.allSources")}</option>
               {sources.map((source) => (

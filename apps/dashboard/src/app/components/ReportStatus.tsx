@@ -53,7 +53,7 @@ export default function ReportStatus({
         type="button"
         onClick={onRefresh}
         disabled={running}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" />
         {t("report.recompute")}

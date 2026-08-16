@@ -25,6 +25,7 @@ import ApiKeyManager from "./ApiKeyManager";
 import { apiFetch } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n/provider";
 import { describeMetric } from "../lib/metrics/catalog";
+import { useDialog } from "../lib/useDialog";
 
 export type ConnectorDirection = "active" | "passive";
 
@@ -245,6 +246,9 @@ export default function ConnectorModal({
   isEditing = false,
 }: ConnectorModalProps) {
   const { t, locale } = useI18n();
+  // Escape, a focus trap and focus returned to the opener — the behaviour
+  // `aria-modal="true"` above has been claiming since this dialog was written.
+  const dialogRef = useDialog<HTMLDivElement>(isOpen, onClose);
   const [step, setStep] = useState<"select_provider" | "configure_provider">("select_provider");
   const [selectedProvider, setSelectedProvider] = useState<ProviderCatalogItem | null>(null);
 
@@ -585,8 +589,11 @@ export default function ConnectorModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
+        aria-label={t("modal.pickSource")}
+        tabIndex={-1}
         className="my-auto w-full max-w-xl max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain bg-white border border-slate-200/90 rounded-3xl p-6 shadow-2xl space-y-6"
       >
         {/* Header */}
@@ -626,9 +633,10 @@ export default function ConnectorModal({
           </div>
           <button
             onClick={onClose}
+            aria-label={t("common.close")}
             className="text-slate-400 hover:text-slate-900 p-1.5 rounded-xl hover:bg-slate-100 transition-colors"
           >
-            <X className="w-5 h-5" />
+            <X className="w-5 h-5" aria-hidden="true" />
           </button>
         </div>
 
@@ -645,7 +653,7 @@ export default function ConnectorModal({
                     key={provider.id}
                     onClick={() => handleSelectProvider(provider)}
                     disabled={!isAvailable}
-                    className={`text-left p-4 rounded-2xl border transition-all flex flex-col justify-between space-y-3 ${
+                    className={`text-left p-4 rounded-2xl border [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex flex-col justify-between space-y-3 ${
                       isAvailable
                         ? "bg-slate-50 border-slate-200 hover:border-[#0d5c3a] hover:bg-emerald-50/50 cursor-pointer shadow-xs"
                         : "bg-slate-100/50 border-slate-200 opacity-60 cursor-not-allowed"
@@ -756,7 +764,7 @@ export default function ConnectorModal({
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
                 placeholder={t("modal.displayNamePlaceholder")}
-                className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus-ring"
               />
               <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
                 {t("modal.displayNameHint")}
@@ -777,7 +785,7 @@ export default function ConnectorModal({
                   <button
                     type="button"
                     onClick={() => setImportMode("connect")}
-                    className={`flex-1 py-2 rounded-xl font-bold transition-all ${
+                    className={`flex-1 py-2 rounded-xl font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                       importMode === "connect"
                         ? "bg-[#0d5c3a] text-white shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
@@ -788,7 +796,7 @@ export default function ConnectorModal({
                   <button
                     type="button"
                     onClick={() => setImportMode("file")}
-                    className={`flex-1 py-2 rounded-xl font-bold transition-all ${
+                    className={`flex-1 py-2 rounded-xl font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                       importMode === "file"
                         ? "bg-[#0d5c3a] text-white shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
@@ -809,7 +817,7 @@ export default function ConnectorModal({
                   <button
                     type="button"
                     onClick={() => setYazioAuthMode("token")}
-                    className={`flex-1 py-2 rounded-xl font-bold transition-all ${
+                    className={`flex-1 py-2 rounded-xl font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                       yazioAuthMode === "token"
                         ? "bg-[#0d5c3a] text-white shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
@@ -820,7 +828,7 @@ export default function ConnectorModal({
                   <button
                     type="button"
                     onClick={() => setYazioAuthMode("login")}
-                    className={`flex-1 py-2 rounded-xl font-bold transition-all ${
+                    className={`flex-1 py-2 rounded-xl font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                       yazioAuthMode === "login"
                         ? "bg-[#0d5c3a] text-white shadow-sm"
                         : "text-slate-600 hover:text-slate-900"
@@ -844,7 +852,7 @@ export default function ConnectorModal({
                         placeholder={isEditing ? t("modal.keepCredentials") : "name@example.com"}
                         value={yazioEmail}
                         onChange={(e) => setYazioEmail(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none"
                       />
                     </div>
                     <div>
@@ -859,7 +867,7 @@ export default function ConnectorModal({
                         placeholder={isEditing ? t("modal.keepUnchanged") : "••••••••"}
                         value={yazioPassword}
                         onChange={(e) => setYazioPassword(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none"
                       />
                     </div>
                   </div>
@@ -881,7 +889,7 @@ export default function ConnectorModal({
                       }
                       value={accessToken}
                       onChange={(e) => setAccessToken(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none font-mono"
                     />
                   </div>
                 )}
@@ -900,7 +908,7 @@ export default function ConnectorModal({
                     value={dawarichUrl}
                     onChange={(e) => setDawarichUrl(e.target.value)}
                     required
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none"
                   />
                 </div>
                 <div>
@@ -919,7 +927,7 @@ export default function ConnectorModal({
                     value={dawarichApiKey}
                     onChange={(e) => setDawarichApiKey(e.target.value)}
                     required={!isEditing}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none font-mono"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none font-mono"
                   />
                 </div>
               </div>
@@ -937,7 +945,7 @@ export default function ConnectorModal({
                     value={providerBaseUrl}
                     onChange={(event) => setProviderBaseUrl(event.target.value)}
                     placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus-ring"
                   />
                   <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
                     {t("modal.icsHint")}{" "}
@@ -992,7 +1000,7 @@ export default function ConnectorModal({
                       value={weatherRequestUrl}
                       onChange={(event) => setWeatherRequestUrl(event.target.value)}
                       placeholder="https://archive-api.open-meteo.com/v1/archive?latitude=52.52&longitude=13.41&hourly=temperature_2m"
-                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs font-mono outline-none"
+                      className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs font-mono outline-none focus-ring"
                     />
                     <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
                       {t("modal.weatherRequestUrlHint")}
@@ -1019,7 +1027,7 @@ export default function ConnectorModal({
                             }
                           }}
                           placeholder={t("modal.weatherPlacePlaceholder")}
-                          className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                          className="flex-1 px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus-ring"
                         />
                         <button
                           type="button"
@@ -1070,7 +1078,7 @@ export default function ConnectorModal({
                           value={weatherLatitude}
                           onChange={(event) => setWeatherLatitude(event.target.value)}
                           placeholder="52.52"
-                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none focus-ring"
                         />
                       </div>
                       <div>
@@ -1084,7 +1092,7 @@ export default function ConnectorModal({
                           value={weatherLongitude}
                           onChange={(event) => setWeatherLongitude(event.target.value)}
                           placeholder="13.41"
-                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                          className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none focus-ring"
                         />
                       </div>
                     </div>
@@ -1098,7 +1106,7 @@ export default function ConnectorModal({
                         value={weatherBaseUrl}
                         onChange={(event) => setWeatherBaseUrl(event.target.value)}
                         placeholder={WEATHER_DEFAULT_BASE_URL}
-                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                        className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus-ring"
                       />
                       <p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">
                         {t("modal.weatherBaseUrlHint")}{" "}
@@ -1129,7 +1137,7 @@ export default function ConnectorModal({
                     value={providerBaseUrl}
                     onChange={(event) => setProviderBaseUrl(event.target.value)}
                     placeholder="https://homeassistant.local:8123"
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm outline-none focus-ring"
                   />
                 </div>
                 <div>
@@ -1144,7 +1152,7 @@ export default function ConnectorModal({
                     placeholder={
                       isEditing ? t("modal.keepTokenPlaceholder") : t("modal.tokenPlaceholder")
                     }
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm font-mono outline-none focus-ring"
                   />
                 </div>
               </div>
@@ -1184,7 +1192,7 @@ export default function ConnectorModal({
                     <select
                       value={pollIntervalHours}
                       onChange={(e) => setPollIntervalHours(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
+                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus-visible:border-[#0d5c3a] outline-none font-bold"
                     >
                       <option value={1} className="bg-white text-slate-900">
                         {t("modal.everyHour")}
@@ -1214,7 +1222,7 @@ export default function ConnectorModal({
                     <select
                       value={lookbackHours}
                       onChange={(e) => setLookbackHours(Number(e.target.value))}
-                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus:border-[#0d5c3a] outline-none font-bold"
+                      className="w-full px-3 py-2 rounded-2xl bg-white border border-slate-200 text-slate-900 text-xs focus-visible:border-[#0d5c3a] outline-none font-bold"
                     >
                       <option value={6} className="bg-white text-slate-900">
                         {t("modal.lastNHours", { count: 6 })}
@@ -1294,7 +1302,7 @@ export default function ConnectorModal({
               <button
                 type="submit"
                 disabled={loading}
-                className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
               >
                 {loading
                   ? t("modal.saving")

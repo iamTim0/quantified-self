@@ -139,7 +139,7 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
                 aria-label={t("analysis.chooseSource")}
                 disabled={saving === metric.metric_type}
                 onChange={(event) => void choose(metric.metric_type, event.target.value)}
-                className="max-w-64 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none disabled:opacity-50"
+                className="max-w-64 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus-ring disabled:opacity-50"
               >
                 <option value="">{t("sources.automatic")}</option>
                 {metric.sources.map((source) => (

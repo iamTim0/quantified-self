@@ -1132,6 +1132,9 @@ export const en = {
   "weekday.saturday": "Saturday",
   "weekday.sunday": "Sunday",
 
+  // Reached by Tab before anything else; invisible until then.
+  "nav.skipToContent": "Skip to content",
+
   // --- end of catalogue ---
 } satisfies Record<string, string>;
 

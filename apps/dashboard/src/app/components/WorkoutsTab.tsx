@@ -183,7 +183,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
             <button
               key={option.value}
               onClick={() => setCategory(option.value)}
-              className={`min-h-9 rounded-lg px-3 py-1 font-semibold transition-all ${
+              className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 category === option.value
                   ? "bg-[#0d5c3a] text-white shadow-sm"
                   : "text-emerald-800 hover:text-emerald-950"
@@ -198,7 +198,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
             <button
               key={option.days}
               onClick={() => setDays(option.days)}
-              className={`min-h-9 rounded-lg px-3 py-1 font-semibold transition-all ${
+              className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 days === option.days
                   ? "bg-slate-900 text-white shadow-sm"
                   : "text-slate-600 hover:text-slate-900"

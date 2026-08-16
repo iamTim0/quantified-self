@@ -414,7 +414,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                 })
               }
               disabled={gapReport.running}
-              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none disabled:opacity-50"
+              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus-ring disabled:opacity-50"
             >
               {[7, 30, 90, 180, 365].map((days) => (
                 <option key={days} value={days}>

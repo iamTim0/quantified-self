@@ -468,7 +468,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
                 disabled={sending}
                 placeholder={t("chat.inputPlaceholder")}
                 aria-label={t("chat.inputLabel")}
-                className="min-h-12 flex-1 resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none transition focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 disabled:bg-slate-50"
+                className="min-h-12 flex-1 resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none [transition-property:color,background-color,border-color,box-shadow] focus-visible:border-emerald-600 focus-visible:ring-2 focus-visible:ring-emerald-100 disabled:bg-slate-50"
               />
               <button
                 type="submit"

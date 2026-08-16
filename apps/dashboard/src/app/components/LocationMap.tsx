@@ -339,7 +339,7 @@ export default function LocationMap({
               <button
                 key={f}
                 onClick={() => setDateFilter(f)}
-                className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold transition-all ${
+                className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                   dateFilter === f
                     ? "bg-[#0d5c3a] text-white shadow-sm"
                     : "text-emerald-800 hover:text-emerald-950"
@@ -374,7 +374,7 @@ export default function LocationMap({
             <select
               value={tileProvider}
               onChange={(e) => setTileProvider(e.target.value as TileProvider)}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none"
+              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring"
             >
               {Object.entries(TILE_PROVIDERS).map(([id, p]) => (
                 <option key={id} value={id}>

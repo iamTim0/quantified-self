@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
+import { useDialog } from "../lib/useDialog";
 
 export interface ConnectorItem {
   id: string;
@@ -172,6 +173,8 @@ export default function ConnectorsPage({
     was looking at the history on. Unmounted means not polling.
   */
   const [runsOpen, setRunsOpen] = useState(false);
+  const closeRuns = React.useCallback(() => setRunsOpen(false), []);
+  const runsDialogRef = useDialog<HTMLDivElement>(runsOpen, closeRuns);
   // Which connector the import dialog is open for, if any.
   const [importDialogFor, setImportDialogFor] = useState<{
     id: string;
@@ -298,14 +301,14 @@ export default function ConnectorsPage({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchConnectors}
-            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm transition-all"
+            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
             <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
             <span>{t("header.refresh")}</span>
           </button>
           <button
             onClick={() => setRunsOpen(true)}
-            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm transition-all"
+            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
             <Clock3 className="w-3.5 h-3.5 text-slate-500" />
             <span>{t("connectors.showRuns")}</span>
@@ -320,7 +323,7 @@ export default function ConnectorsPage({
           </button>
           <button
             onClick={() => setActiveTab("available")}
-            className="flex items-center gap-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white px-4 py-2 rounded-2xl shadow-md shadow-[#0d5c3a]/20 transition-all"
+            className="flex items-center gap-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white px-4 py-2 rounded-2xl shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
             <Plus className="w-4 h-4" />
             <span>{t("connectors.newConnector")}</span>
@@ -338,7 +341,7 @@ export default function ConnectorsPage({
           role="tab"
           aria-selected={activeTab === "current"}
           onClick={() => setActiveTab("current")}
-          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "current"
               ? "bg-[#0d5c3a] text-white shadow-sm"
               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -351,7 +354,7 @@ export default function ConnectorsPage({
           role="tab"
           aria-selected={activeTab === "available"}
           onClick={() => setActiveTab("available")}
-          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold transition-all ${
+          className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "available"
               ? "bg-[#0d5c3a] text-white shadow-sm"
               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
@@ -608,7 +611,7 @@ export default function ConnectorsPage({
                 <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
                 <button
                   onClick={() => setActiveTab("available")}
-                  className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all shadow-md shadow-[#0d5c3a]/20"
+                  className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-[#0d5c3a]/20"
                 >
                   {t("connectors.addFirst")}
                 </button>
@@ -629,7 +632,7 @@ export default function ConnectorsPage({
               return (
                 <div
                   key={`add-${cat.id}`}
-                  className="glass-card flex flex-col justify-between rounded-3xl border border-dashed border-slate-300 bg-white p-6 transition-all hover:-translate-y-1"
+                  className="glass-card flex flex-col justify-between rounded-3xl border border-dashed border-slate-300 bg-white p-6 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,transform] hover:-translate-y-1"
                 >
                   <div>
                     <div className="mb-4 flex items-start justify-between">
@@ -659,7 +662,7 @@ export default function ConnectorsPage({
                   <button
                     onClick={() => onOpenConfigureModal(undefined, cat.id)}
                     disabled={!cat.available}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#0d5c3a] py-2.5 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 transition-all hover:bg-[#08432a] disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#0d5c3a] py-2.5 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-[#08432a] disabled:opacity-40"
                   >
                     <span>
                       {!cat.available
@@ -680,9 +683,11 @@ export default function ConnectorsPage({
       {runsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div
+            ref={runsDialogRef}
             role="dialog"
             aria-modal="true"
             aria-label={t("importOverview.title")}
+            tabIndex={-1}
             className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
           >
             {/* Only the close button: the run overview carries its own heading,

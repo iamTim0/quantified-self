@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 import { LogOut, MoreHorizontal, X } from "lucide-react";
 import { useT } from "../lib/i18n/provider";
+import { useDialog } from "../lib/useDialog";
 import { NAV, PRIMARY_TABS, SECONDARY_TABS, type TabType } from "./navigation";
 
 /**
@@ -32,28 +33,16 @@ export default function MobileTabBar({
 }) {
   const t = useT();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const moreRef = useRef<HTMLButtonElement>(null);
   const inSheet = SECONDARY_TABS.some((tab) => tab === activeTab);
 
-  const closeSheet = useCallback(() => {
-    setSheetOpen(false);
-    // Focus goes back where it came from. Closing via the X unmounts the focused
-    // element, so focus falls to <body> and the next Tab restarts at the top of
-    // the document.
-    moreRef.current?.focus();
-  }, []);
+  const closeSheet = useCallback(() => setSheetOpen(false), []);
 
-  useEffect(() => {
-    if (!sheetOpen) return;
-    // Escape, because `md:hidden` means this sheet also renders in a desktop
-    // window under 768px, where Escape is the reflex — and it is otherwise the
-    // only way out besides a button in the far corner.
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeSheet();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [sheetOpen, closeSheet]);
+  // Escape, the focus trap, and focus handed back to the "More" button on close
+  // — the last of which this component was doing by hand, because closing via
+  // the X unmounts the focused element and focus falls to <body>, restarting the
+  // next Tab at the top of the document. `useDialog` remembers the opener
+  // itself, so the ref this component kept for that purpose is gone.
+  const sheetRef = useDialog<HTMLDivElement>(sheetOpen, closeSheet);
 
   const go = (tab: TabType) => {
     setSheetOpen(false);
@@ -74,13 +63,16 @@ export default function MobileTabBar({
 
       {sheetOpen && (
         <div
+          ref={sheetRef}
           role="dialog"
-          // Deliberately no `aria-modal`. It tells assistive technology to prune
-          // everything outside this subtree, but focus is not trapped and the
-          // shell is not inert — so a screen reader walks straight out into
-          // content it has just been told does not exist. Claiming less is the
-          // honest option until there is a real focus trap.
+          // `aria-modal` now says something true. It tells assistive technology
+          // to prune everything outside this subtree, which was a lie while Tab
+          // walked straight out of the back of the sheet into content a screen
+          // reader had just been told did not exist. `useDialog` traps focus, so
+          // the claim and the behaviour finally agree.
+          aria-modal="true"
           aria-label={t("nav.more")}
+          tabIndex={-1}
           // `pb-[env(safe-area-inset-bottom)]`: on a phone with a home
           // indicator the last row would otherwise sit under it.
           className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-slate-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:hidden"
@@ -162,7 +154,6 @@ export default function MobileTabBar({
           );
         })}
         <button
-          ref={moreRef}
           type="button"
           onClick={() => setSheetOpen((open) => !open)}
           aria-expanded={sheetOpen}

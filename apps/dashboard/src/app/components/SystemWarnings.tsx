@@ -260,7 +260,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
               <button
                 type="button"
                 onClick={() => dismissCode(w.code)}
-                className="shrink-0 rounded-lg p-1 opacity-50 transition hover:opacity-100"
+                className="shrink-0 rounded-lg p-1 opacity-50 transition-opacity hover:opacity-100"
                 aria-label={t("warnings.dismiss")}
                 title={t("warnings.dismissTitle")}
               >

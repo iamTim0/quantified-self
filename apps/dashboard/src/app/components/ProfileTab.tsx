@@ -267,7 +267,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileName(e.target.value)}
                       maxLength={128}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -288,7 +288,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileEmail(e.target.value)}
                       maxLength={320}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -311,7 +311,7 @@ export default function ProfileTab({
                     maxLength={128}
                     required
                     disabled={userRole === "member"}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-500"
                   />
                 </div>
                 {userRole === "member" && (
@@ -341,7 +341,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={profileLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
                 >
                   {profileLoading ? t("profile.saving") : t("profile.save")}
                 </button>
@@ -381,7 +381,7 @@ export default function ProfileTab({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               <button
                 onClick={() => setShowWipeModal(true)}
-                className="py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-all flex items-center justify-center gap-2"
+                className="py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-colors flex items-center justify-center gap-2"
               >
                 <RefreshCw className="w-4 h-4 text-amber-700" />
                 <span>{t("profile.wipeButton")}</span>
@@ -389,7 +389,7 @@ export default function ProfileTab({
 
               <button
                 onClick={() => setShowAccountModal(true)}
-                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
+                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{t("profile.deleteAccountButton")}</span>
@@ -415,7 +415,7 @@ export default function ProfileTab({
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   required
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                 />
               </div>
 
@@ -431,7 +431,7 @@ export default function ProfileTab({
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                   />
                 </div>
 
@@ -446,7 +446,7 @@ export default function ProfileTab({
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20 outline-none transition-all"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -471,7 +471,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white transition-all disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
                 >
                   {passwordLoading ? t("profile.changing") : t("profile.changePassword")}
                 </button>
@@ -533,7 +533,7 @@ export default function ProfileTab({
 
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold transition-all"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold transition-colors"
             >
               <LogOut className="w-4 h-4" />
               <span>{t("profile.signOut")}</span>
@@ -565,7 +565,7 @@ export default function ProfileTab({
               <button
                 onClick={handleWipeDataPoints}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-all disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.wipeRunning") : t("profile.wipeConfirmAction")}
               </button>
@@ -599,7 +599,7 @@ export default function ProfileTab({
               <button
                 onClick={handleAccountWipe}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-all disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.deleteAccountRunning") : t("profile.deleteAccountAction")}
               </button>

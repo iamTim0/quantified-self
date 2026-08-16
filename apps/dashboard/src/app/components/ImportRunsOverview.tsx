@@ -184,7 +184,7 @@ export default function ImportRunsOverview({
                 {progress !== null && isActive && (
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                     <div
-                      className="h-full rounded-full bg-[#0d5c3a] transition-all"
+                      className="h-full rounded-full bg-[#0d5c3a] transition-colors"
                       style={{ width: `${progress}%` }}
                     />
                   </div>
