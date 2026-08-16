@@ -454,7 +454,34 @@ The rest of this section is the second route.
 1. **Drain the broker first.** The JetStream `ingestion` stream must be running
    `WORK_QUEUE` retention; under the old `limits` policy an acked message still
    occupied bytes until `max_age`, which is what filled 4 GiB and made every publish
-   fail. Delete the stream and restart `core-ingest` after deploying.
+   fail. Retention **cannot be changed in place** — the broker rejects it on a live
+   stream — so the stream is deleted and Core recreates it correctly on the next start.
+
+    Neither the `nats:2.10-alpine` image nor any service here ships the `nats` CLI, so
+    run it from a throwaway container on the same network:
+
+    ```bash
+    # 1. Confirm the consumer has nothing left. Both numbers must be 0 before deleting:
+    #    anything else is an event Core has not stored yet, and deleting loses it.
+    docker run --rm --network qs-network natsio/nats-box:latest \
+      nats -s nats://nats:4222 consumer info ingestion core_data_service_group
+
+    # 2. Delete it. Core recreates it with WORK_QUEUE retention when core-ingest starts.
+    docker run --rm --network qs-network natsio/nats-box:latest \
+      nats -s nats://nats:4222 stream rm ingestion -f
+
+    # 3. Restart the consumer so it recreates the stream now rather than at the next event.
+    docker compose -f docker-compose.prod.yml restart core-ingest
+    ```
+
+    Check it took: `docker compose -f docker-compose.prod.yml logs core-ingest | grep -i retention`
+    should print nothing. Core logs a precise error naming the mismatch when the stream is
+    still on `limits`, and it deliberately does not fix it for you — a stream may hold
+    events nobody has stored yet, and destroying those to repair a config problem trades an
+    outage that stops when someone acts for data loss that does not.
+
+    Skipping this step is what reproduces the original incident, and second-resolution heart
+    rate now pushes two to four times the events through that stream.
 2. **Wipe the workspace.** `POST /api/v1/data/wipe` removes `data_points`, the
    rollups, the quarantine and the field reports together. `DELETE
    /api/v1/data/account` goes further and removes the account.
