@@ -217,7 +217,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_ROLE=api
       - SCHEDULER_ENABLED=false
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -263,7 +263,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_ROLE=ingest
       - SCHEDULER_ENABLED=false
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -293,7 +293,7 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qs_dev}:${POSTGRES_PASSWORD:-qs_dev_password}@postgres:5432/${POSTGRES_DB:-quantified_self}
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_ROLE=scheduler
       - SCHEDULER_ENABLED=true
       - ENVIRONMENT=${ENVIRONMENT:-production}
@@ -488,7 +488,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -513,7 +513,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -538,7 +538,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -569,7 +569,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -594,7 +594,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -631,7 +631,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -656,7 +656,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
@@ -681,7 +681,7 @@ services:
       nats:
         condition: service_healthy
     environment:
-      - NATS_URL=nats://nats:4222
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
       - CORE_SERVICE_URL=http://core:8001
       - ANALYSIS_SERVICE_URL=http://analysis:8010
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}

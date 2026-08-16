@@ -190,6 +190,7 @@ deployment itself:
 | `QS_APPLE_HEALTH_PORT` | `8005` | The target of the iPhone automation. |
 | `QS_STREAK_PORT` | `8006` | Inbound Streak data (also routed as `/ingest` through Traefik). |
 | `QS_TRAEFIK_DASHBOARD_PORT` | `8081` | The Traefik dashboard, bound **to loopback only**. |
+| `NATS_URL` | `nats://nats:4222` | Internal JetStream address on the standard Compose/Coolify network. Leave the default unless the broker service name or port is customized. |
 | `POSTGRES_PASSWORD` | `qs_dev_password` | Reachable only inside the compose network. See the note below. |
 | `ALLOWED_ORIGINS` | `https://${PUBLIC_HOST},http://${PUBLIC_HOST}` | The Gateway's CORS origins. The default is its own origin under both schemes — **not** `*`: the Gateway runs with `allow_credentials=True`, and a wildcard makes Starlette reflect back whichever origin asks. Both schemes, because a proxy or tunnel in front of the stack may terminate TLS and `QS_HTTP_PORT` is deliberately http. |
 | `TUNNEL_TOKEN` | required | Your Cloudflare Tunnel token. The production `cloudflared` container is the only public entrypoint. |

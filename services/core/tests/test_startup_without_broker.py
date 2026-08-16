@@ -16,6 +16,7 @@ Maps to Fizzbee Invariants:
 
 import asyncio
 import time
+from types import SimpleNamespace
 
 import pytest
 from core.events import consumer as consumer_module
@@ -138,3 +139,49 @@ async def test_the_app_starts_and_serves_while_the_broker_is_unreachable(monkeyp
     assert response.status_code == 200
     # Generous, but far below the two minutes the previous behaviour took.
     assert elapsed < 20, f"startup took {elapsed:.1f}s with the broker down"
+
+
+@pytest.mark.asyncio
+async def test_nats_publisher_waits_on_the_public_client_state(monkeypatch):
+    """Verifies Fizzbee Invariant: EventualConsistency.
+
+    A successful publisher connection must remain available until NATS closes
+    it; using a nonexistent client attribute would turn every healthy
+    connection into a one-second retry loop.
+    """
+    from core import main as main_module
+
+    class FakeNATSClient:
+        is_closed = False
+
+        def __init__(self):
+            self.close_called = False
+
+        async def close(self):
+            self.close_called = True
+            self.is_closed = True
+
+    client = FakeNATSClient()
+
+    async def fake_connect(_url, **_kwargs):
+        return client
+
+    monkeypatch.setattr(main_module.nats, "connect", fake_connect)
+    app = SimpleNamespace(
+        state=SimpleNamespace(nats_client=None, nats_status="disconnected")
+    )
+    task = asyncio.create_task(main_module._run_nats_publisher_forever(app))
+
+    try:
+        for _ in range(50):
+            if app.state.nats_status == "connected":
+                break
+            await asyncio.sleep(0)
+        assert app.state.nats_status == "connected"
+        assert client.close_called is False
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    assert client.close_called is True

@@ -73,7 +73,7 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `TenantIsolation` | `test_tenant_id_always_present` | Core Data Service |
 | `NoDuplicateData` | `test_deduplication_via_idempotency_key` | Core Data Service |
 | `DataIntegrity` | `test_concurrent_duplicate_messages` | Core Data Service |
-| `EventualConsistency` | `test_network_partition_recovery` | NATS / Importers |
+| `EventualConsistency` | `test_network_partition_recovery`; `test_nats_publisher_waits_on_public_client_state` | NATS / Core API and Importers |
 | `BatchSizeBounded` | `test_batch_size_and_tenant_homogeneity_are_bounded` | Core Data Service / NATS |
 | `TenantHomogeneousBatch` | `test_batch_size_and_tenant_homogeneity_are_bounded` | Core Data Service / NATS |
 | `AckAfterBatchCommit` | `test_ack_follows_commit_and_rollback_keeps_batch_retryable` | Core Data Service / NATS |

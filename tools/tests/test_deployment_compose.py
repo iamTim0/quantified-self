@@ -140,6 +140,32 @@ def test_production_routes_public_traffic_through_cloudflare_and_traefik():
     assert "${QS_BIND_IP:-127.0.0.1}:${QS_HTTP_PORT:-80}:80" in traefik
 
 
+@pytest.mark.parametrize(
+    "service",
+    [
+        "core",
+        "core-ingest",
+        "core-scheduler",
+        "yazio-importer",
+        "dawarich-importer",
+        "whoop-importer",
+        "apple-health-importer",
+        "streak-importer",
+        "home-assistant-importer",
+        "weather-importer",
+        "calendar-importer",
+    ],
+)
+def test_production_nats_clients_have_a_coolify_safe_default(service):
+    """Every production NATS client resolves the broker on a fresh Coolify deploy."""
+    services = service_blocks(REPO_ROOT / "docker-compose.prod.yml")
+
+    assert any(
+        line.strip() == "- NATS_URL=${NATS_URL:-nats://nats:4222}"
+        for line in services[service]
+    ), service
+
+
 def test_production_traefik_has_a_private_container_healthcheck():
     """Keeps Coolify's health signal on the stack's actual public entrypoint."""
     services = service_blocks(REPO_ROOT / "docker-compose.prod.yml")

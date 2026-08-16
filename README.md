@@ -296,7 +296,7 @@ without any backing service.
 | Variable | Description | Production |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string | required |
-| `NATS_URL` | NATS JetStream URL | required |
+| `NATS_URL` | NATS JetStream URL; production Compose defaults to `nats://nats:4222` | required outside the production Compose topology |
 | `ENVIRONMENT` | `production` makes the secret checks below fatal instead of a warning | recommended |
 | `PUBLIC_HOST` | Hostname Traefik serves on. Deliberately absent from this repository | required |
 | `ALLOW_REGISTRATION` | Self-registration. **Defaults to `false`** — create the first account with `python -m core.create_owner` | optional |

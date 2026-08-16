@@ -80,6 +80,7 @@ def test_release_bundle_contains_the_prod_topology():
     """A release must ship the maintained prod compose file."""
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
     assert 'cp docker-compose.prod.yml "$bundle/"' in workflow
+    assert "NATS_URL=nats://nats:4222" in workflow
 
 
 def test_every_published_image_bakes_release_metadata():
