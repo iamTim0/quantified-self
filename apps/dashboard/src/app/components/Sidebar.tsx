@@ -2,24 +2,18 @@
 
 import React from "react";
 import {
-  LayoutDashboard,
-  LineChart,
-  Plug,
   User,
   LogOut,
   Activity,
   ArrowUpRight,
-  ScanSearch,
-  BrainCircuit,
   BookOpen,
-  MessagesSquare,
 } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 
-// Declared in `navigation.ts` beside its label, icon and phone grouping, so a
-// destination cannot be added here and silently forgotten on mobile.
-import type { TabType } from "./navigation";
+// Both desktop and phone navigation render the same registry, so a destination
+// cannot be added to one surface and silently omitted from the other.
+import { NAV, NAV_ORDER, type TabType } from "./navigation";
 
 export type { TabType };
 
@@ -31,14 +25,10 @@ interface SidebarProps {
 
 export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
   const t = useT();
-  const menuItems = [
-    { id: "overview" as TabType, label: t("sidebar.overview"), icon: LayoutDashboard },
-    { id: "explorer" as TabType, label: t("sidebar.explorer"), icon: LineChart },
-    { id: "quality" as TabType, label: t("sidebar.quality"), icon: ScanSearch },
-    { id: "analysis" as TabType, label: t("sidebar.analysis"), icon: BrainCircuit },
-    { id: "chat" as TabType, label: t("sidebar.chat"), icon: MessagesSquare },
-    { id: "connectors" as TabType, label: t("sidebar.connectors"), icon: Plug },
-  ];
+  const menuItems = NAV_ORDER.filter((id) => id !== "profile").map((id) => {
+    const entry = NAV[id];
+    return { id, label: t(entry.labelKey), icon: entry.icon };
+  });
 
   return (
     <aside className="w-64 flex-shrink-0 bg-[#fcfdfe] border-r border-slate-200/80 p-6 flex flex-col justify-between min-h-screen rounded-l-3xl">

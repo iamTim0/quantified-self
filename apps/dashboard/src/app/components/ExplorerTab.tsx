@@ -319,7 +319,6 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       }
 
       setLoading(true);
-      setChartPoints([]);
       try {
         const pointSets = await Promise.all(
           metrics.map((metric) => requestMetricPoints(metric, "day", selectedSource)),
@@ -346,7 +345,6 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       }
 
       setLoading(true);
-      setRawPoints([]);
       try {
         const pointSets = await Promise.all(
           metrics.map((metric) => requestMetricPoints(metric, "raw", selectedSource)),
@@ -479,11 +477,11 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       return knownMetricTypes.map((key) => ({ key, count: 0 }));
     }
 
-    // Last-resort fallback for older deployments that do not expose the type route.
-    const counts = new Map<string, number>();
-    visiblePoints.forEach((p) => counts.set(p.metric_type, (counts.get(p.metric_type) || 0) + 1));
-    return Array.from(counts, ([key, count]) => ({ key, count })).sort((a, b) => b.count - a.count);
-  }, [summary, knownMetricTypes, visiblePoints]);
+    // Do not derive the picker from the points being loaded. The loader updates
+    // that array, and using it here makes the selection change while the request
+    // is in flight, retriggering the loader in a render loop.
+    return [];
+  }, [summary, knownMetricTypes]);
 
   /** The reader's choice, or the busiest few metrics so the chart arrives populated. */
   const selectedMetrics = useMemo(
