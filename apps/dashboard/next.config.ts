@@ -55,6 +55,60 @@ const tileImageHosts = (
   process.env.MAP_TILE_HOSTS ?? "https://tile.openstreetmap.org https://*.basemaps.cartocdn.com"
 ).trim();
 
+/**
+ * The policy, with the development allowances kept out of the built one.
+ *
+ * Three things used to be permitted here that are not needed and are not free:
+ *
+ * * **`'unsafe-eval'`** is a `next dev` requirement — the dev overlay and Fast
+ *   Refresh evaluate code at runtime. A production build does not, so shipping
+ *   it granted the one capability an injected script most wants.
+ * * **Bare `ws:` and `wss:`** match every host on the internet. The dashboard
+ *   opens no WebSocket at all; what those two schemes actually permitted was an
+ *   exfiltration channel to anywhere, which is the specific thing `connect-src`
+ *   exists to close.
+ * * **`fonts.googleapis.com` and `fonts.gstatic.com`** are never contacted:
+ *   `next/font` downloads the faces at build time and serves them from this
+ *   origin. The allowance described an architecture this app moved away from.
+ *
+ * **`'unsafe-inline'` in `script-src` stays, and is the honest remaining gap.**
+ * Next inlines its bootstrap and flight data, so removing it needs a nonce
+ * threaded from middleware through the document — a real change with a real
+ * risk of a blank page, and one worth doing on its own rather than folded in
+ * here. Everything above was removable without touching how the app renders.
+ *
+ * Note that `'unsafe-inline'` in **`style-src`** is a different matter and stays
+ * on its own merits: Tailwind and the chart components set inline styles, and
+ * style injection is not script execution.
+ */
+function contentSecurityPolicy(): string {
+  const isDev = process.env.NODE_ENV === "development";
+
+  const scriptSrc = ["'self'", "'unsafe-inline'", isDev && "'unsafe-eval'"]
+    .filter(Boolean)
+    .join(" ");
+
+  // Loopback belongs to a developer running the Gateway on their own machine.
+  // In a build it is dead weight in a security header.
+  const devConnect = isDev
+    ? " http://127.0.0.1:8000 http://localhost:8000 http://localhost:* http://127.0.0.1:* ws: wss:"
+    : "";
+
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self'",
+    `connect-src 'self' ${connectSrcDomains}${devConnect}`,
+    `img-src 'self' data: blob: ${tileImageHosts}`,
+    // Nothing in this application is framed, and nothing frames it. Stated
+    // rather than left to X-Frame-Options alone, which CSP supersedes.
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join("; ");
+}
+
 const nextConfig: NextConfig = {
   // What the published container runs. Next traces the modules the server
   // actually reaches and writes a self-contained bundle to `.next/standalone`:
@@ -111,14 +165,7 @@ const nextConfig: NextConfig = {
         { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         {
           key: "Content-Security-Policy",
-          value: [
-            "default-src 'self'",
-            "script-src 'self' 'unsafe-eval' 'unsafe-inline'",
-            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-            "font-src 'self' https://fonts.gstatic.com",
-            `connect-src 'self' ${connectSrcDomains} http://127.0.0.1:8000 http://localhost:8000 http://localhost:* http://127.0.0.1:* ws: wss:`,
-            `img-src 'self' data: blob: ${tileImageHosts}`,
-          ].join("; "),
+          value: contentSecurityPolicy(),
         },
       ],
     },

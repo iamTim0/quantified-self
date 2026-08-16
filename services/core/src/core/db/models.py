@@ -17,6 +17,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -883,4 +884,48 @@ class MetricSourcePreference(Base):
             name="fk_metric_source_preferences_tenant_source",
             ondelete="CASCADE",
         ),
+    )
+
+
+class LoginAttempt(Base):
+    """One failed sign-in, counted so that the next one can be refused.
+
+    Nothing throttled the login endpoint: no attempt counter, no lockout, no
+    backoff, and no middleware at the edge either. bcrypt made each guess cost
+    something, which is the only reason a credential-stuffing run against this
+    platform was slow rather than instant.
+
+    **No tenant column, deliberately.** A sign-in has no tenant yet — that is
+    what it is trying to establish — so rule 2 does not apply and cannot: keying
+    on a tenant would mean resolving the account first, which is the very lookup
+    being rate-limited. This is one of the few tables in the platform that is
+    genuinely workspace-agnostic, and it holds no workspace data.
+
+    **Both keys are hashed** (``scope_key`` is a SHA-256 digest, never the value
+    itself). An email address and an IP address are both personal data, and a
+    counter needs only equality — so it gets equality and nothing more. What
+    would otherwise accumulate here is a list of every address someone tried to
+    sign in as, which is a more sensitive record than the thing it protects.
+    Rows older than the window are deleted on the next check; see
+    ``core.security.login_throttle``.
+    """
+
+    __tablename__ = "login_attempts"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    #: ``account`` or ``client`` — which bucket this attempt counts against.
+    scope: Mapped[str] = mapped_column(String(16), nullable=False)
+    #: SHA-256 of the submitted email, or of the client address. Never the value.
+    scope_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        Index("idx_login_attempts_scope_key_time", "scope", "scope_key", "attempted_at"),
+        Index("idx_login_attempts_time", "attempted_at"),
     )

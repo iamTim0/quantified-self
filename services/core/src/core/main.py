@@ -156,6 +156,7 @@ from core.scheduler import (
     has_in_flight_run,
     run_scheduler,
 )
+from core.security import login_throttle
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
@@ -177,6 +178,7 @@ from core.security.crypto import (
     encrypt_secret,
     mask_secret,
 )
+from core.security.login_throttle import client_address
 from core.security.oidc import (
     AUTH_REQUEST_TTL_SECONDS,
     OidcError,
@@ -750,18 +752,66 @@ async def signup(
     }
 
 
+#: Verified against when no account matches, so that both branches of a failed
+#: sign-in cost the same bcrypt work.
+#:
+#: The endpoint used to answer in microseconds for an address it had never seen
+#: and in a few hundred milliseconds for one it had, because `not user or not
+#: verify(...)` short-circuits and never reached bcrypt in the first case. That
+#: difference is measurable over the network, which made the endpoint an
+#: account-enumeration oracle: an attacker learned which addresses were real
+#: before spending a single guess on them.
+#:
+#: Hashed once at import, from a value no account can hold — `bcrypt` truncates
+#: at 72 bytes and never sees this string as a candidate password anyway.
+_DUMMY_PASSWORD_HASH = pwd_context.hash("password-that-belongs-to-no-account")
+
+
 @app.post("/api/v1/auth/login")
 async def login(
+    request: Request,
     req: UserLoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ):
+    client_ip = client_address(request)
+
+    # Before the password is checked, so a throttled caller cannot spend our
+    # bcrypt either. Keyed on the address as *submitted*, so a refusal says
+    # nothing about whether that account exists.
+    decision = await login_throttle.check(session, email=req.email, client_ip=client_ip)
+    if not decision.allowed:
+        await session.commit()
+        logger.warning(
+            "[req_id=%s] Refused a sign-in attempt: too many recent failures.",
+            get_current_request_id(),
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": login_throttle.THROTTLED_CODE,
+                "message": "Too many sign-in attempts. Try again shortly.",
+            },
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
+
     stmt = select(User).where(User.email == req.email)
     res = await session.execute(stmt)
     user = res.scalar_one_or_none()
 
-    if not user or not pwd_context.verify(req.password, user.password_hash):
+    # Always verify something. Against the real hash when the account exists,
+    # against a fixed one when it does not — the point is that both paths pay
+    # bcrypt, so the response time no longer answers "does this address exist".
+    password_ok = pwd_context.verify(
+        req.password, user.password_hash if user else _DUMMY_PASSWORD_HASH
+    )
+
+    if not user or not password_ok:
+        await login_throttle.record_failure(session, email=req.email, client_ip=client_ip)
+        await session.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    await login_throttle.clear_account(session, email=req.email)
 
     tenant_name = (
         await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))

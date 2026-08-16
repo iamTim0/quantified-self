@@ -230,6 +230,86 @@ Two properties of that command are deliberate: the password comes from a prompt 
 argument, and a second call with the same address aborts instead of quietly replacing the existing
 password.
 
+## Repeated failures are refused
+
+Nothing rate-limited sign-in: no attempt counter, no lockout, no backoff, and no middleware at the
+edge either. bcrypt made each guess cost something, which made a credential-stuffing run slow
+rather than impossible.
+
+Failed attempts are now counted in two buckets, because either one alone is walked around.
+
+| Bucket | Ceiling | What it stops |
+| --- | --- | --- |
+| Per account | 10 failures in 15 minutes | Working through a password list against one address |
+| Per client address | 30 failures in 15 minutes | Spraying one common password across many addresses |
+
+The account ceiling is the lower of the two: one person mistyping their own password is a smaller
+number than an office behind a single address all signing in at nine o'clock.
+
+Three properties are worth stating because each one is a way this is usually got wrong:
+
+- **The count is checked before the password is verified**, so a refused caller does not get to
+  spend the server's bcrypt either. Otherwise the endpoint stays a way to burn CPU after it has
+  stopped being a way to guess passwords.
+- **The account bucket keys on the address as submitted**, not on the account that was found. If a
+  throttle only engaged for addresses that exist, `429` would mean "this account is real" — which
+  is the [enumeration oracle](#a-wrong-password-and-an-unknown-address-cost-the-same) closed just
+  below, reintroduced through the status code immediately after being closed through timing.
+- **A successful sign-in clears that account's failures.** The client bucket survives it: one
+  correct password among a hundred wrong ones is what a successful stuffing run looks like, and
+  resetting on that success would hand the attacker the reset.
+
+A refused request answers `429` with a `Retry-After` header and the stable code
+`too_many_attempts` (rule 17). The counter stores a SHA-256 digest of the address and of the
+client, never the values — a plaintext table here would be a record of every address anyone had
+tried to sign in as, which is more sensitive than what it protects.
+
+### Which address counts as the client
+
+Core does not parse `X-Forwarded-For`. Every hop appends to that header, nobody verifies it, and
+the leftmost entry is whatever the caller typed — a limit keyed on it is bypassed by sending a
+header, which is worse than no limit because it reads as coverage.
+
+Instead the **Gateway** determines the address and sends it to Core as `X-Client-IP`, overwriting
+anything the caller supplied. `X-Client-IP` is deliberately absent from the Gateway's
+forward allowlist, so it can only ever be assigned, never relayed. Core has no public route, so a
+header arriving there has passed through the Gateway by construction.
+
+`TRUSTED_PROXY_HOPS` says how many reverse proxies sit in front of the Gateway, and it counts that
+many entries in from the **right** of the chain:
+
+| Value | Deployment |
+| --- | --- |
+| `0` | Nothing in front — the socket peer is used and cannot be forged |
+| `1` (default) | Both Compose files: Traefik terminates and appends the peer it accepted |
+| `2` | A second ingress in front of Traefik — a platform proxy, a CDN |
+
+Setting this too low reads a value the caller controls. Setting it too high, or leaving it at `1`
+behind two proxies, makes every request look like the inner proxy so they all share one bucket —
+the per-account ceiling still applies, since that one does not depend on the network at all.
+
+### A wrong password and an unknown address cost the same
+
+The handler used to read:
+
+```python
+if not user or not pwd_context.verify(req.password, user.password_hash):
+```
+
+Python's `or` short-circuits. When the address was unknown, `not user` was true and **bcrypt never
+ran** — the response came back in microseconds. When the address existed and only the password was
+wrong, bcrypt ran first, costing a few hundred milliseconds. That difference is measurable over the
+network with no special tooling, and it turned the endpoint into an account-enumeration oracle: an
+attacker learned which addresses were real before spending a single guess on them.
+
+A password is now verified on both paths — against the account's hash when there is one, against a
+fixed dummy hash when there is not — so the two branches cost the same. Both answer `401` with an
+identical body.
+
+This matters more here than on a general-purpose site. The addresses in this platform are attached
+to health data, so "does this person have an account" is itself disclosure, quite apart from being
+the reconnaissance step for the guessing the throttle above exists to stop.
+
 ## The server-side route guard
 
 A deep link to `/profile` without a session no longer renders the shell first, waits for
