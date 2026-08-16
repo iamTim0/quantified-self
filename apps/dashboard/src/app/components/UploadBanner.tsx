@@ -33,7 +33,7 @@ export default function UploadBanner() {
   if (jobs.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-4 right-4 z-40 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
+    <div className="pointer-events-none fixed bottom-[calc(4.5rem+env(safe-area-inset-bottom))] right-4 z-40 md:bottom-4 flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2">
       {jobs.map((job) => (
         <article
           key={job.id}

@@ -385,7 +385,7 @@ export default function LocationMap({ apiBase, refreshTrigger }: LocationMapProp
               viewBox="0 0 800 400"
               className="h-[380px] w-full"
               role="img"
-              aria-label="GPS-Route"
+              aria-label={t("map.routeAria")}
             >
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">

@@ -129,6 +129,7 @@ const de: Record<SectionId, ReactNode> = {
         Cookies zu Werbe-, Tracking- oder Analysezwecken verwendet und keine Daten an Dritte
         weitergegeben. Gesetzt werden:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -179,6 +180,7 @@ const de: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         <code>HttpOnly</code> bedeutet, dass die beiden Zugangs-Cookies für JavaScript im Browser
         nicht lesbar sind. Sie können damit auch bei einer Sicherheitslücke in der Oberfläche nicht
@@ -210,6 +212,7 @@ const de: Record<SectionId, ReactNode> = {
         Sie entscheiden selbst, welche Connectoren Sie einrichten. Ohne Einrichtung werden keine
         Daten von Dritten abgerufen. Je nach Auswahl werden verarbeitet:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -256,6 +259,7 @@ const de: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         Rechtsgrundlage: Art. 6 Abs. 1 lit. a und Art. 9 Abs. 2 lit. a DSGVO (Einwilligung), erteilt
         durch die Einrichtung des jeweiligen Connectors.
@@ -560,6 +564,7 @@ const en: Record<SectionId, ReactNode> = {
         advertising, tracking or analytics, and no data is passed to third parties. The cookies set
         are:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -610,6 +615,7 @@ const en: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         <code>HttpOnly</code> means the two access cookies cannot be read by JavaScript in the
         browser. They therefore cannot be read out and passed to a third party even if the interface
@@ -640,6 +646,7 @@ const en: Record<SectionId, ReactNode> = {
         You decide which connectors you set up. Without one, no data is retrieved from any third
         party. Depending on your choices, the following is processed:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -686,6 +693,7 @@ const en: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         Legal basis: Art. 6 (1) (a) and Art. 9 (2) (a) GDPR (consent), given by setting up the
         connector in question.

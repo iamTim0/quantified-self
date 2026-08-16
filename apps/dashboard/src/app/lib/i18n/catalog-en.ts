@@ -33,6 +33,8 @@ export const en = {
   "lang.switchTo": "Switch to {language}",
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
+  "nav.primary": "Main navigation",
+  "nav.more": "More",
   "sidebar.menu": "Menu",
   "sidebar.general": "General",
   "sidebar.overview": "Dashboard",
@@ -281,6 +283,7 @@ export const en = {
   "chart.refresh": "Refresh the chart",
   "chart.emptyPeriod": "No data points in the selected period.",
   "chart.emptyFilter": "No data points for the current filter.",
+  "map.routeAria": "Map of the recorded route",
   "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",
   "map.loading": "Loading GPS data…",
   "map.today": "Today",

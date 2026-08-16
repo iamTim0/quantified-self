@@ -31,6 +31,8 @@ export const de: Record<MessageKey, string> = {
   "lang.switchTo": "Auf {language} umstellen",
 
   // ── Sidebar ─────────────────────────────────────────────────────────────────
+  "nav.primary": "Hauptnavigation",
+  "nav.more": "Mehr",
   "sidebar.menu": "Menü",
   "sidebar.general": "Allgemein",
   "sidebar.overview": "Übersicht",
@@ -282,6 +284,7 @@ export const de: Record<MessageKey, string> = {
   "chart.refresh": "Diagramm aktualisieren",
   "chart.emptyPeriod": "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
   "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
+  "map.routeAria": "Karte der aufgezeichneten Route",
   "map.tilesFailed":
     "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
   "map.loading": "GPS-Daten werden geladen…",

@@ -1058,7 +1058,7 @@ export default function ConnectorModal({
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
                           {t("modal.weatherLatitude")}
@@ -1176,7 +1176,7 @@ export default function ConnectorModal({
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#0d5c3a] flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5" /> {t("modal.intervalSection")}
                 </h3>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className="block text-[11px] text-slate-500 font-bold mb-1 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-[#0d5c3a]" /> {t("modal.syncFrequency")}

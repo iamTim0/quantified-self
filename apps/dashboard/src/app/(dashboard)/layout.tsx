@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { TabType } from "../components/Sidebar";
+import MobileTabBar from "../components/MobileTabBar";
 import TopHeader from "../components/TopHeader";
 import ConnectorModal from "../components/ConnectorModal";
 import { ConnectorItem } from "../components/ConnectorsPage";
@@ -304,14 +305,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // the transfer. `UploadBanner` is what a minimised upload looks like.
     <UploadProvider>
       <ShellProvider value={shellValue}>
-        <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
+        <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
           {/* Main Outer App Window Shell */}
-          <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
-            {/* Sidebar Navigation with URL Sync */}
-            <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onLogout={handleLogout} />
+          <div className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row">
+            {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
+                column of icons sits outside the thumb's reach — `MobileTabBar`
+                takes over below `md`. */}
+            <div className="hidden md:flex">
+              <Sidebar
+                activeTab={activeTab}
+                onTabChange={handleTabChange}
+                onLogout={handleLogout}
+              />
+            </div>
 
-            {/* Main Content Area */}
-            <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+            {/* Main Content Area. The bottom padding on small screens is the tab
+                bar's height plus the home-indicator inset: without it the last
+                element of every page is unreachable behind the bar. */}
+            <main className="flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8">
               <TopHeader
                 userName={userName}
                 userEmail={userEmail}
@@ -358,6 +369,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <UploadBanner />
+
+          <MobileTabBar
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onLogout={handleLogout}
+          />
         </div>
       </ShellProvider>
     </UploadProvider>

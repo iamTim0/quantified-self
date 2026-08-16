@@ -17,14 +17,11 @@ import {
 
 import { useT } from "../lib/i18n/provider";
 
-export type TabType =
-  | "overview"
-  | "explorer"
-  | "quality"
-  | "analysis"
-  | "chat"
-  | "connectors"
-  | "profile";
+// Declared in `navigation.ts` beside its label, icon and phone grouping, so a
+// destination cannot be added here and silently forgotten on mobile.
+import type { TabType } from "./navigation";
+
+export type { TabType };
 
 interface SidebarProps {
   activeTab: TabType;
