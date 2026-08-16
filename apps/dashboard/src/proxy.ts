@@ -40,10 +40,11 @@ const ACCESS_COOKIE = "qs_access";
  * one shell that renders `AuthScreen` or the dashboard depending on the session.
  * Redirecting it would loop.
  */
+const PUBLIC_PATHS = new Set(["/", "/healthz"]);
 const PUBLIC_PREFIXES = ["/auth", "/legal"];
 
 function isPublic(pathname: string): boolean {
-  if (pathname === "/") return true;
+  if (PUBLIC_PATHS.has(pathname)) return true;
   return PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 

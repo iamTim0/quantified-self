@@ -22,6 +22,18 @@ import {
  */
 
 test.describe("route guard", () => {
+  test("the local health endpoint stays reachable without a session", async ({ request }) => {
+    /** Verifies Fizzbee Invariant: UnhealthyDependencyIsVisible. */
+    const response = await request.get("/healthz", { maxRedirects: 0 });
+
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(await response.json()).toMatchObject({
+      status: "ok",
+      service: "qs-dashboard",
+    });
+  });
+
   test("a signed-out deep link is redirected before the page renders", async ({ page }) => {
     await page.goto("/profile");
 
