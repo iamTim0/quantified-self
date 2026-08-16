@@ -10,6 +10,7 @@ dependencies = [
     "httpx>=0.27.0",
     "pydantic>=2.6.0",
     "pydantic-settings>=2.2.0",
+    "cryptography>=42.0.0",
     # Mints the service credential this presents to Core's gRPC endpoint.
     "pyjwt>=2.13.0",
     # MCP SDK v2 implements the stateless 2026-07-28 protocol. The transport

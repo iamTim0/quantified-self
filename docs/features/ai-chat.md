@@ -58,12 +58,19 @@ protocol remains stateless and re-authenticates independently on every tool call
 4. Open the device-login URL and enter the displayed one-time code.
 5. Return to the chat page. It detects the completed login and enables the composer.
 
-Codex owns this device flow. The platform never asks for a ChatGPT password and never
-receives the resulting token. A local checkout requires `codex` on `PATH` and stores
-the login in the operating-system keyring. The Analysis image already contains the
-official Codex CLI. Containers use a RAM-backed `CODEX_HOME`; a container restart
-therefore requires device login again instead of writing a plaintext token to a
-volume. See the official [OpenAI authentication documentation](https://platform.openai.com/docs/api-reference/authentication).
+Codex owns this [device authentication flow](https://developers.openai.com/codex/auth).
+The platform never asks for a ChatGPT password and never parses or logs the resulting
+credential. A local checkout requires `codex` on `PATH` and uses Codex's configured
+credential store. The official [Codex configuration reference](https://developers.openai.com/codex/config-reference)
+documents `file`, `keyring`, and `auto` as credential-store options.
+
+The Analysis image uses `file` because a container normally has no usable OS keyring. Its
+live `CODEX_HOME` remains a RAM-backed tmpfs, while the platform stores only an opaque,
+Fernet-encrypted copy of `auth.json` in the private `analysis-auth` named volume. The
+encrypted copy is restored before the app server starts and replaced atomically after an
+authenticated ChatGPT account check. The encryption key comes from `ENCRYPTION_KEY` (the
+published development fallback is used only for local development). Plaintext credentials
+are never written to the persistent volume, platform database, broker, or logs.
 
 ## Configuration
 
@@ -76,7 +83,9 @@ volume. See the official [OpenAI authentication documentation](https://platform.
 | `CHAT_THREAD_TTL_MINUTES` | `720` | Lifetime of a signed thread token |
 | `CHAT_TURN_TIMEOUT_SECONDS` | `300` | Maximum duration of one model turn |
 | `CHAT_MAX_MESSAGE_CHARS` | `8000` | Maximum user-message size |
-| `CHAT_CREDENTIALS_STORE` | `keyring` | Codex credential store; Compose sets `file` only on a RAM-backed filesystem |
+| `CHAT_CREDENTIALS_STORE` | `keyring` | Codex credential store (`keyring`, `file`, or `auto`) |
+| `ENCRYPTION_KEY` | development fallback | Fernet key material used to encrypt the opaque Codex auth cache |
+| `CHAT_AUTH_BLOB_PATH` | temporary service path | Path for the encrypted auth blob; Compose uses the private `analysis-auth` volume |
 
 The Codex process is launched with web search disabled, network disabled, approvals
 disabled, an empty inherited shell environment, an isolated configuration home, and a
@@ -114,7 +123,7 @@ tenant-scoped Gateway/Core APIs; chat introduces no alternate store or hidden da
 - A Codex thread belongs to the Analysis process that created it. A multi-replica
   deployment needs sticky routing for `/api/v1/chat/turn` or a dedicated external
   app-server tier. The stateless MCP endpoint itself needs neither.
-- Container credentials are intentionally volatile. Device login is repeated after
-  an Analysis container restart.
+- The encrypted auth cache is private to the Analysis deployment. Rotating `ENCRYPTION_KEY`
+  intentionally invalidates the old cache and requires device login again.
 - The chat is read-only. It cannot configure connectors, import data, edit points, or
   change account settings.

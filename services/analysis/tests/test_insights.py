@@ -16,6 +16,7 @@ import pytest
 from analysis.insights import (
     ANALYSIS_VERSION,
     MIN_SAMPLE_FOR_CORRELATION,
+    benjamini_hochberg,
     build_daily_series,
     compare_periods,
     correlation_p_value,
@@ -131,6 +132,47 @@ def test_p_value_is_bounded():
             assert 0.0 <= p <= 1.0, (r, n, p)
 
 
+def test_benjamini_hochberg_returns_monotone_q_values_in_input_order():
+    """Verifies the multiple-testing correction used by correlation_pairs."""
+    p_values = [0.04, 0.001, 0.02, 0.8]
+    q_values = benjamini_hochberg(p_values)
+
+    assert q_values == pytest.approx([0.053333, 0.004, 0.04, 0.8], abs=1e-5)
+    ordered = [
+        q_values[index]
+        for index, _ in sorted(enumerate(p_values), key=lambda item: item[1])
+    ]
+    assert ordered == sorted(ordered)
+
+
+def test_correlation_exposes_bh_q_value_and_adjusted_significance():
+    """The raw p-value remains available, but the decision uses the q-value."""
+    values = [float(i) for i in range(30)]
+    result = correlation_pairs(
+        {"steps": series_from(values), "sleep": series_from(values)}
+    )[0]
+
+    assert result["multiple_testing_method"] == "benjamini_hochberg"
+    assert result["q_value"] == pytest.approx(result["p_value"])
+    assert result["interpretation_code"] == "correlation_association"
+    assert result["interpretation_params"]["metric_a"] == "sleep"
+    assert isinstance(result["caveat_codes"], list)
+
+
+def test_correlation_caveats_have_stable_codes_and_params():
+    """Dashboard localization branches on stable codes, never English prose."""
+    xs = [float(i) for i in range(12)]
+    ys = [1.0, 2.0, 1.5, 2.5, 2.0, 3.0, 2.7, 3.4, 3.1, 3.8, 3.3, 4.0]
+
+    result = correlation_pairs({"a": series_from(xs), "b": series_from(ys)})[0]
+
+    assert any(item["code"] == "small_overlap" for item in result["caveat_codes"])
+    for caveat in result["caveat_codes"]:
+        assert set(caveat) == {"code", "params"}
+        assert isinstance(caveat["code"], str)
+        assert isinstance(caveat["params"], dict)
+
+
 @pytest.mark.parametrize(
     ("r", "expected"),
     [(0.05, "very weak"), (0.3, "weak"), (0.5, "moderate"), (0.7, "strong"), (0.95, "very strong")],
@@ -155,6 +197,8 @@ def test_lagged_correlation_finds_a_shifted_relationship():
     assert match is not None
     assert match["lag_days"] == 2
     assert abs(match["coefficient"]) > 0.9
+    assert match["significance_method"] == "unadjusted_exploratory"
+    assert match["interpretation_code"] == "lagged_association"
 
 
 def test_lagged_correlation_states_that_order_is_not_cause():

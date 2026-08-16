@@ -325,6 +325,8 @@ services:
       # Must match Core's, or Analysis cannot authenticate to the gRPC API.
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
       - CHAT_CREDENTIALS_STORE=file
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      - CHAT_AUTH_BLOB_PATH=/var/lib/qs-analysis/codex-auth.enc
       - CODEX_HOME=/run/qs-codex
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8010/health', timeout=3)"]
@@ -334,6 +336,8 @@ services:
       start_period: 20s
     tmpfs:
       - /run/qs-codex:mode=0700
+    volumes:
+      - analysis-auth:/var/lib/qs-analysis
     networks:
       - qs-network
 
@@ -717,6 +721,7 @@ volumes:
   # their data when the application containers are recreated.
   pgdata:
   natsdata:
+  analysis-auth:
 
 networks:
   qs-network:

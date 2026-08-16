@@ -290,6 +290,9 @@ async def _account_status() -> ChatStatus:
             plan_type=None,
             code="SUBSCRIPTION_REQUIRED",
         )
+    persist_auth = getattr(codex, "persist_auth", None)
+    if callable(persist_auth):
+        await persist_auth()
     return ChatStatus(
         available=True,
         authenticated=True,

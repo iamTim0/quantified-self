@@ -276,6 +276,24 @@ async def latest_successful_report(
     ).scalars().first()
 
 
+async def latest_failed_report(
+    session: AsyncSession, tenant_id: str, kind: str
+) -> ReportRun | None:
+    """The newest failed attempt, kept separate from the last good answer."""
+    return (
+        await session.execute(
+            select(ReportRun)
+            .where(
+                ReportRun.tenant_id == tenant_id,
+                ReportRun.kind == kind,
+                ReportRun.status == "error",
+            )
+            .order_by(ReportRun.finished_at.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+
+
 async def has_in_flight_report(
     session: AsyncSession, tenant_id: str, kind: str, *, now: datetime
 ) -> bool:
@@ -892,7 +910,12 @@ async def run_report_scheduler(*, tick_seconds: int = REPORT_TICK_SECONDS) -> No
             logger.exception("Report tick failed; continuing")
 
 
-def report_payload(run: ReportRun | None, *, stale: bool) -> dict[str, Any]:
+def report_payload(
+    run: ReportRun | None,
+    *,
+    stale: bool,
+    error: ReportRun | None = None,
+) -> dict[str, Any]:
     """The wire shape of a stored report.
 
     `computed_at` and `stale` travel with the result on purpose: a reader shown a
@@ -900,7 +923,7 @@ def report_payload(run: ReportRun | None, *, stale: bool) -> dict[str, Any]:
     date on it is the reason on-the-fly computation felt safer than it was.
     """
     if run is None:
-        return {
+        payload: dict[str, Any] = {
             "status": "never_computed",
             "stale": True,
             "computed_at": None,
@@ -908,13 +931,24 @@ def report_payload(run: ReportRun | None, *, stale: bool) -> dict[str, Any]:
             "params": {},
             "result": None,
         }
-    return {
-        "status": "ready",
-        "stale": stale,
-        "computed_at": run.finished_at.isoformat() if run.finished_at else None,
-        "covers_data_through": (
-            run.covers_data_through.isoformat() if run.covers_data_through else None
-        ),
-        "params": run.params or {},
-        "result": run.payload,
-    }
+    else:
+        payload = {
+            "status": "ready",
+            "stale": stale,
+            "computed_at": run.finished_at.isoformat() if run.finished_at else None,
+            "covers_data_through": (
+                run.covers_data_through.isoformat() if run.covers_data_through else None
+            ),
+            "params": run.params or {},
+            "result": run.payload,
+        }
+    payload["error"] = (
+        {
+            "code": error.message_code or "report_failed",
+            "params": error.message_params or {},
+            "message": error.message,
+        }
+        if error is not None
+        else None
+    )
+    return payload

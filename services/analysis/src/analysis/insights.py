@@ -31,7 +31,7 @@ from shared_schemas.metrics import METRIC_CATALOG, Cadence
 
 # Bumped whenever the maths changes, so a stored or cached result can be traced back
 # to the code that produced it.
-ANALYSIS_VERSION = "2.0.0"
+ANALYSIS_VERSION = "2.1.0"
 
 MIN_SAMPLE_FOR_CORRELATION = 10
 MIN_SAMPLE_FOR_TREND = 7
@@ -39,6 +39,7 @@ MIN_SAMPLE_FOR_WEEKDAY = 14
 MIN_SAMPLE_FOR_BASELINE = 14
 SIGNIFICANCE_ALPHA = 0.05
 MAX_LAG_DAYS = 7
+MULTIPLE_TESTING_METHOD = "benjamini_hochberg"
 
 Series = dict[str, dict[str, float]]
 
@@ -149,6 +150,34 @@ def correlation_p_value(r: float, n: int) -> float:
     return min(1.0, _t_distribution_sf(t, n - 2))
 
 
+def benjamini_hochberg(p_values: list[float]) -> list[float]:
+    """Return Benjamini–Hochberg false-discovery-rate q-values.
+
+    The correlation view tests every eligible metric pair as one family. A raw
+    p <= .05 threshold would therefore make a large matrix look more
+    convincing simply because it contains more pairs. BH controls the expected
+    false-discovery proportion for the selected family while retaining more power
+    than a family-wise correction. The returned values preserve the input order.
+
+    This is deliberately dependency-free: Analysis does not otherwise need SciPy
+    and the formula is small enough to keep auditable next to the p-value code.
+    """
+    if not p_values:
+        return []
+
+    ranked = sorted(enumerate(p_values), key=lambda item: item[1])
+    q_values = [1.0] * len(p_values)
+    running = 1.0
+    count = len(p_values)
+    for rank, (index, p_value) in enumerate(reversed(ranked), start=1):
+        # Reversing gives the monotone minimum over all ranks at or above this
+        # one: q_(i) = min(q_(i+1), p_(i) * m / i).
+        original_rank = count - rank + 1
+        running = min(running, p_value * count / original_rank)
+        q_values[index] = min(1.0, running)
+    return q_values
+
+
 def strength_label(r: float) -> str:
     a = abs(r)
     if a < 0.2:
@@ -205,6 +234,7 @@ def correlation_pairs(
     usually an outlier or a non-linear relationship — and is surfaced as a caveat.
     """
     results: list[dict[str, Any]] = []
+    raw_p_values: list[float] = []
     metrics = sorted(series)
 
     for i, left in enumerate(metrics):
@@ -221,19 +251,23 @@ def correlation_pairs(
             p_value = correlation_p_value(headline, n)
 
             caveats: list[str] = []
+            caveat_codes: list[dict[str, Any]] = []
             if abs(pearson - spearman) > 0.25:
                 caveats.append(
                     "Pearson and Spearman disagree noticeably — possibly an "
                     "outlier, or a relationship that is not linear."
                 )
+                caveat_codes.append({"code": "pearson_spearman_disagree", "params": {}})
             if n < min_sample * 2:
                 caveats.append(
                     f"Only {n} days in common — the result carries little weight."
                 )
+                caveat_codes.append({"code": "small_overlap", "params": {"sample_size": n}})
             if p_value > alpha:
                 caveats.append(
                     "Not statistically significant: the relationship may be chance."
                 )
+                caveat_codes.append({"code": "raw_not_significant", "params": {}})
 
             results.append(
                 {
@@ -248,6 +282,14 @@ def correlation_pairs(
                     "sample_size": n,
                     "p_value": round(p_value, 5),
                     "significant": bool(p_value <= alpha),
+                    "interpretation_code": "correlation_association",
+                    "interpretation_params": {
+                        "metric_a": left,
+                        "metric_b": right,
+                        "direction": _direction_phrase(headline),
+                        "strength": strength_label(headline),
+                        "sample_size": n,
+                    },
                     "interpretation": (
                         f"{left} and {right} go together: days with higher values for "
                         f"{left} come on average with {_direction_phrase(headline)} values "
@@ -255,7 +297,39 @@ def correlation_pairs(
                         "That is a relationship, not a cause."
                     ),
                     "caveats": caveats,
+                    "caveat_codes": caveat_codes,
                 }
+            )
+            raw_p_values.append(p_value)
+
+    q_values = benjamini_hochberg(raw_p_values)
+    for result, q_value in zip(results, q_values):
+        result["q_value"] = round(q_value, 5)
+        result["multiple_testing_method"] = MULTIPLE_TESTING_METHOD
+        # "significant" is the adjusted decision exposed to the dashboard.
+        # Keep raw p-values in the payload so a reader can distinguish the two.
+        result["significant"] = bool(q_value <= alpha)
+        params = result["interpretation_params"]
+        params["q_value"] = round(q_value, 5)
+        params["significant"] = result["significant"]
+        if q_value > alpha and result["p_value"] <= alpha:
+            result["caveats"].append(
+                "Not statistically significant after the Benjamini–Hochberg "
+                "multiple-testing adjustment, although the raw p-value is below "
+                "0.05."
+            )
+            result["caveat_codes"].append(
+                {"code": "bh_not_significant_raw_below_alpha", "params": {}}
+            )
+        elif q_value > alpha and not any(
+            "not statistically significant" in caveat for caveat in result["caveats"]
+        ):
+            result["caveats"].append(
+                "Not statistically significant after the Benjamini–Hochberg "
+                "multiple-testing adjustment."
+            )
+            result["caveat_codes"].append(
+                {"code": "bh_not_significant", "params": {}}
             )
 
     return sorted(results, key=lambda r: abs(r["coefficient"]), reverse=True)
@@ -299,9 +373,18 @@ def lagged_correlations(
                         "strength_pct": round(abs(r) * 100, 1),
                         "sample_size": len(xs),
                         "p_value": round(correlation_p_value(r, len(xs)), 5),
+                        "significance_method": "unadjusted_exploratory",
                     }
             if best and abs(best["coefficient"]) >= 0.3:
                 best["significant"] = best["p_value"] <= SIGNIFICANCE_ALPHA
+                best["interpretation_code"] = "lagged_association"
+                best["interpretation_params"] = {
+                    "metric_a": best["metric_a"],
+                    "metric_b": best["metric_b"],
+                    "lag_days": best["lag_days"],
+                    "strength": strength_label(best["coefficient"]),
+                    "sample_size": best["sample_size"],
+                }
                 best["interpretation"] = (
                     f"{best['metric_a']} goes together with {best['metric_b']} "
                     f"{best['lag_days']} day(s) later "
@@ -367,6 +450,13 @@ def trend_for_metric(
         "last_day": days[-1],
         "mean": round(my, 3),
         "moving_average_7d": moving_average(values, 7),
+        "interpretation_code": "trend_summary",
+        "interpretation_params": {
+            "direction": direction,
+            "change_pct": round(change_pct, 1),
+            "sample_size": n,
+            "uncertain": r_squared < 0.3,
+        },
         "interpretation": (
             f"Over {n} days the course is {direction}"
             + (
@@ -430,7 +520,12 @@ def weekday_pattern(
     weekday_values = [v for i in range(5) for v in buckets.get(i, [])]
     weekend_values = [v for i in (5, 6) for v in buckets.get(i, [])]
     if len(weekday_values) < 3 or len(weekend_values) < 2:
-        return {"per_weekday": per_day, "weekend_effect": None}
+        return {
+            "per_weekday": per_day,
+            "weekend_effect": None,
+            "interpretation_code": "routine_weekday_only",
+            "interpretation_params": {},
+        }
 
     wd, we = fmean(weekday_values), fmean(weekend_values)
     delta_pct = ((we - wd) / abs(wd) * 100) if wd else 0.0
@@ -441,6 +536,15 @@ def weekday_pattern(
             "weekday_mean": round(wd, 3),
             "weekend_mean": round(we, 3),
             "difference_pct": round(delta_pct, 1),
+            "interpretation_code": (
+                "routine_weekend_difference"
+                if abs(delta_pct) >= 5
+                else "routine_no_weekend_difference"
+            ),
+            "interpretation_params": {
+                "difference_pct": round(delta_pct, 1),
+                "direction": "higher" if delta_pct > 0 else "lower",
+            },
             "interpretation": (
                 f"At the weekend the value averages "
                 f"{abs(delta_pct):.0f}% {'higher' if delta_pct > 0 else 'lower'} "
@@ -497,6 +601,13 @@ def detect_anomalies(
         "normal_range_high": round(centre + 2 * scale, 3),
         "sample_size": len(values),
         "anomalies": anomalies[-20:],
+        "interpretation_code": "anomaly_summary",
+        "interpretation_params": {
+            "normal_range_low": round(centre - 2 * scale, 3),
+            "normal_range_high": round(centre + 2 * scale, 3),
+            "anomaly_count": len(anomalies),
+            "sample_size": len(values),
+        },
         "interpretation": (
             f"Typical range: {round(centre - 2 * scale, 1)} to "
             f"{round(centre + 2 * scale, 1)}. "
@@ -559,6 +670,14 @@ def compare_periods(
         "difference_pct": round(delta_pct, 1),
         "p_value": round(p, 5),
         "significant": bool(p <= SIGNIFICANCE_ALPHA),
+        "interpretation_code": "period_comparison",
+        "interpretation_params": {
+            "difference_pct": round(delta_pct, 1),
+            "direction": "higher" if delta > 0 else "lower",
+            "sample_size_a": len(a_values),
+            "sample_size_b": len(b_values),
+            "significant": bool(p <= SIGNIFICANCE_ALPHA),
+        },
         "interpretation": (
             f"In the second period the mean is {abs(delta_pct):.0f}% "
             f"{'higher' if delta > 0 else 'lower'}. "
