@@ -361,6 +361,40 @@ python -m core.retention --tenant-id <tenant-id>
 Rollups are retained when raw points are purged. Keep the dry-run output with the maintenance
 record so a user can distinguish intentional retention from an incomplete provider export.
 
+### Tagging workouts imported before sessions existed
+
+Points stored before session ids were introduced do not gain one by being re-imported, and that
+is deliberate rather than a gap: the idempotency key hashes the tenant, source, metric and
+timestamp — not the metadata — so Core's `ON CONFLICT DO NOTHING` leaves the existing row exactly
+as it was. Making it `DO UPDATE` instead would let an out-of-order NATS redelivery overwrite newer
+metadata with older, which would quietly make the exact-once guarantee untrue.
+
+So it is an explicit, tenant-scoped command, and like every job here it never runs on startup:
+
+```bash
+python -m core.session_backfill --tenant-id <tenant-id> --dry-run
+python -m core.session_backfill --tenant-id <tenant-id>
+```
+
+**It only writes an id it can prove a real import would write.** Where the provider stated its own
+identifier and that identifier survived in the metadata — Streak's `workout_id`, WHOOP's
+`whoop_id`, Health Auto Export's `workout_id` — the digest depends on nothing but the connector
+and that id, so it is reproducible exactly.
+
+Everything else is **counted and named, not guessed**. An Apple Health *archive* workout carries
+no provider id at all (Apple's export has none), and a push route fix carries only the workout
+name; deriving an id for either means guessing which timestamp was the session's start. A wrong
+guess is worse than leaving the row alone, because it writes an id the next real import would not
+match and one workout becomes two. Untagged points still group by timestamp and title on the
+workout list, and the interface marks that grouping as approximate.
+
+Read the dry run before the real one: it prints how many points would be tagged and how many are
+being left, with the reason for each source.
+
+If the workspace can simply be re-imported, prefer that — see
+[Rebuilding a workspace from scratch](#rebuilding-a-workspace-from-scratch). Everything then
+arrives tagged from the start and this command has nothing to do.
+
 ## Backup
 
 PostgreSQL is the only thing that has to be backed up — every other service is stateless.
@@ -402,10 +436,20 @@ the connector credentials is worthless.
 ## Rebuilding a workspace from scratch
 
 Session identifiers, and the resolution a point was stored at, are written at ingest
-and are **not** retrofitted: rule 4 keys a point on `(tenant, source, metric,
-timestamp)` and Core inserts `ON CONFLICT DO NOTHING`, so a re-import never rewrites
-an existing row's metadata. Where the history is not worth keeping, a wipe and a
-re-import is cleaner and faster than any backfill.
+and are **not** retrofitted by re-importing: rule 4 keys a point on `(tenant, source,
+metric, timestamp)` and Core inserts `ON CONFLICT DO NOTHING`, so sending the same
+reading again never rewrites the row that is already there.
+
+Two ways out of that, and they suit different situations:
+
+- **Where the history matters**, [`python -m core.session_backfill`](#tagging-workouts-imported-before-sessions-existed)
+  adds session ids to the points whose provider identifier survived in their metadata,
+  and names the ones it will not guess at. It cannot restore the *resolution* a point
+  was stored at — that is what the reading was, not a label on it.
+- **Where it does not**, a wipe and a re-import is cleaner, faster and complete: it
+  fixes the resolution too, which no backfill can.
+
+The rest of this section is the second route.
 
 1. **Drain the broker first.** The JetStream `ingestion` stream must be running
    `WORK_QUEUE` retention; under the old `limits` policy an acked message still
