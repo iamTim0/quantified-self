@@ -373,16 +373,6 @@ services:
       # request that reaches the Gateway on its own port. In this network the UI
       # is the container; the code default is loopback, for a local checkout.
       - DASHBOARD_URL=http://dashboard:3000
-      # How many reverse proxies sit in front of the Gateway. It decides which
-      # entry of `X-Forwarded-For` the sign-in throttle counts a caller as, taken
-      # from the right — the left of that header is whatever the caller typed.
-      #
-      # 1 is this file: Traefik terminates and appends the peer it accepted. Put
-      # a platform ingress or a CDN in front of Traefik and this must become 2,
-      # or every request looks like that proxy and they all share one bucket. The
-      # per-account limit still applies either way; only the per-client one is
-      # affected. See docs/features/authentication.md.
-      - TRUSTED_PROXY_HOPS=${TRUSTED_PROXY_HOPS:-1}
       - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET; it must match Core's or no session will verify}
       # Defaults to this deployment's own origin, not `*`. The file this replaced
