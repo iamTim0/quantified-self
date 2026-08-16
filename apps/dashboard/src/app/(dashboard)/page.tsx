@@ -12,17 +12,13 @@ import { useShell } from "./shell";
  * opens this page with, which is what happened — last night, yesterday, and how
  * much of today has arrived.
  *
- * The two queries are gone with it. A single `/api/v1/data/day` call per day
- * replaces them, bounded to that day and aggregated server-side, so the page no
- * longer transfers a thousand raw points to bucket them in the browser.
+ * The two queries are gone with it, and so is the third: the story is a stored
+ * report now, so opening this page reads one row. Aggregating a day of points on
+ * every visit was the same mistake in a smaller frame — better than shipping a
+ * thousand raw points to the browser, still work repeated for an answer that
+ * cannot change until an import does.
  */
 export default function OverviewPage() {
-  const { apiBase, refreshTrigger, onUnauthorized } = useShell();
-  return (
-    <DailyStory
-      apiBase={apiBase}
-      refreshTrigger={refreshTrigger}
-      onUnauthorized={onUnauthorized}
-    />
-  );
+  const { apiBase } = useShell();
+  return <DailyStory apiBase={apiBase} />;
 }

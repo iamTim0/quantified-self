@@ -27,7 +27,7 @@ import { usePolling } from "./polling";
 export type ReportParams = Record<string, number | string | boolean>;
 
 /** What a report kind is called on the wire. */
-export type ReportKind = "gaps" | "conflicts" | "insights";
+export type ReportKind = "gaps" | "conflicts" | "insights" | "day";
 
 export interface ReportEnvelope<T> {
   kind: ReportKind;

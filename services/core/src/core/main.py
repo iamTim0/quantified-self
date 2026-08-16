@@ -139,6 +139,7 @@ from core.reports import (
     report_is_stale,
     report_payload,
     resolve_primary_source,
+    resolved_report_params,
     run_report_scheduler,
     tenant_data_high_water,
 )
@@ -2948,8 +2949,13 @@ async def refresh_report(
     kind = _validated_report_kind(kind)
     now = datetime.now(timezone.utc)
     request_id = get_current_request_id() or str(uuid.uuid4())
-    params = (
-        {key: value for key, value in (req.model_dump() if req else {}).items() if value is not None}
+    params = resolved_report_params(
+        kind,
+        {
+            key: value
+            for key, value in (req.model_dump() if req else {}).items()
+            if value is not None
+        },
     )
 
     # Waited on, not tried: a second click must re-check the guard after the first

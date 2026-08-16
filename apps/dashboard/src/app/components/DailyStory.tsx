@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { CircleAlert, Clock, RefreshCw } from "lucide-react";
-import { apiFetch } from "../lib/api";
 import { useI18n, type MessageKey } from "../lib/i18n/provider";
 import { describeMetric } from "../lib/metrics/catalog";
+import { useReport } from "../lib/reports";
+import ReportStatus from "./ReportStatus";
 
 /**
  * One day, told in the order it happened.
@@ -20,6 +21,13 @@ import { describeMetric } from "../lib/metrics/catalog";
  * data at the top and invite every gap to be read as a fact. Each lane says when
  * its connector last ran, so "no workout" and "the workout connector last ran at
  * 06:00" are distinguishable — which on the old page they were not.
+ *
+ * **Read from a stored run, not computed on arrival.** This page first fetched
+ * both days on every visit, which meant aggregating a day of points — on a
+ * workspace with per-minute sampling and a location trace, six figures of rows,
+ * twice — for an answer that cannot change until an import does. It is a report
+ * like the gap and conflict scans now: the reader sees the last good answer and
+ * a note that newer data has arrived, rather than waiting for a scan.
  */
 
 type LaneMetric = {
@@ -84,68 +92,11 @@ const LANE_LABEL: Record<string, MessageKey> = {
   custom: "day.laneCustom",
 };
 
-function useDay(
-  apiBase: string,
-  dayOffset: number,
-  refreshTrigger: number,
-  onUnauthorized: () => void,
-) {
-  const [story, setStory] = useState<DayStory | null>(null);
-  const [loading, setLoading] = useState(true);
-  // Distinguished from "no data": this page replaced the overview outright, so a
-  // failing endpoint used to leave a heading above nothing at all, with no way
-  // for a reader to tell a quiet day from a broken one.
-  const [failed, setFailed] = useState(false);
-
-  const load = useCallback(async () => {
-    const target = new Date();
-    target.setDate(target.getDate() - dayOffset);
-    const iso = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, "0")}-${String(
-      target.getDate(),
-    ).padStart(2, "0")}`;
-    // The reader's own offset. Day rollups are bucketed in UTC, so without this
-    // a reader two hours east is shown a day running 22:00 to 22:00.
-    const offset = -new Date().getTimezoneOffset();
-    try {
-      const response = await apiFetch(
-        `${apiBase}/api/v1/data/day?day=${iso}&offset_minutes=${offset}`,
-      );
-      // A 401 that survived `apiFetch`'s own refresh means the session is over.
-      // Swallowing it left a permanently blank page where the previous overview
-      // signed the reader out.
-      if (response.status === 401) {
-        onUnauthorized();
-        return;
-      }
-      if (!response.ok) {
-        setFailed(true);
-        return;
-      }
-      setStory((await response.json()) as DayStory);
-      setFailed(false);
-    } catch {
-      setFailed(true);
-    } finally {
-      setLoading(false);
-    }
-  }, [apiBase, dayOffset, onUnauthorized]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      await Promise.resolve();
-      if (!cancelled) await load();
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // `refreshTrigger` belongs here: the shell bumps it when the tab becomes
-    // visible again and after a sync finishes. Without it the one page whose
-    // premise is "today, as far as importers have reported" was frozen at mount.
-  }, [load, refreshTrigger]);
-
-  return { story, loading, failed, reload: load };
-}
+/** Both days as one stored answer, which is what the run holds. */
+type DayReport = {
+  offset_minutes: number;
+  days: DayStory[];
+};
 
 function MetricValue({ metric }: { metric: LaneMetric }) {
   const { t, formatNumber, locale } = useI18n();
@@ -272,22 +223,17 @@ function DaySection({ story, heading }: { story: DayStory; heading: string }) {
   );
 }
 
-export default function DailyStory({
-  apiBase,
-  refreshTrigger = 0,
-  onUnauthorized,
-}: {
-  apiBase: string;
-  refreshTrigger?: number;
-  onUnauthorized: () => void;
-}) {
+export default function DailyStory({ apiBase }: { apiBase: string }) {
   const { t } = useI18n();
-  // Yesterday first: it is the finished day. Today is partial by construction,
-  // and leading with it puts the least complete data at the top.
-  const yesterday = useDay(apiBase, 1, refreshTrigger, onUnauthorized);
-  const today = useDay(apiBase, 0, refreshTrigger, onUnauthorized);
+  const report = useReport<DayReport>(apiBase, "day");
+  const [yesterday, today] = report.result?.days ?? [];
 
-  if (yesterday.loading && today.loading) {
+  // The reader's own offset, so a run computed for somebody else's midnight is
+  // recomputed rather than shown. The server records it with the run.
+  const offset = -new Date().getTimezoneOffset();
+  const requestFresh = () => void report.refresh({ offset_minutes: offset });
+
+  if (report.loading) {
     return (
       <div className="flex items-center gap-2 p-6 text-sm text-slate-500">
         <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -297,32 +243,31 @@ export default function DailyStory({
 
   return (
     <div className="space-y-8">
-      <header>
-        <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
-          {t("day.eyebrow")}
-        </p>
-        <h1 className="text-3xl font-extrabold text-slate-900">{t("day.title")}</h1>
-        <p className="mt-2 text-sm text-slate-500">{t("day.subtitle")}</p>
+      <header className="space-y-3">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
+            {t("day.eyebrow")}
+          </p>
+          <h1 className="text-3xl font-extrabold text-slate-900">{t("day.title")}</h1>
+          <p className="mt-2 text-sm text-slate-500">{t("day.subtitle")}</p>
+        </div>
+        <ReportStatus
+          computedAt={report.computed_at}
+          stale={report.stale}
+          running={report.running}
+          neverComputed={report.status === "never_computed"}
+          onRefresh={requestFresh}
+        />
       </header>
 
-      {yesterday.failed && today.failed ? (
-        <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-5">
-          <p className="text-sm text-red-800">{t("day.loadFailed")}</p>
-          <button
-            type="button"
-            onClick={() => {
-              void yesterday.reload();
-              void today.reload();
-            }}
-            className="min-h-11 rounded-xl border border-red-300 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-100"
-          >
-            {t("day.retry")}
-          </button>
-        </div>
+      {report.status === "never_computed" && !report.running ? (
+        <p className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600">
+          {t("report.pendingFirstRun")}
+        </p>
       ) : null}
 
-      {yesterday.story && <DaySection story={yesterday.story} heading={t("day.yesterday")} />}
-      {today.story && <DaySection story={today.story} heading={t("day.today")} />}
+      {yesterday && <DaySection story={yesterday} heading={t("day.yesterday")} />}
+      {today && <DaySection story={today} heading={t("day.today")} />}
     </div>
   );
 }

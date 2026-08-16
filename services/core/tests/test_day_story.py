@@ -23,6 +23,13 @@ from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tena
 app.state.testing = True
 
 
+async def _sleep() -> None:
+    """A short wait, for a report Core computes in a background task."""
+    import asyncio
+
+    await asyncio.sleep(0.1)
+
+
 async def _client() -> AsyncClient:
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
 
@@ -395,3 +402,73 @@ async def test_a_gps_trace_does_not_crowd_the_evening_off_the_timeline():
         assert [event["title"] for event in body["events"]] == ["Evening ride"]
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_the_day_report_holds_both_days_and_records_which_day_it_is_for():
+    """The story is a stored run, so opening the page reads a row, not a scan."""
+
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id)
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        at = day_window(yesterday, 0).start + timedelta(hours=9)
+        await _point(tenant_id, source_id, "steps", at, 7000.0)
+
+        async with await _client() as client:
+            started = await client.post(
+                "/api/v1/data/reports/day/refresh",
+                json={"offset_minutes": 0},
+                headers=auth_headers(tenant_id),
+            )
+            assert started.status_code == 202
+
+            body = {}
+            for _ in range(40):
+                body = (
+                    await client.get(
+                        "/api/v1/data/reports/day", headers=auth_headers(tenant_id)
+                    )
+                ).json()
+                if body["status"] == "ready":
+                    break
+                await _sleep()
+
+        assert body["status"] == "ready", body
+        days = body["result"]["days"]
+        # Yesterday first, then today — the order the page renders.
+        assert len(days) == 2
+        assert days[0]["day"] == yesterday.isoformat()
+        assert days[0]["is_today"] is False
+        assert days[1]["is_today"] is True
+        # The day it answers for is recorded, which is what the rollover check reads.
+        assert body["params"]["day"] == days[1]["day"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+def test_a_day_report_goes_stale_at_the_readers_midnight():
+    """The one kind that expires on a clock rather than on an import.
+
+    At one minute past midnight a run computed yesterday still holds the wrong
+    two days. No data changed, so the data-driven trigger sees nothing, and the
+    twelve-hour age backstop would leave the landing page naming the wrong days
+    for most of a morning.
+    """
+    from core.db.models import ReportRun
+    from core.reports import day_report_has_rolled_over
+
+    today = datetime.now(timezone.utc).date()
+
+    current = ReportRun(kind="day", params={"day": today.isoformat(), "offset_minutes": 0})
+    assert day_report_has_rolled_over(current) is False
+
+    rolled = ReportRun(
+        kind="day",
+        params={"day": (today - timedelta(days=1)).isoformat(), "offset_minutes": 0},
+    )
+    assert day_report_has_rolled_over(rolled) is True
+
+    # A run from before the day was recorded cannot be trusted to be current.
+    legacy = ReportRun(kind="day", params={})
+    assert day_report_has_rolled_over(legacy) is True

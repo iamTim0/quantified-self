@@ -69,12 +69,12 @@ logger = logging.getLogger(__name__)
 
 #: The kinds a tenant can hold. `insights` is written by the Analysis Service;
 #: the other two are computed in this module.
-REPORT_KINDS: tuple[str, ...] = ("gaps", "conflicts", "insights")
+REPORT_KINDS: tuple[str, ...] = ("gaps", "conflicts", "insights", "day")
 
 #: Kinds Core computes itself. `insights` is deliberately absent — Core does not
 #: do data science, and the one time this endpoint did, it queried SQL straight
 #: from a request handler and had to be moved out again.
-CORE_COMPUTED_KINDS: tuple[str, ...] = ("gaps", "conflicts")
+CORE_COMPUTED_KINDS: tuple[str, ...] = ("gaps", "conflicts", "day")
 
 #: Statuses that mean a run for this kind is already under way.
 IN_FLIGHT_STATUSES = ("queued", "running")
@@ -302,15 +302,43 @@ async def expire_stale_report_runs(
     return result.rowcount or 0
 
 
+def day_report_has_rolled_over(run: ReportRun) -> bool:
+    """Whether a stored day report is describing the wrong two days.
+
+    The daily story is the only kind whose answer expires on a clock rather than
+    on an import: at one minute past midnight a report computed yesterday still
+    holds the 14th and the 15th and calls the 15th "today". No data changed, so
+    nothing else here would notice, and the twelve-hour age backstop would leave
+    the landing page naming the wrong days for most of a morning.
+
+    The reader's own midnight, not UTC's — the offset the run was computed for is
+    stored with it, which is exactly what that offset is for.
+    """
+    params = run.params or {}
+    stored_day = params.get("day")
+    if not isinstance(stored_day, str):
+        # A run from before the day was recorded. Treat as rolled over rather
+        # than assume: recomputing once is cheap, showing the wrong day is not.
+        return True
+    offset = int(params.get("offset_minutes") or 0)
+    reader_today = (
+        datetime.now(timezone.utc) + timedelta(minutes=offset)
+    ).date().isoformat()
+    return stored_day != reader_today
+
+
 def report_is_stale(run: ReportRun | None, high_water: datetime | None) -> bool:
     """Whether a stored report no longer describes the data that exists.
 
-    Three ways to be stale, and the third is the one a data-driven trigger alone
-    would miss: no report at all; data finished arriving after the report saw it;
-    or the report is simply old, which catches an input that changed without an
-    import (an adopted mapping rule, a deleted connector).
+    Four ways to be stale, and only the first two are about data: no report at
+    all; data finished arriving after the report saw it; the report is simply
+    old, which catches an input that changed without an import (an adopted
+    mapping rule, a deleted connector); or — for the daily story alone — the
+    calendar day it was computed for has ended.
     """
     if run is None or run.finished_at is None:
+        return True
+    if run.kind == "day" and day_report_has_rolled_over(run):
         return True
     if high_water is not None and (
         run.covers_data_through is None or run.covers_data_through < high_water
@@ -415,6 +443,29 @@ async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueR
                 )
             )
     return due
+
+
+def resolved_report_params(
+    kind: str, params: dict[str, Any] | None
+) -> dict[str, Any]:
+    """The parameters a run is opened with, completed for the kinds that need it.
+
+    A day report records the day it answers for, stamped when the run opens so
+    the stored value is right even if the computation straddles midnight. It is
+    what `day_report_has_rolled_over` reads; without it every day report looks
+    permanently stale.
+
+    Shared, because there are two entry points — the scheduler and a manual
+    refresh — and stamping in only one of them is how the manual path ended up
+    storing a run with no day at all.
+    """
+    resolved = dict(params or {})
+    if kind == "day":
+        offset = int(resolved.get("offset_minutes") or 0)
+        resolved["day"] = (
+            (datetime.now(timezone.utc) + timedelta(minutes=offset)).date().isoformat()
+        )
+    return resolved
 
 
 async def open_report_run(
@@ -603,7 +654,43 @@ async def compute_core_report(
     if kind == "conflicts":
         tolerance = float(params.get("tolerance") or DEFAULT_CONFLICT_TOLERANCE)
         return await compute_conflicts_report(session, tenant_id, tolerance=tolerance)
+    if kind == "day":
+        return await compute_day_report(session, tenant_id, params)
     raise ValueError(f"{kind} is not computed by Core")
+
+
+async def compute_day_report(
+    session: AsyncSession, tenant_id: str, params: dict[str, Any]
+) -> dict[str, Any]:
+    """Yesterday and today in one stored answer.
+
+    Both days in one report rather than one report per day, because that is what
+    the page renders and because a report is one row per (tenant, kind). Storing
+    a row per calendar day would make the table grow without bound to hold
+    answers nobody will ask for again.
+
+    The offset is recorded in the run's params, which is what lets the staleness
+    check know when the reader's midnight has passed.
+    """
+    # Imported here rather than at module scope: `core.daily_story` imports this
+    # module for the primary-source resolver, so binding the name at load time
+    # would be a cycle.
+    from core.daily_story import build_day_story
+
+    offset_minutes = int(params.get("offset_minutes") or 0)
+    today = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date()
+    yesterday = today - timedelta(days=1)
+
+    return {
+        "tenant_id": tenant_id,
+        "offset_minutes": offset_minutes,
+        "days": [
+            await build_day_story(
+                session, tenant_id, day=day, offset_minutes=offset_minutes
+            )
+            for day in (yesterday, today)
+        ],
+    }
 
 
 async def run_core_report(
@@ -621,7 +708,7 @@ async def run_core_report(
     because a scheduled tick must go on to the next tenant and a reader must go
     on seeing the last good answer.
     """
-    resolved = dict(params or {})
+    resolved = resolved_report_params(kind, params)
     run = await open_report_run(
         session,
         tenant_id=tenant_id,
