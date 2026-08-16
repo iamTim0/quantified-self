@@ -457,28 +457,43 @@ The rest of this section is the second route.
    fail. Retention **cannot be changed in place** — the broker rejects it on a live
    stream — so the stream is deleted and Core recreates it correctly on the next start.
 
-    Neither the `nats:2.10-alpine` image nor any service here ships the `nats` CLI, so
-    run it from a throwaway container on the same network:
+    Neither the `nats:2.10-alpine` image nor any service here ships the `nats` CLI. Core does
+    ship `nats-py`, so run it from the container that already has it — no extra image, no
+    network flags, nothing to pull:
 
     ```bash
-    # 1. Confirm the consumer has nothing left. Both numbers must be 0 before deleting:
-    #    anything else is an event Core has not stored yet, and deleting loses it.
-    docker run --rm --network qs-network natsio/nats-box:latest \
-      nats -s nats://nats:4222 consumer info ingestion core_data_service_group
-
-    # 2. Delete it. Core recreates it with WORK_QUEUE retention when core-ingest starts.
-    docker run --rm --network qs-network natsio/nats-box:latest \
-      nats -s nats://nats:4222 stream rm ingestion -f
-
-    # 3. Restart the consumer so it recreates the stream now rather than at the next event.
-    docker compose -f docker-compose.prod.yml restart core-ingest
+    CORE=$(sudo docker ps -qf name=core-ingest)
+    sudo docker exec $CORE python -c "
+    import asyncio, nats
+    async def m():
+        nc = await nats.connect('nats://nats:4222'); js = nc.jetstream()
+        ci = await js.consumer_info('ingestion', 'core_data_service_group')
+        assert ci.num_pending == 0 and ci.num_ack_pending == 0, 'unacked data present'
+        await js.delete_stream('ingestion'); print('deleted')
+        await nc.close()
+    asyncio.run(m())"
+    sudo docker restart $CORE
     ```
 
-    Check it took: `docker compose -f docker-compose.prod.yml logs core-ingest | grep -i retention`
-    should print nothing. Core logs a precise error naming the mismatch when the stream is
-    still on `limits`, and it deliberately does not fix it for you — a stream may hold
-    events nobody has stored yet, and destroying those to repair a config problem trades an
-    outage that stops when someone acts for data loss that does not.
+    **The assertion is the safety check, not a formality.** Anything unacknowledged is an event
+    Core has not written to Postgres yet, and deleting the stream would lose it. Zero on both
+    counters means everything in the stream is already stored, so the delete costs nothing. If it
+    trips, wait for the consumer to drain and run it again rather than removing the assertion.
+
+    The restart is what makes Core recreate the stream: `core-ingest` holds the subscription, and
+    after the delete it is subscribed to something that no longer exists. On startup it recreates
+    the stream with `WORK_QUEUE` retention.
+
+    Check it took — this should print nothing:
+
+    ```bash
+    sudo docker logs $CORE 2>&1 | grep -i retention
+    ```
+
+    Core logs a precise error naming the mismatch when the stream is still on `limits`, and it
+    deliberately does not repair it for you: a stream may hold events nobody has stored yet, and
+    destroying those to fix a configuration problem trades an outage that stops when someone acts
+    for data loss that does not.
 
     Skipping this step is what reproduces the original incident, and second-resolution heart
     rate now pushes two to four times the events through that stream.
