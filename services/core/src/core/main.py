@@ -96,6 +96,9 @@ from core.deployment_warnings import account_warnings, deployment_warnings
 from core.events.consumer import (
     MAX_QUARANTINED_NAMES,
     MAX_QUARANTINED_ROWS,
+    IngestionConsumerController,
+    IngestionResetError,
+    ingestion_retention_warning,
     run_consumer_forever,
 )
 from core.grpc.server import serve_grpc
@@ -404,15 +407,32 @@ async def lifespan(app: FastAPI):
     # authentication or the dashboard.
     app.state.nats_client = None
     app.state.nats_status = "disconnected"
+    ingestion_controller = IngestionConsumerController()
+    app.state.ingestion_controller = ingestion_controller
 
     def _remember(nc):
         app.state.nats_client = nc
         app.state.nats_status = "connected"
 
+    def _consumer_ready(nc, connection_lost):
+        ingestion_controller.connected(nc, connection_lost)
+
+    def _consumer_lost(nc):
+        ingestion_controller.disconnected(nc)
+        if getattr(app.state, "nats_client", None) is nc:
+            app.state.nats_client = None
+            app.state.nats_status = "disconnected"
+
     consumer_task = None
     publisher_task = None
     if role in {"all", "ingest"}:
-        consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+        consumer_task = asyncio.create_task(
+            run_consumer_forever(
+                _remember,
+                on_connection_ready=_consumer_ready,
+                on_connection_lost=_consumer_lost,
+            )
+        )
     if role in {"api", "scheduler"}:
         # API-triggered imports and scheduled imports both publish task messages,
         # but neither role should consume the ingest stream. Keeping this small
@@ -569,6 +589,8 @@ async def readiness_check(response: Response):
     components: dict[str, str] = {"database": "ok"}
     if role in {"all", "api", "ingest", "scheduler"}:
         components["nats"] = "unknown"
+    if role in {"all", "ingest"}:
+        components["ingestion_consumer"] = "unknown"
     if role in {"all", "api"}:
         components["grpc"] = "unknown"
     try:
@@ -584,6 +606,12 @@ async def readiness_check(response: Response):
             components["nats"] = "ok"
         else:
             components["nats"] = "disconnected"
+
+    if "ingestion_consumer" in components:
+        controller = getattr(app.state, "ingestion_controller", None)
+        components["ingestion_consumer"] = (
+            "ok" if controller is not None and controller.status == "connected" else "disconnected"
+        )
 
     if "grpc" in components:
         grpc_server = getattr(app.state, "grpc_server", None)
@@ -1953,8 +1981,56 @@ async def list_system_warnings(session: AsyncSession = Depends(get_session)):
                 cookie_secure=settings.COOKIE_SECURE,
             )
         )
+        if stream_warning := await ingestion_retention_warning(
+            getattr(app.state, "nats_client", None)
+        ):
+            warnings.append(stream_warning)
 
     return {"warnings": [w.as_dict() for w in warnings]}
+
+
+@app.post("/api/v1/data/system/ingestion/reset")
+async def reset_ingestion_stream(
+    _principal: Principal = Depends(require_role("owner")),
+):
+    """Reset the shared ingestion stream only from its consumer-owning role."""
+    if settings.CORE_ROLE.lower() not in {"all", "ingest"}:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "code": "ingestion_reset_unavailable",
+                "detail": "The ingestion reset is served only by Core's ingest role.",
+            },
+        )
+
+    controller = getattr(app.state, "ingestion_controller", None)
+    if controller is None:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "ingestion_consumer_unavailable",
+                "detail": "The ingestion consumer is not available; no stream was deleted.",
+            },
+        )
+
+    try:
+        result = await controller.reset()
+    except IngestionResetError as exc:
+        logger.warning(
+            "[req_id=%s] Ingestion stream reset refused code=%s num_pending=%s num_ack_pending=%s",
+            get_current_request_id(),
+            exc.code,
+            exc.num_pending,
+            exc.num_ack_pending,
+        )
+        return JSONResponse(status_code=exc.status_code, content=exc.as_dict())
+
+    logger.info(
+        "[req_id=%s] Ingestion stream reset completed code=%s",
+        get_current_request_id(),
+        result["code"],
+    )
+    return result
 
 
 @app.get("/api/v1/data/oidc/identities")

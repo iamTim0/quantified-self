@@ -139,6 +139,29 @@ export const en = {
   "warning.development_environment.detail":
     "That is why the services start despite the points above. With a production-like ENVIRONMENT, Core and the Gateway refuse to start while any value is a published default.",
   "warning.development_environment.action": "Set ENVIRONMENT=production for a real deployment.",
+  "warning.ingestion_stream_retention_mismatch.title":
+    "The ingestion stream uses the wrong retention policy",
+  "warning.ingestion_stream_retention_mismatch.detail":
+    "The stream currently uses {actual_retention}; it must use {expected_retention}. An owner can reset it after confirming that the queue is empty.",
+  "warning.ingestion_stream_retention_mismatch.action":
+    "An owner can reset the ingestion stream from the dashboard after confirming the queue is empty.",
+  "warning.ingestion_stream_retention_mismatch.confirm":
+    "Reset the ingestion stream now? Core will proceed only when both pending counters are zero, and importer publishing will pause briefly during the reset.",
+  "warning.ingestion_stream_retention_mismatch.controlDetail":
+    "This control is available only to the workspace owner. Core checks both consumer counters, pauses normal importer subjects, then recreates the stream and subscription.",
+  "warning.ingestion_stream_retention_mismatch.reset": "Reset ingestion stream",
+  "warning.ingestion_stream_retention_mismatch.resetBusy": "Resetting ingestion stream…",
+  "warning.ingestion_stream_retention_mismatch.resetDone": "Stream reset complete",
+  "warning.ingestion_stream_retention_mismatch.resetSuccess":
+    "The stream was recreated and the consumer subscription is ready.",
+  "warning.ingestion_stream_retention_mismatch.resetPendingTitle":
+    "Reset refused: events are still pending",
+  "warning.ingestion_stream_retention_mismatch.resetPendingDetail":
+    "Nothing was deleted. Pending events: {pending}; awaiting acknowledgement: {ackPending}.",
+  "warning.ingestion_stream_retention_mismatch.countUnavailable": "unavailable",
+  "warning.ingestion_stream_retention_mismatch.resetFailedTitle": "Reset could not be completed",
+  "warning.ingestion_stream_retention_mismatch.resetFailedDetail":
+    "Nothing was deleted. Review the operator fallback in the documentation before trying again.",
 
   // ── Daily story ────────────────────────────────────────────────────────────
   "day.eyebrow": "Your day",

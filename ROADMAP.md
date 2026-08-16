@@ -211,7 +211,7 @@ Raised by an audit against the Chrome web-quality skills, Vercel's Web Interface
 Cloudflare's security-audit methodology. The exploitable findings are fixed; these are what was
 deliberately deferred, each with the reason it was not done at the time.
 
-- [ ] **Reset the ingestion stream from the dashboard.** Switching JetStream retention needs the
+- [x] **Reset the ingestion stream from the dashboard.** Switching JetStream retention needs the
   stream deleted and recreated, and that is currently a documented `docker exec` on the host
   ([operations](docs/operations.md#rebuilding-a-workspace-from-scratch)) — the one deploy step that
   reproduces the 4 GiB outage if it is skipped. The endpoint has to live on **`core-ingest`**, not

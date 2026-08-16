@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useEffect, useState, useSyncExternalStore } from "react";
-import { AlertTriangle, ShieldAlert, Info, X } from "lucide-react";
+import { AlertTriangle, ShieldAlert, Info, RefreshCw, X } from "lucide-react";
 
 import { apiFetch } from "../lib/api";
-import { useT, type MessageKey, type Translate } from "../lib/i18n/provider";
+import { useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
 import { en } from "../lib/i18n/catalog-en";
 
 /**
@@ -44,6 +44,15 @@ interface SystemWarning {
   /** Values for the placeholders in this warning's translation, if it has any. */
   params?: Record<string, string> | null;
 }
+
+interface ResetError {
+  code: string;
+  numPending?: number;
+  numAckPending?: number;
+}
+
+const INGESTION_RETENTION_WARNING = "ingestion_stream_retention_mismatch";
+const INGESTION_PENDING_ERROR = "ingestion_reset_pending_events";
 
 const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: MessageKey }> = {
   critical: {
@@ -178,9 +187,17 @@ function dismissCode(code: string): void {
   invalidateDismissed();
 }
 
-export default function SystemWarnings({ apiBase }: { apiBase: string }) {
-  const t = useT();
+export default function SystemWarnings({
+  apiBase,
+  userRole,
+}: {
+  apiBase: string;
+  userRole: string;
+}) {
+  const { t, formatNumber } = useI18n();
   const [warnings, setWarnings] = useState<SystemWarning[]>([]);
+  const [resetState, setResetState] = useState<"idle" | "busy" | "success" | "error">("idle");
+  const [resetError, setResetError] = useState<ResetError | null>(null);
   const dismissed = useSyncExternalStore(
     subscribeDismissed,
     dismissedSnapshot,
@@ -215,6 +232,42 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
   const visible = warnings.filter((w) => !dismissed.has(w.code));
   if (visible.length === 0) return null;
 
+  const resetIngestion = async (): Promise<void> => {
+    if (resetState === "busy") return;
+    if (!window.confirm(t("warning.ingestion_stream_retention_mismatch.confirm"))) return;
+
+    setResetState("busy");
+    setResetError(null);
+    try {
+      const response = await apiFetch(`${apiBase}/api/v1/data/system/ingestion/reset`, {
+        method: "POST",
+      });
+      const body: unknown = await response.json().catch(() => null);
+      if (!response.ok) {
+        const payload = body && typeof body === "object" ? body : {};
+        const code =
+          "code" in payload && typeof payload.code === "string"
+            ? payload.code
+            : "ingestion_stream_reset_failed";
+        const numPending =
+          "num_pending" in payload && typeof payload.num_pending === "number"
+            ? payload.num_pending
+            : undefined;
+        const numAckPending =
+          "num_ack_pending" in payload && typeof payload.num_ack_pending === "number"
+            ? payload.num_ack_pending
+            : undefined;
+        setResetError({ code, numPending, numAckPending });
+        setResetState("error");
+        return;
+      }
+      setResetState("success");
+    } catch {
+      setResetError({ code: "ingestion_stream_reset_failed" });
+      setResetState("error");
+    }
+  };
+
   return (
     <section className="mb-6 space-y-3" aria-label={t("warnings.region")}>
       {visible.map((w) => {
@@ -223,6 +276,7 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
           <div
             key={w.code}
             className={`rounded-2xl border px-4 py-3.5 ${style.box}`}
+            data-warning-code={w.code}
             // assertive for critical: a public signing key or a public password
             // is worth interrupting a screen reader for.
             role={w.severity === "critical" ? "alert" : "status"}
@@ -257,16 +311,84 @@ export default function SystemWarnings({ apiBase }: { apiBase: string }) {
                   </a>
                 )}
               </div>
-              <button
-                type="button"
-                onClick={() => dismissCode(w.code)}
-                className="shrink-0 rounded-lg p-1 opacity-50 transition-opacity hover:opacity-100"
-                aria-label={t("warnings.dismiss")}
-                title={t("warnings.dismissTitle")}
-              >
-                <X className="w-4 h-4" aria-hidden />
-              </button>
+              {w.code !== INGESTION_RETENTION_WARNING && (
+                <button
+                  type="button"
+                  onClick={() => dismissCode(w.code)}
+                  className="shrink-0 rounded-lg p-1 opacity-50 transition-opacity hover:opacity-100"
+                  aria-label={t("warnings.dismiss")}
+                  title={t("warnings.dismissTitle")}
+                >
+                  <X className="w-4 h-4" aria-hidden />
+                </button>
+              )}
             </div>
+
+            {w.code === INGESTION_RETENTION_WARNING &&
+              userRole === "owner" &&
+              w.params?.owner_only === "true" && (
+                <div className="mt-4 border-t border-current/15 pt-3" data-reset-state={resetState}>
+                  <p className="text-sm leading-relaxed">
+                    {t("warning.ingestion_stream_retention_mismatch.controlDetail")}
+                  </p>
+                  <button
+                    type="button"
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={() => void resetIngestion()}
+                    disabled={resetState === "busy" || resetState === "success"}
+                  >
+                    <RefreshCw
+                      className={`h-4 w-4 ${resetState === "busy" ? "animate-spin" : ""}`}
+                      aria-hidden
+                    />
+                    {resetState === "busy"
+                      ? t("warning.ingestion_stream_retention_mismatch.resetBusy")
+                      : resetState === "success"
+                        ? t("warning.ingestion_stream_retention_mismatch.resetDone")
+                        : t("warning.ingestion_stream_retention_mismatch.reset")}
+                  </button>
+
+                  {resetState === "success" && (
+                    <p className="mt-2 text-sm font-semibold" role="status">
+                      {t("warning.ingestion_stream_retention_mismatch.resetSuccess")}
+                    </p>
+                  )}
+
+                  {resetState === "error" && resetError && (
+                    <div
+                      className="mt-3 rounded-xl border border-rose-300 bg-rose-100/70 px-3 py-2 text-sm"
+                      data-reset-error-code={resetError.code}
+                      data-num-pending={resetError.numPending}
+                      data-num-ack-pending={resetError.numAckPending}
+                      role="alert"
+                    >
+                      <p className="font-semibold">
+                        {resetError.code === INGESTION_PENDING_ERROR
+                          ? t("warning.ingestion_stream_retention_mismatch.resetPendingTitle")
+                          : t("warning.ingestion_stream_retention_mismatch.resetFailedTitle")}
+                      </p>
+                      {resetError.code === INGESTION_PENDING_ERROR ? (
+                        <p className="mt-1 leading-relaxed">
+                          {t("warning.ingestion_stream_retention_mismatch.resetPendingDetail", {
+                            pending:
+                              resetError.numPending === undefined
+                                ? t("warning.ingestion_stream_retention_mismatch.countUnavailable")
+                                : formatNumber(resetError.numPending),
+                            ackPending:
+                              resetError.numAckPending === undefined
+                                ? t("warning.ingestion_stream_retention_mismatch.countUnavailable")
+                                : formatNumber(resetError.numAckPending),
+                          })}
+                        </p>
+                      ) : (
+                        <p className="mt-1 leading-relaxed">
+                          {t("warning.ingestion_stream_retention_mismatch.resetFailedDetail")}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
           </div>
         );
       })}

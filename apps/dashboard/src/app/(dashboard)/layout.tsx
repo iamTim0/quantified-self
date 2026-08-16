@@ -381,7 +381,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               {/* Configuration and credential problems, on every tab. Previously
                 these lived only in a startup log and docs/operations.md. */}
-              <SystemWarnings apiBase={API_BASE} />
+              <SystemWarnings apiBase={API_BASE} userRole={userRole} />
 
               {children}
 

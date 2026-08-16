@@ -451,7 +451,15 @@ Two ways out of that, and they suit different situations:
 
 The rest of this section is the second route.
 
-1. **Drain the broker first.** The JetStream `ingestion` stream must be running
+1. **Reset the ingestion stream.** Open the dashboard's system warning for the
+   retention mismatch and choose **Reset ingestion stream** as an owner. The
+   action runs on `core-ingest`, checks both `num_pending` and `num_ack_pending`,
+   gates normal importer subjects, and reports the counts instead of deleting
+   anything when either is nonzero. It returns success only after the stream has
+   been recreated with `WORK_QUEUE` retention and the consumer is active again.
+
+   For a break-glass recovery when the dashboard or `core-ingest` is unavailable,
+   drain the broker manually. The JetStream `ingestion` stream must be running
    `WORK_QUEUE` retention; under the old `limits` policy an acked message still
    occupied bytes until `max_age`, which is what filled 4 GiB and made every publish
    fail. Retention **cannot be changed in place** — the broker rejects it on a live
@@ -482,7 +490,8 @@ The rest of this section is the second route.
 
     The restart is what makes Core recreate the stream: `core-ingest` holds the subscription, and
     after the delete it is subscribed to something that no longer exists. On startup it recreates
-    the stream with `WORK_QUEUE` retention.
+    the stream with `WORK_QUEUE` retention. The dashboard action performs this close-and-rebind
+    sequence without requiring a container restart.
 
     Check it took — this should print nothing:
 

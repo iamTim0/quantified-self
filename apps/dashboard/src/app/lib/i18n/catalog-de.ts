@@ -140,6 +140,30 @@ export const de: Record<MessageKey, string> = {
     "Deshalb starten die Dienste trotz der obigen Punkte. Mit einem produktiven ENVIRONMENT verweigern Core und Gateway den Start, solange ein Wert ein veröffentlichter Standard ist.",
   "warning.development_environment.action":
     "Für ein echtes Deployment ENVIRONMENT=production setzen.",
+  "warning.ingestion_stream_retention_mismatch.title":
+    "Der Ingestion-Stream verwendet die falsche Aufbewahrungsrichtlinie",
+  "warning.ingestion_stream_retention_mismatch.detail":
+    "Der Stream verwendet derzeit {actual_retention}; erforderlich ist {expected_retention}. Ein Owner kann ihn zurücksetzen, nachdem bestätigt wurde, dass die Warteschlange leer ist.",
+  "warning.ingestion_stream_retention_mismatch.action":
+    "Ein Owner kann den Ingestion-Stream nach der Bestätigung einer leeren Warteschlange im Dashboard zurücksetzen.",
+  "warning.ingestion_stream_retention_mismatch.confirm":
+    "Ingestion-Stream jetzt zurücksetzen? Core fährt nur fort, wenn beide offenen Zähler null sind; während des Zurücksetzens pausiert die Veröffentlichung der Importer kurz.",
+  "warning.ingestion_stream_retention_mismatch.controlDetail":
+    "Diese Steuerung ist nur für den Owner des Arbeitsbereichs verfügbar. Core prüft beide Consumer-Zähler, pausiert normale Importer-Subjects und erstellt anschließend Stream und Subscription neu.",
+  "warning.ingestion_stream_retention_mismatch.reset": "Ingestion-Stream zurücksetzen",
+  "warning.ingestion_stream_retention_mismatch.resetBusy": "Ingestion-Stream wird zurückgesetzt…",
+  "warning.ingestion_stream_retention_mismatch.resetDone": "Stream zurückgesetzt",
+  "warning.ingestion_stream_retention_mismatch.resetSuccess":
+    "Der Stream wurde neu erstellt und die Consumer-Subscription ist bereit.",
+  "warning.ingestion_stream_retention_mismatch.resetPendingTitle":
+    "Zurücksetzen abgelehnt: Events sind noch offen",
+  "warning.ingestion_stream_retention_mismatch.resetPendingDetail":
+    "Es wurde nichts gelöscht. Offene Events: {pending}; ausstehende Bestätigungen: {ackPending}.",
+  "warning.ingestion_stream_retention_mismatch.countUnavailable": "nicht verfügbar",
+  "warning.ingestion_stream_retention_mismatch.resetFailedTitle":
+    "Zurücksetzen konnte nicht abgeschlossen werden",
+  "warning.ingestion_stream_retention_mismatch.resetFailedDetail":
+    "Es wurde nichts gelöscht. Vor einem neuen Versuch die Operator-Alternative in der Dokumentation prüfen.",
 
   // ── Daily story ────────────────────────────────────────────────────────────
   "day.eyebrow": "Dein Tag",

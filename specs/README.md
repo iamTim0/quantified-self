@@ -124,6 +124,15 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `SessionGroupsAreDisjoint` | `test_one_workout_split_by_the_migration_never_doubles_a_row` | Core workout sessions |
 | `SessionDetailIsTenantScoped` | `test_a_forged_session_key_returns_the_callers_own_empty_result` | Core workout sessions |
 | `BoundedSessionRead` | `test_a_three_hour_workout_returns_a_bounded_payload` | Core workout sessions |
+| `OnlyOperatorCanReset` | `test_only_owner_can_start_a_reset` | Core / JetStream |
+| `AtMostOneResetInProgress` | `test_concurrent_reset_is_serialized` | Core / JetStream |
+| `DeleteOnlyWhenDrained` | `test_delete_requires_both_pending_counters_to_be_zero` | Core / JetStream |
+| `PublishGatePrecedesFinalDrainCheck` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `PublishGateOnlyDuringReset` | `test_retention_warning_carries_live_counts_without_claiming_gate_active` | Core / JetStream |
+| `RetentionMismatchIsVisible` | `test_retention_warning_carries_live_counts_without_claiming_gate_active` | Core / JetStream |
+| `SuccessfulResetHasDesiredRetention` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `SuccessfulResetHasActiveConsumer` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `FailedResetNeverReportsSuccess` | `test_a_failed_reset_cannot_be_successful` | Core / JetStream |
 
 ## Adding New Specs
 

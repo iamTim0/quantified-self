@@ -723,6 +723,89 @@ async def proxy_chat_service(path: str, request: Request):
     )
 
 
+@app.post("/api/v1/data/system/ingestion/reset")
+async def proxy_ingestion_reset(request: Request):
+    """Proxy the owner-only reset to the Core process that owns the consumer."""
+    token = _session_credential(request)
+    if not token:
+        return JSONResponse(
+            status_code=401,
+            content={
+                "code": "authentication_required",
+                "detail": "Missing session cookie or Authorization Bearer header",
+            },
+        )
+
+    try:
+        claims = decode_jwt(token)
+    except HTTPException as exc:
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"code": "authentication_required", "detail": exc.detail},
+        )
+
+    if claims.get("role") != "owner":
+        return JSONResponse(
+            status_code=403,
+            content={
+                "code": "owner_required",
+                "detail": "Only a workspace owner may reset the ingestion stream.",
+            },
+        )
+
+    claimed_tenant = request.headers.get("X-Tenant-ID")
+    if claimed_tenant and claimed_tenant != claims["tenant_id"]:
+        return JSONResponse(
+            status_code=403,
+            content={
+                "code": "tenant_claim_mismatch",
+                "detail": "X-Tenant-ID does not match authenticated tenant",
+            },
+        )
+
+    # Cookie-authenticated writes need the double-submit proof at the edge as
+    # well as in Core. Header-authenticated callers are not vulnerable to a
+    # browser attaching their Authorization header cross-site.
+    if not request.headers.get("Authorization"):
+        cookie_token = request.cookies.get(CSRF_COOKIE) or ""
+        header_token = request.headers.get(CSRF_HEADER) or ""
+        if not cookie_token or not secrets.compare_digest(cookie_token, header_token):
+            return JSONResponse(
+                status_code=403,
+                content={
+                    "code": "csrf_required",
+                    "detail": "Missing or invalid CSRF token",
+                },
+            )
+
+    forwarded_headers = {
+        key: value
+        for key, value in request.headers.items()
+        if key.lower() in _SAFE_FORWARD_HEADERS and key.lower() != "x-request-id"
+    }
+    # Preserve the original authentication mode: Core's middleware applies its
+    # own CSRF check to cookies, while a bearer request remains bearer-authenticated.
+    if auth_header := request.headers.get("Authorization"):
+        forwarded_headers["Authorization"] = auth_header
+    forwarded_headers["X-Tenant-ID"] = claims["tenant_id"]
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        try:
+            upstream = await client.request(
+                method="POST",
+                url=f"{settings.CORE_INGEST_URL}/api/v1/data/system/ingestion/reset",
+                headers=forwarded_headers,
+                content=await request.body(),
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Core ingest service unavailable: {exc!s}",
+            ) from exc
+    return _relay_response(upstream)
+
+
 @app.api_route("/api/v1/data/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_core_service(
     path: str,
