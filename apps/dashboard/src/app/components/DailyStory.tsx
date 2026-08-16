@@ -63,6 +63,11 @@ type DayEvent = {
 
 export type DayStory = {
   day: string;
+  /**
+   * True when the server computed this run. Not read here — a report is
+   * served while stale, so the client re-derives it from its own clock via
+   * `relativeDay`. Kept because it is part of the wire shape.
+   */
   is_today: boolean;
   complete: boolean;
   lanes: Lane[];
@@ -91,6 +96,25 @@ const LANE_LABEL: Record<string, MessageKey> = {
   home: "day.laneHome",
   custom: "day.laneCustom",
 };
+
+/**
+ * What a stored day is, relative to the reader's clock right now.
+ *
+ * Derived here rather than taken from the report, because a report is served
+ * while it is stale. Between the reader's midnight and the recomputation that
+ * follows it, the stored run still holds yesterday and the day before — correct
+ * data under headings that would read "Yesterday" and "Today" and be wrong about
+ * both. Reading the clock costs nothing and means the page is never wrong about
+ * what it is showing, only sometimes behind — and behind is already on the label.
+ */
+function relativeDay(day: string, offsetMinutes: number): "today" | "yesterday" | "older" {
+  const now = new Date(Date.now() + offsetMinutes * 60_000);
+  const todayIso = now.toISOString().slice(0, 10);
+  const yesterday = new Date(now.getTime() - 86_400_000).toISOString().slice(0, 10);
+  if (day === todayIso) return "today";
+  if (day === yesterday) return "yesterday";
+  return "older";
+}
 
 /** Both days as one stored answer, which is what the run holds. */
 type DayReport = {
@@ -122,8 +146,25 @@ function MetricValue({ metric }: { metric: LaneMetric }) {
   );
 }
 
-function DaySection({ story, heading }: { story: DayStory; heading: string }) {
+function DaySection({
+  story,
+  offsetMinutes,
+}: {
+  story: DayStory;
+  offsetMinutes: number;
+}) {
   const { t, formatDay, formatDateTime, formatTime, formatNumber, locale } = useI18n();
+  const relative = relativeDay(story.day, offsetMinutes);
+  // `older` gets no relative word at all: the date alone is honest, and
+  // inventing "two days ago" for a report that is merely waiting to be
+  // recomputed would tell the reader something about their data that is
+  // really about the scheduler.
+  const heading =
+    relative === "today"
+      ? t("day.today")
+      : relative === "yesterday"
+        ? t("day.yesterday")
+        : "";
 
   const timeline = useMemo(
     () =>
@@ -148,9 +189,12 @@ function DaySection({ story, heading }: { story: DayStory; heading: string }) {
     <section className="space-y-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-lg font-bold text-slate-900">
-          {heading} <span className="font-normal text-slate-400">{formatDay(story.day)}</span>
+          {heading}{" "}
+          <span className={heading ? "font-normal text-slate-400" : undefined}>
+            {formatDay(story.day)}
+          </span>
         </h2>
-        {story.is_today && (
+        {relative === "today" && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800">
             <Clock className="h-3 w-3" aria-hidden="true" />
             {t("day.stillArriving")}
@@ -266,8 +310,8 @@ export default function DailyStory({ apiBase }: { apiBase: string }) {
         </p>
       ) : null}
 
-      {yesterday && <DaySection story={yesterday} heading={t("day.yesterday")} />}
-      {today && <DaySection story={today} heading={t("day.today")} />}
+      {yesterday && <DaySection story={yesterday} offsetMinutes={offset} />}
+      {today && <DaySection story={today} offsetMinutes={offset} />}
     </div>
   );
 }
