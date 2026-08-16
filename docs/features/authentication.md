@@ -282,11 +282,19 @@ many entries in from the **right** of the chain:
 | --- | --- |
 | `0` | Nothing in front — the socket peer is used and cannot be forged |
 | `1` (default) | Both Compose files: Traefik terminates and appends the peer it accepted |
-| `2` | A second ingress in front of Traefik — a platform proxy, a CDN |
+| `2` | A second ingress in front of Traefik — a Cloudflare Tunnel, a platform proxy, a CDN |
 
 Setting this too low reads a value the caller controls. Setting it too high, or leaving it at `1`
 behind two proxies, makes every request look like the inner proxy so they all share one bucket —
 the per-account ceiling still applies, since that one does not depend on the network at all.
+
+!!! warning "Set this to `2` if you run the Cloudflare Tunnel"
+
+    `cloudflared` is a second hop, and it is the arrangement `.env.example` recommends for a
+    Coolify deployment. Left at `1`, every request looks like the tunnel's own address and they
+    all land in one bucket: nothing breaks and nothing warns, but the per-client limit stops
+    distinguishing between callers, and a workspace with a few active people could throttle
+    itself. The per-account limit is unaffected.
 
 ### A wrong password and an unknown address cost the same
 
