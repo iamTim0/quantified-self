@@ -144,6 +144,8 @@ export const en = {
   "day.title": "What happened",
   "day.subtitle":
     "Yesterday is a finished day. Today is shown as far as your connectors have reported it.",
+  "day.loadFailed": "Your day could not be loaded. The data is unaffected.",
+  "day.retry": "Try again",
   "day.yesterday": "Yesterday",
   "day.today": "Today",
   "day.stillArriving": "Still arriving",

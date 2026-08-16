@@ -145,6 +145,8 @@ export const de: Record<MessageKey, string> = {
   "day.title": "Was passiert ist",
   "day.subtitle":
     "Gestern ist ein abgeschlossener Tag. Heute wird so weit gezeigt, wie deine Connectoren gemeldet haben.",
+  "day.loadFailed": "Dein Tag konnte nicht geladen werden. Die Daten sind davon nicht betroffen.",
+  "day.retry": "Erneut versuchen",
   "day.yesterday": "Gestern",
   "day.today": "Heute",
   "day.stillArriving": "Kommt noch",

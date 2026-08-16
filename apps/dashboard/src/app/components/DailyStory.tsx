@@ -92,6 +92,10 @@ function useDay(
 ) {
   const [story, setStory] = useState<DayStory | null>(null);
   const [loading, setLoading] = useState(true);
+  // Distinguished from "no data": this page replaced the overview outright, so a
+  // failing endpoint used to leave a heading above nothing at all, with no way
+  // for a reader to tell a quiet day from a broken one.
+  const [failed, setFailed] = useState(false);
 
   const load = useCallback(async () => {
     const target = new Date();
@@ -113,9 +117,14 @@ function useDay(
         onUnauthorized();
         return;
       }
-      if (response.ok) setStory((await response.json()) as DayStory);
+      if (!response.ok) {
+        setFailed(true);
+        return;
+      }
+      setStory((await response.json()) as DayStory);
+      setFailed(false);
     } catch {
-      // Left as it was; the next visit re-reads.
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -135,7 +144,7 @@ function useDay(
     // premise is "today, as far as importers have reported" was frozen at mount.
   }, [load, refreshTrigger]);
 
-  return { story, loading, reload: load };
+  return { story, loading, failed, reload: load };
 }
 
 function MetricValue({ metric }: { metric: LaneMetric }) {
@@ -295,6 +304,22 @@ export default function DailyStory({
         <h1 className="text-3xl font-extrabold text-slate-900">{t("day.title")}</h1>
         <p className="mt-2 text-sm text-slate-500">{t("day.subtitle")}</p>
       </header>
+
+      {yesterday.failed && today.failed ? (
+        <div className="space-y-3 rounded-2xl border border-red-200 bg-red-50 p-5">
+          <p className="text-sm text-red-800">{t("day.loadFailed")}</p>
+          <button
+            type="button"
+            onClick={() => {
+              void yesterday.reload();
+              void today.reload();
+            }}
+            className="min-h-11 rounded-xl border border-red-300 bg-white px-3 text-sm font-medium text-red-700 hover:bg-red-100"
+          >
+            {t("day.retry")}
+          </button>
+        </div>
+      ) : null}
 
       {yesterday.story && <DaySection story={yesterday.story} heading={t("day.yesterday")} />}
       {today.story && <DaySection story={today.story} heading={t("day.today")} />}
