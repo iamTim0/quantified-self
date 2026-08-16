@@ -94,7 +94,7 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `TenantHeaderAlwaysInjected` | `test_tenant_header_always_injected` | API Gateway |
 | `SecretsAlwaysEncryptedAtRest` | `test_secrets_always_encrypted_at_rest` | Core Data Service |
 | `SecretMaskedInReadResponse` | `test_secret_masked_in_read_response` | Core Data Service |
-| `InstanceNamesUniquePerTenantType` | `test_two_connectors_may_not_share_a_name` | Core Data Service |
+| `InstanceNamesUniquePerTenantType` | `test_two_connectors_may_not_share_a_name`; `test_deleted_connector_name_can_be_reused` | Core Data Service |
 | `UploadNoDuplicateData` | `test_the_archive_is_published_then_deleted` | Apple Health Importer |
 | `UploadTenantIsolation` | `test_a_connector_belonging_to_somebody_else_is_a_404` | Apple Health / WHOOP Importer |
 | `AcceptedUploadIsVisible` | `test_an_upload_is_accepted_and_opens_a_run` | Apple Health / WHOOP Importer |

@@ -21,6 +21,7 @@ from sqlalchemy import (
     Integer,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -108,17 +109,23 @@ class DataSource(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # A deleted connector keeps its row so historical data remains addressable,
+    # but its display name may be reused by a new active connector.
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
-        # Two instances of a type are fine; two with the same name are not, because
-        # then the list the user picks from has two identical rows. Declared here as
-        # well as in the migration -- the ORM used to know about none of this, which
-        # is how the constraint and the model drifted apart in the first place.
-        UniqueConstraint(
+        # Two active instances of a type are fine; two with the same name are not,
+        # because then the list the user picks from has two identical rows. Deleted
+        # rows remain for historical provenance and are outside this index.
+        Index(
+            "uq_data_sources_tenant_type_name",
             "tenant_id",
             "source_type",
             "display_name",
-            name="uq_data_sources_tenant_type_name",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         # Child rows carry tenant_id as well as source_id. Keeping the pair
         # addressable lets PostgreSQL enforce that those two claims describe the

@@ -1095,6 +1095,7 @@ async def _mark_source_seen(session, tenant_id: str, data: dict) -> None:
             select(DataSource)
             .where(
                 DataSource.tenant_id == tenant_id,
+                DataSource.deleted_at.is_(None),
                 DataSource.source_type == source_type,
             )
             .order_by(DataSource.created_at, DataSource.id)

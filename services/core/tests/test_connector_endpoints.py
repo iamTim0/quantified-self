@@ -182,6 +182,50 @@ async def test_two_connectors_may_not_share_a_name():
 
 
 @pytest.mark.asyncio
+async def test_deleted_connector_name_can_be_reused():
+    """Verifies Fizzbee Invariant: InstanceNamesUniquePerTenantType.
+
+    Deletion preserves the historical source row, but only active connector
+    names participate in the uniqueness rule.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+    headers = auth_headers(tenant_id)
+    body = {
+        "source_type": "calendar",
+        "display_name": "Work",
+        "status": "active",
+        "config": {"ics_url": "https://example.com/work.ics"},
+    }
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            first = await ac.post(
+                "/api/v1/data/sources/configure", json=body, headers=headers
+            )
+            assert first.status_code == 200, first.text
+
+            deleted = await ac.delete(
+                f"/api/v1/data/sources/{first.json()['source_id']}", headers=headers
+            )
+            assert deleted.status_code == 200, deleted.text
+
+            replacement = await ac.post(
+                "/api/v1/data/sources/configure", json=body, headers=headers
+            )
+            assert replacement.status_code == 200, replacement.text
+            assert replacement.json()["source_id"] != first.json()["source_id"]
+
+            listed = await ac.get("/api/v1/data/sources", headers=headers)
+            assert listed.status_code == 200, listed.text
+            assert [item["display_name"] for item in listed.json()["connectors"]] == [
+                "Work"
+            ]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
 async def test_creating_a_connector_requires_a_name():
     transport = ASGITransport(app=app)
     tenant_id = await create_test_tenant()
