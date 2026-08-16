@@ -901,12 +901,12 @@ class LoginAttempt(Base):
     being rate-limited. This is one of the few tables in the platform that is
     genuinely workspace-agnostic, and it holds no workspace data.
 
-    **Both keys are hashed** (``scope_key`` is a SHA-256 digest, never the value
-    itself). An email address and an IP address are both personal data, and a
-    counter needs only equality — so it gets equality and nothing more. What
-    would otherwise accumulate here is a list of every address someone tried to
-    sign in as, which is a more sensitive record than the thing it protects.
-    Rows older than the window are deleted on the next check; see
+    **The address is hashed.** ``email_hash`` is a SHA-256 digest and never the
+    address itself: an email address is personal data and a counter needs only
+    equality, so it gets equality and nothing more. What would otherwise
+    accumulate here is a list of every address someone tried to sign in as,
+    which is a more sensitive record than the thing it protects. Rows older than
+    the window are deleted on the next check; see
     ``core.security.login_throttle``.
     """
 
@@ -915,10 +915,8 @@ class LoginAttempt(Base):
     id: Mapped[str] = mapped_column(
         UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    #: ``account`` or ``client`` — which bucket this attempt counts against.
-    scope: Mapped[str] = mapped_column(String(16), nullable=False)
-    #: SHA-256 of the submitted email, or of the client address. Never the value.
-    scope_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    #: SHA-256 of the address as submitted. Never the address.
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     attempted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
@@ -926,6 +924,6 @@ class LoginAttempt(Base):
     )
 
     __table_args__ = (
-        Index("idx_login_attempts_scope_key_time", "scope", "scope_key", "attempted_at"),
+        Index("idx_login_attempts_email_time", "email_hash", "attempted_at"),
         Index("idx_login_attempts_time", "attempted_at"),
     )

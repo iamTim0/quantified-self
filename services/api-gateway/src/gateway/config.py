@@ -57,18 +57,6 @@ class Settings(BaseSettings):
     # first account with `python -m core.create_owner`; turn this on only
     # for a deployment that is meant to accept strangers.
     ALLOW_REGISTRATION: bool = False
-    # How many reverse proxies sit in front of this service, used to pick the
-    # right entry out of `X-Forwarded-For` when telling Core who is signing in.
-    #
-    # 1 is both Compose files: Traefik terminates and appends the peer it
-    # accepted, so the last entry is the caller. Behind a second proxy — a
-    # platform ingress, a CDN — set 2, or every request looks like that proxy and
-    # they all share one throttle bucket. Set 0 and only the socket peer is used,
-    # which is right when nothing is in front and cannot be forged either way.
-    #
-    # Counting from the right is what makes this safe: the leftmost entry is
-    # whatever the caller typed, and a limit keyed on that is no limit at all.
-    TRUSTED_PROXY_HOPS: int = 1
 
     model_config = SettingsConfigDict(env_file=str(_ROOT_ENV), env_file_encoding="utf-8", extra="ignore")
 

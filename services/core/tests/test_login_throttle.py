@@ -17,6 +17,9 @@ the status code, having just closed it through timing. So the counter keys on th
 address as submitted, and a nonexistent address gets throttled exactly like a
 real one.
 
+There is one bucket, per account. `login_throttle` explains why there is no
+per-client one.
+
 Every test creates its own tenant and cleans up after itself (rule 10), and each
 uses a unique email so the per-account bucket of one test cannot influence
 another.
@@ -30,7 +33,7 @@ from core.db.session import async_session_maker
 from core.main import app
 from core.security import login_throttle
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from tests.db_helpers import cleanup_test_tenant
 
@@ -40,12 +43,8 @@ BASE_URL = "https://testserver"
 PASSWORD = "correct horse battery staple"
 
 
-def _client(client_ip: str | None = None) -> AsyncClient:
-    """A client that presents the header the Gateway would set, if asked to."""
-    headers = {login_throttle.CLIENT_IP_HEADER: client_ip} if client_ip else {}
-    return AsyncClient(
-        transport=ASGITransport(app=app), base_url=BASE_URL, headers=headers
-    )
+def _client() -> AsyncClient:
+    return AsyncClient(transport=ASGITransport(app=app), base_url=BASE_URL)
 
 
 def _email() -> str:
@@ -70,17 +69,10 @@ async def _tenant_of(email: str) -> str | None:
         return user.tenant_id if user else None
 
 
-async def _forget(email: str, *addresses: str) -> None:
+async def _forget(email: str) -> None:
     """Drop this test's counters so a shared database does not couple tests."""
     async with async_session_maker() as session:
         await login_throttle.clear_account(session, email=email)
-        for address in addresses:
-            await session.execute(
-                delete(LoginAttempt).where(
-                    LoginAttempt.scope == login_throttle.SCOPE_CLIENT,
-                    LoginAttempt.scope_key == login_throttle._digest(address),
-                )
-            )
         await session.commit()
 
 
@@ -91,8 +83,7 @@ async def _forget(email: str, *addresses: str) -> None:
 async def test_the_account_bucket_refuses_after_its_ceiling():
     """Ten wrong passwords against one address, and the eleventh is not answered."""
     email = _email()
-    address = f"198.51.100.{uuid.uuid4().int % 200 + 1}"
-    async with _client(address) as ac:
+    async with _client() as ac:
         await _signup(ac, email)
         tenant_id = await _tenant_of(email)
         try:
@@ -110,7 +101,7 @@ async def test_the_account_bucket_refuses_after_its_ceiling():
             # A client needs to know when to come back, not just that it was refused.
             assert int(refused.headers["Retry-After"]) > 0
         finally:
-            await _forget(email, address)
+            await _forget(email)
             if tenant_id:
                 await cleanup_test_tenant(tenant_id)
 
@@ -123,8 +114,7 @@ async def test_the_right_password_is_refused_too_once_throttled():
     the correct password is precisely what an attacker is looking for.
     """
     email = _email()
-    address = f"198.51.100.{uuid.uuid4().int % 200 + 1}"
-    async with _client(address) as ac:
+    async with _client() as ac:
         await _signup(ac, email)
         tenant_id = await _tenant_of(email)
         try:
@@ -136,7 +126,7 @@ async def test_the_right_password_is_refused_too_once_throttled():
             )
             assert res.status_code == 429
         finally:
-            await _forget(email, address)
+            await _forget(email)
             if tenant_id:
                 await cleanup_test_tenant(tenant_id)
 
@@ -145,8 +135,7 @@ async def test_the_right_password_is_refused_too_once_throttled():
 async def test_signing_in_successfully_clears_the_account():
     """Otherwise somebody using six devices locks themselves out of their own data."""
     email = _email()
-    address = f"198.51.100.{uuid.uuid4().int % 200 + 1}"
-    async with _client(address) as ac:
+    async with _client() as ac:
         await _signup(ac, email)
         tenant_id = await _tenant_of(email)
         try:
@@ -162,14 +151,13 @@ async def test_signing_in_successfully_clears_the_account():
                 remaining = (
                     await session.execute(
                         select(LoginAttempt).where(
-                            LoginAttempt.scope == login_throttle.SCOPE_ACCOUNT,
-                            LoginAttempt.scope_key == login_throttle._digest(email),
+                            LoginAttempt.email_hash == login_throttle._digest(email)
                         )
                     )
                 ).scalars().all()
             assert remaining == [], "a correct password forgives the earlier typos"
         finally:
-            await _forget(email, address)
+            await _forget(email)
             if tenant_id:
                 await cleanup_test_tenant(tenant_id)
 
@@ -186,8 +174,7 @@ async def test_an_address_that_does_not_exist_is_throttled_the_same_way():
     answering.
     """
     unknown = _email()
-    address = f"203.0.113.{uuid.uuid4().int % 200 + 1}"
-    async with _client(address) as ac:
+    async with _client() as ac:
         try:
             for _ in range(login_throttle.MAX_PER_ACCOUNT):
                 res = await ac.post(
@@ -200,7 +187,7 @@ async def test_an_address_that_does_not_exist_is_throttled_the_same_way():
             )
             assert refused.status_code == 429, "a nonexistent address throttles too"
         finally:
-            await _forget(unknown, address)
+            await _forget(unknown)
 
 
 @pytest.mark.asyncio
@@ -246,46 +233,40 @@ def test_a_missing_account_still_pays_for_a_password_check():
 
 @pytest.mark.asyncio
 async def test_no_address_is_stored_in_the_clear():
-    """The counter holds digests. In plain text it would be a more sensitive
+    """The counter holds a digest. In plain text it would be a more sensitive
     record than the thing it protects — every address anyone tried to sign in as."""
-    email = _email()
-    address = f"203.0.113.{uuid.uuid4().int % 200 + 1}"
-    async with _client(address) as ac:
-        try:
-            await ac.post("/api/v1/auth/login", json={"email": email, "password": "wrong"})
-
-            async with async_session_maker() as session:
-                rows = (await session.execute(select(LoginAttempt))).scalars().all()
-            stored = {row.scope_key for row in rows}
-
-            assert email not in stored
-            assert address not in stored
-            assert login_throttle._digest(email) in stored
-            assert login_throttle._digest(address) in stored
-            assert all(len(key) == 64 for key in stored), "sha256 hex"
-        finally:
-            await _forget(email, address)
-
-
-@pytest.mark.asyncio
-async def test_a_request_with_no_forwarded_address_still_counts_the_account():
-    """No client bucket rather than a shared one.
-
-    Lumping every address-less request under one key would let the first caller
-    to exhaust it lock out all the others. The account ceiling does not depend on
-    the network and still applies.
-    """
     email = _email()
     async with _client() as ac:
         try:
             await ac.post("/api/v1/auth/login", json={"email": email, "password": "wrong"})
 
             async with async_session_maker() as session:
-                scopes = {
-                    row.scope
-                    for row in (await session.execute(select(LoginAttempt))).scalars().all()
-                    if row.scope_key == login_throttle._digest(email)
-                }
-            assert scopes == {login_throttle.SCOPE_ACCOUNT}
+                rows = (await session.execute(select(LoginAttempt))).scalars().all()
+            stored = {row.email_hash for row in rows}
+
+            assert email not in stored
+            assert login_throttle._digest(email) in stored
+            assert all(len(key) == 64 for key in stored), "sha256 hex"
         finally:
             await _forget(email)
+
+
+def test_there_is_one_bucket_and_it_is_the_account():
+    """No per-client counter, deliberately — `login_throttle` says why.
+
+    A per-client bucket stops password *spraying*, which needs many real accounts
+    to be worth anything; this platform ships with registration off and one owner
+    account. Reinstating it would mean trusting a client address behind a proxy,
+    which needs a configured hop count whose wrong value degrades silently.
+
+    Pinned as a test so that reintroducing it is a deliberate act rather than a
+    half-wired one.
+    """
+    assert not hasattr(login_throttle, "MAX_PER_CLIENT")
+    assert not hasattr(login_throttle, "client_address")
+    assert not hasattr(login_throttle, "CLIENT_IP_HEADER")
+    assert {column.name for column in LoginAttempt.__table__.columns} == {
+        "id",
+        "email_hash",
+        "attempted_at",
+    }

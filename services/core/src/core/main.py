@@ -178,7 +178,6 @@ from core.security.crypto import (
     encrypt_secret,
     mask_secret,
 )
-from core.security.login_throttle import client_address
 from core.security.oidc import (
     AUTH_REQUEST_TTL_SECONDS,
     OidcError,
@@ -769,17 +768,14 @@ _DUMMY_PASSWORD_HASH = pwd_context.hash("password-that-belongs-to-no-account")
 
 @app.post("/api/v1/auth/login")
 async def login(
-    request: Request,
     req: UserLoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ):
-    client_ip = client_address(request)
-
     # Before the password is checked, so a throttled caller cannot spend our
     # bcrypt either. Keyed on the address as *submitted*, so a refusal says
     # nothing about whether that account exists.
-    decision = await login_throttle.check(session, email=req.email, client_ip=client_ip)
+    decision = await login_throttle.check(session, email=req.email)
     if not decision.allowed:
         await session.commit()
         logger.warning(
@@ -807,7 +803,7 @@ async def login(
     )
 
     if not user or not password_ok:
-        await login_throttle.record_failure(session, email=req.email, client_ip=client_ip)
+        await login_throttle.record_failure(session, email=req.email)
         await session.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
 

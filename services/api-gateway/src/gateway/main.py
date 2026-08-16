@@ -146,41 +146,6 @@ ACCESS_COOKIE = "qs_access"
 # Response headers that belong to the hop, not the payload.
 _HOP_BY_HOP_HEADERS = {"transfer-encoding", "connection", "server", "content-encoding"}
 
-# What Core's sign-in throttle keys its per-client bucket on. Keep in step with
-# core.security.login_throttle.CLIENT_IP_HEADER (duplicated rather than imported:
-# the Gateway shares no code with Core by design, AGENTS.md rule 6).
-CLIENT_IP_HEADER = "X-Client-IP"
-
-
-def _client_address(request: Request) -> str | None:
-    """The address this request actually arrived from, as far as we can trust it.
-
-    Deliberately **not** the leftmost `X-Forwarded-For` entry. That one is
-    whatever the caller typed — every hop appends, nobody verifies — so a
-    throttle keyed on it is bypassed by adding a header, which is worse than no
-    throttle because it reads as coverage.
-
-    `TRUSTED_PROXY_HOPS` says how many proxies sit in front of this service, and
-    we count that many entries in from the right. The default of 1 is the
-    deployment in `docker-compose.prod.yml`: Traefik terminates and appends the
-    peer it accepted. Behind a second proxy — Coolify's, a CDN — set it to 2, or
-    every client will look like that proxy and share one bucket.
-
-    Never trusts a value the client set: with no proxies configured we use the
-    socket peer, which cannot be forged.
-    """
-    hops = settings.TRUSTED_PROXY_HOPS
-    if hops > 0:
-        chain = [
-            part.strip()
-            for part in (request.headers.get("X-Forwarded-For") or "").split(",")
-            if part.strip()
-        ]
-        # Index from the right: entry -1 is the peer the nearest proxy saw.
-        if len(chain) >= hops:
-            return chain[-hops]
-    return request.client.host if request.client else None
-
 
 def _session_credential(request: Request) -> str | None:
     """The caller's access token, from the Authorization header or session cookie.
@@ -385,11 +350,6 @@ async def proxy_auth_service(
     if auth_header := request.headers.get("Authorization"):
         forwarded_headers["Authorization"] = auth_header
     forwarded_headers["X-Request-ID"] = get_current_request_id()
-    # Assigned, never relayed: `X-Client-IP` is absent from _SAFE_FORWARD_HEADERS,
-    # so a caller cannot supply their own and pick which throttle bucket to land
-    # in. This is the only place the value is set.
-    if (caller := _client_address(request)) is not None:
-        forwarded_headers[CLIENT_IP_HEADER] = caller
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         try:

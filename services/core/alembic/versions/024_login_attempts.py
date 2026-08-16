@@ -14,10 +14,10 @@ otherwise:
   is for — so there is no workspace to scope to and rule 2 has nothing to bite
   on. Keying on a tenant would mean resolving the account before the rate limit
   applied, which is the lookup being limited.
-* **`scope_key` is a digest, not a value.** An email address and an IP address
-  are both personal data; a counter needs equality and gets nothing more. The
-  plaintext alternative would be a log of every address anyone tried to sign in
-  as, which is more sensitive than what it protects.
+* **`email_hash` is a digest, not an address.** An email address is personal
+  data; a counter needs equality and gets nothing more. The plaintext
+  alternative would be a log of every address anyone tried to sign in as, which
+  is more sensitive than what it protects.
 """
 
 from collections.abc import Sequence
@@ -36,22 +36,18 @@ def upgrade() -> None:
     op.create_table(
         "login_attempts",
         sa.Column("id", sa.dialects.postgresql.UUID(as_uuid=False), primary_key=True),
-        sa.Column("scope", sa.String(16), nullable=False),
-        sa.Column("scope_key", sa.String(64), nullable=False),
+        sa.Column("email_hash", sa.String(64), nullable=False),
         sa.Column("attempted_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint(
-            "scope IN ('account', 'client')", name="ck_login_attempts_scope"
-        ),
     )
-    # The counting query: scope + key + a time floor.
+    # The counting query: one address and a time floor.
     op.create_index(
-        "idx_login_attempts_scope_key_time",
+        "idx_login_attempts_email_time",
         "login_attempts",
-        ["scope", "scope_key", "attempted_at"],
+        ["email_hash", "attempted_at"],
     )
-    # The sweep: every row older than the window, regardless of key. Without this
-    # the prune degrades to a sequential scan as the table grows, which is exactly
-    # when it is under attack and least able to afford one.
+    # The sweep: every row older than the window, regardless of address. Without
+    # this the prune degrades to a sequential scan as the table grows, which is
+    # exactly when it is under attack and least able to afford one.
     op.create_index("idx_login_attempts_time", "login_attempts", ["attempted_at"])
 
 
@@ -63,5 +59,5 @@ def downgrade() -> None:
     and nothing references it.
     """
     op.drop_index("idx_login_attempts_time", table_name="login_attempts")
-    op.drop_index("idx_login_attempts_scope_key_time", table_name="login_attempts")
+    op.drop_index("idx_login_attempts_email_time", table_name="login_attempts")
     op.drop_table("login_attempts")

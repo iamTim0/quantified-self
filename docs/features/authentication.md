@@ -236,65 +236,47 @@ Nothing rate-limited sign-in: no attempt counter, no lockout, no backoff, and no
 edge either. bcrypt made each guess cost something, which made a credential-stuffing run slow
 rather than impossible.
 
-Failed attempts are now counted in two buckets, because either one alone is walked around.
-
-| Bucket | Ceiling | What it stops |
-| --- | --- | --- |
-| Per account | 10 failures in 15 minutes | Working through a password list against one address |
-| Per client address | 30 failures in 15 minutes | Spraying one common password across many addresses |
-
-The account ceiling is the lower of the two: one person mistyping their own password is a smaller
-number than an office behind a single address all signing in at nine o'clock.
+Failed sign-ins against one address are now counted: **ten in fifteen minutes** and it stops
+answering. That is well past mistyping a password and well short of a wordlist.
 
 Three properties are worth stating because each one is a way this is usually got wrong:
 
 - **The count is checked before the password is verified**, so a refused caller does not get to
   spend the server's bcrypt either. Otherwise the endpoint stays a way to burn CPU after it has
   stopped being a way to guess passwords.
-- **The account bucket keys on the address as submitted**, not on the account that was found. If a
-  throttle only engaged for addresses that exist, `429` would mean "this account is real" — which
-  is the [enumeration oracle](#a-wrong-password-and-an-unknown-address-cost-the-same) closed just
-  below, reintroduced through the status code immediately after being closed through timing.
-- **A successful sign-in clears that account's failures.** The client bucket survives it: one
-  correct password among a hundred wrong ones is what a successful stuffing run looks like, and
-  resetting on that success would hand the attacker the reset.
+- **It keys on the address as submitted**, not on the account that was found. If a throttle only
+  engaged for addresses that exist, `429` would mean "this account is real" — which is the
+  [enumeration oracle](#a-wrong-password-and-an-unknown-address-cost-the-same) closed just below,
+  reintroduced through the status code immediately after being closed through timing.
+- **A successful sign-in clears that address's failures.** Otherwise somebody signing in from six
+  devices a day would eventually lock themselves out of their own workspace, which is a denial of
+  service we would have written ourselves.
 
 A refused request answers `429` with a `Retry-After` header and the stable code
-`too_many_attempts` (rule 17). The counter stores a SHA-256 digest of the address and of the
-client, never the values — a plaintext table here would be a record of every address anyone had
-tried to sign in as, which is more sensitive than what it protects.
+`too_many_attempts` (rule 17). The counter stores a SHA-256 digest of the address, never the
+address — a plaintext table here would be a record of every address anyone had tried to sign in
+as, which is more sensitive than what it protects.
 
-### Which address counts as the client
+### Why there is no per-client limit
 
-Core does not parse `X-Forwarded-For`. Every hop appends to that header, nobody verifies it, and
-the leftmost entry is whatever the caller typed — a limit keyed on it is bypassed by sending a
-header, which is worse than no limit because it reads as coverage.
+A per-client counter stops **spraying**: one common password tried against many addresses, where
+each account only ever sees a single failure so an account counter never trips. It is the standard
+companion to the limit above, and it is deliberately absent.
 
-Instead the **Gateway** determines the address and sends it to Core as `X-Client-IP`, overwriting
-anything the caller supplied. `X-Client-IP` is deliberately absent from the Gateway's
-forward allowlist, so it can only ever be assigned, never relayed. Core has no public route, so a
-header arriving there has passed through the Gateway by construction.
+Spraying needs many *real* accounts to be worth anything. This platform ships with
+`ALLOW_REGISTRATION` off and one owner account created by `python -m core.create_owner`; against a
+single account, spraying collapses into exactly the attack the account counter already stops.
 
-`TRUSTED_PROXY_HOPS` says how many reverse proxies sit in front of the Gateway, and it counts that
-many entries in from the **right** of the chain:
+The cost would not have been the counting — it is knowing who the client is. Behind a proxy the
+socket peer is the proxy, and `X-Forwarded-For` is append-only with nothing authenticating it, so
+its leftmost entry is whatever the caller typed. Reading that gives a limit bypassed by sending one
+header, which is worse than no limit because it reads as coverage. Doing it properly needs a
+configured count of trusted proxy hops — a setting whose wrong value degrades silently, carried for
+an attack this deployment does not face.
 
-| Value | Deployment |
-| --- | --- |
-| `0` | Nothing in front — the socket peer is used and cannot be forged |
-| `1` (default) | Both Compose files: Traefik terminates and appends the peer it accepted |
-| `2` | A second ingress in front of Traefik — a Cloudflare Tunnel, a platform proxy, a CDN |
-
-Setting this too low reads a value the caller controls. Setting it too high, or leaving it at `1`
-behind two proxies, makes every request look like the inner proxy so they all share one bucket —
-the per-account ceiling still applies, since that one does not depend on the network at all.
-
-!!! warning "Set this to `2` if you run the Cloudflare Tunnel"
-
-    `cloudflared` is a second hop, and it is the arrangement `.env.example` recommends for a
-    Coolify deployment. Left at `1`, every request looks like the tunnel's own address and they
-    all land in one bucket: nothing breaks and nothing warns, but the per-client limit stops
-    distinguishing between callers, and a workspace with a few active people could throttle
-    itself. The per-account limit is unaffected.
+If the workspace ever gains a real user base, this is the thing to add back, and
+`test_login_throttle.py` pins its absence so that reinstating it is a deliberate act rather than a
+half-wired one.
 
 ### A wrong password and an unknown address cost the same
 
