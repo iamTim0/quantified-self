@@ -334,7 +334,7 @@ async def test_the_detail_pulls_every_connector_in_the_window():
         surrounding = {row["metric_type"] for row in body["surroundings"]}
         assert "weather_temperature" in surrounding
         assert "hrv_rmssd" in surrounding
-        assert {row["source_reason"] for row in body["surroundings"]} == {"ONLY_SOURCE"}
+        assert {row["source_reason"] for row in body["surroundings"]} == {"only_source"}
     finally:
         await cleanup_test_tenant(tenant_id)
 
@@ -688,7 +688,7 @@ async def test_a_legacy_key_separates_a_workout_from_a_strength_session():
 async def test_two_connectors_reporting_one_metric_pick_a_winner():
     """The branch the other tests never reached.
 
-    Every earlier case has one connector per metric, so `ONLY_SOURCE` short-circuits
+    Every earlier case has one connector per metric, so `only_source` short-circuits
     before the resolver is called — which is how a wrong call signature survived to
     here. With two connectors reporting `heart_rate_resting` inside the window, the
     detail must name one of them rather than adding them together (rule 19).
@@ -719,7 +719,7 @@ async def test_two_connectors_reporting_one_metric_pick_a_winner():
             row for row in body["surroundings"] if row["metric_type"] == "heart_rate_resting"
         )
         # One connector answers; the other is named, never added.
-        assert resting["source_reason"] in {"PREFERENCE", "COVERAGE"}
+        assert resting["source_reason"] in {"preference", "coverage"}
         assert resting["value"] in (52.0, 49.0), "never 101 — that would be the sum"
         assert len(resting["other_sources"]) == 1
     finally:

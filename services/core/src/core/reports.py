@@ -79,6 +79,22 @@ CORE_COMPUTED_KINDS: tuple[str, ...] = ("gaps", "conflicts", "day")
 #: Statuses that mean a run for this kind is already under way.
 IN_FLIGHT_STATUSES = ("queued", "running")
 
+#: Why one connector answers for a metric — the whole vocabulary, in one place.
+#:
+#: Named constants rather than literals because that is what went wrong: the
+#: three strings were written out at five call sites across three modules, and
+#: nothing tied them together, so `daily_story` could have invented a fourth and
+#: no test would have said anything. A client compares against these (rule 17),
+#: which makes them interface, and interface belongs somewhere a reader can find.
+REASON_ONLY_SOURCE = "only_source"
+REASON_PREFERENCE = "preference"
+REASON_COVERAGE = "coverage"
+
+#: Every value `source_reason` and `primary_reason` may take.
+SOURCE_REASONS: frozenset[str] = frozenset(
+    {REASON_ONLY_SOURCE, REASON_PREFERENCE, REASON_COVERAGE}
+)
+
 #: A run still "running" after this long is assumed dead — the replica computing
 #: it crashed, or the Analysis Service never answered. Without this one lost run
 #: would block a kind forever, which is the failure the sync scheduler already
@@ -190,11 +206,17 @@ def resolve_primary_source(
     Otherwise the source with the most samples wins, with the identifier breaking
     a tie so the choice is stable between calls rather than flickering with row
     order.
+
+    The reason is `preference` or `coverage` — lowercase, English, stable, the
+    shape rule 17 fixes for every field a client compares against. It was
+    `PREFERENCE` / `COVERAGE` until now, which was the same idea in a second
+    spelling: `direction` next to it is lowercase, `severity` is lowercase, and a
+    reader working out which convention to follow had to guess. There is one now.
     """
     if preference and preference in source_ids:
-        return preference, "PREFERENCE"
+        return preference, REASON_PREFERENCE
     best = max(sorted(source_ids), key=lambda source_id: coverage.get(source_id, 0))
-    return best, "COVERAGE"
+    return best, REASON_COVERAGE
 
 
 def report_lock_key(tenant_id: str, kind: str) -> int:

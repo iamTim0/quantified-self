@@ -29,7 +29,7 @@ type SourceOption = {
 type AmbiguousMetric = {
   metric_type: string;
   primary_source_id: string;
-  /** PREFERENCE or COVERAGE — a stable identifier, not prose (rule 17). */
+  /** `preference` or `coverage` — a stable identifier, not prose (rule 17). */
   primary_reason: string;
   sources: SourceOption[];
 };
@@ -127,7 +127,7 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
                 <p className="text-xs text-slate-500">
                   {failed === metric.metric_type
                     ? t("sources.saveFailed")
-                    : metric.primary_reason === "PREFERENCE"
+                    : metric.primary_reason === "preference"
                       ? t("analysis.primaryByPreference")
                       : t("analysis.primaryByCoverage")}
                 </p>
@@ -135,7 +135,7 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
               <select
                 // The empty value is "automatic", which is the absence of a
                 // stored preference rather than a third kind of choice.
-                value={metric.primary_reason === "PREFERENCE" ? metric.primary_source_id : ""}
+                value={metric.primary_reason === "preference" ? metric.primary_source_id : ""}
                 aria-label={t("analysis.chooseSource")}
                 disabled={saving === metric.metric_type}
                 onChange={(event) => void choose(metric.metric_type, event.target.value)}

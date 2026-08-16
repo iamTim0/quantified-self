@@ -312,7 +312,7 @@ async def test_insights_use_metric_series_instead_of_raw_points(monkeypatch):
     assert result["metrics_analysed"] == ["steps"]
 
 
-def _ambiguous_steps_client(primary: str, reason: str = "COVERAGE"):
+def _ambiguous_steps_client(primary: str, reason: str = "coverage"):
     """A Core answering with `steps` from two connectors, one of them primary."""
 
     class _FakeCoreClient:
@@ -366,7 +366,7 @@ async def test_insights_never_merge_two_sources_of_one_metric(monkeypatch):
     # `source-b` reported 1000 on every day. If its buckets had leaked into the
     # series the trend would be built on values this connector never sent.
     assert result["source_issues"][0]["primary_source_id"] == "source-a"
-    assert result["source_issues"][0]["primary_reason"] == "COVERAGE"
+    assert result["source_issues"][0]["primary_reason"] == "coverage"
 
 
 @pytest.mark.asyncio

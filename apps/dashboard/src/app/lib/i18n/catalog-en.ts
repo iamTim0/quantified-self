@@ -1120,6 +1120,18 @@ export const en = {
   "analysis.direction.falling": "Falling",
   "analysis.direction.flat": "Flat",
 
+  // ── Weekdays ────────────────────────────────────────────────────────────
+  // The Analysis Service names the day; this is where it gets said. It used to
+  // send the German word, so an English reader was shown "Montag" and there was
+  // nothing the interface could do about it (rule 17).
+  "weekday.monday": "Monday",
+  "weekday.tuesday": "Tuesday",
+  "weekday.wednesday": "Wednesday",
+  "weekday.thursday": "Thursday",
+  "weekday.friday": "Friday",
+  "weekday.saturday": "Saturday",
+  "weekday.sunday": "Sunday",
+
   // --- end of catalogue ---
 } satisfies Record<string, string>;
 

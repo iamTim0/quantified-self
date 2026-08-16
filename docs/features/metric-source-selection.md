@@ -34,8 +34,8 @@ not merge" never implied "do not answer" — it implied "say which one".
 
 | Reason code | When it applies | Wins over |
 | --- | --- | --- |
-| `PREFERENCE` | The workspace has stated a primary connector for this metric, and that connector still reports it | Everything |
-| `COVERAGE` | No preference is stated | — |
+| `preference` | The workspace has stated a primary connector for this metric, and that connector still reports it | Everything |
+| `coverage` | No preference is stated | — |
 
 With no preference, the connector with the **most samples in the workspace's whole stored
 history** answers — not the most in whatever window is being viewed. A primary source is a
@@ -51,13 +51,13 @@ volume would make the setting a placebo. A preference naming a connector that co
 nothing to the window being analysed is ignored rather than honoured into an empty series,
 and coverage decides instead.
 
-`PREFERENCE` and `COVERAGE` are stable English identifiers, not prose (rule 17). Clients
+`preference` and `coverage` are stable English identifiers, not prose (rule 17). Clients
 branch on them; the interface renders them as *your choice* and *chosen automatically —
 most complete*.
 
 The daily story applies the same rule through the same function, so the figure on the
 landing page and the series in the analysis can never name different connectors for one
-metric. It emits one further reason code the analysis path has no use for — `ONLY_SOURCE`,
+metric. It emits one further reason code the analysis path has no use for — `only_source`,
 for a metric a single connector reported that day, where there is no decision to make. See
 [The daily story](daily-story.md).
 
@@ -71,7 +71,7 @@ Analysis asks Core for the daily series (QueryMetricSeries, gRPC)
          metric_type        = the canonical name
          source_ids         = every connector reporting it
          primary_source_id  = the one that answers
-         primary_reason     = PREFERENCE | COVERAGE
+         primary_reason     = preference | coverage
     -> Analysis keeps only the primary source's buckets for that metric
     -> the bundle reports metric_source_ids and source_issues
 ```
@@ -125,7 +125,7 @@ DELETE /api/v1/data/metrics/source-preferences/{metric_type}
       "metric_type": "steps",
       "definition": { "key": "steps", "unit": "count", "aggregation": "sum", "cadence": "daily" },
       "primary_source_id": "…",
-      "primary_reason": "COVERAGE",
+      "primary_reason": "coverage",
       "sources": [
         { "source_id": "…", "source_type": "whoop",        "sample_count": 4210 },
         { "source_id": "…", "source_type": "apple_health", "sample_count": 1180 }
@@ -153,11 +153,11 @@ aggregate. See [Data resolution and rollups](data-resolution.md).
 { "primary_source_id": "…" }
 ```
 
-and answers with `primary_reason: "PREFERENCE"`. The metric name is canonicalised first, so
+and answers with `primary_reason: "preference"`. The metric name is canonicalised first, so
 a registered alias is accepted and stored under its canonical key; an unrecognised name is
 a `400`. A connector that does not belong to the authenticated workspace is a `404`.
 
-`DELETE` removes the stated preference and answers with `primary_reason: "COVERAGE"`,
+`DELETE` removes the stated preference and answers with `primary_reason: "coverage"`,
 meaning the choice is made by coverage again. Deleting the connector itself also clears any
 preference naming it, through a composite foreign key that cannot cross workspaces
 (rule 2).

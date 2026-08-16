@@ -151,11 +151,11 @@ Each lane metric reports the outcome rather than hiding it:
 | Field | Contents |
 | --- | --- |
 | `source_id`, `source_type` | The connector that answered |
-| `source_reason` | `ONLY_SOURCE`, `PREFERENCE` or `COVERAGE` — stable English identifiers, not prose (rule 17) |
+| `source_reason` | `only_source`, `preference` or `coverage` — stable English identifiers, not prose (rule 17) |
 | `other_sources` | The connectors that also reported this metric that day and were not added to it |
 | `sample_count` | How many points the answering connector contributed to the window |
 
-`ONLY_SOURCE` is the common case and the cheap one: a single connector reports the metric,
+`only_source` is the common case and the cheap one: a single connector reports the metric,
 there is no decision to make, and no preference is looked up. The other two reason codes are
 exactly those the analysis and the preference card use.
 
@@ -244,7 +244,7 @@ that it buckets in UTC.
           "sample_count": 1,
           "source_id": "…",
           "source_type": "apple_health",
-          "source_reason": "COVERAGE",
+          "source_reason": "coverage",
           "other_sources": ["…"],
           "last_at": "2026-08-15T21:00:00+00:00"
         }

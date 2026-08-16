@@ -385,7 +385,26 @@ def trend_for_metric(
 
 # ─── 3. weekday / routine patterns ───────────────────────────
 
-WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"]
+#: Stable lowercase identifiers, in `date.weekday()` order — Monday is 0.
+#:
+#: These used to be German words, which was two rules at once: a service wrote
+#: prose in a language the repository does not use (rule 16), and it decided the
+#: reader's language on the server (rule 17). An English reader saw "Montag"; so
+#: did a chart legend, an export and anything else that ever read this field.
+#:
+#: The name of a day is exactly what rule 17 means by a code: the dashboard
+#: renders it through `weekday.<id>` and falls back to the value itself for one
+#: it does not know, which is what keeps a report stored before this change
+#: legible until it is recomputed.
+WEEKDAYS = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
 
 
 def weekday_pattern(

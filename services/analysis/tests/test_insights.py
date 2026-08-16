@@ -251,6 +251,57 @@ def test_weekday_pattern_needs_two_weeks():
     assert weekday_pattern(series_from([1.0] * 5)) is None
 
 
+def test_a_weekday_is_an_identifier_not_a_word():
+    """Rule 16 and rule 17: the server names the day, the client says it.
+
+    This field held German words, so an English reader was shown "Montag" and the
+    dashboard had no way to say otherwise. It is a code now — lowercase, English,
+    stable — and the language is the client's decision.
+    """
+    daily = {
+        (START + timedelta(days=i)).isoformat(): float(i) for i in range(21)
+    }
+    pattern = weekday_pattern(daily)
+    assert pattern is not None
+
+    names = [entry["weekday"] for entry in pattern["per_weekday"]]
+    assert names == [
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+    ], "Monday first, matching date.weekday()"
+    assert all(name == name.lower() and name.isascii() for name in names)
+
+
+def test_the_weekday_order_follows_the_calendar():
+    """The nth entry describes the nth weekday, which is what makes it readable.
+
+    A chart draws these in the order they arrive, so an off-by-one here would put
+    Sunday's mean under Monday's label with nothing to give it away.
+    """
+    # A fortnight starting on a Friday, with one distinctive value on Sundays.
+    daily = {}
+    for i in range(28):
+        day = START + timedelta(days=i)
+        daily[day.isoformat()] = 99.0 if day.weekday() == 6 else 1.0
+
+    per_day = {row["weekday"]: row["mean"] for row in weekday_pattern(daily)["per_weekday"]}
+    assert per_day["sunday"] == 99.0
+    assert set(per_day) - {"sunday"} == {
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+    }
+    assert all(mean == 1.0 for day, mean in per_day.items() if day != "sunday")
+
+
 # ─── period comparison ───────────────────────────────────────
 
 

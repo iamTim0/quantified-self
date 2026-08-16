@@ -46,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import DataPoint, DataSource, SyncRun
 from core.reports import (
+    REASON_ONLY_SOURCE,
     metric_source_coverage,
     primary_source_preferences,
     resolve_primary_source,
@@ -406,7 +407,7 @@ async def build_day_story(
     last_import_by_source = await _lane_completeness(session, tenant_id)
 
     # Only when something is actually ambiguous. Both scan the workspace's whole
-    # rollup history, and `ONLY_SOURCE` is the common case — a single-connector
+    # rollup history, and `only_source` is the common case — a single-connector
     # workspace was paying for two full-history aggregations per day rendered,
     # four per page load, to answer a question it never asked.
     ambiguous = {metric for metric, sources in totals.items() if len(sources) > 1}
@@ -440,7 +441,7 @@ async def build_day_story(
                 metric_type, source_ids, preferences, coverage
             )
         else:
-            chosen, reason = source_ids[0], "ONLY_SOURCE"
+            chosen, reason = source_ids[0], REASON_ONLY_SOURCE
 
         stats = by_source[chosen]
         if definition.aggregation is Aggregation.SUM:
@@ -462,7 +463,7 @@ async def build_day_story(
                 "sample_count": stats["samples"],
                 "source_id": chosen,
                 "source_type": source_types.get(chosen),
-                # ONLY_SOURCE, PREFERENCE or COVERAGE — identifiers, not prose.
+                # only_source, preference or coverage — identifiers, not prose.
                 "source_reason": reason,
                 "other_sources": [s for s in source_ids if s != chosen],
                 "last_at": stats["last_at"].isoformat() if stats["last_at"] else None,

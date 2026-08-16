@@ -68,7 +68,11 @@ message MetricSeriesIssue {
   // double count) and averaging them would silently reweight the samples. One
   // source answers, and this field says which, so the result can be attributed.
   string primary_source_id = 4;
-  // How the primary was arrived at: PREFERENCE or COVERAGE.
+  // How the primary was arrived at: `preference` or `coverage`.
+  //
+  // Lowercase, English and stable — a client compares against it, so it is an
+  // identifier and not a sentence (rule 17). It was uppercase until now, which
+  // was a second spelling of a convention every neighbouring field already had.
   string primary_reason = 5;
 }
 

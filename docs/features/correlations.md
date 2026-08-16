@@ -23,6 +23,21 @@ says which — values from two connectors are never added or averaged. See
 | `0.60–0.79` | strong | A relevant pattern, but not causation. |
 | `0.80–1.00` | very strong | A very clear shared course; check the data quality. |
 
+## Weekday patterns
+
+`routines` holds the mean per weekday and how far the weekend departs from the working week.
+Each entry names its day with a **stable lowercase identifier** — `monday` through `sunday`,
+in `date.weekday()` order, so the nth entry is the nth day and a chart can draw them as they
+arrive.
+
+It is an identifier and not a word on purpose. The field held German day names, which put the
+reader's language in the service's hands: an English reader was shown `Montag`, and the
+interface had no way to say otherwise. Naming the day and saying it are two jobs, and only
+the second one knows what language the reader chose (rule 17). The dashboard renders these
+through `weekday.<id>` in both catalogues, and falls back to whatever the server sent for a
+value it does not recognise — which is what keeps a report stored before this change readable
+until it is recomputed.
+
 ## Sensible next algorithms
 
 - Spearman correlation for monotonic, non-linear relationships.

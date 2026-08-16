@@ -39,7 +39,7 @@ type LaneMetric = {
   sample_count: number;
   source_id: string;
   source_type: string | null;
-  /** ONLY_SOURCE, PREFERENCE or COVERAGE — an identifier, not prose (rule 17). */
+  /** `only_source`, `preference` or `coverage` — an identifier, not prose (rule 17). */
   source_reason: string;
   other_sources: string[];
   last_at: string | null;

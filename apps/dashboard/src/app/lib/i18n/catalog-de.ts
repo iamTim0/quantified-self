@@ -1134,5 +1134,14 @@ export const de: Record<MessageKey, string> = {
   "analysis.direction.falling": "Fallend",
   "analysis.direction.flat": "Gleichbleibend",
 
+  // ── Wochentage ──────────────────────────────────────────────────────────
+  "weekday.monday": "Montag",
+  "weekday.tuesday": "Dienstag",
+  "weekday.wednesday": "Mittwoch",
+  "weekday.thursday": "Donnerstag",
+  "weekday.friday": "Freitag",
+  "weekday.saturday": "Samstag",
+  "weekday.sunday": "Sonntag",
+
   // --- End of catalogue ---
 };

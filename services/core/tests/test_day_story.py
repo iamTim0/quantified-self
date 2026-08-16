@@ -236,7 +236,7 @@ async def test_two_connectors_reporting_one_metric_are_never_added():
         steps = next(m for m in activity["metrics"] if m["metric_type"] == "steps")
         # 10000 would be the double count. One source answers.
         assert steps["value"] in (4000.0, 6000.0)
-        assert steps["source_reason"] in ("COVERAGE", "PREFERENCE")
+        assert steps["source_reason"] in ("coverage", "preference")
         assert len(steps["other_sources"]) == 1
     finally:
         await cleanup_test_tenant(tenant_id)

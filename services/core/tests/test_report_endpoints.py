@@ -349,7 +349,7 @@ async def test_only_metrics_from_several_connectors_offer_a_source_choice():
         entry = listed["metrics"][0]
         # No preference stated, so coverage decides — apple_health has five days
         # against Oura's one.
-        assert entry["primary_reason"] == "COVERAGE"
+        assert entry["primary_reason"] == "coverage"
         assert entry["primary_source_id"] == apple
         assert [source["sample_count"] for source in entry["sources"]] == [5, 1]
     finally:
@@ -372,7 +372,29 @@ def test_equal_coverage_is_broken_deterministically():
     second = resolve_primary_source(
         ["aaa", "bbb"], preference=None, coverage={"bbb": 7, "aaa": 7}
     )
-    assert first == second == ("aaa", "COVERAGE")
+    assert first == second == ("aaa", "coverage")
+
+
+def test_every_reason_is_a_lowercase_identifier():
+    """Rule 17: a client compares against this, so it is spelled one way.
+
+    These were `PREFERENCE` / `COVERAGE` / `ONLY_SOURCE` while `direction`,
+    `status` and `severity` beside them were lowercase — the same convention in
+    two spellings, which leaves the next person to guess. The check is here so a
+    fourth reason cannot arrive in a third style.
+    """
+    from core.reports import SOURCE_REASONS, resolve_primary_source
+
+    assert SOURCE_REASONS == {"only_source", "preference", "coverage"}
+    assert all(
+        reason == reason.lower() and reason.isascii() and " " not in reason
+        for reason in SOURCE_REASONS
+    )
+
+    # Not just the constants — what the resolver actually returns.
+    _, by_coverage = resolve_primary_source(["a"], preference=None, coverage={"a": 1})
+    _, by_preference = resolve_primary_source(["a"], preference="a", coverage={"a": 1})
+    assert {by_coverage, by_preference} <= SOURCE_REASONS
 
 
 @pytest.mark.asyncio
@@ -417,7 +439,7 @@ async def test_a_stated_preference_beats_coverage_and_can_be_cleared():
             entry = listed["metrics"][0]
             # Oura covered less and still answers, because it was chosen.
             assert entry["primary_source_id"] == oura
-            assert entry["primary_reason"] == "PREFERENCE"
+            assert entry["primary_reason"] == "preference"
 
             cleared = await client.delete(
                 "/api/v1/data/metrics/source-preferences/steps", headers=headers
@@ -429,7 +451,7 @@ async def test_a_stated_preference_beats_coverage_and_can_be_cleared():
                     "/api/v1/data/metrics/source-preferences", headers=headers
                 )
             ).json()
-            assert listed["metrics"][0]["primary_reason"] == "COVERAGE"
+            assert listed["metrics"][0]["primary_reason"] == "coverage"
 
         async with async_session_maker() as session:
             rows = (

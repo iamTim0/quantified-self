@@ -123,6 +123,8 @@ from core.oauth_refresh import (
 )
 from core.reports import (
     CORE_COMPUTED_KINDS,
+    REASON_COVERAGE,
+    REASON_PREFERENCE,
     REPORT_KINDS,
     acquire_report_lock,
     compute_conflicts_report,
@@ -2497,7 +2499,7 @@ async def list_metric_source_preferences(
                 "metric_type": metric_type,
                 "definition": _definition_payload(metric_type),
                 "primary_source_id": primary,
-                # PREFERENCE or COVERAGE — a stable identifier, not prose (rule 17).
+                # preference or coverage — a stable identifier, not prose (rule 17).
                 "primary_reason": reason,
                 "sources": [
                     {
@@ -2556,7 +2558,7 @@ async def set_metric_source_preference(
         "tenant_id": tenant_id,
         "metric_type": canonical,
         "primary_source_id": source.id,
-        "primary_reason": "PREFERENCE",
+        "primary_reason": REASON_PREFERENCE,
     }
 
 
@@ -2579,7 +2581,7 @@ async def clear_metric_source_preference(
     return {
         "tenant_id": tenant_id,
         "metric_type": canonical,
-        "primary_reason": "COVERAGE",
+        "primary_reason": REASON_COVERAGE,
     }
 
 

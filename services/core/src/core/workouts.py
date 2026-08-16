@@ -49,7 +49,11 @@ from core.daily_story import (
     resolve_primary_source_for,
 )
 from core.db.models import DataPoint, DataSource
-from core.reports import metric_source_coverage, primary_source_preferences
+from core.reports import (
+    REASON_ONLY_SOURCE,
+    metric_source_coverage,
+    primary_source_preferences,
+)
 from core.sessions import (
     END_FIELDS,
     STREAM_METRICS,
@@ -882,7 +886,7 @@ async def _context(
                 metric_type, source_ids, preferences, coverage
             )
         else:
-            chosen, reason = source_ids[0], "ONLY_SOURCE"
+            chosen, reason = source_ids[0], REASON_ONLY_SOURCE
         stats = by_source[chosen]
         value = {
             "sum": stats["sum"],

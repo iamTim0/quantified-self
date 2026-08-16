@@ -193,7 +193,7 @@ interface Insights {
     source_ids: string[];
     /** Which source answers. Empty from a Core that could not resolve it. */
     primary_source_id?: string;
-    /** PREFERENCE or COVERAGE — an identifier the client branches on (rule 17). */
+    /** `preference` or `coverage` — an identifier the client branches on (rule 17). */
     primary_reason?: string;
   }[];
   data_quality: Record<string, Quality>;
@@ -1235,11 +1235,33 @@ function Sparkline({ values }: { values: (number | null)[] }) {
   );
 }
 
+/**
+ * The seven identifiers the Analysis Service sends, and their labels.
+ *
+ * A lookup rather than the templated cast `muscleKey` uses, because this value
+ * can arrive from a *stored* report: a run computed before the server stopped
+ * sending German words still holds `"Montag"`, and `t("weekday.Montag")` would
+ * render that key as visible text. An unrecognised value falls back to the
+ * server's own string — the posture rule 17 sets out for deployment warnings,
+ * and here it means an old report stays readable until it is recomputed, which
+ * happens on the next import or within twelve hours at the latest.
+ */
+const WEEKDAY_KEYS: Record<string, MessageKey> = {
+  monday: "weekday.monday",
+  tuesday: "weekday.tuesday",
+  wednesday: "weekday.wednesday",
+  thursday: "weekday.thursday",
+  friday: "weekday.friday",
+  saturday: "weekday.saturday",
+  sunday: "weekday.sunday",
+};
+
 function WeekdayChart({
   data,
 }: {
   data: { weekday: string; mean: number | null; sample_size: number }[];
 }) {
+  const t = useT();
   const values = data.map((d) => d.mean).filter((v): v is number => v !== null);
   if (values.length === 0) return null;
   const max = Math.max(...values);
@@ -1248,7 +1270,9 @@ function WeekdayChart({
     <div className="space-y-1">
       {data.map((d) => (
         <div key={d.weekday} className="flex items-center gap-2 text-[11px]">
-          <span className="w-20 shrink-0 text-slate-500">{d.weekday}</span>
+          <span className="w-20 shrink-0 text-slate-500">
+            {WEEKDAY_KEYS[d.weekday] ? t(WEEKDAY_KEYS[d.weekday]) : d.weekday}
+          </span>
           <span className="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
             {d.mean !== null && (
               <span

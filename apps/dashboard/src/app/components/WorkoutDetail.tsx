@@ -95,6 +95,7 @@ interface Surrounding {
   unit: string;
   category: string;
   source_type: string | null;
+  /** `only_source`, `preference` or `coverage` — an identifier, not prose (rule 17). */
   source_reason: string;
   other_sources: string[];
   sample_count: number;
