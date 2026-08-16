@@ -480,7 +480,11 @@ async def _run_nats_publisher_forever(app: FastAPI) -> None:
             app.state.nats_client = nc
             app.state.nats_status = "connected"
             delay = 1.0
-            await nc.closed
+            # nats-py exposes the terminal state as the public `is_closed`
+            # property; there is no public `closed` event. Polling keeps this
+            # publisher alive without depending on a private client member.
+            while not nc.is_closed:
+                await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 - retry after a broker outage
