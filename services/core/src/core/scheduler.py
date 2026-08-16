@@ -226,7 +226,8 @@ async def find_due_connectors(
     rows = (
         await session.execute(
             select(DataSource).where(
-                DataSource.tenant_id.in_(select(Tenant.id))
+                DataSource.tenant_id.in_(select(Tenant.id)),
+                DataSource.deleted_at.is_(None),
             )
         )
     ).scalars().all()

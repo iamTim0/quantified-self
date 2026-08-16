@@ -518,6 +518,7 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
                     select(DataSource).where(
                         DataSource.id == connector.source_id,
                         DataSource.tenant_id == connector.tenant_id,
+                        DataSource.deleted_at.is_(None),
                     )
                 )
             ).scalars().first()
@@ -2978,7 +2979,11 @@ async def import_mapped_rows(
     tenant_id = get_current_tenant_id()
     source_ids = {row.source_id for row in request.rows}
     known = await session.execute(
-        select(DataSource.id).where(DataSource.tenant_id == tenant_id, DataSource.id.in_(source_ids))
+        select(DataSource.id).where(
+            DataSource.tenant_id == tenant_id,
+            DataSource.deleted_at.is_(None),
+            DataSource.id.in_(source_ids),
+        )
     )
     if set(known.scalars()) != source_ids:
         raise HTTPException(status_code=400, detail="Every source_id must belong to the authenticated tenant")
@@ -3443,7 +3448,10 @@ async def _resolve_source(
     resolves to whichever the database returns first, so it is ordered by creation
     to at least be *stable* rather than arbitrary.
     """
-    query = select(DataSource).where(DataSource.tenant_id == tenant_id)
+    query = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.deleted_at.is_(None),
+    )
     if source_id is not None:
         query = query.where(DataSource.id == source_id)
     if source_type is not None:
@@ -4989,7 +4997,10 @@ async def list_connectors(
     """List configured connectors for the tenant with masked secrets and sync details."""
     tenant_id = get_current_tenant_id()
 
-    stmt = select(DataSource).where(DataSource.tenant_id == tenant_id)
+    stmt = select(DataSource).where(
+        DataSource.tenant_id == tenant_id,
+        DataSource.deleted_at.is_(None),
+    )
     res = await session.execute(stmt)
     sources = res.scalars().all()
 
@@ -5081,11 +5092,15 @@ async def delete_connector(
     if not source:
         raise HTTPException(status_code=404, detail="Connector configuration not found")
 
-    # Clear encrypted token and deactivate connector while preserving all ingested data_points
+    # Clear encrypted token and deactivate connector while preserving the source
+    # row and all ingested data_points. The deletion timestamp lets a new active
+    # connector reuse this display name without changing historical provenance.
+    deleted_at = datetime.now(timezone.utc)
     source.config = {
         "status": "inactive",
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": deleted_at.isoformat(),
     }
+    source.deleted_at = deleted_at
     await session.commit()
 
     return {
@@ -5242,7 +5257,11 @@ async def _resolve_connector_for_key(
 
     res = await session.execute(
         select(DataSource)
-        .where(DataSource.tenant_id == tenant_id, DataSource.source_type == source_type)
+        .where(
+            DataSource.tenant_id == tenant_id,
+            DataSource.deleted_at.is_(None),
+            DataSource.source_type == source_type,
+        )
         .order_by(DataSource.created_at, DataSource.id)
     )
     candidates = res.scalars().all()

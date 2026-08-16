@@ -51,6 +51,10 @@ In the dashboard's **Connectors** area, configured importers and their live stat
 the **Current importers** tab. Provider selection for a new importer is kept in the adjacent
 **Add importer** tab, so adding another instance does not mix with the current status list.
 
+Deleting a connector removes its credentials and deactivates it while preserving its source row and
+already imported history. A replacement connector receives a new source ID, so it can reuse the same
+display name without merging its future data with the retired connector's history.
+
 ## Retrieving the data
 
 Imported data does not live in the importers, it lives in Core. Queries go through the
