@@ -80,7 +80,7 @@ task docs:build        # MkDocs --strict
 | Variable | Purpose | Required in production |
 | --- | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection | yes |
-| `NATS_URL` | Broker | yes |
+| `NATS_URL` | Broker; local checkouts use loopback, while production Compose defaults to `nats://nats:4222` | no when using the production Compose topology |
 | `CORE_ROLE` | Core runtime role: `all`, `api`, `ingest` or `scheduler` | no (`all` locally) |
 | `JWT_SECRET` | Signature of the user tokens | **yes — the default is unsafe** |
 | `INTERNAL_SERVICE_SECRET` | Secret for internal service calls | **yes** |

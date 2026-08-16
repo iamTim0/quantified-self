@@ -511,6 +511,9 @@ jobs:
 
           QS_VERSION=${VERSION}
           QS_IMAGE_PREFIX=${REGISTRY}
+          # Internal broker address for the standard Compose/Coolify network.
+          # Leave this unchanged unless the service name or port is customized.
+          NATS_URL=nats://nats:4222
 
           PUBLIC_HOST=your-host.example
           ENVIRONMENT=production
