@@ -207,6 +207,17 @@ that hides its extremes is a number that looks measured: a sprint peaking at 186
 inside a bucket averaging 162 has to still show 186, or the chart is a different
 workout from the one that happened. `test_decimation_preserves_the_peak` pins it.
 
+## Am I getting stronger
+
+Per-exercise progression — best set, estimated one-rep max, weekly volume and a
+direction — is computed by the Analysis Service and shown under **Strength** on the
+analysis page. It reads sets from Core over a purpose-built
+`QueryStrengthSets` RPC, because the grouping key is a metadata field only Core can
+read. See [Correlations and simple analyses](correlations.md#strength-progression).
+
+The workout detail below shows the sets of *one* session; that page shows one
+exercise across all of them.
+
 ## Muscle groups
 
 Streak states a category per exercise, and that category *is* the muscle group. It

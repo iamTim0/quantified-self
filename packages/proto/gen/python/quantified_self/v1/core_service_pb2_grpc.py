@@ -45,6 +45,11 @@ class CoreDataServiceStub:
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.SerializeToString,
                 response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.FromString,
                 _registered_method=True)
+        self.QueryStrengthSets = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/QueryStrengthSets',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.FromString,
+                _registered_method=True)
         self.GetDataPoint = channel.unary_unary(
                 '/quantified_self.v1.CoreDataService/GetDataPoint',
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.GetDataPointRequest.SerializeToString,
@@ -87,6 +92,12 @@ class CoreDataServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def QueryMetricSeries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueryStrengthSets(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -140,6 +151,11 @@ def add_CoreDataServiceServicer_to_server(servicer, server):
                     servicer.QueryMetricSeries,
                     request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.FromString,
                     response_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.SerializeToString,
+            ),
+            'QueryStrengthSets': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryStrengthSets,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.SerializeToString,
             ),
             'GetDataPoint': grpc.unary_unary_rpc_method_handler(
                     servicer.GetDataPoint,
@@ -226,6 +242,33 @@ class CoreDataService:
             '/quantified_self.v1.CoreDataService/QueryMetricSeries',
             quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.SerializeToString,
             quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueryStrengthSets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/QueryStrengthSets',
+            quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.FromString,
             options,
             channel_credentials,
             insecure,

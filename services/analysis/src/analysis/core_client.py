@@ -46,6 +46,42 @@ PAGE_SIZE = 1000
 # in paging -- a token that fails to advance would otherwise loop forever.
 MAX_PAGES = 500
 
+#: Pages of sets one bundle will read. A year of five sessions a week at twenty
+#: sets is roughly five thousand, so this covers it without an unbounded loop.
+MAX_SET_PAGES = 10
+
+
+@dataclass(frozen=True)
+class StrengthSet:
+    """One resistance set, as Core reassembled it.
+
+    A set is stored as up to four points sharing a `set_id`; Core puts them back
+    together because the grouping key — the exercise name — lives in JSONB, which
+    this service may not read (rules 1 and 3).
+    """
+
+    at: datetime
+    session_id: str
+    source_id: str
+    exercise_title: str
+    #: Canonical MuscleGroup identifier, or empty when the provider stated none.
+    muscle_group: str
+    weight_kg: float
+    reps: float
+    volume_kg: float
+    set_number: int
+    #: False for a bodyweight set. Not the same as `weight_kg == 0`, which a
+    #: provider may legitimately state.
+    has_weight: bool
+
+
+@dataclass(frozen=True)
+class StrengthSetsResponse:
+    sets: list[StrengthSet]
+    #: The window held more sets than the pages read. A shortened answer says so
+    #: rather than reading as a quiet training block.
+    truncated: bool
+
 
 class CoreUnavailable(Exception):
     """Core could not be reached or refused the call."""
@@ -296,6 +332,73 @@ class CoreClient:
                 for issue in response.issues
             ],
         )
+
+    async def fetch_strength_sets(
+        self,
+        tenant_id: str,
+        *,
+        start: datetime,
+        end: datetime,
+        request_id: str,
+        source_id: str | None = None,
+    ) -> StrengthSetsResponse:
+        """Every resistance set in a bounded window, paged.
+
+        The one call in this client that reads a *metadata* dimension. It exists as
+        its own RPC rather than a grouping option on `fetch_metric_series` because
+        that message is the interface every analysis depends on, and an
+        almost-always-empty dimension there would be a field every future reader had
+        to reason about.
+        """
+        collected: list[StrengthSet] = []
+        token = ""
+        truncated = False
+
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                for _ in range(MAX_SET_PAGES):
+                    query = pb.QueryStrengthSetsRequest(
+                        tenant_id=tenant_id,
+                        start_time=_timestamp(start),
+                        end_time=_timestamp(end),
+                        pagination=common_pb.PaginationRequest(page_token=token),
+                    )
+                    if source_id is not None:
+                        query.source_id = source_id
+                    response = await stub.QueryStrengthSets(
+                        query, metadata=_metadata(request_id)
+                    )
+                    collected.extend(
+                        StrengthSet(
+                            at=row.at.ToDatetime().replace(tzinfo=timezone.utc),
+                            session_id=row.session_id,
+                            source_id=row.source_id,
+                            exercise_title=row.exercise_title,
+                            muscle_group=row.muscle_group,
+                            weight_kg=row.weight_kg,
+                            reps=row.reps,
+                            volume_kg=row.volume_kg,
+                            set_number=int(row.set_number),
+                            has_weight=row.has_weight,
+                        )
+                        for row in response.sets
+                    )
+                    token = response.pagination.next_page_token
+                    if not token:
+                        break
+                else:
+                    # The loop ran out rather than the data. Reported, not raised:
+                    # a partial training history still answers "am I getting
+                    # stronger", where an exception answers nothing.
+                    truncated = True
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC strength set query failed: {exc.code().name}"
+            ) from exc
+
+        return StrengthSetsResponse(sets=collected, truncated=truncated)
+
 
     async def fetch_metric_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         """Canonical or registered dynamic metric names stored for one tenant."""

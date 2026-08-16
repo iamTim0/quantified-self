@@ -155,7 +155,8 @@ export const en = {
   "day.timelineTruncated": "Only the first entries of this day are shown.",
   "day.lastImport": "This connector last imported {timestamp}",
   "day.neverImported": "This connector has never completed an import",
-  "day.answeredBy": "Answered by {source}. Another connector also reports this metric; the two are never added together.",
+  "day.answeredBy":
+    "Answered by {source}. Another connector also reports this metric; the two are never added together.",
   "day.laneSleep": "Sleep",
   "day.laneActivity": "Activity",
   "day.laneWorkout": "Workouts",
@@ -1096,6 +1097,28 @@ export const en = {
   "muscle.full_body": "Full body",
   "muscle.cardio": "Cardio",
   "muscle.other": "Other",
+
+  // ── Strength progression ────────────────────────────────────────────────
+  "analysis.tabStrength": "Strength",
+  "analysis.strengthEmpty":
+    "No resistance training in this period. Sets arrive from the Streak connector.",
+  "analysis.strengthTruncated": "More sets than one analysis reads. The oldest are not included.",
+  "analysis.strengthBalance": "Where the work went",
+  "analysis.strengthBalanceHint":
+    "Sets per muscle group. A share, not a total: what was pushed only means something beside what was pulled.",
+  "analysis.strengthExercise": "Exercise",
+  "analysis.strengthSessions": "Sessions",
+  "analysis.strengthBest": "Best set",
+  "analysis.strengthOneRm": "Estimated 1RM",
+  "analysis.strengthDirection": "Direction",
+  "analysis.strengthTooFew": "Fewer than {count} sessions — too few to call a direction.",
+  "analysis.strengthBasis.estimated_1rm": "Measured as the estimated one-rep max",
+  "analysis.strengthBasis.volume": "Measured as total volume",
+  "analysis.strengthBasis.reps": "Measured as repetitions, this being a bodyweight exercise",
+  "analysis.strengthBasis.none": "No basis",
+  "analysis.direction.rising": "Rising",
+  "analysis.direction.falling": "Falling",
+  "analysis.direction.flat": "Flat",
 
   // --- end of catalogue ---
 } satisfies Record<string, string>;

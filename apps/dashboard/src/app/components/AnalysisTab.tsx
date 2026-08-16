@@ -7,16 +7,19 @@ import {
   BookOpen,
   CalendarClock,
   ChevronDown,
+  Dumbbell,
   Info,
   RefreshCw,
   ShieldQuestion,
   TrendingUp,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { useI18n, useT, type MessageKey } from "../lib/i18n/provider";
+import { plural, useI18n, useT, type MessageKey } from "../lib/i18n/provider";
 import { useReport, type ReportParams } from "../lib/reports";
+import { describeMetric } from "../lib/metrics/catalog";
 import MetricSourcePicker from "./MetricSourcePicker";
 import ReportStatus from "./ReportStatus";
+import { muscleKey } from "./WorkoutsTab";
 
 /**
  * Analysis dashboard.
@@ -127,6 +130,51 @@ interface Quality {
   note: string;
 }
 
+/**
+ * Per-exercise progression, from `insights.strength`.
+ *
+ * `basis` says what "stronger" was measured *as*, because it differs per
+ * exercise: a loaded lift trends on its estimated one-rep max, a high-rep lift on
+ * volume, and a bodyweight exercise on repetitions — the last because its volume
+ * is zero at every session and calling that flat would be a wrong answer.
+ */
+interface StrengthTrend {
+  direction: string;
+  basis: string;
+  change_pct_over_window: number;
+  r_squared: number;
+  sample_size: number;
+}
+
+interface StrengthExercise {
+  exercise_title: string;
+  muscle_group: string | null;
+  sessions: number;
+  total_sets: number;
+  total_volume_kg: number;
+  best_set_weight_kg: number | null;
+  best_set_day: string | null;
+  latest_estimated_1rm_kg: number | null;
+  trend: StrengthTrend | null;
+}
+
+interface StrengthGroup {
+  muscle_group: string;
+  volume_kg: number;
+  sets: number;
+  volume_share_pct: number | null;
+  set_share_pct: number;
+}
+
+interface Strength {
+  exercises: StrengthExercise[];
+  muscle_groups: StrengthGroup[];
+  sets_analysed: number;
+  truncated: boolean;
+  min_sessions_for_trend: number;
+  disclaimer: string;
+}
+
 interface Insights {
   provenance: {
     analysis_version: string;
@@ -155,6 +203,7 @@ interface Insights {
   anomalies: Record<string, Anomaly>;
   routines: Record<string, Routine>;
   period_comparisons: Record<string, unknown>;
+  strength?: Strength;
   docs_url?: string;
 }
 
@@ -164,16 +213,148 @@ interface AnalysisSource {
   display_name?: string;
 }
 
-type Section = "overview" | "correlations" | "trends" | "anomalies" | "routines" | "quality";
+type Section =
+  | "overview"
+  | "correlations"
+  | "trends"
+  | "strength"
+  | "anomalies"
+  | "routines"
+  | "quality";
 
 const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[] = [
   { id: "overview", labelKey: "analysis.tabOverview", icon: Activity },
   { id: "correlations", labelKey: "analysis.tabCorrelations", icon: Activity },
   { id: "trends", labelKey: "analysis.tabTrends", icon: TrendingUp },
+  { id: "strength", labelKey: "analysis.tabStrength", icon: Dumbbell },
   { id: "anomalies", labelKey: "analysis.tabAnomalies", icon: AlertTriangle },
   { id: "routines", labelKey: "analysis.tabRoutines", icon: CalendarClock },
   { id: "quality", labelKey: "analysis.tabQuality", icon: ShieldQuestion },
 ];
+
+/**
+ * Per-exercise progression.
+ *
+ * Its own component so `strength` arrives non-optional: inline, TypeScript loses
+ * the narrowing from the guard the moment the value is read inside a `.map()`
+ * callback, and the alternative is a non-null assertion on every line.
+ */
+function StrengthSection({ strength, weightUnit }: { strength: Strength; weightUnit: string }) {
+  const { t, formatNumber } = useI18n();
+  return (
+    <>
+      <p className="text-xs text-slate-500">{strength.disclaimer}</p>
+      {strength.truncated && (
+        <p className="text-xs text-amber-700">{t("analysis.strengthTruncated")}</p>
+      )}
+
+      {strength.muscle_groups.length > 0 && (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h3 className="mb-1 text-sm font-bold text-slate-900">{t("analysis.strengthBalance")}</h3>
+          <p className="mb-3 text-xs text-slate-500">{t("analysis.strengthBalanceHint")}</p>
+          <div className="space-y-1.5">
+            {strength.muscle_groups.map((group) => (
+              <div key={group.muscle_group} className="flex items-center gap-2">
+                <span className="w-28 shrink-0 truncate text-xs text-slate-600">
+                  {t(muscleKey(group.muscle_group))}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-[#1d4ed8]"
+                    style={{ width: `${group.set_share_pct}%` }}
+                  />
+                </div>
+                <span className="w-24 shrink-0 text-right text-[11px] text-slate-500">
+                  {t(plural(group.sets, "workouts.sets_one", "workouts.sets_other"), {
+                    count: group.sets,
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="w-full min-w-[560px] text-xs">
+          <thead className="bg-slate-50 text-left">
+            <tr>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthExercise")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthSessions")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthBest")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthOneRm")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthDirection")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {strength.exercises.map((exercise) => (
+              <tr key={exercise.exercise_title} className="border-t border-slate-100">
+                <td className="px-3 py-2">
+                  <span className="font-semibold text-slate-800">{exercise.exercise_title}</span>
+                  {exercise.muscle_group && (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                      {t(muscleKey(exercise.muscle_group))}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-600">{exercise.sessions}</td>
+                <td className="px-3 py-2 text-slate-600">
+                  {exercise.best_set_weight_kg === null
+                    ? "—"
+                    : `${formatNumber(exercise.best_set_weight_kg)} ${weightUnit}`}
+                </td>
+                <td className="px-3 py-2 text-slate-600">
+                  {exercise.latest_estimated_1rm_kg === null
+                    ? "—"
+                    : `${formatNumber(exercise.latest_estimated_1rm_kg)} ${weightUnit}`}
+                </td>
+                <td className="px-3 py-2">
+                  {exercise.trend === null ? (
+                    <span
+                      className="text-slate-400"
+                      title={t("analysis.strengthTooFew", {
+                        count: strength.min_sessions_for_trend,
+                      })}
+                    >
+                      —
+                    </span>
+                  ) : (
+                    <span
+                      className={
+                        exercise.trend.direction === "rising"
+                          ? "font-semibold text-[#1d4ed8]"
+                          : exercise.trend.direction === "falling"
+                            ? "font-semibold text-[#b91c1c]"
+                            : "text-slate-500"
+                      }
+                      title={t(`analysis.strengthBasis.${exercise.trend.basis}` as MessageKey)}
+                    >
+                      {t(`analysis.direction.${exercise.trend.direction}` as MessageKey)}{" "}
+                      <span className="font-normal text-slate-400">
+                        {exercise.trend.change_pct_over_window > 0 ? "+" : ""}
+                        {formatNumber(exercise.trend.change_pct_over_window)} %
+                      </span>
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 
 export default function AnalysisTab({
   apiBase,
@@ -184,7 +365,9 @@ export default function AnalysisTab({
   tenantId?: string;
   refreshTrigger?: number;
 }) {
-  const { t, formatDate } = useI18n();
+  const { t, locale, formatDate } = useI18n();
+  // From the registry: the unit a set weight is stored in is declared once.
+  const weightUnit = describeMetric("strength_set_weight", locale).unit;
   const [section, setSection] = useState<Section>("overview");
 
   const [minStrength, setMinStrength] = useState(0.2);
@@ -632,6 +815,16 @@ export default function AnalysisTab({
                 )}
               </article>
             ))
+          )}
+        </div>
+      )}
+
+      {data && section === "strength" && (
+        <div className="space-y-4">
+          {!data.strength || data.strength.exercises.length === 0 ? (
+            <EmptyNote>{t("analysis.strengthEmpty")}</EmptyNote>
+          ) : (
+            <StrengthSection strength={data.strength} weightUnit={weightUnit} />
           )}
         </div>
       )}

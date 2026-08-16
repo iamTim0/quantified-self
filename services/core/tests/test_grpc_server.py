@@ -607,3 +607,226 @@ async def test_get_data_point_hides_other_tenants_behind_not_found(grpc_channel)
     finally:
         await cleanup_test_tenant(tenant_a)
         await cleanup_test_tenant(tenant_b)
+
+
+# ── QueryStrengthSets ────────────────────────────────────────────────────────
+
+
+async def _seed_sets(tenant_id: str, plan: list[tuple[str, str, float | None, int]]) -> str:
+    """One source and one set per entry: (exercise, muscle group, weight, reps).
+
+    A weight of `None` is a bodyweight set — reps and no load, which is a real
+    thing a gym log records and which `has_weight` exists to distinguish from a
+    stated zero.
+    """
+    source_id = str(uuid.uuid4())
+    base = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(days=1)
+    async with async_session_maker() as session:
+        session.add(
+            DataSource(
+                id=source_id, tenant_id=tenant_id,
+                source_type="streak", display_name="Streak",
+            )
+        )
+        await session.flush()
+        for index, (exercise, group, weight, reps) in enumerate(plan):
+            at = base + timedelta(minutes=index * 3)
+            common = {
+                "exercise_title": exercise,
+                "muscle_group": group,
+                "set_id": f"set-{index}",
+                "set_number": index + 1,
+                "session_id": "streak:abc123",
+            }
+            values = [("strength_set_reps", float(reps))]
+            if weight is not None:
+                values += [
+                    ("strength_set_weight", weight),
+                    ("strength_set_volume", weight * reps),
+                ]
+            for metric, value in values:
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()), tenant_id=tenant_id, source_id=source_id,
+                        metric_type=metric, timestamp=at, value=value,
+                        idempotency_key=f"set-{uuid.uuid4().hex}", metadata_=common,
+                    )
+                )
+        await session.commit()
+    return source_id
+
+
+def _set_window() -> tuple[Timestamp, Timestamp]:
+    start, end = Timestamp(), Timestamp()
+    start.FromDatetime(datetime.now(timezone.utc) - timedelta(days=3))
+    end.FromDatetime(datetime.now(timezone.utc) + timedelta(days=1))
+    return start, end
+
+
+@pytest.mark.asyncio
+async def test_strength_sets_are_reassembled_into_rows(grpc_channel):
+    """Four metrics sharing a `set_id` are one set, not four points.
+
+    Analysis holds no database connection (rule 3), so this is the only way it can
+    see an exercise name at all — the grouping key lives in JSONB.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed_sets(tenant_id, [
+            ("Back Squat", "quads", 100.0, 5),
+            ("Back Squat", "quads", 110.0, 3),
+            ("Pull-up", "back", None, 12),
+        ])
+        start, end = _set_window()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(tenant_id=tenant_id, start_time=start, end_time=end),
+            metadata=_auth(),
+        )
+
+        assert len(response.sets) == 3
+        first = response.sets[0]
+        assert first.exercise_title == "Back Squat"
+        assert first.muscle_group == "quads"
+        assert first.weight_kg == 100.0
+        assert first.reps == 5
+        assert first.volume_kg == 500.0
+        assert first.has_weight is True
+        assert first.session_id == "streak:abc123"
+        assert first.set_number == 1
+
+        bodyweight = response.sets[2]
+        assert bodyweight.exercise_title == "Pull-up"
+        assert bodyweight.reps == 12
+        # Not the same as a stated zero, which is why the flag exists.
+        assert bodyweight.has_weight is False
+        assert bodyweight.weight_kg == 0.0
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_strength_sets_are_scoped_to_the_calling_tenant(grpc_channel):
+    """Verifies Fizzbee Invariant: TenantIsolation."""
+    owner = await create_test_tenant()
+    other = await create_test_tenant()
+    try:
+        await _seed_sets(owner, [("Deadlift", "hamstrings", 140.0, 5)])
+        start, end = _set_window()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(tenant_id=other, start_time=start, end_time=end),
+            metadata=_auth(),
+        )
+        assert list(response.sets) == []
+    finally:
+        await cleanup_test_tenant(owner)
+        await cleanup_test_tenant(other)
+
+
+@pytest.mark.asyncio
+async def test_strength_sets_can_be_filtered_by_exercise_and_muscle(grpc_channel):
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed_sets(tenant_id, [
+            ("Back Squat", "quads", 100.0, 5),
+            ("Bench Press", "chest", 80.0, 8),
+        ])
+        start, end = _set_window()
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+
+        by_exercise = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(
+                tenant_id=tenant_id, start_time=start, end_time=end,
+                exercise_titles=["Bench Press"],
+            ),
+            metadata=_auth(),
+        )
+        assert [s.exercise_title for s in by_exercise.sets] == ["Bench Press"]
+
+        by_muscle = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(
+                tenant_id=tenant_id, start_time=start, end_time=end,
+                muscle_groups=["quads"],
+            ),
+            metadata=_auth(),
+        )
+        assert [s.exercise_title for s in by_muscle.sets] == ["Back Squat"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_page_of_sets_reports_that_it_was_cut(grpc_channel):
+    """A shortened answer says so, rather than reading as a short training block."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed_sets(
+            tenant_id,
+            [("Back Squat", "quads", 100.0 + index, 5) for index in range(6)],
+        )
+        start, end = _set_window()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(
+                tenant_id=tenant_id, start_time=start, end_time=end,
+                pagination=common_pb.PaginationRequest(page_size=2),
+            ),
+            metadata=_auth(),
+        )
+
+        assert response.truncated is True
+        assert response.pagination.next_page_token
+        assert len(response.sets) <= 2
+        # And the cursor actually advances rather than repeating the first page.
+        nxt = await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(
+                tenant_id=tenant_id, start_time=start, end_time=end,
+                pagination=common_pb.PaginationRequest(
+                    page_size=2, page_token=response.pagination.next_page_token
+                ),
+            ),
+            metadata=_auth(),
+        )
+        assert {s.weight_kg for s in nxt.sets}.isdisjoint({s.weight_kg for s in response.sets})
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_an_unbounded_strength_range_is_refused(grpc_channel):
+    """Bounded exactly like the series call: no window, no answer."""
+    tenant_id = await create_test_tenant()
+    try:
+        start, end = Timestamp(), Timestamp()
+        start.FromDatetime(datetime.now(timezone.utc) - timedelta(days=400))
+        end.FromDatetime(datetime.now(timezone.utc))
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+            await stub.QueryStrengthSets(
+                pb.QueryStrengthSetsRequest(
+                    tenant_id=tenant_id, start_time=start, end_time=end
+                ),
+                metadata=_auth(),
+            )
+        assert excinfo.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_strength_sets_require_a_service_credential(grpc_channel):
+    """Verifies Fizzbee Invariant: CredentialBoundToIdentity."""
+    stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+    start, end = _set_window()
+    with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+        await stub.QueryStrengthSets(
+            pb.QueryStrengthSetsRequest(
+                tenant_id=str(uuid.uuid4()), start_time=start, end_time=end
+            )
+        )
+    assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED

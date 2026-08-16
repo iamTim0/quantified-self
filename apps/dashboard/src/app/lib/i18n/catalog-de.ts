@@ -156,7 +156,8 @@ export const de: Record<MessageKey, string> = {
   "day.timelineTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
   "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
   "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
-  "day.answeredBy": "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
+  "day.answeredBy":
+    "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
   "day.laneSleep": "Schlaf",
   "day.laneActivity": "Aktivität",
   "day.laneWorkout": "Workouts",
@@ -1108,6 +1109,30 @@ export const de: Record<MessageKey, string> = {
   "muscle.full_body": "Ganzkörper",
   "muscle.cardio": "Ausdauer",
   "muscle.other": "Sonstiges",
+
+  // ── Kraftentwicklung ────────────────────────────────────────────────────
+  "analysis.tabStrength": "Kraft",
+  "analysis.strengthEmpty":
+    "Kein Krafttraining in diesem Zeitraum. Sätze kommen über den Streak-Connector.",
+  "analysis.strengthTruncated":
+    "Mehr Sätze, als eine Auswertung liest. Die ältesten sind nicht enthalten.",
+  "analysis.strengthBalance": "Wohin die Arbeit ging",
+  "analysis.strengthBalanceHint":
+    "Sätze je Muskelgruppe. Ein Anteil, keine Summe: was gedrückt wurde, sagt erst neben dem etwas, was gezogen wurde.",
+  "analysis.strengthExercise": "Übung",
+  "analysis.strengthSessions": "Einheiten",
+  "analysis.strengthBest": "Bester Satz",
+  "analysis.strengthOneRm": "Geschätztes 1RM",
+  "analysis.strengthDirection": "Richtung",
+  "analysis.strengthTooFew": "Weniger als {count} Einheiten — zu wenig für eine Richtung.",
+  "analysis.strengthBasis.estimated_1rm": "Gemessen am geschätzten Einer-Maximum",
+  "analysis.strengthBasis.volume": "Gemessen am Gesamtvolumen",
+  "analysis.strengthBasis.reps":
+    "An den Wiederholungen gemessen, da es eine Körpergewichtsübung ist",
+  "analysis.strengthBasis.none": "Keine Grundlage",
+  "analysis.direction.rising": "Steigend",
+  "analysis.direction.falling": "Fallend",
+  "analysis.direction.flat": "Gleichbleibend",
 
   // --- End of catalogue ---
 };

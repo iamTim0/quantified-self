@@ -45,6 +45,7 @@ from analysis.insights import (
     detect_anomalies,
     lagged_correlations,
     series_quality,
+    strength_progression,
     trend_for_metric,
     weekday_pattern,
 )
@@ -323,6 +324,32 @@ async def build_insights_bundle(
 
     excluded = sorted((set(series) - set(usable)) | unresolved_metrics)
 
+    # Strength is asked for separately, because it is the one analysis whose
+    # grouping key is a metadata field rather than a metric name. Core reads it
+    # (rule 1) and hands over sets; the maths here is arithmetic over those rows.
+    #
+    # A failure to fetch is not a failure of the bundle: a workspace with no
+    # resistance training is the common case, and a correlation report should not
+    # disappear because a strength query did. `CoreUnavailable` still propagates —
+    # the worker distinguishes "Core is restarting" from "this run failed", and
+    # swallowing it here would make every run look successful during an outage.
+    strength: dict[str, Any] = strength_progression([])
+    try:
+        strength_sets = await core_client.fetch_strength_sets(
+            tenant_id,
+            start=window_start,
+            end=now,
+            request_id=request_id,
+            source_id=source_id,
+        )
+        strength = strength_progression(
+            strength_sets.sets, truncated=strength_sets.truncated
+        )
+    except CoreUnavailable:
+        raise
+    except Exception:  # one analysis must not take the whole bundle down
+        logger.warning("Strength progression could not be computed", exc_info=True)
+
     return {
         "tenant_id": tenant_id,
         "provenance": provenance.to_dict(),
@@ -341,6 +368,7 @@ async def build_insights_bundle(
         "anomalies": anomalies,
         "routines": routines,
         "period_comparisons": comparisons,
+        "strength": strength,
         "docs_url": "/docs/features/correlations/",
     }
 

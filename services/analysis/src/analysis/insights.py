@@ -625,3 +625,212 @@ def build_daily_series(
         metric: {day: round(float(reducer(vals)), 4) for day, vals in days.items()}
         for metric, days in buckets.items()
     }
+
+
+# ─── 7. strength progression ─────────────────────────────────
+#
+# "Am I getting stronger" is not a correlation and not a trend over a daily
+# series: it is a question about one exercise, and the thing that identifies an
+# exercise lives in a metadata field. Core reads it (rule 1) and hands over sets
+# through `QueryStrengthSets`; everything below is arithmetic over those rows and
+# does no I/O, like the rest of this module.
+
+#: Sessions an exercise needs before a direction is reported. Two points make a
+#: line through any two numbers, and a line through two numbers is not a trend.
+MIN_SESSIONS_FOR_PROGRESSION = 4
+
+#: Exercises one bundle reports on. Ordered by how much work went into them, so
+#: the cap keeps what somebody actually trains rather than what sorts first.
+MAX_EXERCISES = 20
+
+
+def estimated_one_rep_max(weight: float, reps: float) -> float | None:
+    """Epley: `w × (1 + reps/30)`.
+
+    An estimate, and only useful in the range it was fitted for. Above about ten
+    repetitions it drifts high — a set of twenty says more about endurance than
+    about a maximum — so it is not computed there rather than being computed and
+    quietly wrong. A single repetition is its own answer.
+    """
+    if weight <= 0 or reps <= 0 or reps > 10:
+        return None
+    if reps == 1:
+        return weight
+    return weight * (1 + reps / 30.0)
+
+
+def _session_key(entry: Any) -> str:
+    """One training session, for an exercise that may be trained twice a day.
+
+    The session id where the set carries one; the calendar date otherwise, which
+    is what separated sessions before ids existed and is still right for a set
+    stored back then.
+    """
+    return entry.session_id or entry.at.date().isoformat()
+
+
+def exercise_progression(sets: list[Any]) -> list[dict[str, Any]]:
+    """One entry per exercise: its sessions, its best sets, and where it is going.
+
+    Grouped by session rather than by day so two sessions in one day are two data
+    points, and sorted oldest first so the slope means what its sign says.
+    """
+    by_exercise: dict[str, list[Any]] = defaultdict(list)
+    for entry in sets:
+        if entry.exercise_title:
+            by_exercise[entry.exercise_title].append(entry)
+
+    results: list[dict[str, Any]] = []
+    for exercise, entries in by_exercise.items():
+        by_session: dict[str, list[Any]] = defaultdict(list)
+        for entry in entries:
+            by_session[_session_key(entry)].append(entry)
+
+        sessions: list[dict[str, Any]] = []
+        for rows in by_session.values():
+            ordered = sorted(rows, key=lambda row: row.at)
+            weighted = [row for row in ordered if row.has_weight and row.weight_kg > 0]
+            top = max(weighted, key=lambda row: row.weight_kg) if weighted else None
+            one_rm = estimated_one_rep_max(top.weight_kg, top.reps) if top else None
+            sessions.append(
+                {
+                    "at": ordered[0].at.isoformat(),
+                    "day": ordered[0].at.date().isoformat(),
+                    "sets": len(ordered),
+                    "reps": round(sum(row.reps for row in ordered), 1),
+                    "volume_kg": round(sum(row.volume_kg for row in ordered), 1),
+                    "top_set_weight_kg": round(top.weight_kg, 2) if top else None,
+                    "estimated_1rm_kg": round(one_rm, 1) if one_rm is not None else None,
+                    "muscle_group": ordered[0].muscle_group or None,
+                }
+            )
+        sessions.sort(key=lambda item: item["at"])
+
+        # What "stronger" means depends on the exercise, so the basis is chosen
+        # rather than assumed, and the choice is reported.
+        #
+        #   * A loaded lift: the estimated one-rep max.
+        #   * A loaded lift trained above ten reps, where Epley is not computed:
+        #     total volume.
+        #   * A bodyweight exercise: repetitions. It carries no load, so its volume
+        #     is zero at every session — reporting "flat" for somebody who went from
+        #     eight pull-ups to fifteen would be a wrong answer, not a missing one.
+        candidates: list[tuple[str, list[tuple[str, float]]]] = [
+            (
+                "estimated_1rm",
+                [(s["day"], s["estimated_1rm_kg"]) for s in sessions
+                 if s["estimated_1rm_kg"] is not None],
+            ),
+            ("volume", [(s["day"], s["volume_kg"]) for s in sessions if s["volume_kg"]]),
+            ("reps", [(s["day"], s["reps"]) for s in sessions if s["reps"]]),
+        ]
+        basis, series = next(
+            (
+                (name, points)
+                for name, points in candidates
+                if len(points) >= MIN_SESSIONS_FOR_PROGRESSION
+            ),
+            ("none", []),
+        )
+        trend = None
+        if len(series) >= MIN_SESSIONS_FOR_PROGRESSION:
+            trend = trend_for_metric(
+                [day for day, _ in series],
+                [value for _, value in series],
+                min_sample=MIN_SESSIONS_FOR_PROGRESSION,
+            )
+            if trend is not None:
+                # `moving_average_7d` is a window over *days*; these points are
+                # sessions, which are days apart. Dropped rather than relabelled.
+                trend.pop("moving_average_7d", None)
+                trend["basis"] = basis
+
+        best = max(
+            (s for s in sessions if s["top_set_weight_kg"] is not None),
+            key=lambda s: s["top_set_weight_kg"],
+            default=None,
+        )
+        results.append(
+            {
+                "exercise_title": exercise,
+                "muscle_group": next(
+                    (s["muscle_group"] for s in sessions if s["muscle_group"]), None
+                ),
+                "sessions": len(sessions),
+                "total_sets": sum(s["sets"] for s in sessions),
+                "total_volume_kg": round(sum(s["volume_kg"] for s in sessions), 1),
+                "best_set_weight_kg": best["top_set_weight_kg"] if best else None,
+                "best_set_day": best["day"] if best else None,
+                "latest_estimated_1rm_kg": next(
+                    (s["estimated_1rm_kg"] for s in reversed(sessions)
+                     if s["estimated_1rm_kg"] is not None),
+                    None,
+                ),
+                "trend": trend,
+                "history": sessions,
+            }
+        )
+
+    results.sort(key=lambda item: item["total_volume_kg"], reverse=True)
+    return results[:MAX_EXERCISES]
+
+
+def muscle_group_volume(sets: list[Any]) -> list[dict[str, Any]]:
+    """Where the work went, as a share of the whole.
+
+    A share rather than a raw total, because the useful question is balance: a
+    thousand kilos of pulling means nothing without knowing what was pushed.
+    Sets carrying no volume — bodyweight work — are counted, because leaving them
+    out would make a calisthenics programme look like no training at all.
+    """
+    volume: dict[str, float] = defaultdict(float)
+    counts: dict[str, int] = defaultdict(int)
+    for entry in sets:
+        group = entry.muscle_group or "other"
+        volume[group] += entry.volume_kg
+        counts[group] += 1
+
+    total_volume = sum(volume.values())
+    total_sets = sum(counts.values())
+    if not total_sets:
+        return []
+
+    return sorted(
+        (
+            {
+                "muscle_group": group,
+                "volume_kg": round(volume[group], 1),
+                "sets": counts[group],
+                "volume_share_pct": (
+                    round(volume[group] / total_volume * 100, 1) if total_volume else None
+                ),
+                "set_share_pct": round(counts[group] / total_sets * 100, 1),
+            }
+            for group in counts
+        ),
+        key=lambda item: item["sets"],
+        reverse=True,
+    )
+
+
+def strength_progression(sets: list[Any], *, truncated: bool = False) -> dict[str, Any]:
+    """The strength half of the insights bundle.
+
+    Empty rather than absent when a workspace logs no resistance training: a
+    reader who has never lifted should see nothing here, not an error, and a
+    consumer should not have to branch on a missing key.
+    """
+    exercises = exercise_progression(sets)
+    return {
+        "exercises": exercises,
+        "muscle_groups": muscle_group_volume(sets),
+        "sets_analysed": len(sets),
+        "exercises_analysed": len(exercises),
+        "truncated": truncated,
+        "min_sessions_for_trend": MIN_SESSIONS_FOR_PROGRESSION,
+        "disclaimer": (
+            "An estimated one-rep max is Epley's formula applied to the heaviest "
+            "set of a session, not a measurement. It is not computed above ten "
+            "repetitions, where the formula drifts high."
+        ),
+    }

@@ -174,9 +174,65 @@ message PutAnalysisReportResponse {
   string code = 2;
 }
 
+// One resistance set, as the strength analysis needs to see it.
+//
+// A purpose-built call rather than a `group_by_metadata_key` dimension on
+// `QueryMetricSeries`. The grouping key here is `exercise_title`, which lives in
+// JSONB and which only Core can read (rule 1) — but a general "group by any
+// metadata key" field would put an almost-always-empty dimension into the one
+// interface every analysis depends on, and every future reader of it would have to
+// reason about a case with a single caller. This message says what a set is.
+//
+// The four `strength_set_*` metrics are assembled back into a row here because a
+// set *is* a row: a weight, its repetitions and the volume they make are three
+// points sharing a `set_id`, and no consumer wants them apart.
+message StrengthSet {
+  google.protobuf.Timestamp at = 1;
+  // The session the set belongs to. Empty for a set stored before sessions
+  // existed; see docs/features/workout-detail.md.
+  string session_id = 2;
+  string source_id = 3;
+  string exercise_title = 4;
+  // Canonical MuscleGroup identifier, lowercase and stable (rule 17). Empty when
+  // the provider stated no category at all.
+  string muscle_group = 5;
+  double weight_kg = 6;
+  double reps = 7;
+  double volume_kg = 8;
+  int32 set_number = 9;
+  // False for a bodyweight set. Distinct from `weight_kg == 0`, which is what a
+  // set with a stated weight of zero would also look like.
+  bool has_weight = 10;
+}
+
+// Sets in a bounded window, for the strength-progression analysis.
+//
+// Bounded exactly like `QueryMetricSeries`: a range no longer than a year, a hard
+// row ceiling, and a keyset cursor. Analysis holds no database connection (rule 3)
+// and this is the only way it can see an exercise name.
+message QueryStrengthSetsRequest {
+  string tenant_id = 1;
+  google.protobuf.Timestamp start_time = 2;
+  google.protobuf.Timestamp end_time = 3;
+  // Optional filters. Empty means every exercise, every muscle group.
+  repeated string exercise_titles = 4;
+  repeated string muscle_groups = 5;
+  optional string source_id = 6;
+  PaginationRequest pagination = 7;
+}
+
+message QueryStrengthSetsResponse {
+  repeated StrengthSet sets = 1;
+  PaginationResponse pagination = 2;
+  // True when the window held more sets than the ceiling allows. A shortened
+  // answer says so rather than reading as a quiet period.
+  bool truncated = 3;
+}
+
 service CoreDataService {
   rpc QueryDataPoints(QueryDataPointsRequest) returns (QueryDataPointsResponse);
   rpc QueryMetricSeries(QueryMetricSeriesRequest) returns (QueryMetricSeriesResponse);
+  rpc QueryStrengthSets(QueryStrengthSetsRequest) returns (QueryStrengthSetsResponse);
   rpc GetDataPoint(GetDataPointRequest) returns (DataPoint);
   rpc ListMetricTypes(ListMetricTypesRequest) returns (ListMetricTypesResponse);
   rpc ListDataSources(ListDataSourcesRequest) returns (ListDataSourcesResponse);
