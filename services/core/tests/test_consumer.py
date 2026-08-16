@@ -1,6 +1,7 @@
 import json
 import math
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 import pytest
 from core.events.consumer import (
@@ -204,3 +205,27 @@ async def test_a_failure_that_keeps_recurring_is_given_up_on(monkeypatch):
 
     assert msg.terminated is True
     assert msg.acked is False
+
+
+@pytest.mark.asyncio
+async def test_final_delivery_failure_marks_the_tenant_run_before_termination(monkeypatch):
+    """A terminal broker delivery failure closes only its tenant-scoped run."""
+    marker = AsyncMock()
+    monkeypatch.setattr("core.events.consumer._mark_sync_run_delivery_failure", marker)
+    event = _event()
+    event["sync_run_id"] = "33333333-3333-3333-3333-333333333333"
+    monkeypatch.setattr(
+        "core.events.consumer.async_session_maker",
+        _session_raising(RuntimeError("connection refused")),
+    )
+    msg = DummyMsg(event, num_delivered=MAX_DELIVERY_ATTEMPTS)
+
+    await process_message(msg)
+
+    marker.assert_awaited_once_with(
+        tenant_id=event["tenant_id"],
+        source_id=event["source_id"],
+        sync_run_id=event["sync_run_id"],
+        attempts=MAX_DELIVERY_ATTEMPTS,
+    )
+    assert msg.terminated is True

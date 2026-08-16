@@ -13,6 +13,7 @@ handing importers the signing key to save an HTTP call would undo exactly that. 
 token therefore goes back to Core, which answers with the workspace it belongs to.
 """
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any
@@ -24,6 +25,9 @@ from apple_health_importer.auth import internal_headers
 from apple_health_importer.config import settings
 
 logger = logging.getLogger(__name__)
+
+STATUS_REPORT_ATTEMPTS = 4
+STATUS_REPORT_DELAYS = (0.1, 0.5, 1.5)
 
 
 @dataclass(frozen=True)
@@ -206,8 +210,17 @@ async def close_sync_run(
     provider_window_start: str | None = None,
     provider_window_end: str | None = None,
     provider_exported_at: str | None = None,
-) -> None:
-    """Close the run out so the history shows what happened."""
+    code: str | None = None,
+    params: dict[str, str | int | float | bool] | None = None,
+) -> bool:
+    """Close the run out so the history shows what happened.
+
+    A final status is the only thing that turns an open run into a terminal audit
+    record. Treating a dropped HTTP response as success left the dashboard loading
+    forever, so transient transport and 5xx failures are retried and every response
+    is checked. Four client errors are not retried: the tenant/source/run boundary is
+    wrong and repeating it cannot repair that request.
+    """
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_id}/status"
     payload: dict[str, Any] = {
         "sync_status": status,
@@ -228,12 +241,38 @@ async def close_sync_run(
         payload["provider_window_end"] = provider_window_end
     if provider_exported_at is not None:
         payload["provider_exported_at"] = provider_exported_at
+    if code is not None:
+        payload["code"] = code
+    if params is not None:
+        payload["params"] = params
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Could not report sync result to Core: {exc}")
+        for attempt in range(1, STATUS_REPORT_ATTEMPTS + 1):
+            try:
+                response = await client.post(
+                    url, headers=internal_headers(req_id, tenant_id), json=payload
+                )
+            except Exception as exc:  # noqa: BLE001 - final status must not crash the worker
+                if attempt == STATUS_REPORT_ATTEMPTS:
+                    logger.warning(
+                        "[req_id=%s] Could not report final sync result to Core after %d attempts (%s).",
+                        req_id,
+                        attempt,
+                        type(exc).__name__,
+                    )
+                    return False
+            else:
+                if 200 <= response.status_code < 300:
+                    return True
+                if response.status_code < 500 or attempt == STATUS_REPORT_ATTEMPTS:
+                    logger.warning(
+                        "[req_id=%s] Core rejected final sync result (status=%s).",
+                        req_id,
+                        response.status_code,
+                    )
+                    return False
+            await asyncio.sleep(STATUS_REPORT_DELAYS[min(attempt - 1, len(STATUS_REPORT_DELAYS) - 1)])
+    return False
 
 
 async def report_sync_progress(

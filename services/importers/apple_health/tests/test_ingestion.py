@@ -143,6 +143,73 @@ def test_ingest_rejects_unknown_key(mock_resolve):
     assert response.status_code == 401
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"unexpected": {"sensitive": "must not be reflected"}},
+        {"data": {"unexpected": [1, 2, 3]}},
+        {"data": "not-an-object"},
+    ],
+)
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.open_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.resolve_api_key", new_callable=AsyncMock)
+def test_ingest_rejects_structurally_invalid_payload_without_reflecting_values(
+    mock_resolve, mock_open, mock_close, payload
+):
+    """Verifies Fizzbee Invariant: InvalidProviderSchemaCannotLookSuccessful.
+
+    Schema failures are a 4xx, carry only a stable code/params pair, and never copy
+    provider keys or values into the API response or the terminal run message.
+    """
+    mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-invalid"
+
+    response = client.post(
+        "/ingest",
+        json=payload,
+        headers={"Authorization": f"Bearer {VALID_KEY}", "X-Request-ID": "req-invalid"},
+    )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["code"].startswith("payload_")
+    assert body["params"] == {}
+    assert "sensitive" not in response.text
+    assert "unexpected" not in response.text
+    assert mock_close.await_args.kwargs["code"] == body["code"]
+    assert mock_close.await_args.kwargs["params"] == {}
+    assert "sensitive" not in mock_close.await_args.kwargs["message"]
+
+
+@patch("apple_health_importer.main.close_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.open_sync_run", new_callable=AsyncMock)
+@patch("apple_health_importer.main.resolve_api_key", new_callable=AsyncMock)
+def test_ingest_rejects_invalid_json_with_a_stable_code(mock_resolve, mock_open, mock_close):
+    """Malformed JSON is recorded as a safe 400 terminal run."""
+    mock_resolve.return_value = _identity()
+    mock_open.return_value = "run-invalid-json"
+
+    response = client.post(
+        "/ingest",
+        content=b"{not-json",
+        headers={
+            "Authorization": f"Bearer {VALID_KEY}",
+            "Content-Type": "application/json",
+            "X-Request-ID": "req-invalid-json",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {
+        "code": "invalid_json",
+        "params": {},
+        "detail": "The request body is not valid JSON.",
+    }
+    assert mock_close.await_args.kwargs["code"] == "invalid_json"
+
+
 def test_extract_presented_key_prefers_bearer():
     """Authorization is the documented form; X-Api-Key is the legacy fallback."""
     assert extract_presented_key("Bearer abc", "xyz") == "abc"

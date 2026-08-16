@@ -47,6 +47,10 @@ from apple_health_importer.export_archive import (
     read_export,
 )
 from apple_health_importer.transformer import transform_health_auto_export_json
+from apple_health_importer.transformer import (
+    AppleHealthPayloadError,
+    validate_health_auto_export_payload,
+)
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(
@@ -87,6 +91,39 @@ PUBLISH_BATCH_BYTES = 512 * 1024
 
 #: How often the spool is checked for uploads nobody came back to finish.
 _SWEEP_INTERVAL_SECONDS = 300
+
+_PAYLOAD_ERROR_DETAILS: dict[str, str] = {
+    "invalid_json": "The request body is not valid JSON.",
+    "payload_not_object": "The Apple Health payload must be a JSON object.",
+    "payload_empty": "The Apple Health payload is empty.",
+    "payload_data_not_object": "The Apple Health payload has an invalid data envelope.",
+    "payload_unrecognized": "The JSON document is not a Health Auto Export payload.",
+    "payload_missing_sections": "The Health Auto Export payload has no supported data sections.",
+    "payload_section_not_array": "A Health Auto Export data section must be an array.",
+    "payload_metric_invalid": "A Health Auto Export metric entry has an invalid shape.",
+    "payload_metric_data_invalid": "A Health Auto Export metric data section has an invalid shape.",
+    "payload_workout_invalid": "A Health Auto Export workout entry has an invalid shape.",
+    "payload_transform_failed": "The Apple Health payload could not be transformed.",
+    "broker_unavailable": "The event broker is unavailable; the request was rejected.",
+    "broker_publish_failed": "The event broker did not accept the Apple Health data.",
+}
+
+
+def _payload_error_response(
+    code: str,
+    *,
+    params: dict[str, str | int | float | bool] | None = None,
+    status_code: int = 422,
+) -> JSONResponse:
+    """Return a stable safe error without reflecting provider payload data."""
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "code": code,
+            "params": params or {},
+            "detail": _PAYLOAD_ERROR_DETAILS.get(code, "The Apple Health payload was rejected."),
+        },
+    )
 
 
 def _field_report_count(report: FieldReportCollector) -> int:
@@ -231,20 +268,25 @@ async def ingest_health_auto_export_payload(
             sync_run_id,
             req_id=x_request_id,
             status="error",
-            message="Invalid JSON payload.",
+            message=_PAYLOAD_ERROR_DETAILS["invalid_json"],
+            code="invalid_json",
         )
-        raise HTTPException(status_code=400, detail="Invalid JSON payload.")
+        return _payload_error_response("invalid_json", status_code=400)
 
-    if not isinstance(payload, dict):
+    try:
+        validate_health_auto_export_payload(payload)
+    except AppleHealthPayloadError as exc:
         await close_sync_run(
             tenant_id,
             source_id,
             sync_run_id,
             req_id=x_request_id,
             status="error",
-            message="Payload must be a JSON object.",
+            message=_PAYLOAD_ERROR_DETAILS.get(exc.code, "The Apple Health payload was rejected."),
+            code=exc.code,
+            params=exc.params,
         )
-        raise HTTPException(status_code=400, detail="Payload must be a JSON object.")
+        return _payload_error_response(exc.code, params=exc.params)
 
     # Prevent silent data loss: Return 503 if NATS is unavailable so webhook client retries delivery
     if nc_client is None or not nc_client.is_connected:  # noqa: SIM102
@@ -256,13 +298,12 @@ async def ingest_health_auto_export_payload(
                 sync_run_id,
                 req_id=x_request_id,
                 status="error",
-                message="NATS event broker unavailable; the request was rejected.",
+                message=_PAYLOAD_ERROR_DETAILS["broker_unavailable"],
+                code="broker_unavailable",
+                params={},
             )
             logger.error(f"[req_id={x_request_id}] NATS connection offline. Rejecting payload with 503.")
-            raise HTTPException(
-                status_code=503,
-                detail="NATS event broker unavailable. Please retry later.",
-            )
+            return _payload_error_response("broker_unavailable", status_code=503)
 
     field_report = FieldReportCollector()
     try:
@@ -278,16 +319,17 @@ async def ingest_health_auto_export_payload(
             report=field_report,
             ingest_policies=ingest_policies,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         await close_sync_run(
             tenant_id,
             source_id,
             sync_run_id,
             req_id=x_request_id,
             status="error",
-            message=f"Health Auto Export transformation failed: {type(exc).__name__}: {exc}",
+            message=_PAYLOAD_ERROR_DETAILS["payload_transform_failed"],
+            code="payload_transform_failed",
         )
-        raise HTTPException(status_code=400, detail="The Apple Health payload could not be imported.") from None
+        return _payload_error_response("payload_transform_failed")
 
     provider_window_start, provider_window_end = _event_window(events)
     unsupported_fields = _field_report_count(field_report)
@@ -306,9 +348,34 @@ async def ingest_health_auto_export_payload(
     published_count = 0
     if nc_client and nc_client.is_connected:
         js = nc_client.jetstream()
-        published_count = await _publish_events(
-            js, events, req_id=x_request_id, sync_run_id=sync_run_id
-        )
+        try:
+            published_count = await _publish_events(
+                js, events, req_id=x_request_id, sync_run_id=sync_run_id
+            )
+        except TimeoutError:
+            await close_sync_run(
+                tenant_id,
+                source_id,
+                sync_run_id,
+                req_id=x_request_id,
+                status="error",
+                message=_PAYLOAD_ERROR_DETAILS["broker_publish_failed"],
+                code="broker_publish_failed",
+                params={"published": published_count},
+            )
+            return _payload_error_response("broker_publish_failed", status_code=503)
+        except Exception:  # noqa: BLE001 - do not reflect event/provider data
+            await close_sync_run(
+                tenant_id,
+                source_id,
+                sync_run_id,
+                req_id=x_request_id,
+                status="error",
+                message=_PAYLOAD_ERROR_DETAILS["broker_publish_failed"],
+                code="broker_publish_failed",
+                params={"published": published_count},
+            )
+            return _payload_error_response("broker_publish_failed", status_code=503)
     else:
         # Testing dry-run mode
         published_count = len(events)
