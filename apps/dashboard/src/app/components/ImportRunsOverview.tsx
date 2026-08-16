@@ -5,6 +5,7 @@ import { CheckCircle2, Clock3, Loader2, RefreshCw, XCircle } from "lucide-react"
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
+import OperatorRunDiagnostics from "./OperatorRunDiagnostics";
 import {
   ACTIVE_STATUSES,
   messageForRun,
@@ -18,12 +19,14 @@ interface ImportRunsOverviewProps {
   apiBase: string;
   tenantId: string;
   refreshTrigger: number;
+  userRole: string;
 }
 
 export default function ImportRunsOverview({
   apiBase,
   tenantId,
   refreshTrigger,
+  userRole,
 }: ImportRunsOverviewProps) {
   const { t, formatDateTime, formatNumber } = useI18n();
   const [runs, setRuns] = useState<SyncRun[]>([]);
@@ -70,21 +73,23 @@ export default function ImportRunsOverview({
   usePolling(() => void loadRuns(), tenantId ? (active.length > 0 ? 2500 : 10000) : null);
 
   return (
-    <section className="space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
+    <section className="space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Clock3 className="h-4 w-4 text-[#0d5c3a]" />
-            <h2 className="text-sm font-bold text-slate-900">{t("importOverview.title")}</h2>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              {t("importOverview.title")}
+            </h2>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-500">
+          <p className="mt-1 text-xs leading-relaxed text-slate-500 dark:text-slate-400">
             {t("importOverview.subtitle")}
           </p>
         </div>
         <button
           type="button"
           onClick={() => void loadRuns()}
-          className="inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+          className="inline-flex items-center gap-2 self-start rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           aria-label={t("importOverview.refresh")}
         >
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
@@ -123,7 +128,7 @@ export default function ImportRunsOverview({
             return (
               <article
                 key={run.id}
-                className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5"
+                className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-700 dark:bg-slate-800/60"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -137,7 +142,7 @@ export default function ImportRunsOverview({
                       ) : (
                         <Clock3 className="h-3.5 w-3.5 text-slate-500" />
                       )}
-                      <span className="truncate text-xs font-bold text-slate-900">
+                      <span className="truncate text-xs font-bold text-slate-900 dark:text-slate-100">
                         {run.connector_name || run.source_type}
                       </span>
                       <span className="text-[10px] uppercase tracking-wide text-slate-400">
@@ -149,7 +154,7 @@ export default function ImportRunsOverview({
                         {t(statusKey(run.status))}
                       </span>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
                       <span>{t(triggerKey(run.trigger))}</span>
                       <span>
                         {run.started_at
@@ -167,7 +172,7 @@ export default function ImportRunsOverview({
                       </span>
                     </div>
                     {(run.points_rejected > 0 || run.unsupported_fields > 0) && (
-                      <p className="mt-1 text-[11px] text-amber-700">
+                      <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-300">
                         {t("importOverview.quality", {
                           rejected: formatNumber(run.points_rejected ?? 0),
                           unsupported: formatNumber(run.unsupported_fields ?? 0),
@@ -176,7 +181,7 @@ export default function ImportRunsOverview({
                     )}
                   </div>
                   {progress !== null && isActive && (
-                    <span className="shrink-0 text-[11px] font-semibold text-slate-600">
+                    <span className="shrink-0 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
                       {progress}%
                     </span>
                   )}
@@ -190,10 +195,11 @@ export default function ImportRunsOverview({
                   </div>
                 )}
                 {messageForRun(t, run) && (
-                  <p className="mt-2 break-words text-[11px] text-slate-500">
+                  <p className="mt-2 break-words text-[11px] text-slate-500 dark:text-slate-400">
                     {messageForRun(t, run)}
                   </p>
                 )}
+                <OperatorRunDiagnostics run={run} userRole={userRole} />
               </article>
             );
           })}
@@ -208,7 +214,7 @@ export default function ImportRunsOverview({
             void loadRuns(true, runs.length);
           }}
           disabled={loadingMore}
-          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {loadingMore ? t("importOverview.loadingMore") : t("importOverview.loadMore")}

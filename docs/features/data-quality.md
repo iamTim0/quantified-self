@@ -75,6 +75,12 @@ takes the observations with it.
 **Copy report** produces a Markdown block of field names, types and counts — no values, no
 identifiers — ready to paste into an issue.
 
+The report is collapsed by default so it does not compete with the active quality indicators.
+It is a live schema report, not a deletion queue: a field leaves the list after an importer
+starts storing it, while historical shape observations remain available for audit. Nothing is
+automatically deleted when support is added, and no provider payload is retained to make this
+report.
+
 ### Roadmap
 
 Filing that report automatically as a GitHub issue is the obvious next step and is deliberately

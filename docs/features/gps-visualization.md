@@ -12,10 +12,13 @@ the reader asks for one.
   fetches nothing: re-deriving the track from a calendar filter would show a
   different route from the one the session actually covers.
 - **A period of Dawarich history** — the map fetches `location_point` over a chosen
-  day range itself.
+  day range itself. On the daily story it receives the exact local calendar day and
+  the reader's UTC offset, so today and yesterday never bleed into adjacent UTC days.
 
 The difference is one prop. With `points`, the component is controlled and its date
-filter is hidden; without, it fetches.
+filter is hidden; without, it fetches. The daily story lazy-loads the map only for a
+day whose report contains a location lane, and passes `day` plus `offsetMinutes` to
+bound the request to that one tenant-scoped window.
 
 ## Modes
 

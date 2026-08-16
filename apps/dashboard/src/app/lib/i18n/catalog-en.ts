@@ -55,6 +55,12 @@ export const en = {
   "header.refreshTitle": "Reload the whole page",
   "header.addConnector": "Add connector",
 
+  // ── Theme ─────────────────────────────────────────────────────────────────
+  "theme.label": "Colour theme",
+  "theme.system": "System",
+  "theme.light": "Light",
+  "theme.dark": "Dark",
+
   // ── Legal footer and legal pages ───────────────────────────────────────────
   "footer.nav": "Legal and documentation",
   "footer.imprint": "Legal notice",
@@ -230,6 +236,9 @@ export const en = {
   "quality.unsupportedTitle": "Not yet supported",
   "quality.unsupportedHint":
     "Your device sends these fields and this platform does not store them yet. Only the field names and their types are recorded here — never a value.",
+  "quality.unsupportedSummary": "Unsupported fields ({count})",
+  "quality.unsupportedLifecycle":
+    "This report is shape-only. A field leaves this list after an import stores it; historical observations remain for audit, and nothing is deleted automatically.",
   "quality.unsupportedConnector": "Connector",
   "quality.unsupportedField": "Field",
   "quality.unsupportedKind": "Type",
@@ -427,6 +436,18 @@ export const en = {
   "importerDetail.modeForce": "Force",
   "importerDetail.modeOther": "Other",
   "importerDetail.requestId": "Request ID",
+  "importerDetail.operatorDiagnostics": "Operator diagnostics",
+  "importerDetail.operatorPhase": "Phase",
+  "importerDetail.operatorProgress": "Progress",
+  "importerDetail.operatorProgressUnknown": "Unknown",
+  "importerDetail.operatorProgressValue": "{processed} of {total} events ({percent}%)",
+  "importerDetail.operatorElapsed": "Elapsed",
+  "importerDetail.operatorMessage": "Sanitized operator message",
+  "importerDetail.redacted": "[redacted]",
+  "importerDetail.operatorStalled":
+    "This run is taking unusually long. Check importer, Core and broker health; the request ID links the logs.",
+  "importerDetail.operatorActiveGuidance":
+    "This run is still active. Check the request ID in service logs before retrying.",
   "importerDetail.historyTitle": "Complete run history",
   "importerDetail.autoRefresh": "Refreshes every {seconds}s",
   "importerDetail.loading": "Loading run history…",
@@ -465,6 +486,12 @@ export const en = {
   "importerDetail.messageUploadRead": "The export was read successfully.",
   "importerDetail.messageUploadPublishing": "The export is being sent to Core.",
   "importerDetail.messageUploadFailed": "The export could not be processed.",
+  "importerDetail.messageCoreDeliveryFailed":
+    "Core stopped retrying an event; this import is incomplete and should be retried.",
+  "importerDetail.messageInvalidJson": "The provider sent invalid JSON.",
+  "importerDetail.messagePayloadInvalid": "The provider payload schema was not recognized.",
+  "importerDetail.messageBrokerFailed":
+    "The event broker did not accept the import; retry it when the broker is healthy.",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "The keys could not be loaded.",
@@ -697,6 +724,8 @@ export const en = {
   "explorer.resolutionHour": "Hour",
   "explorer.resolutionDay": "Day",
   "explorer.period": "Period:",
+  "explorer.customStart": "Start date",
+  "explorer.customEnd": "End date",
   "explorer.selectAll": "Select all",
   "explorer.searchPlaceholder":
     "Full-text search across the raw data (food name, category, metric name or JSON metadata…)",
@@ -938,6 +967,15 @@ export const en = {
   "report.running": "Computing…",
   "report.stale": "New data since",
   "report.recompute": "Recompute",
+  "report.failed": "The last computation failed; the previous result remains available.",
+  "report.error.report_failed":
+    "The last computation failed; the previous result remains available.",
+  "report.error.insights_failed":
+    "The analysis could not be computed. The previous result remains available.",
+  "report.error.report_load_failed":
+    "The saved report could not be loaded. Check the connection and try again.",
+  "report.error.report_refresh_failed":
+    "The report could not be started. Check the connection and try again.",
   "report.pendingFirstRun":
     "This is computed in the background after an import. Start it now to see it straight away.",
 
@@ -959,6 +997,8 @@ export const en = {
   "analysis.laggedTitle": "Time-shifted relationships",
   "analysis.laggedTail":
     "A value from one day is compared with another metric a few days later. A sequence in time is no evidence of a cause.",
+  "analysis.laggedExploratory":
+    "Exploratory only: these lag p-values are unadjusted across the tested lags and pairs. A time order is not causation.",
   "analysis.lagDays": "+{count} days",
   "analysis.sameDirection": "same direction",
   "analysis.oppositeDirection": "opposite direction",
@@ -966,7 +1006,7 @@ export const en = {
   "analysis.trendStats": "Mean {mean} · R² {r2} · n={n} days",
   "analysis.tooFewForNormalRange": "Too few days to establish a personal normal range.",
   "analysis.anomalyBasis":
-    "Based on the median and mean absolute deviation over {days} days. Unusual means unusual for you, not automatically medically concerning.",
+    "Based on the median and median absolute deviation (MAD) over {days} days. Unusual means unusual for you, not automatically medically concerning.",
   "analysis.tooFewForWeekly": "At least two weeks of data are needed to see weekly patterns.",
   "analysis.colDays": "Days",
   "analysis.sufficient": "sufficient",
@@ -976,9 +1016,28 @@ export const en = {
   "analysis.scaleStrongSame": "strongly aligned",
   "analysis.scaleLabel":
     "Colour scale from strongly opposite through no relationship to strongly aligned",
+  "analysis.scaleMin": "−1.0",
+  "analysis.scaleMax": "+1.0",
   "analysis.scaleEnds": "opposite ← → aligned",
   "analysis.matrixHint":
-    "Each cell shows the strength of the relationship as a percentage. Empty cells mean there are too few shared days.",
+    "Each cell shows the correlation coefficient r from −1 to +1. Empty cells have no eligible result for the current data and filters.",
+  "analysis.coefficientShort": "r = {value}",
+  "analysis.explainerTitle": "How to read these relationships",
+  "analysis.explainerWhatTitle": "What it shows",
+  "analysis.explainerWhat":
+    "Each pair shows whether two metrics tend to be higher or lower on the same days. It describes an association, not a cause.",
+  "analysis.explainerMethodTitle": "How it is calculated",
+  "analysis.explainerMethod":
+    "Pearson and Spearman are compared on shared days. The more conservative coefficient is shown and q-values adjust for the number of pairs.",
+  "analysis.explainerLimitsTitle": "What it cannot tell you",
+  "analysis.explainerLimits":
+    "Missing data, a third factor, seasonality, and repeated measurements can all create a pattern. Correlation cannot explain why it occurs.",
+  "analysis.matrixMobileHint":
+    "On a small screen, each relationship is shown as a readable card. Select one for the full calculation and limitations.",
+  "analysis.matrixMobileAria": "Open details for {first} and {second}",
+  "analysis.matrixCellTitle": "{first} and {second}: coefficient {value}; q-value {q}",
+  "analysis.matrixCellTitleRaw": "{first} and {second}: coefficient {value}; raw p-value {q}",
+  "analysis.matrixCellAria": "{first} and {second}: correlation coefficient {value}",
   "analysis.strongestTitle": "Strongest relationships",
   "analysis.matrixTitle": "Correlation matrix",
   "analysis.matrixAria": "Correlation matrix of metrics",
@@ -989,7 +1048,12 @@ export const en = {
   "analysis.calculationTitle": "Calculation",
   "analysis.pearsonLabel": "Pearson (linear):",
   "analysis.spearmanLabel": "Spearman (rank):",
-  "analysis.pValueLabel": "p-value:",
+  "analysis.pValueLabel": "Raw p-value:",
+  "analysis.qValueLabel": "q-value:",
+  "analysis.qValueShort": "q {value}",
+  "analysis.pValueShort": "p {value}",
+  "analysis.sampleSize": "n={count}",
+  "analysis.bhAdjustment": "Benjamini–Hochberg adjusted",
   "analysis.analysisVersionLabel": "Analysis version:",
   "analysis.computedLabel": "Computed:",
   "analysis.metricLabel": "Metric",
@@ -1000,13 +1064,54 @@ export const en = {
     "Period {start} – {end} · Sources: {sources} · analysis version {version} · computed {computed}",
   "analysis.provenanceTitle": "Data basis",
   "analysis.sources": "Sources: {list}",
-  "analysis.significant": "significant (α = 0.05)",
-  "analysis.notSignificant": "not significant",
+  "analysis.significant": "significant after adjustment (q ≤ 0.05)",
+  "analysis.notSignificant": "not significant after adjustment",
   "analysis.limitsTitle": "Limitations",
   "analysis.limitsBody":
     "A relationship is not a cause. Both values may depend on a third factor nobody recorded.",
   "analysis.sparklineLabel": "Rolling 7-day mean",
   "analysis.footerSources": "Sources: {list} · analysis version",
+  "analysis.strengthDisclaimer":
+    "An estimated one-rep max uses Epley's formula on the heaviest set; it is an estimate, not a measurement, and is not calculated above ten repetitions.",
+  "analysis.anomalyDirection.unusually_high": "unusually high",
+  "analysis.anomalyDirection.unusually_low": "unusually low",
+  "analysis.direction.higher": "higher",
+  "analysis.direction.lower": "lower",
+  "analysis.direction.higherCorrelation": "higher",
+  "analysis.direction.lowerCorrelation": "lower",
+  "analysis.direction.higherRoutine": "higher",
+  "analysis.direction.lowerRoutine": "lower",
+  "analysis.strength.very_weak": "very weak",
+  "analysis.strength.weak": "weak",
+  "analysis.strength.moderate": "moderate",
+  "analysis.strength.strong": "strong",
+  "analysis.strength.very_strong": "very strong",
+  "analysis.interpretation.correlation_association":
+    "{metric_a} and {metric_b} tend to move together: higher values for {metric_a} occur on average with {direction} values for {metric_b} ({strength}, {sample_size} shared days). This is an association, not a cause.",
+  "analysis.interpretation.lagged_association":
+    "{metric_a} tends to move together with {metric_b} {lag_days} day(s) later ({strength}, {sample_size} shared days). This exploratory ordering is not evidence of a cause.",
+  "analysis.interpretation.trend_summary":
+    "Across {sample_size} days, the course is {direction} (about {change_pct} % over the period). Treat this as a descriptive pattern, not a cause.",
+  "analysis.interpretation.anomaly_summary":
+    "Your typical range is {normal_range_low} to {normal_range_high}; {anomaly_count} of {sample_size} days fall clearly outside it. This is a personal signal, not a diagnosis.",
+  "analysis.interpretation.routine_weekend_difference":
+    "At the weekend, the value averages {difference_pct} % {direction} than on weekdays.",
+  "analysis.interpretation.routine_no_weekend_difference":
+    "There is no clear weekend–weekday difference in this data.",
+  "analysis.interpretation.routine_weekday_only":
+    "There are not enough weekend observations to compare weekday and weekend values.",
+  "analysis.interpretation.period_comparison":
+    "The second period is {difference_pct} % {direction} on average. A difference between periods does not identify a cause.",
+  "analysis.caveat.pearson_spearman_disagree":
+    "Pearson and Spearman differ noticeably. Outliers or a non-linear pattern may be involved.",
+  "analysis.caveat.small_overlap":
+    "Only {sample_size} shared days are available, so this result carries little weight.",
+  "analysis.caveat.raw_not_significant":
+    "The raw test is not statistically significant; the pattern may be chance.",
+  "analysis.caveat.bh_not_significant_raw_below_alpha":
+    "The raw p-value is below 0.05, but the result is not significant after correcting for all tested pairs.",
+  "analysis.caveat.bh_not_significant":
+    "The result is not statistically significant after correcting for all tested pairs.",
 
   // ── Analysis tiles ──────────────────────────────────────────────────────
   "analysis.usableMetrics": "Metrics that can be analysed",
@@ -1026,7 +1131,7 @@ export const en = {
     "Install the Codex CLI next to the Analysis service or enable it in the service image to use chat.",
   "chat.loginTitle": "Connect your ChatGPT subscription",
   "chat.loginBody":
-    "Sign in through the official Codex device flow. The platform never receives or stores your ChatGPT password or token.",
+    "Sign in through the official Codex device flow. The platform never receives your password and stores the Codex credential state only as an encrypted blob.",
   "chat.loginAction": "Connect ChatGPT",
   "chat.deviceInstruction": "Open the sign-in page and enter this one-time code.",
   "chat.deviceCodeLabel": "One-time code",

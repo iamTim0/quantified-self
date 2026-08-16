@@ -13,11 +13,11 @@ It also could not tell two different situations apart. An empty workout card mea
 the same blank. That turns an import schedule into a finding, which is the worst mistake a
 summary can make: the reader acts on a gap that was never in their data.
 
-The page is now one day at a time. **Yesterday leads**, because it is a finished day whose
-importers have run; **today follows**, as far as the connectors have reported. Each day is
-told in lanes — sleep, activity, workouts, heart, nutrition, … — with a timeline of that
-day's discrete events underneath, and every lane states when the connector feeding it last
-finished an import.
+The page is now one day at a time. **Today leads**, because it is the question most readers
+ask first; **yesterday follows**, as far as the connectors have reported. The current day is
+partial by construction, so every lane states when the connector feeding it last finished an
+import. Each day is told in lanes — sleep, activity, workouts, heart, nutrition, … — with a
+timeline of that day's discrete events underneath.
 
 ## Data flow
 
@@ -281,9 +281,10 @@ empty lanes and events rather than with somebody else's morning.
 
 ## In the interface
 
-The landing page renders two of these — yesterday, then today — from two calls issued in
-parallel. Yesterday leads because it is the finished day; leading with today would put the
-least complete data at the top of the page and invite every gap in it to be read as a fact.
+The landing page renders two of these — today, then yesterday — from the stored report. Today
+leads because it is the first question the reader asks; its **Still arriving** badge and each
+lane's last-import timestamp make its partial coverage explicit rather than presenting a gap
+as a fact.
 
 - Today's heading carries a **Still arriving** badge, from `is_today`.
 - Each lane is a card. An incomplete lane shows the warning glyph and its tooltip.

@@ -2,7 +2,7 @@ import type { MessageKey, Translate } from "../lib/i18n/provider";
 
 export interface SyncRun {
   id: string;
-  request_id: string;
+  request_id: string | null;
   source_id: string | null;
   source_type: string;
   connector_name: string | null;
@@ -101,7 +101,14 @@ export function messageForRun(t: Translate, run: SyncRun): string | null {
   if (code === "upload_read") return t("importerDetail.messageUploadRead");
   if (code === "upload_publishing") return t("importerDetail.messageUploadPublishing");
   if (code === "upload_failed") return t("importerDetail.messageUploadFailed");
+  if (code === "core_ingest_delivery_failed") {
+    return t("importerDetail.messageCoreDeliveryFailed");
+  }
+  if (code === "invalid_json") return t("importerDetail.messageInvalidJson");
+  if (code?.startsWith("payload_")) return t("importerDetail.messagePayloadInvalid");
+  if (code?.startsWith("broker_")) return t("importerDetail.messageBrokerFailed");
   if (run.status === "success") return t("importerDetail.messageCoreLoaded");
+  if (run.status === "error" && !run.message) return t("importerDetail.messageFailed");
   // Older runs and codes added by a newer service still have useful English
   // fallback text. Never make a status message disappear merely because the
   // dashboard has not learned a code yet.

@@ -37,6 +37,10 @@ interface LocationMapProps {
   apiBase?: string;
   tenantId?: string;
   refreshTrigger?: number;
+  /** A local calendar day to fetch exactly; used by the daily story. */
+  day?: string;
+  /** Offset, in minutes east of UTC, for the reader's local day window. */
+  offsetMinutes?: number;
   /**
    * A track supplied by the caller. When present nothing is fetched and the date
    * filter is hidden: the workout detail already knows which fixes belong to the
@@ -114,6 +118,8 @@ export function simplifyTrack(points: GpsPoint[], limit = MAX_RENDERED_POINTS): 
 export default function LocationMap({
   apiBase,
   refreshTrigger,
+  day,
+  offsetMinutes,
   points: suppliedPoints,
   showHeader = true,
 }: LocationMapProps) {
@@ -137,14 +143,29 @@ export default function LocationMap({
     setLoading(true);
     try {
       const now = new Date();
-      const start = new Date(now);
-      if (dateFilter === "today") start.setHours(0, 0, 0, 0);
-      else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
+      let start: Date;
+      let end: Date;
+      if (day) {
+        // The report's day is a calendar day in the reader's zone. Convert both
+        // local-midnight boundaries to UTC using the same offset that produced
+        // the report; this avoids the old browser-local "today" approximation.
+        const dayStartUtc = Date.parse(`${day}T00:00:00.000Z`);
+        const offset = offsetMinutes ?? -now.getTimezoneOffset();
+        start = new Date(dayStartUtc - offset * 60_000);
+        // The metrics endpoint accepts inclusive boundaries. Stop one millisecond
+        // before the following midnight so its first sample cannot leak into this day.
+        end = new Date(dayStartUtc + 86_400_000 - offset * 60_000 - 1);
+      } else {
+        end = now;
+        start = new Date(now);
+        if (dateFilter === "today") start.setHours(0, 0, 0, 0);
+        else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
+      }
 
       const query = new URLSearchParams({
         metric_type: "location_point",
         start_time: start.toISOString(),
-        end_time: now.toISOString(),
+        end_time: end.toISOString(),
         limit: "1000",
       });
       const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
@@ -175,7 +196,7 @@ export default function LocationMap({
     } finally {
       setLoading(false);
     }
-  }, [apiBase, dateFilter]);
+  }, [apiBase, dateFilter, day, offsetMinutes]);
 
   useEffect(() => {
     if (controlled) return;
@@ -202,10 +223,10 @@ export default function LocationMap({
 
   const filteredPoints = useMemo(
     () =>
-      controlled || dateFilter !== "today"
+      controlled || day || dateFilter !== "today"
         ? points
         : points.filter((p) => isToday(p.timestamp)),
-    [controlled, points, dateFilter],
+    [controlled, day, points, dateFilter],
   );
 
   const renderPoints = useMemo(() => simplifyTrack(filteredPoints), [filteredPoints]);
@@ -333,25 +354,25 @@ export default function LocationMap({
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          {!controlled && (
-          <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
-            {(["today", "7d", "30d"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setDateFilter(f)}
-                className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
-                  dateFilter === f
-                    ? "bg-[#0d5c3a] text-white shadow-sm"
-                    : "text-emerald-800 hover:text-emerald-950"
-                }`}
-              >
-                {f === "today" && <Calendar className="h-3 w-3" />}
-                {f === "today"
-                  ? t("map.today")
-                  : t("quality.windowDays", { count: f === "7d" ? 7 : 30 })}
-              </button>
-            ))}
-          </div>
+          {!controlled && !day && (
+            <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
+              {(["today", "7d", "30d"] as const).map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setDateFilter(f)}
+                  className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
+                    dateFilter === f
+                      ? "bg-[#0d5c3a] text-white shadow-sm"
+                      : "text-emerald-800 hover:text-emerald-950"
+                  }`}
+                >
+                  {f === "today" && <Calendar className="h-3 w-3" />}
+                  {f === "today"
+                    ? t("map.today")
+                    : t("quality.windowDays", { count: f === "7d" ? 7 : 30 })}
+                </button>
+              ))}
+            </div>
           )}
 
           <button

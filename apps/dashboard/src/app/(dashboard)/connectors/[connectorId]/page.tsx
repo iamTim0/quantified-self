@@ -16,12 +16,13 @@ export default function ConnectorDetailRoutePage({
   params: Promise<{ connectorId: string }>;
 }) {
   const { connectorId } = use(params);
-  const { apiBase, tenantId, refreshTrigger, openConfigureModal } = useShell();
+  const { apiBase, tenantId, userRole, refreshTrigger, openConfigureModal } = useShell();
 
   return (
     <ConnectorsPage
       apiBase={apiBase}
       tenantId={tenantId}
+      userRole={userRole}
       refreshTrigger={refreshTrigger}
       onOpenConfigureModal={openConfigureModal}
       connectorId={decodeURIComponent(connectorId)}

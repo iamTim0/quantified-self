@@ -66,6 +66,27 @@ test.describe("route guard", () => {
     await expectSignedIn(page);
   });
 
+  test("the workouts tab navigates to its own route", async ({ page, request }) => {
+    const account = newAccount();
+    await signUp(request, account);
+    await signIn(page, account);
+
+    await page.getByRole("button", { name: "Workouts" }).first().click();
+    await expect(page).toHaveURL(/\/workouts$/);
+    await expect(page.getByRole("heading", { name: "Workouts" })).toBeVisible();
+  });
+
+  test("the selected theme survives a reload", async ({ page, request }) => {
+    const account = newAccount();
+    await signUp(request, account);
+    await signIn(page, account);
+
+    await page.getByRole("button", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  });
+
   test("public pages stay reachable while signed out", async ({ page }) => {
     // The guard defaults to protecting everything, so the exemptions are the
     // part that can silently break. Locking a user out of the privacy policy or

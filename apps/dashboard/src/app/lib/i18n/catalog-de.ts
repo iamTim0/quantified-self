@@ -53,6 +53,12 @@ export const de: Record<MessageKey, string> = {
   "header.refreshTitle": "Gesamte Seite neu laden",
   "header.addConnector": "Connector hinzufügen",
 
+  // ── Theme ──────────────────────────────────────────────────────────────────
+  "theme.label": "Farbschema",
+  "theme.system": "System",
+  "theme.light": "Hell",
+  "theme.dark": "Dunkel",
+
   // ── Legal ───────────────────────────────────────────────────────────────────
   "footer.nav": "Rechtliches und Dokumentation",
   "footer.imprint": "Impressum",
@@ -232,6 +238,9 @@ export const de: Record<MessageKey, string> = {
   "quality.unsupportedTitle": "Noch nicht unterstützt",
   "quality.unsupportedHint":
     "Dein Gerät sendet diese Felder, und diese Plattform speichert sie noch nicht. Erfasst sind ausschließlich Feldnamen und Typen — nie ein Wert.",
+  "quality.unsupportedSummary": "Nicht unterstützte Felder ({count})",
+  "quality.unsupportedLifecycle":
+    "Dieser Bericht zeigt nur die Form der Daten. Ein Feld verschwindet aus dieser Liste, sobald ein Import es speichert; frühere Beobachtungen bleiben zur Nachvollziehbarkeit erhalten, und es wird nichts automatisch gelöscht.",
   "quality.unsupportedConnector": "Connector",
   "quality.unsupportedField": "Feld",
   "quality.unsupportedKind": "Typ",
@@ -428,6 +437,18 @@ export const de: Record<MessageKey, string> = {
   "importerDetail.modeForce": "Force",
   "importerDetail.modeOther": "Sonstiger",
   "importerDetail.requestId": "Request-ID",
+  "importerDetail.operatorDiagnostics": "Operator-Diagnose",
+  "importerDetail.operatorPhase": "Phase",
+  "importerDetail.operatorProgress": "Fortschritt",
+  "importerDetail.operatorProgressUnknown": "Unbekannt",
+  "importerDetail.operatorProgressValue": "{processed} von {total} Ereignissen ({percent} %)",
+  "importerDetail.operatorElapsed": "Vergangene Zeit",
+  "importerDetail.operatorMessage": "Bereinigte Betreibernachricht",
+  "importerDetail.redacted": "[entfernt]",
+  "importerDetail.operatorStalled":
+    "Dieser Lauf dauert ungewöhnlich lange. Prüfe Importer, Core und Broker; die Request-ID verbindet die Logs.",
+  "importerDetail.operatorActiveGuidance":
+    "Dieser Lauf ist noch aktiv. Prüfe vor einem erneuten Versuch die Request-ID in den Service-Logs.",
   "importerDetail.historyTitle": "Vollständige Laufhistorie",
   "importerDetail.autoRefresh": "Aktualisiert alle {seconds}s",
   "importerDetail.loading": "Laufhistorie wird geladen…",
@@ -467,6 +488,12 @@ export const de: Record<MessageKey, string> = {
   "importerDetail.messageUploadRead": "Der Export wurde erfolgreich gelesen.",
   "importerDetail.messageUploadPublishing": "Der Export wird an Core gesendet.",
   "importerDetail.messageUploadFailed": "Der Export konnte nicht verarbeitet werden.",
+  "importerDetail.messageCoreDeliveryFailed":
+    "Core hat ein Ereignis nach mehreren Versuchen aufgegeben; dieser Import ist unvollständig und sollte wiederholt werden.",
+  "importerDetail.messageInvalidJson": "Der Provider hat ungültiges JSON gesendet.",
+  "importerDetail.messagePayloadInvalid": "Das Schema des Provider-Payloads wurde nicht erkannt.",
+  "importerDetail.messageBrokerFailed":
+    "Der Ereignis-Broker hat den Import nicht angenommen; wiederhole ihn bei gesundem Broker.",
 
   // ── API keys and external sign-in ───────────────────────────────────────
   "apikeys.loadFailed": "Schlüssel konnten nicht geladen werden.",
@@ -705,6 +732,8 @@ export const de: Record<MessageKey, string> = {
   "explorer.resolutionHour": "Stunde",
   "explorer.resolutionDay": "Tag",
   "explorer.period": "Zeitraum:",
+  "explorer.customStart": "Startdatum",
+  "explorer.customEnd": "Enddatum",
   "explorer.selectAll": "Alle auswählen",
   "explorer.searchPlaceholder":
     "Volltextsuche in Rohdaten (Lebensmittelname, Kategorie, Metrik-Name oder JSON-Metadata…)",
@@ -950,6 +979,16 @@ export const de: Record<MessageKey, string> = {
   "report.running": "Wird berechnet…",
   "report.stale": "Neue Daten seitdem",
   "report.recompute": "Neu berechnen",
+  "report.failed":
+    "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",
+  "report.error.report_failed":
+    "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",
+  "report.error.insights_failed":
+    "Die Analyse konnte nicht berechnet werden. Das vorherige Ergebnis ist weiterhin verfügbar.",
+  "report.error.report_load_failed":
+    "Der gespeicherte Bericht konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
+  "report.error.report_refresh_failed":
+    "Der Bericht konnte nicht gestartet werden. Prüfe die Verbindung und versuche es erneut.",
   "report.pendingFirstRun":
     "Das wird nach einem Import im Hintergrund berechnet. Jetzt starten, um es sofort zu sehen.",
 
@@ -971,6 +1010,8 @@ export const de: Record<MessageKey, string> = {
   "analysis.laggedTitle": "Zeitversetzte Zusammenhänge",
   "analysis.laggedTail":
     "Ein Wert eines Tages wird einige Tage später mit einer anderen Metrik verglichen. Eine zeitliche Reihenfolge ist kein Beleg für eine Ursache.",
+  "analysis.laggedExploratory":
+    "Nur explorativ: Die p-Werte der Zeitverschiebungen sind über die getesteten Verschiebungen und Paare nicht korrigiert. Eine zeitliche Reihenfolge ist keine Ursache.",
   "analysis.lagDays": "+{count} Tage",
   "analysis.sameDirection": "gleichläufig",
   "analysis.oppositeDirection": "gegenläufig",
@@ -979,7 +1020,7 @@ export const de: Record<MessageKey, string> = {
   "analysis.tooFewForNormalRange":
     "Zu wenige Tage, um einen persönlichen Normalbereich zu bestimmen.",
   "analysis.anomalyBasis":
-    "Grundlage: Median und mittlere absolute Abweichung über {days} Tage. Auffälligkeit bedeutet ungewöhnlich für dich, nicht automatisch medizinisch bedenklich.",
+    "Grundlage: Median und mediane absolute Abweichung (MAD) über {days} Tage. Auffällig bedeutet ungewöhnlich für dich, nicht automatisch medizinisch bedenklich.",
   "analysis.tooFewForWeekly": "Mindestens zwei Wochen Daten nötig, um Wochenmuster zu erkennen.",
   "analysis.colDays": "Tage",
   "analysis.sufficient": "ausreichend",
@@ -989,9 +1030,29 @@ export const de: Record<MessageKey, string> = {
   "analysis.scaleStrongSame": "stark gleichläufig",
   "analysis.scaleLabel":
     "Farbskala von stark gegenläufig über kein Zusammenhang zu stark gleichläufig",
+  "analysis.scaleMin": "−1,0",
+  "analysis.scaleMax": "+1,0",
   "analysis.scaleEnds": "gegenläufig ← → gleichläufig",
   "analysis.matrixHint":
-    "Jede Zelle zeigt die Stärke des Zusammenhangs in Prozent. Leere Zellen bedeuten, dass es zu wenige gemeinsame Tage gibt.",
+    "Jede Zelle zeigt den Korrelationskoeffizienten r von −1 bis +1. Leere Zellen haben für die aktuellen Daten und Filter kein geeignetes Ergebnis.",
+  "analysis.coefficientShort": "r = {value}",
+  "analysis.explainerTitle": "So liest du diese Zusammenhänge",
+  "analysis.explainerWhatTitle": "Was wird gezeigt?",
+  "analysis.explainerWhat":
+    "Jedes Paar zeigt, ob zwei Metriken an denselben Tagen tendenziell höhere oder niedrigere Werte haben. Das beschreibt einen Zusammenhang, keine Ursache.",
+  "analysis.explainerMethodTitle": "Wie wird gerechnet?",
+  "analysis.explainerMethod":
+    "Pearson und Spearman werden an gemeinsamen Tagen verglichen. Gezeigt wird der konservativere Koeffizient; q-Werte korrigieren für die Zahl der Paare.",
+  "analysis.explainerLimitsTitle": "Was sagt das nicht?",
+  "analysis.explainerLimits":
+    "Fehlende Daten, ein dritter Faktor, Saisonalität und wiederholte Messungen können ein Muster erzeugen. Eine Korrelation erklärt nicht, warum es auftritt.",
+  "analysis.matrixMobileHint":
+    "Auf kleinen Bildschirmen wird jeder Zusammenhang als lesbare Karte gezeigt. Wähle eine Karte für Berechnung und Einschränkungen.",
+  "analysis.matrixMobileAria": "Details für {first} und {second} öffnen",
+  "analysis.matrixCellTitle": "{first} und {second}: Koeffizient {value}; q-Wert {q}",
+  "analysis.matrixCellTitleRaw":
+    "{first} und {second}: Koeffizient {value}; unkorrigierter p-Wert {q}",
+  "analysis.matrixCellAria": "{first} und {second}: Korrelationskoeffizient {value}",
   "analysis.strongestTitle": "Auffälligste Zusammenhänge",
   "analysis.matrixTitle": "Korrelationsmatrix",
   "analysis.matrixAria": "Korrelationsmatrix der Metriken",
@@ -1002,7 +1063,12 @@ export const de: Record<MessageKey, string> = {
   "analysis.calculationTitle": "Berechnung",
   "analysis.pearsonLabel": "Pearson (linear):",
   "analysis.spearmanLabel": "Spearman (Rang):",
-  "analysis.pValueLabel": "p-Wert:",
+  "analysis.pValueLabel": "Unkorrigierter p-Wert:",
+  "analysis.qValueLabel": "q-Wert:",
+  "analysis.qValueShort": "q {value}",
+  "analysis.pValueShort": "p {value}",
+  "analysis.sampleSize": "n={count}",
+  "analysis.bhAdjustment": "Benjamini–Hochberg-korrigiert",
   "analysis.analysisVersionLabel": "Analyseversion:",
   "analysis.computedLabel": "Berechnet:",
   "analysis.metricLabel": "Metrik",
@@ -1013,13 +1079,54 @@ export const de: Record<MessageKey, string> = {
     "Zeitraum {start} – {end} · Quellen: {sources} · Analyseversion {version} · berechnet {computed}",
   "analysis.provenanceTitle": "Datenbasis",
   "analysis.sources": "Datenquellen: {list}",
-  "analysis.significant": "signifikant (α = 0,05)",
-  "analysis.notSignificant": "nicht signifikant",
+  "analysis.significant": "nach Korrektur signifikant (q ≤ 0,05)",
+  "analysis.notSignificant": "nach Korrektur nicht signifikant",
   "analysis.limitsTitle": "Einschränkungen",
   "analysis.limitsBody":
     "Ein Zusammenhang ist keine Ursache. Beide Werte können von einem dritten, nicht erfassten Faktor abhängen.",
   "analysis.sparklineLabel": "Gleitender 7-Tage-Mittelwert",
   "analysis.footerSources": "Quellen: {list} · Analyseversion",
+  "analysis.strengthDisclaimer":
+    "Ein geschätztes Einer-Maximum nutzt Epleys Formel auf den schwersten Satz; es ist eine Schätzung, keine Messung, und wird bei mehr als zehn Wiederholungen nicht berechnet.",
+  "analysis.anomalyDirection.unusually_high": "ungewöhnlich hoch",
+  "analysis.anomalyDirection.unusually_low": "ungewöhnlich niedrig",
+  "analysis.direction.higher": "höhere",
+  "analysis.direction.lower": "niedrigere",
+  "analysis.direction.higherCorrelation": "höheren",
+  "analysis.direction.lowerCorrelation": "niedrigeren",
+  "analysis.direction.higherRoutine": "höher",
+  "analysis.direction.lowerRoutine": "niedriger",
+  "analysis.strength.very_weak": "sehr schwach",
+  "analysis.strength.weak": "schwach",
+  "analysis.strength.moderate": "mittel",
+  "analysis.strength.strong": "stark",
+  "analysis.strength.very_strong": "sehr stark",
+  "analysis.interpretation.correlation_association":
+    "{metric_a} und {metric_b} bewegen sich tendenziell gemeinsam: Höhere Werte für {metric_a} treten im Mittel mit {direction} Werten für {metric_b} auf ({strength}, {sample_size} gemeinsame Tage). Das ist ein Zusammenhang, keine Ursache.",
+  "analysis.interpretation.lagged_association":
+    "{metric_a} bewegt sich tendenziell gemeinsam mit {metric_b}, {lag_days} Tag(e) später ({strength}, {sample_size} gemeinsame Tage). Diese explorative Reihenfolge belegt keine Ursache.",
+  "analysis.interpretation.trend_summary":
+    "Über {sample_size} Tage ist der Verlauf {direction} (etwa {change_pct} % im Zeitraum). Das ist ein beschreibendes Muster, keine Ursache.",
+  "analysis.interpretation.anomaly_summary":
+    "Dein typischer Bereich reicht von {normal_range_low} bis {normal_range_high}; {anomaly_count} von {sample_size} Tagen liegen klar außerhalb. Das ist ein persönliches Signal, keine Diagnose.",
+  "analysis.interpretation.routine_weekend_difference":
+    "Am Wochenende liegt der Mittelwert {difference_pct} % {direction} als an Werktagen.",
+  "analysis.interpretation.routine_no_weekend_difference":
+    "In diesen Daten gibt es keinen klaren Unterschied zwischen Wochenende und Werktagen.",
+  "analysis.interpretation.routine_weekday_only":
+    "Es gibt zu wenige Wochenendbeobachtungen für einen Vergleich mit Werktagen.",
+  "analysis.interpretation.period_comparison":
+    "Der Mittelwert im zweiten Zeitraum ist {difference_pct} % {direction}. Ein Unterschied zwischen Zeiträumen benennt keine Ursache.",
+  "analysis.caveat.pearson_spearman_disagree":
+    "Pearson und Spearman unterscheiden sich deutlich. Ausreißer oder ein nichtlinearer Verlauf können eine Rolle spielen.",
+  "analysis.caveat.small_overlap":
+    "Es gibt nur {sample_size} gemeinsame Tage; deshalb hat dieses Ergebnis wenig Gewicht.",
+  "analysis.caveat.raw_not_significant":
+    "Der unkorrigierte Test ist nicht statistisch signifikant; das Muster kann zufällig sein.",
+  "analysis.caveat.bh_not_significant_raw_below_alpha":
+    "Der unkorrigierte p-Wert liegt unter 0,05, aber nach der Korrektur für alle getesteten Paare ist das Ergebnis nicht signifikant.",
+  "analysis.caveat.bh_not_significant":
+    "Nach der Korrektur für alle getesteten Paare ist das Ergebnis nicht statistisch signifikant.",
 
   // ── Analysis tiles ──────────────────────────────────────────────────────
   "analysis.usableMetrics": "Auswertbare Metriken",
@@ -1039,7 +1146,7 @@ export const de: Record<MessageKey, string> = {
     "Installiere die Codex CLI beim Analysis Service oder aktiviere sie im Service-Image, um den Chat zu nutzen.",
   "chat.loginTitle": "ChatGPT-Abonnement verbinden",
   "chat.loginBody":
-    "Melde dich über den offiziellen Codex-Gerätefluss an. Die Plattform erhält oder speichert weder dein ChatGPT-Passwort noch dein Token.",
+    "Melde dich über den offiziellen Codex-Gerätefluss an. Die Plattform erhält dein Passwort nie und speichert den Codex-Anmeldestatus nur als verschlüsselten Datenblock.",
   "chat.loginAction": "ChatGPT verbinden",
   "chat.deviceInstruction": "Öffne die Anmeldeseite und gib diesen einmaligen Code ein.",
   "chat.deviceCodeLabel": "Einmaliger Code",

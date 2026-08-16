@@ -19,6 +19,6 @@ import { useShell } from "./shell";
  * cannot change until an import does.
  */
 export default function OverviewPage() {
-  const { apiBase } = useShell();
-  return <DailyStory apiBase={apiBase} />;
+  const { apiBase, refreshTrigger } = useShell();
+  return <DailyStory apiBase={apiBase} refreshTrigger={refreshTrigger} />;
 }
