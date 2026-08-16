@@ -138,6 +138,34 @@ export const de: Record<MessageKey, string> = {
   "warning.development_environment.action":
     "Für ein echtes Deployment ENVIRONMENT=production setzen.",
 
+  // ── Daily story ────────────────────────────────────────────────────────────
+  "day.eyebrow": "Dein Tag",
+  "day.title": "Was passiert ist",
+  "day.subtitle":
+    "Gestern ist ein abgeschlossener Tag. Heute wird so weit gezeigt, wie deine Connectoren gemeldet haben.",
+  "day.yesterday": "Gestern",
+  "day.today": "Heute",
+  "day.stillArriving": "Kommt noch",
+  "day.nothingRecorded": "Für diesen Tag wurde nichts aufgezeichnet.",
+  "day.timeline": "Im Tagesverlauf",
+  "day.timelineTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
+  "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
+  "day.answeredBy": "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
+  "day.laneSleep": "Schlaf",
+  "day.laneActivity": "Aktivität",
+  "day.laneWorkout": "Workouts",
+  "day.laneStrength": "Kraft",
+  "day.laneHeart": "Herz",
+  "day.laneNutrition": "Ernährung",
+  "day.laneBody": "Körper",
+  "day.laneLocation": "Orte",
+  "day.laneCalendar": "Kalender",
+  "day.laneEnvironment": "Wetter",
+  "day.laneHome": "Zuhause",
+  "day.laneCustom": "Eigene Metriken",
+  "day.laneOther": "Sonstiges",
+
   // ── Overview ────────────────────────────────────────────────────────────
   "overview.title": "Übersicht",
   "overview.subtitle": "Aggregierte Auswertung deiner verbundenen Sensoren und Tracker.",

@@ -68,6 +68,13 @@ With `auto`, the Explorer selects:
 | More than 24 hours and up to 90 days | hour |
 | More than 90 days | day |
 
+**Rollup buckets are UTC.** `date_trunc('day')` runs in UTC and `/api/v1/data/metrics` takes
+no timezone parameter, so a "day" here is a UTC day: for a reader at UTC+2 it runs from
+22:00 to 22:00, and a reading taken at 23:30 belongs to the following bucket. That is
+correct for a chart spanning weeks and wrong for anything that claims to describe *one day*,
+which is why the daily story is a separate endpoint that takes the reader's offset and
+bounds the window itself — see [The daily story](daily-story.md).
+
 The server applies the time window and source filter before the limit. The response
 declares the requested resolution, bucket timestamp, sample count and whether a
 point is derived. If a workspace contains a mixture of historical raw points and

@@ -66,6 +66,7 @@ from core.connectors import (
     is_scheduled,
     supports_file_import,
 )
+from core.daily_story import build_day_story
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -2828,6 +2829,43 @@ async def get_cross_source_conflicts(
     """
     return await compute_conflicts_report(
         session, get_current_tenant_id(), tolerance=tolerance
+    )
+
+
+@app.get("/api/v1/data/day")
+async def get_day_story(
+    day: date | None = Query(None, description="Calendar day in the reader's zone; default today"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the day is bounded in it",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """One day as a reader experiences it: lanes, a timeline, and how current it is.
+
+    A separate endpoint rather than a client assembling `/api/v1/data/metrics`
+    calls, for three reasons the client cannot solve on its own: day rollups are
+    bucketed in UTC and that endpoint takes no timezone, so a reader two hours
+    east gets a day running 22:00 to 22:00; a whole day would otherwise be one
+    unfiltered query sharing a single `limit` between a GPS trace and per-minute
+    heart rate, which truncates silently; and the rule deciding which connector
+    answers for a metric two of them report existed only over gRPC. See
+    `core.daily_story`.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (
+        datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
+    ).date()
+    target = day or reader_today
+    if target > reader_today:
+        raise HTTPException(status_code=400, detail="That day has not happened yet")
+    if (reader_today - target).days > 366:
+        raise HTTPException(status_code=400, detail="Only the last 367 days can be told")
+
+    return await build_day_story(
+        session, tenant_id, day=target, offset_minutes=offset_minutes
     )
 
 

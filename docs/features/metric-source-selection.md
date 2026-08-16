@@ -37,10 +37,13 @@ not merge" never implied "do not answer" — it implied "say which one".
 | `PREFERENCE` | The workspace has stated a primary connector for this metric, and that connector still reports it | Everything |
 | `COVERAGE` | No preference is stated | — |
 
-With no preference, the connector with the **most samples in the window** answers. A tie is
-broken by the connector identifier, so the choice is stable between calls rather than
-flickering with row order — an analysis whose attribution changed each time it was
-recomputed would be worse than either candidate.
+With no preference, the connector with the **most samples in the workspace's whole stored
+history** answers — not the most in whatever window is being viewed. A primary source is a
+property of the workspace, not of the current chart: resolving it per window made the
+analysed series change identity between two views of the same data, and made the picker
+card name a connector the bundle had not used. A tie is broken by the connector identifier,
+so the choice is stable between calls rather than flickering with row order — an analysis
+whose attribution changed each time it was recomputed would be worse than either candidate.
 
 A stated preference wins **even when that connector covered less of the window**. It is a
 statement about which device the reader trusts, not a guess, and quietly overruling it on
@@ -51,6 +54,12 @@ and coverage decides instead.
 `PREFERENCE` and `COVERAGE` are stable English identifiers, not prose (rule 17). Clients
 branch on them; the interface renders them as *your choice* and *chosen automatically —
 most complete*.
+
+The daily story applies the same rule through the same function, so the figure on the
+landing page and the series in the analysis can never name different connectors for one
+metric. It emits one further reason code the analysis path has no use for — `ONLY_SOURCE`,
+for a metric a single connector reported that day, where there is no decision to make. See
+[The daily story](daily-story.md).
 
 ## Data flow
 
@@ -188,13 +197,12 @@ The insights bundle carries the attribution rather than hiding it:
 - The automatic choice is made on sample count, which is a proxy for coverage and not for
   accuracy. A cheap sensor that samples constantly will out-count an accurate one that
   reports daily. Where that matters, state a preference.
-- **The two coverage counts are not the same count.** The analysis counts samples inside
-  the window it is analysing — 90 days by default. The preference listing counts them over
-  the workspace's whole stored history, because it has no window to speak of. So a
-  connector that was replaced a year ago can be shown as the automatic primary on the card
-  while the analysis, looking at the last 90 days, used the other one. Where a workspace
-  has switched devices, state a preference rather than reading the card as a description of
-  what the last bundle did; `metric_source_ids` in the bundle is that description.
+- **Coverage is counted over the whole history, so a replaced device keeps winning.** A
+  connector retired a year ago can still hold the most samples and therefore still answer,
+  even though the workspace has not heard from it since. That is the price of a choice that
+  does not change between two views of the same data, and it is the case a stated preference
+  exists for: after switching devices, name the new one. `metric_source_ids` in the analysis
+  bundle always describes what that run actually used.
 - Changing a preference changes what the analyses say. The bundle is recomputed rather than
   patched, so the numbers and the attribution always come from the same run.
 - Two connectors that disagree are still two connectors that disagree. Choosing a primary

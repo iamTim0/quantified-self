@@ -307,7 +307,11 @@ Every expensive mistake this service has made was invisible to a correctness tes
 list returned the right connectors while running one `max(created_at)` over the largest table per
 connector — on the endpoint the dashboard refreshes every ten seconds. The metric summary returned
 the right totals while scanning the workspace's entire history to compensate for data that was not
-there. Both were correct, so nothing failed.
+there. The landing page drew correct whole-history averages by fetching that summary *and* the
+newest thousand raw points, then bucketing them in the browser — more data than a page should carry
+and, for a workspace recording heart rate every minute, less than one day needs. It is now a single
+day-bounded call aggregated in SQL ([The daily story](features/daily-story.md)). All three were
+correct, so nothing failed.
 
 `services/core/tests/test_query_cost.py` pins the two properties that were actually violated:
 

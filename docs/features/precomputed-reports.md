@@ -36,6 +36,12 @@ have to be correct the instant a user saves a mapping rule rather than at the ne
 scheduled run. Putting them behind a job would make the page wrong for hours in order to
 save nothing. See [Data quality](data-quality.md) for what each of them contains.
 
+The [daily story](daily-story.md) is the one derivation deliberately left on the live side.
+What makes the three above expensive is that they read a workspace's whole history; a day
+story reads one tenant's rows inside one 24-hour window, on the indexed time dimension. It
+also has to reflect an import that finished a minute ago, since *how much of today has
+arrived* is the question it answers.
+
 ## Data flow
 
 ```text
