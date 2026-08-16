@@ -26,11 +26,12 @@ import math
 import uuid
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager, suppress
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import nats
-from nats.js.api import ConsumerConfig, DiscardPolicy, StreamConfig
+from nats.js.api import ConsumerConfig, DiscardPolicy, RetentionPolicy, StreamConfig
 from shared_schemas import idempotency_key as derive_idempotency_key
 from shared_schemas.metrics import UnknownMetricTypeError, canonical_metric_type
 from sqlalchemy import and_, case, delete, func, literal, select, update
@@ -49,9 +50,10 @@ from core.db.models import (
     SyncRunEvent,
 )
 from core.db.session import async_session_maker
+from core.deployment_warnings import Warning_
 from core.metric_mapping import ValidatedMapping, replay_value, validate_mapping
 from core.rollups import update_rollups_for_point
-from core.tracing import set_current_request_id
+from core.tracing import get_current_request_id, set_current_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -393,6 +395,10 @@ class _SyntheticPointMessage:
         self.data = data
         self.metadata = None
         self.failed = False
+        # Whether the failure is one a redelivery could fix. A constraint violation
+        # is not: the envelope would fail identically every time and take its 999
+        # healthy siblings down with it on the last attempt.
+        self.permanent = False
         self.event_key = event_key or "payload:" + hashlib.sha256(data).hexdigest()
 
     async def ack(self) -> None:
@@ -449,6 +455,7 @@ async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
             known_source = source_result.scalars().first()
 
         failed = False
+        permanently_rejected = 0
         for index, raw_child in enumerate(events):
             child = dict(raw_child) if isinstance(raw_child, dict) else {}
             mismatch = any(
@@ -470,19 +477,73 @@ async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
             synthetic = _SyntheticPointMessage(
                 json.dumps(child).encode("utf-8"), event_key=f"batch:{child_key}"
             )
+            # Each child inside its own savepoint. Without one, a child that
+            # violates a constraint poisons the shared transaction, so the only
+            # available response was to fail the whole envelope — which JetStream
+            # then redelivered five times before discarding all thousand events,
+            # the 999 storable ones included. The single-event path has acked this
+            # class of failure since the day a wiped database produced it in bulk;
+            # the batch path could not, and so undid that fix wherever batching was
+            # in use.
+            nested = await session.begin_nested()
             await process_message(
                 synthetic,
                 db_session=session,
                 known_source=known_source,
             )
+
             if synthetic.failed:
-                failed = True
-                break
+                # Rolled back before anything else is decided. A transient failure
+                # is usually a DBAPI error, which leaves the transaction aborted —
+                # and `RELEASE SAVEPOINT` on an aborted transaction raises, so
+                # committing first and branching afterwards threw out of this
+                # function entirely, skipping both the rollback below and
+                # `_retry_or_give_up`. `nested.rollback()`, not
+                # `session.rollback()`: the savepoint is what has to go, and
+                # rolling back the session would discard every sibling already
+                # written in this envelope.
+                await nested.rollback()
+                if not synthetic.permanent:
+                    # A database restarting, say. The envelope stays
+                    # unacknowledged so JetStream delivers it again.
+                    failed = True
+                    break
+                permanently_rejected += 1
+                logger.error(
+                    "Dropped child %s of ingest batch %s: it violates a database "
+                    "constraint, which a redelivery cannot change.",
+                    index,
+                    batch_id,
+                )
+                # Counted against the run, not only logged. The single-event path
+                # tallies this class of rejection, and a batch that quietly did
+                # not would leave `points_processed` short of `points_expected`
+                # forever — the run never reconciles, and the only trace is a log
+                # line. Rule 19: stored, carried, or *named*.
+                await _tally_rejected_event(
+                    tenant_id=child.get("tenant_id"),
+                    source_id=child.get("source_id"),
+                    sync_run_id=child.get("sync_run_id"),
+                    event_key=synthetic.event_key,
+                    session=session,
+                )
+                continue
+
+            await nested.commit()
 
         if failed:
             await session.rollback()
         else:
             await session.commit()
+            if permanently_rejected:
+                logger.error(
+                    "Ingest batch %s stored %s of %s events; %s could not be stored "
+                    "and were dropped rather than failing the envelope.",
+                    batch_id,
+                    len(events) - permanently_rejected,
+                    len(events),
+                    permanently_rejected,
+                )
 
     if failed:
         await _retry_or_give_up(msg)
@@ -951,10 +1012,13 @@ async def process_message(
             source_id,
         )
         if isinstance(msg, _SyntheticPointMessage) and db_session is not None:
-            # The batch owner rolls back the shared transaction and redelivers the
-            # envelope. A constraint failure cannot safely be acknowledged from a
-            # transaction whose state is already failed.
+            # The batch owner rolls back to this child's savepoint and carries on.
+            # A constraint failure cannot safely be acknowledged from a transaction
+            # whose state is already failed, but it is also permanent: marking it as
+            # such is what stops one unstorable point from discarding the whole
+            # envelope after five identical attempts.
             msg.failed = True
+            msg.permanent = True
             return
         await _ack_rejected()
     except Exception as exc:  # noqa: BLE001 - transient failures need redelivery
@@ -1168,6 +1232,442 @@ ACK_WAIT_SECONDS = 30
 #: that a broker cannot outlive the database it feeds.
 STREAM_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 STREAM_MAX_BYTES = 4 * 1024 * 1024 * 1024
+INGESTION_STREAM_NAME = "ingestion"
+INGESTION_SUBJECT = "qs.ingest.>"
+INGESTION_CONSUMER_NAME = "core_data_service_group"
+# During a reset the stream is still present, but ordinary importer subjects no
+# longer match it. A publisher already in flight before the update is visible to
+# the final consumer_info check; a publisher after the update receives no stream
+# acknowledgement and can retry instead of being deleted with the stream.
+INGESTION_RESET_GATE_SUBJECT = "qs.internal.ingestion-reset-gate"
+INGESTION_RESET_TIMEOUT_SECONDS = 30.0
+
+#: A work queue, because the sentence above was only true of the *comment*.
+#:
+#: With the default `limits` retention, an acknowledged message stays in the stream
+#: until `max_age` expires it. Core stores an event and acks it within milliseconds,
+#: and the message then occupies its bytes for the remaining seven days — so the
+#: stream is not a buffer holding what has yet to be stored, it is an archive of
+#: everything that already has been. Paired with `discard=new`, which refuses a
+#: publish rather than dropping unacknowledged data, that archive eventually fills
+#: and **every importer stops being able to publish at all**.
+#:
+#: Measured in production: 6,292,863 messages, 4,294,966,938 bytes against a
+#: 4 GiB ceiling — 358 bytes below it — with the consumer fully caught up
+#: (`num_pending=0`, `num_ack_pending=0`, ack floor equal to the last sequence).
+#: Nothing was stuck; there was simply no room left. Every importer failed
+#: identically with `ServiceUnavailableError` after 0 events, across all four
+#: triggers, which is what made it look like a Core fault rather than a full disk.
+#:
+#: `WORK_QUEUE` deletes a message when the consumer acks it, which is the behaviour
+#: the comment above always claimed. `discard=new` keeps its meaning and gets its
+#: teeth back: the stream can now only fill with events Core has *not* yet stored,
+#: which is the one case where refusing a publish is the correct answer.
+#:
+#: This requires exactly one consumer per subject, which `qs.ingest.>` has
+#: (`core_data_service_group`). A second overlapping consumer would be refused by
+#: the broker rather than silently stealing messages.
+STREAM_RETENTION = RetentionPolicy.WORK_QUEUE
+
+
+def ingestion_stream_config() -> StreamConfig:
+    """Return the one configured shape used when the ingestion stream is created."""
+    return StreamConfig(
+        name=INGESTION_STREAM_NAME,
+        subjects=[INGESTION_SUBJECT],
+        max_age=STREAM_MAX_AGE_SECONDS,
+        max_bytes=STREAM_MAX_BYTES,
+        retention=STREAM_RETENTION,
+        discard=DiscardPolicy.NEW,
+    )
+
+
+def _stream_config_with_subjects(config: StreamConfig, subjects: list[str]) -> StreamConfig:
+    """Preserve every broker setting while changing only the accepted subjects."""
+    return replace(config, subjects=subjects)
+
+
+def _counter(info: Any, name: str) -> int:
+    """Read a JetStream consumer counter without allowing an unknown value as zero."""
+    value = getattr(info, name, None)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"consumer_info returned an invalid {name}")
+    return value
+
+
+class IngestionResetError(RuntimeError):
+    """Stable API error raised when a stream reset cannot be completed safely."""
+
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        status_code: int = 503,
+        num_pending: int | None = None,
+        num_ack_pending: int | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.status_code = status_code
+        self.num_pending = num_pending
+        self.num_ack_pending = num_ack_pending
+
+    def as_dict(self) -> dict[str, Any]:
+        """Return the machine-readable response shared by Core and the Gateway."""
+        payload: dict[str, Any] = {"code": self.code, "detail": self.detail}
+        if self.num_pending is not None:
+            payload["num_pending"] = self.num_pending
+        if self.num_ack_pending is not None:
+            payload["num_ack_pending"] = self.num_ack_pending
+        return payload
+
+
+def _client_is_connected(client: Any) -> bool:
+    """Read nats-py's connection state while keeping simple fakes compatible."""
+    state = getattr(client, "is_connected", True)
+    if callable(state):
+        state = state()
+    return bool(state)
+
+
+class IngestionConsumerController:
+    """Own the live consumer connection and coordinate a safe stream reset.
+
+    The supervisor calls ``connected`` after the stream has been recreated and
+    the durable subscription has been installed. The reset path therefore waits
+    for that callback rather than guessing that a closed socket means the next
+    consumer is ready.
+    """
+
+    def __init__(self) -> None:
+        self.client: Any | None = None
+        self.connection_lost: asyncio.Event | None = None
+        self.status = "disconnected"
+        self.generation = 0
+        self.ready = asyncio.Event()
+        self._lock = asyncio.Lock()
+        self._reset_in_progress = False
+
+    def connected(self, client: Any, connection_lost: asyncio.Event) -> None:
+        """Record a client only after ``start_consumer`` completed successfully."""
+        self.client = client
+        self.connection_lost = connection_lost
+        self.status = "connected"
+        self.generation += 1
+        self.ready.set()
+
+    def disconnected(self, client: Any) -> None:
+        """Forget a client only if it is still the current one."""
+        if self.client is client:
+            self.client = None
+            self.connection_lost = None
+            self.status = "disconnected"
+            self.ready.clear()
+
+    def _assert_current(self, client: Any, connection_lost: asyncio.Event) -> None:
+        """Refuse to mutate a stream after the supervisor has changed clients."""
+        if (
+            self.client is not client
+            or self.connection_lost is not connection_lost
+            or connection_lost.is_set()
+            or not _client_is_connected(client)
+        ):
+            raise IngestionResetError(
+                "ingestion_consumer_unavailable",
+                "The ingestion consumer connection changed during the reset; no stream was deleted.",
+            )
+
+    async def _consumer_counts(self, js: Any) -> tuple[int, int]:
+        """Read both safety counters from the named durable consumer."""
+        info = await js.consumer_info(INGESTION_STREAM_NAME, INGESTION_CONSUMER_NAME)
+        return _counter(info, "num_pending"), _counter(info, "num_ack_pending")
+
+    async def _restore_subjects(self, js: Any, config: StreamConfig) -> None:
+        """Re-open ordinary importer subjects after an aborted gated reset."""
+        try:
+            await js.update_stream(config)
+        except Exception as exc:
+            logger.error(
+                "[req_id=%s] Could not restore ingestion stream subjects after reset refusal (%s)",
+                get_current_request_id(),
+                type(exc).__name__,
+            )
+            raise IngestionResetError(
+                "ingestion_reset_gate_restore_failed",
+                "The ingestion reset was refused, but the temporary publish gate could not be removed.",
+            ) from exc
+
+    async def _wait_for_reconnected(self, previous_generation: int) -> None:
+        """Wait until the supervisor has recreated and subscribed a new client."""
+        deadline = asyncio.get_running_loop().time() + INGESTION_RESET_TIMEOUT_SECONDS
+        while self.generation <= previous_generation or self.client is None:
+            self.ready.clear()
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise IngestionResetError(
+                    "ingestion_stream_recreation_timeout",
+                    "The ingestion stream was deleted, but Core did not recreate its consumer in time.",
+                )
+            try:
+                await asyncio.wait_for(self.ready.wait(), timeout=remaining)
+            except TimeoutError as exc:
+                raise IngestionResetError(
+                    "ingestion_stream_recreation_timeout",
+                    "The ingestion stream was deleted, but Core did not recreate its consumer in time.",
+                ) from exc
+
+    async def reset(self) -> dict[str, Any]:
+        """Gate publishers, re-check counters, delete, and await resubscription."""
+        # The flag is set before the first await. That closes the small gap in
+        # which two requests could both observe an unlocked asyncio.Lock.
+        if self._reset_in_progress:
+            raise IngestionResetError(
+                "ingestion_reset_busy",
+                "Another ingestion stream reset is already in progress.",
+                status_code=409,
+            )
+        self._reset_in_progress = True
+        lock_acquired = False
+        jetstream: Any | None = None
+        restore_config: StreamConfig | None = None
+        gate_active = False
+        stream_deleted = False
+
+        async def restore_gate() -> None:
+            """Restore importer subjects after a reset stops before deletion."""
+            nonlocal gate_active
+            if not gate_active or stream_deleted or jetstream is None or restore_config is None:
+                return
+            await self._restore_subjects(jetstream, restore_config)
+            gate_active = False
+
+        try:
+            await self._lock.acquire()
+            lock_acquired = True
+            client = self.client
+            connection_lost = self.connection_lost
+            # Capture this before any broker await. A supervisor reconnect that
+            # wins a race before deletion must count as a new generation, never
+            # as the client this request started with.
+            previous_generation = self.generation
+            if (
+                client is None
+                or connection_lost is None
+                or connection_lost.is_set()
+                or not _client_is_connected(client)
+            ):
+                raise IngestionResetError(
+                    "ingestion_consumer_unavailable",
+                    "The ingestion consumer is not connected; no stream was deleted.",
+                )
+
+            js = client.jetstream()
+            jetstream = js
+            try:
+                num_pending, num_ack_pending = await self._consumer_counts(js)
+            except Exception as exc:
+                raise IngestionResetError(
+                    "ingestion_consumer_unavailable",
+                    "Core could not inspect the ingestion consumer; no stream was deleted.",
+                ) from exc
+
+            if num_pending or num_ack_pending:
+                raise IngestionResetError(
+                    "ingestion_reset_pending_events",
+                    "The ingestion stream still contains events that must be stored before it can be reset.",
+                    status_code=409,
+                    num_pending=num_pending,
+                    num_ack_pending=num_ack_pending,
+                )
+
+            self._assert_current(client, connection_lost)
+            try:
+                stream_info = await js.stream_info(INGESTION_STREAM_NAME)
+                original_config = stream_info.config
+                original_subjects = list(original_config.subjects or [INGESTION_SUBJECT])
+                restore_config = _stream_config_with_subjects(
+                    original_config, original_subjects
+                )
+                gated_config = _stream_config_with_subjects(
+                    original_config,
+                    [INGESTION_RESET_GATE_SUBJECT],
+                )
+                # Mark this before the await: the broker may apply an update and
+                # then lose the connection before returning to the caller.
+                gate_active = True
+                await js.update_stream(gated_config)
+            except IngestionResetError:
+                raise
+            except Exception as exc:
+                await restore_gate()
+                raise IngestionResetError(
+                    "ingestion_reset_gate_failed",
+                    "Core could not pause ingestion publishers; no stream was deleted.",
+                ) from exc
+
+            try:
+                # The gate closes the publish/delete race: a normal importer
+                # subject cannot enter the stream after this update. A message
+                # accepted before the update is still caught by this final check.
+                self._assert_current(client, connection_lost)
+                num_pending, num_ack_pending = await self._consumer_counts(js)
+                if num_pending or num_ack_pending:
+                    await restore_gate()
+                    raise IngestionResetError(
+                        "ingestion_reset_pending_events",
+                        "The ingestion stream received an event while the reset was starting; nothing was deleted.",
+                        status_code=409,
+                        num_pending=num_pending,
+                        num_ack_pending=num_ack_pending,
+                    )
+
+                self._assert_current(client, connection_lost)
+                deleted = await js.delete_stream(INGESTION_STREAM_NAME)
+                if deleted is False:
+                    raise RuntimeError("delete_stream returned false")
+                stream_deleted = True
+                gate_active = False
+            except IngestionResetError:
+                with suppress(Exception):
+                    await restore_gate()
+                raise
+            except Exception as exc:
+                await restore_gate()
+                raise IngestionResetError(
+                    "ingestion_stream_reset_failed",
+                    "Core could not delete the gated ingestion stream; no data was deleted.",
+                ) from exc
+
+            # Do this before closing the socket. The endpoint must never report
+            # the deleted connection as active while the supervisor is waking.
+            self.client = None
+            self.connection_lost = None
+            self.status = "resetting"
+            connection_lost.set()
+            with suppress(Exception):
+                await client.close()
+
+            await self._wait_for_reconnected(previous_generation)
+            return {
+                "code": "ingestion_stream_reset",
+                "status": "recreated",
+                "stream": INGESTION_STREAM_NAME,
+                "retention": STREAM_RETENTION.value,
+            }
+        except asyncio.CancelledError:
+            # A browser disconnect must not leave the stream accepting only the
+            # internal gate subject. Cleanup is safe before deletion and the
+            # supervisor will reconcile the stream if the connection itself died.
+            with suppress(Exception):
+                await restore_gate()
+            raise
+        finally:
+            if lock_acquired:
+                self._lock.release()
+            self._reset_in_progress = False
+
+
+async def ingestion_retention_warning(client: Any) -> Warning_ | None:
+    """Return the dashboard warning when the live stream has old retention."""
+    if client is None or not _client_is_connected(client):
+        return None
+    try:
+        info = await client.jetstream().stream_info(INGESTION_STREAM_NAME)
+    except Exception:  # noqa: BLE001 - a disconnected broker is not a mismatch
+        return None
+
+    actual = getattr(info.config.retention, "value", info.config.retention)
+    expected = getattr(STREAM_RETENTION, "value", STREAM_RETENTION)
+    if actual == expected:
+        return None
+    counts: dict[str, str] = {}
+    try:
+        consumer_info = await client.jetstream().consumer_info(
+            INGESTION_STREAM_NAME,
+            INGESTION_CONSUMER_NAME,
+        )
+        counts = {
+            "num_pending": str(_counter(consumer_info, "num_pending")),
+            "num_ack_pending": str(_counter(consumer_info, "num_ack_pending")),
+        }
+    except Exception as exc:  # noqa: BLE001 - a mismatch remains useful without counts
+        logger.debug(
+            "Could not read ingestion consumer counts for the retention warning (%s)",
+            type(exc).__name__,
+        )
+    return Warning_(
+        code="ingestion_stream_retention_mismatch",
+        severity="critical",
+        title="The ingestion stream uses the wrong retention policy",
+        detail=(
+            f"The stream currently uses {actual}; it must use {expected}. "
+            "An owner can reset it after confirming that the queue is empty."
+        ),
+        action="An owner can reset the ingestion stream from the dashboard after confirming the queue is empty.",
+        docs="/docs/operations/#rebuilding-a-workspace-from-scratch",
+        params={
+            "actual_retention": str(actual),
+            "expected_retention": str(expected),
+            "owner_only": "true",
+            **counts,
+        },
+    )
+
+
+async def _reconcile_stream(js: Any, desired: StreamConfig) -> None:
+    """Bring an existing ingestion stream up to the configuration above.
+
+    `max_age` and `max_bytes` are updatable in place. **`retention` is not** — the
+    broker rejects a change on a live stream, and that refusal is the one worth
+    saying out loud rather than folding into a generic warning: a stream left on
+    `limits` retention will fill with already-stored events and stop accepting
+    publishes from every importer at once (see STREAM_RETENTION).
+
+    Deliberately not self-healing. Switching retention means deleting and
+    recreating the stream, and a stream may hold events Core has not stored yet;
+    destroying those to fix a configuration problem would trade an outage that
+    stops when someone acts for data loss that does not. So this reports precisely
+    what is wrong and what to do, and leaves the decision to a person.
+    """
+    try:
+        current = await js.stream_info(desired.name)
+        actual_retention = current.config.retention
+    except Exception as exc:  # noqa: BLE001 - an old server may not answer stream_info
+        logger.warning(
+            "Could not read the ingestion stream's configuration (%s)",
+            type(exc).__name__,
+        )
+        actual_retention = None
+
+    if actual_retention is not None and actual_retention != desired.retention:
+        logger.error(
+            "The 'ingestion' stream uses %s retention, not %s. Acknowledged events "
+            "are therefore kept until max_age instead of being dropped once stored, "
+            "so the stream fills with data Core already holds and discard=new then "
+            "refuses every importer's publish. Retention cannot be changed in place: "
+            "drain the stream, confirm the consumer reports num_pending=0 and "
+            "num_ack_pending=0, then delete and let Core recreate it.",
+            getattr(actual_retention, "value", actual_retention),
+            getattr(desired.retention, "value", desired.retention),
+        )
+    # What is actually sent. On a retention mismatch the broker rejects the whole
+    # update, so asking for the desired retention would also throw away the age
+    # and byte ceilings — in exactly the deployment where they matter most, since
+    # a legacy `limits` stream is the one that fills up. Ask for the retention the
+    # stream already has, and the rest applies.
+    applicable = desired
+    if actual_retention is not None and actual_retention != desired.retention:
+        applicable = replace(desired, retention=actual_retention)
+
+    try:
+        await js.update_stream(applicable)
+    except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
+        logger.warning(
+            "Could not apply the ingestion stream's limits (%s)",
+            type(exc).__name__,
+        )
 
 
 async def start_consumer(
@@ -1202,29 +1702,15 @@ async def start_consumer(
     try:
         js = nc.jetstream()
 
-        stream = StreamConfig(
-            name="ingestion",
-            subjects=["qs.ingest.>"],
-            max_age=STREAM_MAX_AGE_SECONDS,
-            max_bytes=STREAM_MAX_BYTES,
-            # Ingestion is a delivery buffer, not a lossy cache. A full stream must
-            # apply publisher backpressure so the importer can pause and resume rather
-            # than silently discarding unacknowledged medical data.
-            discard=DiscardPolicy.NEW,
-        )
+        # The reset controller and the supervisor must recreate the same shape.
+        stream = ingestion_stream_config()
         try:
             await js.add_stream(stream)
         except Exception:  # noqa: BLE001 - the stream already exists, which is the normal case
             # Its limits are brought up to date rather than left as whatever the first Core
             # to start ever created. An unbounded stream is the state this exists to correct,
             # so finding one is expected, not exceptional.
-            try:
-                await js.update_stream(stream)
-            except Exception as exc:  # noqa: BLE001 - a server too old to update it still serves
-                logger.warning(
-                    "Could not apply the ingestion stream's limits (%s)",
-                    type(exc).__name__,
-                )
+            await _reconcile_stream(js, stream)
 
         consumer = ConsumerConfig(
             max_deliver=MAX_DELIVERY_ATTEMPTS,
@@ -1233,8 +1719,8 @@ async def start_consumer(
         )
         try:
             await js.subscribe(
-                "qs.ingest.>",
-                "core_data_service_group",
+                INGESTION_SUBJECT,
+                INGESTION_CONSUMER_NAME,
                 cb=process_message,
                 config=consumer,
             )
@@ -1245,8 +1731,8 @@ async def start_consumer(
                 type(exc).__name__,
             )
             await js.subscribe(
-                "qs.ingest.>",
-                "core_data_service_group",
+                INGESTION_SUBJECT,
+                INGESTION_CONSUMER_NAME,
                 cb=process_message,
             )
         logger.info("Started consuming from qs.ingest.>")
@@ -1260,6 +1746,8 @@ async def start_consumer(
 
 async def run_consumer_forever(
     on_connected: Callable[[Any], None] | None = None,
+    on_connection_ready: Callable[[Any, asyncio.Event], None] | None = None,
+    on_connection_lost: Callable[[Any], None] | None = None,
 ) -> None:
     """Supervise the subscription and reconnect after a connection loss.
 
@@ -1292,6 +1780,10 @@ async def run_consumer_forever(
 
         delay = RECONNECT_INITIAL_DELAY
         logger.info("NATS consumer established")
+        if on_connection_ready is not None:
+            # start_consumer returns only after stream creation/reconciliation
+            # and durable subscription have both completed.
+            on_connection_ready(nc, connection_lost)
         if on_connected is not None:
             on_connected(nc)
 
@@ -1302,6 +1794,8 @@ async def run_consumer_forever(
                 await nc.close()
             raise
 
+        if on_connection_lost is not None:
+            on_connection_lost(nc)
         logger.warning("NATS consumer connection lost; restarting the subscription")
         with suppress(Exception):
             await nc.close()

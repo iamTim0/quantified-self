@@ -525,7 +525,11 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
-            body: JSON.stringify({ resolution, raw_retention_days: 90 }),
+            // Resolution only. Sending a retention here wrote ninety days onto
+            // whatever metric was selected, including the workout, strength and
+            // location metrics the registry keeps forever — and the next purge
+            // deleted them.
+            body: JSON.stringify({ resolution }),
           }),
         ),
       );
@@ -827,7 +831,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       <select
         value={selectedSource}
         onChange={(e) => setSelectedSource(e.target.value)}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-[#0d5c3a]"
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
       >
         <option value="all">{t("explorer.allSources")}</option>
         {availableSources.map((source) => (
@@ -851,7 +855,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         value={importResolution}
         onChange={(event) => handleImportResolutionChange(event.target.value as Resolution)}
         title={t("explorer.importResolutionHint")}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-[#0d5c3a]"
+        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
       >
         <option value="auto">{t("explorer.resolutionAuto")}</option>
         <option value="raw">{t("explorer.resolutionRaw")}</option>
@@ -879,7 +883,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
           <button
             key={preset.id}
             onClick={() => setDateRangePreset(preset.id as typeof dateRangePreset)}
-            className={`rounded-xl px-3 py-1 font-bold transition-all ${
+            className={`rounded-xl px-3 py-1 font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
               dateRangePreset === preset.id
                 ? "bg-[#0d5c3a] text-white shadow-xs"
                 : "text-slate-500 hover:text-slate-900"
@@ -896,14 +900,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             type="date"
             value={customStartDate}
             onChange={(e) => setCustomStartDate(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus:border-[#0d5c3a]"
+            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a]"
           />
           <span className="text-slate-400">{t("chart.rangeTo")}</span>
           <input
             type="date"
             value={customEndDate}
             onChange={(e) => setCustomEndDate(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus:border-[#0d5c3a]"
+            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a]"
           />
         </div>
       )}
@@ -918,7 +922,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         placeholder={t("explorer.searchPlaceholder")}
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-all focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20"
+        className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-colors focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20"
       />
     </div>
   );
@@ -961,7 +965,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         </div>
         <button
           onClick={refresh}
-          className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs transition-all hover:bg-slate-50"
+          className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
           <span>{t("explorer.refresh")}</span>
@@ -979,7 +983,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               key={tab.id}
               onClick={() => setView(tab.id)}
               aria-current={isActive}
-              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition-all ${
+              className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 isActive
                   ? "bg-white text-[#0d5c3a] shadow-xs"
                   : "text-slate-500 hover:text-slate-900"
@@ -1013,7 +1017,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   placeholder={t("explorer.viewNamePlaceholder")}
                   value={newViewName}
                   onChange={(e) => setNewViewName(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none focus:border-[#0d5c3a]"
+                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
                 />
                 <button
                   onClick={handleSaveCurrentView}
@@ -1038,7 +1042,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 <div
                   key={saved.id}
                   onClick={() => handleLoadView(saved)}
-                  className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                  className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-3.5 py-1.5 text-xs font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     activeViewId === saved.id
                       ? "border-[#0d5c3a] bg-[#0d5c3a] text-white shadow-xs"
                       : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
@@ -1092,7 +1096,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                         onClick={() => setChartType(option.id)}
                         title={t(option.titleKey)}
                         aria-label={t(option.titleKey)}
-                        className={`rounded-xl p-1.5 transition-all ${
+                        className={`rounded-xl p-1.5 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                           chartType === option.id
                             ? "bg-[#0d5c3a] text-white shadow-xs"
                             : "text-slate-500 hover:text-slate-900"
@@ -1152,7 +1156,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 placeholder={t("explorer.metricFilterPlaceholder")}
                 value={overviewSearch}
                 onChange={(e) => setOverviewSearch(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-all focus:border-[#0d5c3a] focus:ring-2 focus:ring-[#0d5c3a]/20"
+                className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-colors focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20"
               />
             </div>
           </div>

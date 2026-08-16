@@ -33,6 +33,8 @@ export const en = {
   "lang.switchTo": "Switch to {language}",
 
   // ── Sidebar ────────────────────────────────────────────────────────────────
+  "nav.primary": "Main navigation",
+  "nav.more": "More",
   "sidebar.menu": "Menu",
   "sidebar.general": "General",
   "sidebar.overview": "Dashboard",
@@ -40,6 +42,7 @@ export const en = {
   "sidebar.quality": "Data quality",
   "sidebar.analysis": "Analysis",
   "sidebar.chat": "AI chat",
+  "sidebar.workouts": "Workouts",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Documentation",
   "sidebar.docsTitle": "Open the platform documentation",
@@ -136,6 +139,60 @@ export const en = {
   "warning.development_environment.detail":
     "That is why the services start despite the points above. With a production-like ENVIRONMENT, Core and the Gateway refuse to start while any value is a published default.",
   "warning.development_environment.action": "Set ENVIRONMENT=production for a real deployment.",
+  "warning.ingestion_stream_retention_mismatch.title":
+    "The ingestion stream uses the wrong retention policy",
+  "warning.ingestion_stream_retention_mismatch.detail":
+    "The stream currently uses {actual_retention}; it must use {expected_retention}. An owner can reset it after confirming that the queue is empty.",
+  "warning.ingestion_stream_retention_mismatch.action":
+    "An owner can reset the ingestion stream from the dashboard after confirming the queue is empty.",
+  "warning.ingestion_stream_retention_mismatch.confirm":
+    "Reset the ingestion stream now? Core will proceed only when both pending counters are zero, and importer publishing will pause briefly during the reset.",
+  "warning.ingestion_stream_retention_mismatch.controlDetail":
+    "This control is available only to the workspace owner. Core checks both consumer counters, pauses normal importer subjects, then recreates the stream and subscription.",
+  "warning.ingestion_stream_retention_mismatch.reset": "Reset ingestion stream",
+  "warning.ingestion_stream_retention_mismatch.resetBusy": "Resetting ingestion stream…",
+  "warning.ingestion_stream_retention_mismatch.resetDone": "Stream reset complete",
+  "warning.ingestion_stream_retention_mismatch.resetSuccess":
+    "The stream was recreated and the consumer subscription is ready.",
+  "warning.ingestion_stream_retention_mismatch.resetPendingTitle":
+    "Reset refused: events are still pending",
+  "warning.ingestion_stream_retention_mismatch.resetPendingDetail":
+    "Nothing was deleted. Pending events: {pending}; awaiting acknowledgement: {ackPending}.",
+  "warning.ingestion_stream_retention_mismatch.countUnavailable": "unavailable",
+  "warning.ingestion_stream_retention_mismatch.resetFailedTitle": "Reset could not be completed",
+  "warning.ingestion_stream_retention_mismatch.resetFailedDetail":
+    "Nothing was deleted. Review the operator fallback in the documentation before trying again.",
+
+  // ── Daily story ────────────────────────────────────────────────────────────
+  "day.eyebrow": "Your day",
+  "day.title": "What happened",
+  "day.subtitle":
+    "Yesterday is a finished day. Today is shown as far as your connectors have reported it.",
+  "day.loadFailed": "Your day could not be loaded. The data is unaffected.",
+  "day.retry": "Try again",
+  "day.yesterday": "Yesterday",
+  "day.today": "Today",
+  "day.stillArriving": "Still arriving",
+  "day.nothingRecorded": "Nothing was recorded for this day.",
+  "day.timeline": "During the day",
+  "day.timelineTruncated": "Only the first entries of this day are shown.",
+  "day.lastImport": "This connector last imported {timestamp}",
+  "day.neverImported": "This connector has never completed an import",
+  "day.answeredBy":
+    "Answered by {source}. Another connector also reports this metric; the two are never added together.",
+  "day.laneSleep": "Sleep",
+  "day.laneActivity": "Activity",
+  "day.laneWorkout": "Workouts",
+  "day.laneStrength": "Strength",
+  "day.laneHeart": "Heart",
+  "day.laneNutrition": "Nutrition",
+  "day.laneBody": "Body",
+  "day.laneLocation": "Places",
+  "day.laneCalendar": "Calendar",
+  "day.laneEnvironment": "Weather",
+  "day.laneHome": "Home",
+  "day.laneCustom": "Your own metrics",
+  "day.laneOther": "Other",
 
   // ── Overview ────────────────────────────────────────────────────────────
   "overview.title": "Dashboard",
@@ -253,6 +310,7 @@ export const en = {
   "chart.refresh": "Refresh the chart",
   "chart.emptyPeriod": "No data points in the selected period.",
   "chart.emptyFilter": "No data points for the current filter.",
+  "map.routeAria": "Map of the recorded route",
   "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",
   "map.loading": "Loading GPS data…",
   "map.today": "Today",
@@ -263,6 +321,9 @@ export const en = {
   "map.privacyLead":
     "No location data is sent to a map provider. Loading the tiles makes the part of the map you are looking at visible to that provider.",
   "map.empty": "No GPS points in the selected period.",
+  "map.pointCount": "{count} points",
+  "map.simplifiedTo": "simplified to {count}",
+  "map.vectorMode": "Vector view",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
   "map.privacyDetail":
@@ -864,7 +925,30 @@ export const en = {
     "There is no data to analyse yet. Set up a connector and import at least two weeks.",
   "analysis.excludedForQuality": "{count} hidden because the data is too thin",
   "analysis.ambiguousSources":
-    "{count} metric(s) use more than one connector. They were left out until one source is selected, so values are not counted twice.",
+    "{count} metric(s) are reported by more than one connector. One of them answers, because adding two would count the same value twice.",
+  "analysis.ambiguousUnresolved":
+    "{count} metric(s) come from several connectors and no primary source is set, so they were left out.",
+  "analysis.primaryByCoverage": "chosen automatically — most complete",
+  "analysis.primaryByPreference": "your choice",
+  "analysis.chooseSource": "Choose source",
+
+  // ─── Precomputed reports ──────────────────────────────────
+  "report.computedAt": "Computed {timestamp}",
+  "report.neverComputed": "Not computed yet",
+  "report.running": "Computing…",
+  "report.stale": "New data since",
+  "report.recompute": "Recompute",
+  "report.pendingFirstRun":
+    "This is computed in the background after an import. Start it now to see it straight away.",
+
+  // ─── Primary source selection ─────────────────────────────
+  "sources.title": "Metrics from several connectors",
+  "sources.intro":
+    "These metrics arrive from more than one connector. Values are never added together — one connector answers, and you can say which.",
+  "sources.none": "No metric is reported by more than one connector.",
+  "sources.automatic": "Automatic (most complete)",
+  "sources.saveFailed": "Could not be saved. Please try again.",
+  "sources.samples": "{count} values",
   "analysis.allMetricsQualify": "every metric meets the minimum requirements",
   "analysis.significantRelationships": "Significant relationships",
   "analysis.ofPairsChecked": "of {count} pairs checked",
@@ -966,6 +1050,114 @@ export const en = {
   "chat.errorLoginRequired": "Connect your ChatGPT subscription before sending a message.",
   "chat.errorResponse": "The assistant could not complete this response.",
   "chat.errorStream": "The chat connection was interrupted.",
+  // ── Workouts ────────────────────────────────────────────────────────────
+  "workouts.title": "Workouts",
+  "workouts.subtitle":
+    "Every session, and everything the other connectors recorded while it was happening.",
+  "workouts.loading": "Loading sessions…",
+  "workouts.empty": "No sessions in this period.",
+  "workouts.emptyHint":
+    "Workouts arrive from Apple Health, WHOOP and Streak. A connector that has not run yet is not the same as a rest day.",
+  "workouts.filterAll": "All",
+  "workouts.filterWorkout": "Endurance",
+  "workouts.filterStrength": "Strength",
+  "workouts.range30": "Last 30 days",
+  "workouts.range90": "Last 90 days",
+  "workouts.range365": "Last year",
+  "workouts.approximate": "Grouped by time and name",
+  "workouts.approximateHint":
+    "This session was imported before workouts carried an identifier, so its points are grouped by timestamp and title. Two sessions stamped alike can appear as one, and one session can appear as two.",
+  "workouts.scanTruncated":
+    "This period holds more rows than one scan reads. Narrow the range to see everything.",
+  "workouts.back": "All workouts",
+  "workouts.exercises_one": "{count} exercise",
+  "workouts.exercises_other": "{count} exercises",
+  "workouts.sets_one": "{count} set",
+  "workouts.sets_other": "{count} sets",
+  "workouts.notFound": "That session is not in this workspace.",
+  "workouts.clamped":
+    "This session states an end more than 12 hours after its start, so the window shown is capped.",
+  "workouts.measures": "What the session states",
+  "workouts.derived": "Worked out from {fields}, not stated by the provider",
+  "workouts.providerValue": "Provider stated {value} {unit}",
+  "workouts.route": "Route",
+  "workouts.routeMeasured": "Measured along the track: {distance}",
+  "workouts.routeFixes_one": "{count} GPS fix",
+  "workouts.routeFixes_other": "{count} GPS fixes",
+  "workouts.routeFallback":
+    "Drawn from the stored coordinates; these fixes predate the spatial column.",
+  "workouts.streams": "During the session",
+  "workouts.streamBucket": "One point per {seconds} s",
+  "workouts.streamRange": "Range {min}–{max}",
+  "workouts.streamTruncated": "Shortened to fit the chart.",
+  "workouts.strength": "Sets",
+  "workouts.strengthTruncated": "More sets than one response returns.",
+  "workouts.topSet": "Best set",
+  "workouts.totalVolume": "Volume",
+  "workouts.totalReps": "Repetitions",
+  "workouts.setNumber": "Set",
+  "workouts.weight": "Weight",
+  "workouts.reps": "Reps",
+  "workouts.volume": "Volume",
+  "workouts.surroundings": "Recorded at the same time",
+  "workouts.surroundingsHint":
+    "These connectors know nothing about the workout. They are here because their readings fall inside it.",
+  "workouts.noStreams": "No second-by-second series for this session.",
+  "workouts.noStrength": "No sets logged for this session.",
+
+  // ── Muscle groups ───────────────────────────────────────────────────────
+  "muscle.chest": "Chest",
+  "muscle.back": "Back",
+  "muscle.shoulders": "Shoulders",
+  "muscle.biceps": "Biceps",
+  "muscle.triceps": "Triceps",
+  "muscle.forearms": "Forearms",
+  "muscle.quads": "Quadriceps",
+  "muscle.hamstrings": "Hamstrings",
+  "muscle.glutes": "Glutes",
+  "muscle.calves": "Calves",
+  "muscle.core": "Core",
+  "muscle.full_body": "Full body",
+  "muscle.cardio": "Cardio",
+  "muscle.other": "Other",
+
+  // ── Strength progression ────────────────────────────────────────────────
+  "analysis.tabStrength": "Strength",
+  "analysis.strengthEmpty":
+    "No resistance training in this period. Sets arrive from the Streak connector.",
+  "analysis.strengthTruncated": "More sets than one analysis reads. The oldest are not included.",
+  "analysis.strengthBalance": "Where the work went",
+  "analysis.strengthBalanceHint":
+    "Sets per muscle group. A share, not a total: what was pushed only means something beside what was pulled.",
+  "analysis.strengthExercise": "Exercise",
+  "analysis.strengthSessions": "Sessions",
+  "analysis.strengthBest": "Best set",
+  "analysis.strengthOneRm": "Estimated 1RM",
+  "analysis.strengthDirection": "Direction",
+  "analysis.strengthTooFew": "Fewer than {count} sessions — too few to call a direction.",
+  "analysis.strengthBasis.estimated_1rm": "Measured as the estimated one-rep max",
+  "analysis.strengthBasis.volume": "Measured as total volume",
+  "analysis.strengthBasis.reps": "Measured as repetitions, this being a bodyweight exercise",
+  "analysis.strengthBasis.none": "No basis",
+  "analysis.direction.rising": "Rising",
+  "analysis.direction.falling": "Falling",
+  "analysis.direction.flat": "Flat",
+
+  // ── Weekdays ────────────────────────────────────────────────────────────
+  // The Analysis Service names the day; this is where it gets said. It used to
+  // send the German word, so an English reader was shown "Montag" and there was
+  // nothing the interface could do about it (rule 17).
+  "weekday.monday": "Monday",
+  "weekday.tuesday": "Tuesday",
+  "weekday.wednesday": "Wednesday",
+  "weekday.thursday": "Thursday",
+  "weekday.friday": "Friday",
+  "weekday.saturday": "Saturday",
+  "weekday.sunday": "Sunday",
+
+  // Reached by Tab before anything else; invisible until then.
+  "nav.skipToContent": "Skip to content",
+
   // --- end of catalogue ---
 } satisfies Record<string, string>;
 

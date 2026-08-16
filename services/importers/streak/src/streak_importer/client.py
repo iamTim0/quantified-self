@@ -117,6 +117,38 @@ async def report_sync_progress(
             )
 
 
+async def send_field_report(
+    tenant_id: str,
+    source_id: str,
+    report: Any,
+    *,
+    req_id: str,
+    sync_run_id: str | None = None,
+) -> None:
+    """Tell Core which Streak fields this import used, and which it ignored.
+
+    Streak was the only importer without this, so every field it sends that the
+    transformer does not read disappeared without a trace — the fourth outcome
+    rule 19 forbids. It is also the only way to find out what Streak actually
+    sends, since it is a webhook source with no published schema.
+
+    Best-effort: an import that produced data must not fail because its bookkeeping
+    could not be filed. The report carries paths and value *kinds* only — never a
+    value — so it is safe to send and safe to keep.
+    """
+    payload = report.model_dump()
+    payload["sync_run_id"] = sync_run_id
+    url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{source_id}/field-report"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            await client.post(url, headers=internal_headers(req_id, tenant_id), json=payload)
+        except Exception as exc:  # noqa: BLE001 - bookkeeping never fails an import
+            logger.warning(
+                "Could not send the Streak field report to Core (%s)", type(exc).__name__
+            )
+
+
 async def get_connector_credentials_from_core(
     tenant_id: str, req_id: str = "req_streak_auth"
 ) -> tuple[str | None, str | None, dict[str, Any] | None]:

@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { TabType } from "../components/Sidebar";
+import MobileTabBar from "../components/MobileTabBar";
 import TopHeader from "../components/TopHeader";
 import ConnectorModal from "../components/ConnectorModal";
 import { ConnectorItem } from "../components/ConnectorsPage";
@@ -11,6 +12,7 @@ import LegalFooter from "../components/LegalFooter";
 import SystemWarnings from "../components/SystemWarnings";
 import UploadBanner from "../components/UploadBanner";
 import { UploadProvider } from "../lib/uploads/provider";
+import { useT } from "../lib/i18n/provider";
 import { SessionUser, endSession, fetchSession } from "../lib/session";
 import { ShellProvider } from "./shell";
 
@@ -69,6 +71,7 @@ function consumeNextParam(): string | null {
  * a page loads only what that page shows.
  */
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const API_BASE = getApiBase();
   const [mounted, setMounted] = useState(false);
   const pathname = usePathname();
@@ -76,6 +79,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const getTabFromPathname = (path: string): TabType => {
     if (path.startsWith("/explorer")) return "explorer";
+    // Matches the detail route too, so the tab stays lit while a session is open.
+    if (path.startsWith("/workouts")) return "workouts";
     if (path.startsWith("/connectors")) return "connectors";
     if (path.startsWith("/quality")) return "quality";
     if (path.startsWith("/analysis")) return "analysis";
@@ -115,27 +120,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
-
-  // Refreshed when the tab comes back into the foreground, and not on a timer.
-  //
-  // There was a 30s interval here. Nothing on this page changes every 30 seconds:
-  // the scheduler checks for due connectors every five minutes, and an import that
-  // lands writes history, not a live figure. So the interval mostly re-fetched the
-  // same numbers, moved the page under whoever was reading it, and kept a signed-in
-  // tab talking to the API all day for nothing.
-  //
-  // Coming back to the tab is the moment the data might actually be stale, which is
-  // why that half stays. A sync you trigger yourself already calls triggerRefresh.
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const refreshWhenVisible = () => {
-      if (document.visibilityState === "visible") triggerRefresh();
-    };
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    return () => {
-      document.removeEventListener("visibilitychange", refreshWhenVisible);
-    };
-  }, [isAuthenticated, triggerRefresh]);
 
   const applySession = useCallback((user: SessionUser) => {
     setTenantId(user.tenantId);
@@ -181,19 +165,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     };
   }, [API_BASE, applySession, resetToSignedOut, router]);
 
-  // Logging out in one tab must sign the others out too. The cookie is shared
+  // Coming back to the tab does two things, in one listener and in this order.
+  //
+  // There were two listeners here, registered separately on the same event: one
+  // re-checked the session, the other re-fetched every child. Returning to the
+  // tab therefore fired a round trip *and* a full refresh with no ordering
+  // between them, so a signed-out tab spent a page's worth of requests before
+  // finding out it was signed out. Confirm first, then refresh.
+  //
+  // Logging out in one tab must sign the others out too: the cookie is shared
   // across tabs but its removal fires no event, so a tab that regains focus
   // re-checks with the server rather than trusting what it last rendered.
+  //
+  // Not on a timer. There was a 30s interval here once, and nothing on this page
+  // changes every 30 seconds — the scheduler checks for due connectors every
+  // five minutes, and an import that lands writes history, not a live figure. So
+  // it mostly re-fetched the same numbers and moved the page under whoever was
+  // reading it. Regaining focus is the moment the data might actually be stale.
   useEffect(() => {
     if (!isAuthenticated) return;
-    const recheck = async () => {
+    const onVisible = async () => {
       if (document.visibilityState !== "visible") return;
       const user = await fetchSession(API_BASE);
-      if (!user) resetToSignedOut();
+      if (!user) {
+        resetToSignedOut();
+        return;
+      }
+      triggerRefresh();
     };
-    document.addEventListener("visibilitychange", recheck);
-    return () => document.removeEventListener("visibilitychange", recheck);
-  }, [API_BASE, isAuthenticated, resetToSignedOut]);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [API_BASE, isAuthenticated, resetToSignedOut, triggerRefresh]);
 
   const handleLogin = (data: UserAuthData) => {
     applySession(data.user);
@@ -290,8 +292,37 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     ],
   );
 
+  // The shell, drawn before we know whether anyone is signed in.
+  //
+  // This was a bare grey rectangle, and it covered a longer stretch than it
+  // looks: download the JS, hydrate, *then* an effect fires `fetchSession()` and
+  // a round trip has to come back before `mounted` flips. Everything up to that
+  // point rendered nothing at all, and then the entire page appeared at once.
+  //
+  // Painting the frame — the window, the sidebar's footprint, the header's — is
+  // most of the perceived fix, and it costs nothing: the layout is fixed and
+  // known before any data is. It also removes the layout shift, because the real
+  // shell drops into the space this one already occupies rather than replacing
+  // an empty box.
+  //
+  // Deliberately not the children: they need a tenant, and a signed-out visitor
+  // must not see even the outline of a workspace.
   if (!mounted) {
-    return <div className="min-h-screen bg-slate-200/60" />;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
+        <div
+          className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row"
+          // A frame, not a claim about content. Nothing here is real yet, so
+          // nothing here should be announced.
+          aria-hidden="true"
+        >
+          <div className="hidden w-64 shrink-0 border-r border-slate-200/80 bg-white md:block" />
+          <div className="flex-1 p-4 sm:px-6 sm:pt-6 md:p-6 lg:p-8">
+            <div className="h-10 w-56 rounded-xl bg-slate-200/70" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   if (!isAuthenticated) {
@@ -304,14 +335,42 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     // the transfer. `UploadBanner` is what a minimised upload looks like.
     <UploadProvider>
       <ShellProvider value={shellValue}>
-        <div className="min-h-screen bg-slate-200/60 p-2 sm:p-4 lg:p-6 flex items-center justify-center">
+        {/*
+          Past the sidebar in one keystroke (WCAG 2.4.1).
+          Seven navigation targets sit before the content of every page, and a
+          keyboard or screen-reader user re-traversed all of them on every
+          navigation. Visually hidden until focused, which is the whole
+          convention: it is the first thing Tab reaches and invisible to
+          everyone who never presses it.
+        */}
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-900 focus:shadow-lg focus:outline-2 focus:outline-[#0d5c3a]"
+        >
+          {t("nav.skipToContent")}
+        </a>
+        <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
           {/* Main Outer App Window Shell */}
-          <div className="w-full max-w-[1600px] min-h-[900px] bg-[#f8fafc] rounded-3xl shadow-2xl border border-slate-200/80 flex flex-col md:flex-row overflow-hidden">
-            {/* Sidebar Navigation with URL Sync */}
-            <Sidebar activeTab={activeTab} onTabChange={handleTabChange} onLogout={handleLogout} />
+          <div className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row">
+            {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
+                column of icons sits outside the thumb's reach — `MobileTabBar`
+                takes over below `md`. */}
+            <div className="hidden md:flex">
+              <Sidebar
+                activeTab={activeTab}
+                onTabChange={handleTabChange}
+                onLogout={handleLogout}
+              />
+            </div>
 
-            {/* Main Content Area */}
-            <main className="flex-1 p-6 lg:p-8 overflow-y-auto">
+            {/* Main Content Area. The bottom padding on small screens is the tab
+                bar's height plus the home-indicator inset: without it the last
+                element of every page is unreachable behind the bar. */}
+            <main
+              id="main-content"
+              tabIndex={-1}
+              className="flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
+            >
               <TopHeader
                 userName={userName}
                 userEmail={userEmail}
@@ -322,7 +381,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
               {/* Configuration and credential problems, on every tab. Previously
                 these lived only in a startup log and docs/operations.md. */}
-              <SystemWarnings apiBase={API_BASE} />
+              <SystemWarnings apiBase={API_BASE} userRole={userRole} />
 
               {children}
 
@@ -358,6 +417,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <UploadBanner />
+
+          <MobileTabBar
+            activeTab={activeTab}
+            onTabChange={handleTabChange}
+            onLogout={handleLogout}
+          />
         </div>
       </ShellProvider>
     </UploadProvider>

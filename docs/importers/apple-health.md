@@ -171,8 +171,29 @@ never mistaken for one the phone reported.
 What such a series must **not** become is one data point per sample under the daily metric.
 `steps` and `distance` aggregate by sum over a day, and the day's own total already arrives from
 the phone; adding a workout's per-minute samples on top would make that day read roughly a third
-too high everywhere it is shown. Per-sample resolution needs a metric of its own before it can be
-stored. A provider-stated workout total always takes precedence over a derived series.
+too high everywhere it is shown. A provider-stated workout total always takes precedence over a
+derived series.
+
+### The pulse series is kept as well as collapsed
+
+`heartRateData` is the one series that now has a metric of its own:
+**`workout_heart_rate`**, one point per sample, at second resolution. The mean and the
+maximum above are still emitted — this is in addition to them, not instead of them.
+
+It is keyed apart from `heart_rate` even though both are bpm, and that is a rule 15
+judgement rather than an oversight. Health Auto Export sends `metrics[].heart_rate`
+(interval summaries) *and* `workouts[].heartRateData` (per sample) covering overlapping
+wall-clock time in separate pushes; under one name they interleave without aligning, so
+`sample_count` and the min/max envelope would stop meaning anything, and the two could
+not be given different retention.
+
+Each sample keeps the phone's own `Min` and `Max` for the interval it covers. A sample
+carrying no usable moment is skipped rather than stamped with the session start —
+stamping them all would give them one idempotency key, and Core would keep exactly one
+of them.
+
+Every workout point, and every fix in its GPS route, now carries a `session_id`. See
+[Workout detail](../features/workout-detail.md).
 
 The remaining workout fields without a canonical metric are still named in the
 [Data Quality Center](../features/data-quality.md) rather than dropped quietly. This currently

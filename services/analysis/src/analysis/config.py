@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     # There is deliberately no DATABASE_URL here. This service reads through
     # Core's gRPC API and owns no database connection (AGENTS.md rules 1 and 3).
 
+    # Whether this process claims queued insight runs from Core. On by default,
+    # and safe to leave on for every replica: Core marks a run `running` in the
+    # transaction that hands it out, so two workers cannot claim the same one.
+    # A deployment that wants the work on one replica can turn it off elsewhere.
+    REPORT_WORKER_ENABLED: bool = True
+
     # Shared secret for the internal service credential this presents to Core.
     # Empty means "derive the same deterministic dev value Core derives", so a
     # local checkout works without configuration while a deployment sets both.

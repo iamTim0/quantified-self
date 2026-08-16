@@ -77,6 +77,7 @@ def _resolved_endpoint(path: str, method: str = "GET"):
 def _make_token(
     tenant_id: str = "11111111-1111-1111-1111-111111111111",
     *,
+    role: str = "owner",
     token_type: str = "access",
     audience: str = "qs-api",
     issuer: str = "qs-core",
@@ -91,7 +92,7 @@ def _make_token(
         "user_id": "22222222-2222-2222-2222-222222222222",
         "tenant_id": tenant_id,
         "email": "user@example.test",
-        "role": "owner",
+        "role": role,
         "iss": issuer,
         "aud": audience,
         "token_type": token_type,
@@ -373,6 +374,103 @@ async def test_data_proxy_rejects_malformed_claims(kwargs):
         )
 
     assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_ingestion_reset_uses_core_ingest_and_preserves_security_headers(monkeypatch):
+    """Verifies Fizzbee Invariants: OwnerOnlyReset and RequestCorrelationTracing."""
+    from gateway import main as gateway_main
+
+    monkeypatch.setattr(gateway_main.settings, "CORE_INGEST_URL", "http://core-ingest:8001")
+    token = _make_token()
+    observed: dict[str, str] = {}
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        observed.update(
+            {
+                "url": str(request.url),
+                "authorization": request.headers.get("authorization", ""),
+                "cookie": request.headers.get("cookie", ""),
+                "csrf": request.headers.get("x-csrf-token", ""),
+                "tenant": request.headers.get("x-tenant-id", ""),
+                "request_id": request.headers.get("x-request-id", ""),
+            }
+        )
+        return httpx.Response(
+            409,
+            json={
+                "code": "ingestion_reset_pending_events",
+                "detail": "pending",
+                "num_pending": 4,
+                "num_ack_pending": 1,
+            },
+        )
+
+    transport = ASGITransport(app=gateway_main.app)
+    with _upstreams(upstream):
+        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+            response = await client.post(
+                "/api/v1/data/system/ingestion/reset",
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "X-Tenant-ID": "11111111-1111-1111-1111-111111111111",
+                    "X-CSRF-Token": "csrf-value",
+                    "X-Request-ID": "req_gateway_reset",
+                },
+                cookies={
+                    "qs_access": "cookie-value",
+                    "qs_csrf": "csrf-value",
+                },
+            )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "ingestion_reset_pending_events"
+    assert response.json()["num_pending"] == 4
+    assert observed == {
+        "url": "http://core-ingest:8001/api/v1/data/system/ingestion/reset",
+        "authorization": f"Bearer {token}",
+        "cookie": "qs_access=cookie-value; qs_csrf=csrf-value",
+        "csrf": "csrf-value",
+        "tenant": "11111111-1111-1111-1111-111111111111",
+        "request_id": "req_gateway_reset",
+    }
+    assert response.headers["x-request-id"] == "req_gateway_reset"
+
+
+@pytest.mark.asyncio
+async def test_ingestion_reset_is_owner_only_and_csrf_protected():
+    """Verifies Fizzbee Invariants: OwnerOnlyReset and UnauthenticatedRequestsBlocked."""
+    from gateway import main as gateway_main
+
+    token = _make_token(role="member")
+    transport = ASGITransport(app=gateway_main.app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        member = await client.post(
+            "/api/v1/data/system/ingestion/reset",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        cookie_token = _make_token()
+        csrf = await client.post(
+            "/api/v1/data/system/ingestion/reset",
+            cookies={"qs_access": cookie_token, "qs_csrf": "cookie-csrf"},
+            headers={"X-CSRF-Token": "wrong-csrf"},
+        )
+
+    assert member.status_code == 403
+    assert member.json()["code"] == "owner_required"
+    assert csrf.status_code == 403
+    assert csrf.json()["code"] == "csrf_required"
+
+
+def test_ingestion_reset_route_precedes_the_generic_core_proxy():
+    """Verifies Fizzbee Invariant: SpecificRoutesPrecedeDashboard."""
+    from gateway import main as gateway_main
+
+    assert (
+        _resolved_endpoint("/api/v1/data/system/ingestion/reset", "POST")
+        is gateway_main.proxy_ingestion_reset
+    )
 
 
 @pytest.mark.asyncio

@@ -82,6 +82,9 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `ImportCompletionAfterCoreProcessing` | `test_importer_completion_waits_for_core_to_drain_events` | Core Data Service / NATS |
 | `SyncRunProgressAtMostOnce` | `test_core_marks_run_success_only_on_the_last_processed_event` | Core Data Service / NATS |
 | `SchedulerSingleFlight` | `test_concurrent_sync_requests_create_only_one_in_flight_run` | Core Data Service |
+| `ReportSingleFlight` | `test_a_second_refresh_does_not_queue_a_second_run` | Core Data Service |
+| `ReportNeverServesFutureData` | `test_a_report_is_stale_once_an_import_finishes_after_it` | Core Data Service |
+| `RunIsClaimedOnce` | `test_a_claimed_run_is_computed_and_handed_back` | Analysis Service |
 | `NoUnauthorizedAccess` | `test_query_returns_only_own_data` | Core Data Service (Queries) |
 | `ShareRevocationImmediate` | `test_share_revocation_blocks_access` | Core Data Service (Queries) |
 | `IdempotencyKeyDeterministic` | `test_oura_idempotency_key_deterministic` | Oura Importer |
@@ -117,6 +120,19 @@ We use Fizzbee to model the logic, and we map these invariants to real integrati
 | `UnhealthyDependencyIsVisible` | `test_unhealthy_dependency_is_visible` | API Gateway health aggregation |
 | `VersionComesFromObservedService` | `test_gateway_health_reports_observed_metadata` | API Gateway health aggregation |
 | `LivenessDoesNotWaitForDependencies` | `test_liveness_is_independent_from_aggregate_readiness` | API Gateway / Compose |
+| `SessionGroupingIsStable` | `test_tagged_and_untagged_points_never_share_a_group` | Core workout sessions |
+| `SessionGroupsAreDisjoint` | `test_one_workout_split_by_the_migration_never_doubles_a_row` | Core workout sessions |
+| `SessionDetailIsTenantScoped` | `test_a_forged_session_key_returns_the_callers_own_empty_result` | Core workout sessions |
+| `BoundedSessionRead` | `test_a_three_hour_workout_returns_a_bounded_payload` | Core workout sessions |
+| `OnlyOperatorCanReset` | `test_only_owner_can_start_a_reset` | Core / JetStream |
+| `AtMostOneResetInProgress` | `test_concurrent_reset_is_serialized` | Core / JetStream |
+| `DeleteOnlyWhenDrained` | `test_delete_requires_both_pending_counters_to_be_zero` | Core / JetStream |
+| `PublishGatePrecedesFinalDrainCheck` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `PublishGateOnlyDuringReset` | `test_retention_warning_carries_live_counts_without_claiming_gate_active` | Core / JetStream |
+| `RetentionMismatchIsVisible` | `test_retention_warning_carries_live_counts_without_claiming_gate_active` | Core / JetStream |
+| `SuccessfulResetHasDesiredRetention` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `SuccessfulResetHasActiveConsumer` | `test_successful_reset_requires_gate_and_active_consumer` | Core / JetStream |
+| `FailedResetNeverReportsSuccess` | `test_a_failed_reset_cannot_be_successful` | Core / JetStream |
 
 ## Adding New Specs
 

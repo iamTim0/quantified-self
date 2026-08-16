@@ -5,7 +5,12 @@
   "ingest_subject": "qs.ingest.whoop",
   "task_subject": "qs.task.sync.whoop",
   "entrypoint": "whoop_importer.main",
-  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "required_modules": [
+    "client.py",
+    "config.py",
+    "main.py",
+    "transformer.py"
+  ],
   "communication": {
     "ingest": "nats_jetstream",
     "credentials": "core_internal_http",
@@ -66,6 +71,7 @@
     "whoop_workout_strain",
     "workout_distance",
     "workout_duration",
+    "workout_elevation_gain",
     "workout_energy",
     "workout_heart_rate_average",
     "workout_heart_rate_max",

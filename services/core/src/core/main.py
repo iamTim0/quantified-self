@@ -57,12 +57,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.analytics import (
-    detect_cadence_gaps,
-    detect_daily_gaps,
-    find_cross_source_conflicts,
-    pearson_pairs,
-)
+from core.analytics import pearson_pairs
 from core.config import settings
 from core.connectors import (
     IMPORT_MODE_FILE,
@@ -71,6 +66,7 @@ from core.connectors import (
     is_scheduled,
     supports_file_import,
 )
+from core.daily_story import build_day_story
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -80,11 +76,13 @@ from core.db.models import (
     MetricIngestPolicy,
     MetricMappingRule,
     MetricRollup,
+    MetricSourcePreference,
     OidcAuthRequest,
     OidcProvider,
     QuarantinedDataPoint,
     QuarantineRefusal,
     RefreshToken,
+    ReportRun,
     RevokedAccessToken,
     SyncRun,
     Tenant,
@@ -98,6 +96,9 @@ from core.deployment_warnings import account_warnings, deployment_warnings
 from core.events.consumer import (
     MAX_QUARANTINED_NAMES,
     MAX_QUARANTINED_ROWS,
+    IngestionConsumerController,
+    IngestionResetError,
+    ingestion_retention_warning,
     run_consumer_forever,
 )
 from core.grpc.server import serve_grpc
@@ -112,7 +113,7 @@ from core.ingest_planning import (
 from core.metric_mapping import (
     MappingAction,
     ValidatedMapping,
-    custom_metric_definition,
+    custom_definitions_from_rules,
     replay_value,
     validate_mapping,
 )
@@ -122,6 +123,30 @@ from core.oauth_refresh import (
     can_refresh,
     needs_refresh,
     refresh_credential,
+)
+from core.reports import (
+    CORE_COMPUTED_KINDS,
+    REASON_COVERAGE,
+    REASON_PREFERENCE,
+    REPORT_KINDS,
+    acquire_report_lock,
+    compute_conflicts_report,
+    compute_core_report,
+    compute_gaps_report,
+    enqueue_report_run,
+    fail_report_run,
+    finish_report_run,
+    has_in_flight_report,
+    latest_successful_report,
+    metric_source_coverage,
+    open_report_run,
+    primary_source_preferences,
+    report_is_stale,
+    report_payload,
+    resolve_primary_source,
+    resolved_report_params,
+    run_report_scheduler,
+    tenant_data_high_water,
 )
 from core.rollup_coverage import (
     may_hold_points_outside_day_rollups,
@@ -134,6 +159,7 @@ from core.scheduler import (
     has_in_flight_run,
     run_scheduler,
 )
+from core.security import login_throttle
 from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
@@ -176,10 +202,24 @@ from core.security.tokens import (
     decode_access_token,
     hash_token,
 )
+from core.sessions import decode_session_key
 from core.tracing import (
     RequestTracingMiddleware,
     get_current_request_id,
     setup_tracing_logger,
+)
+from core.workouts import (
+    DEFAULT_PAD_SECONDS,
+    DEFAULT_ROUTE_POINTS,
+    DEFAULT_STREAM_POINTS,
+    MAX_LIST_DAYS,
+    MAX_LIST_SESSIONS,
+    MAX_PAD_SECONDS,
+    MAX_ROUTE_POINTS,
+    MAX_STREAM_POINTS,
+    SessionNotFound,
+    build_workout_detail,
+    build_workout_list,
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -347,8 +387,13 @@ async def lifespan(app: FastAPI):
             logger.exception("gRPC server failed to start; Analysis Service reads will fail")
 
     scheduler_task = None
+    report_task = None
     if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
+        # Same role as the sync scheduler and for the same reason: it is the one
+        # process that acts across tenants on a timer. Separate task, because a
+        # report that fails must not delay the next import.
+        report_task = asyncio.create_task(run_report_scheduler())
 
     # The NATS subscription is established in the background, never awaited here.
     #
@@ -362,15 +407,32 @@ async def lifespan(app: FastAPI):
     # authentication or the dashboard.
     app.state.nats_client = None
     app.state.nats_status = "disconnected"
+    ingestion_controller = IngestionConsumerController()
+    app.state.ingestion_controller = ingestion_controller
 
     def _remember(nc):
         app.state.nats_client = nc
         app.state.nats_status = "connected"
 
+    def _consumer_ready(nc, connection_lost):
+        ingestion_controller.connected(nc, connection_lost)
+
+    def _consumer_lost(nc):
+        ingestion_controller.disconnected(nc)
+        if getattr(app.state, "nats_client", None) is nc:
+            app.state.nats_client = None
+            app.state.nats_status = "disconnected"
+
     consumer_task = None
     publisher_task = None
     if role in {"all", "ingest"}:
-        consumer_task = asyncio.create_task(run_consumer_forever(_remember))
+        consumer_task = asyncio.create_task(
+            run_consumer_forever(
+                _remember,
+                on_connection_ready=_consumer_ready,
+                on_connection_lost=_consumer_lost,
+            )
+        )
     if role in {"api", "scheduler"}:
         # API-triggered imports and scheduled imports both publish task messages,
         # but neither role should consume the ingest stream. Keeping this small
@@ -396,6 +458,10 @@ async def lifespan(app: FastAPI):
             scheduler_task.cancel()
             with suppress(asyncio.CancelledError):
                 await scheduler_task
+        if report_task is not None:
+            report_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await report_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
 
@@ -523,6 +589,8 @@ async def readiness_check(response: Response):
     components: dict[str, str] = {"database": "ok"}
     if role in {"all", "api", "ingest", "scheduler"}:
         components["nats"] = "unknown"
+    if role in {"all", "ingest"}:
+        components["ingestion_consumer"] = "unknown"
     if role in {"all", "api"}:
         components["grpc"] = "unknown"
     try:
@@ -538,6 +606,12 @@ async def readiness_check(response: Response):
             components["nats"] = "ok"
         else:
             components["nats"] = "disconnected"
+
+    if "ingestion_consumer" in components:
+        controller = getattr(app.state, "ingestion_controller", None)
+        components["ingestion_consumer"] = (
+            "ok" if controller is not None and controller.status == "connected" else "disconnected"
+        )
 
     if "grpc" in components:
         grpc_server = getattr(app.state, "grpc_server", None)
@@ -705,18 +779,63 @@ async def signup(
     }
 
 
+#: Verified against when no account matches, so that both branches of a failed
+#: sign-in cost the same bcrypt work.
+#:
+#: The endpoint used to answer in microseconds for an address it had never seen
+#: and in a few hundred milliseconds for one it had, because `not user or not
+#: verify(...)` short-circuits and never reached bcrypt in the first case. That
+#: difference is measurable over the network, which made the endpoint an
+#: account-enumeration oracle: an attacker learned which addresses were real
+#: before spending a single guess on them.
+#:
+#: Hashed once at import, from a value no account can hold — `bcrypt` truncates
+#: at 72 bytes and never sees this string as a candidate password anyway.
+_DUMMY_PASSWORD_HASH = pwd_context.hash("password-that-belongs-to-no-account")
+
+
 @app.post("/api/v1/auth/login")
 async def login(
     req: UserLoginRequest,
     response: Response,
     session: AsyncSession = Depends(get_session),
 ):
+    # Before the password is checked, so a throttled caller cannot spend our
+    # bcrypt either. Keyed on the address as *submitted*, so a refusal says
+    # nothing about whether that account exists.
+    decision = await login_throttle.check(session, email=req.email)
+    if not decision.allowed:
+        await session.commit()
+        logger.warning(
+            "[req_id=%s] Refused a sign-in attempt: too many recent failures.",
+            get_current_request_id(),
+        )
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": login_throttle.THROTTLED_CODE,
+                "message": "Too many sign-in attempts. Try again shortly.",
+            },
+            headers={"Retry-After": str(decision.retry_after_seconds)},
+        )
+
     stmt = select(User).where(User.email == req.email)
     res = await session.execute(stmt)
     user = res.scalar_one_or_none()
 
-    if not user or not pwd_context.verify(req.password, user.password_hash):
+    # Always verify something. Against the real hash when the account exists,
+    # against a fixed one when it does not — the point is that both paths pay
+    # bcrypt, so the response time no longer answers "does this address exist".
+    password_ok = pwd_context.verify(
+        req.password, user.password_hash if user else _DUMMY_PASSWORD_HASH
+    )
+
+    if not user or not password_ok:
+        await login_throttle.record_failure(session, email=req.email)
+        await session.commit()
         raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    await login_throttle.clear_account(session, email=req.email)
 
     tenant_name = (
         await session.execute(select(Tenant.name).where(Tenant.id == user.tenant_id))
@@ -1862,8 +1981,56 @@ async def list_system_warnings(session: AsyncSession = Depends(get_session)):
                 cookie_secure=settings.COOKIE_SECURE,
             )
         )
+        if stream_warning := await ingestion_retention_warning(
+            getattr(app.state, "nats_client", None)
+        ):
+            warnings.append(stream_warning)
 
     return {"warnings": [w.as_dict() for w in warnings]}
+
+
+@app.post("/api/v1/data/system/ingestion/reset")
+async def reset_ingestion_stream(
+    _principal: Principal = Depends(require_role("owner")),
+):
+    """Reset the shared ingestion stream only from its consumer-owning role."""
+    if settings.CORE_ROLE.lower() not in {"all", "ingest"}:
+        return JSONResponse(
+            status_code=404,
+            content={
+                "code": "ingestion_reset_unavailable",
+                "detail": "The ingestion reset is served only by Core's ingest role.",
+            },
+        )
+
+    controller = getattr(app.state, "ingestion_controller", None)
+    if controller is None:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "code": "ingestion_consumer_unavailable",
+                "detail": "The ingestion consumer is not available; no stream was deleted.",
+            },
+        )
+
+    try:
+        result = await controller.reset()
+    except IngestionResetError as exc:
+        logger.warning(
+            "[req_id=%s] Ingestion stream reset refused code=%s num_pending=%s num_ack_pending=%s",
+            get_current_request_id(),
+            exc.code,
+            exc.num_pending,
+            exc.num_ack_pending,
+        )
+        return JSONResponse(status_code=exc.status_code, content=exc.as_dict())
+
+    logger.info(
+        "[req_id=%s] Ingestion stream reset completed code=%s",
+        get_current_request_id(),
+        result["code"],
+    )
+    return result
 
 
 @app.get("/api/v1/data/oidc/identities")
@@ -1931,43 +2098,6 @@ async def unlink_identity(
 
 # ─── Core Metric Endpoints ───────────────────────────────────
 
-def _custom_definitions(
-    rules: Sequence[MetricMappingRule],
-) -> dict[str, MetricDefinition]:
-    """Return valid tenant-local adopted definitions, ignoring corrupt legacy rows."""
-    definitions: dict[str, MetricDefinition] = {}
-    ambiguous: set[str] = set()
-    for rule in rules:
-        if rule.action != "adopt" or not rule.target_metric_type:
-            continue
-        try:
-            mapping = validate_mapping(
-                raw_metric_type=rule.raw_metric_type,
-                action=rule.action,
-                target_metric_type=rule.target_metric_type,
-                source_unit=rule.source_unit,
-                target_unit=rule.target_unit,
-                aggregation=rule.aggregation,
-                cadence=rule.cadence,
-            )
-            definition = custom_metric_definition(mapping)
-        except ValueError:
-            continue
-        if rule.target_metric_type in ambiguous:
-            continue
-        existing = definitions.get(rule.target_metric_type)
-        if existing is None:
-            definitions[rule.target_metric_type] = definition
-        elif existing != definition:
-            # Older installations may contain conflicting rows from before the
-            # one-name-one-definition check existed. Never present an arbitrary
-            # definition as authoritative for data whose unit or aggregation is
-            # ambiguous; omit it until an administrator repairs the rules.
-            definitions.pop(rule.target_metric_type, None)
-            ambiguous.add(rule.target_metric_type)
-    return definitions
-
-
 def _definition_payload(
     metric_type: str,
     custom_definitions: dict[str, MetricDefinition] | None = None,
@@ -2007,7 +2137,11 @@ def _ingest_policy_payload(
                 else IngestResolution.RAW.value
             )
         aggregation = definition.get("aggregation", "average")
-        retention = int(definition.get("raw_retention_days", 90))
+        stated = definition.get("raw_retention_days", 90)
+        # `None` is a value here, not a missing key: it means never purge. Coercing
+        # it with `int()` raised, and defaulting it to 90 would have quietly put an
+        # expiry on the metrics whose fine-grained form is the data.
+        retention = None if stated is None else int(stated)
     else:
         default_resolution = IngestResolution.RAW.value
         aggregation = "average"
@@ -2066,8 +2200,8 @@ async def query_metrics(
     end_time: str | None = Query(None, description="ISO end timestamp"),
     source_id: str | None = Query(None, description="Filter by connector instance"),
     source_type: str | None = Query(None, description="Filter by connector type"),
-    resolution: Literal["auto", "raw", "minute", "hour", "day"] = Query(
-        "raw", description="Raw points or a server-side rollup resolution"
+    resolution: Literal["auto", "raw", "second", "minute", "hour", "day"] = Query(
+        "raw", description="Stored points or a server-side rollup resolution"
     ),
     limit: int = Query(100, ge=1, le=10000, description="Max points or buckets to return"),
     sort: Literal["asc", "desc"] = Query("asc", description="Sort by timestamp"),
@@ -2092,13 +2226,24 @@ async def query_metrics(
         raise HTTPException(status_code=400, detail="end_time must be after start_time")
 
     effective_resolution = resolution
+    # `second` is not a rollup tier and never will be: a second bucket has the same
+    # cardinality as `data_points`, so storing one would double the storage to answer
+    # nothing faster. The stored points already *are* the second-resolution answer,
+    # so the request reads them directly.
+    if effective_resolution == "second":
+        effective_resolution = "raw"
+
     if resolution == "auto":
         if not start_dt or not end_dt:
             effective_resolution = "raw"
         else:
             duration = end_dt - start_dt
             effective_resolution = (
-                "minute" if duration <= timedelta(hours=24)
+                # A workout-length window gets whatever was stored, which for heart
+                # rate is now per second. Bucketing an interval session by the minute
+                # is what turned it into a flat line.
+                "raw" if duration <= timedelta(hours=2)
+                else "minute" if duration <= timedelta(hours=24)
                 else "hour" if duration <= timedelta(days=90)
                 else "day"
             )
@@ -2214,6 +2359,12 @@ async def query_metrics(
                     "derived": not rollup.is_provider_total,
                 },
                 "sample_count": rollup.sample_count,
+                # The bucket's spread, so a chart can draw the range a mean hides.
+                # A minute of heart rate averaging 162 says nothing about whether it
+                # was flat or ran from 140 to 186, and the second is a different
+                # workout.
+                "min": rollup.min_value,
+                "max": rollup.max_value,
                 "is_derived": not rollup.is_provider_total,
                 "_sort_timestamp": rollup.bucket_start,
             }
@@ -2318,7 +2469,25 @@ class MetricIngestPolicyRequest(BaseModel):
     """Tenant-owned resolution override used by future imports."""
 
     resolution: IngestResolution
-    raw_retention_days: int = Field(90, ge=0, le=3650)
+    #: Explicit `null` means never purge. **Omitting the field keeps whatever the
+    #: registry says**, which is not the same thing and is why this defaults to
+    #: `None` rather than to 90.
+    #:
+    #: A default of 90 meant that changing a metric's *resolution* silently wrote a
+    #: ninety-day expiry onto it. For a `workout_*`, `strength_*` or `location_*`
+    #: metric — the ones `NEVER_PURGED_CATEGORIES` exists to protect — the next
+    #: retention run then deleted the GPS fixes and the sets, and reported nothing
+    #: unusual, because a policy row of 90 is indistinguishable from a workspace
+    #: asking for 90.
+    raw_retention_days: int | None = Field(None, ge=0, le=3650)
+
+    def retention_for(self, definition: MetricDefinition | None) -> int | None:
+        """The retention to store: the caller's if they stated one, else the registry's."""
+        if "raw_retention_days" in self.model_fields_set:
+            return self.raw_retention_days
+        if isinstance(definition, MetricDefinition):
+            return definition.raw_retention_days
+        return 90
 
 
 async def _effective_ingest_policies(
@@ -2362,11 +2531,12 @@ async def set_ingest_policy(
         raise HTTPException(status_code=422, detail="metric_type must be canonical")
 
     definition = describe(canonical)
+    retention = req.retention_for(definition)
     statement = pg_insert(MetricIngestPolicy).values(
         tenant_id=tenant_id,
         metric_type=canonical,
         resolution=req.resolution.value,
-        raw_retention_days=req.raw_retention_days,
+        raw_retention_days=retention,
         updated_at=datetime.now(timezone.utc),
     )
     statement = statement.on_conflict_do_update(
@@ -2379,13 +2549,199 @@ async def set_ingest_policy(
     )
     await session.execute(statement)
     await session.commit()
+    stored = (
+        await session.execute(
+            select(MetricIngestPolicy).where(
+                MetricIngestPolicy.tenant_id == tenant_id,
+                MetricIngestPolicy.metric_type == canonical,
+            )
+        )
+    ).scalar_one_or_none()
     return {
         "tenant_id": tenant_id,
-        "policy": _ingest_policy_payload(canonical, definition=definition),
+        # With the override, so the echoed policy is the one that was stored.
+        # Without it this reported the registry default while the sibling field and
+        # the database said something else — the response contradicted itself on the
+        # one field that decides whether data is deleted.
+        "policy": _ingest_policy_payload(canonical, definition=definition, override=stored),
         "resolution": req.resolution.value,
-        "raw_retention_days": req.raw_retention_days,
+        "raw_retention_days": retention,
         "applies_to": "future_imports",
     }
+
+
+class MetricSourcePreferenceRequest(BaseModel):
+    primary_source_id: str = Field(..., min_length=1, max_length=64)
+
+
+@app.get("/api/v1/data/metrics/source-preferences")
+async def list_metric_source_preferences(
+    session: AsyncSession = Depends(get_session),
+):
+    """Metrics that more than one connector reports, and which one answers.
+
+    Only ambiguous metrics are listed: a metric with a single source needs no
+    decision, and offering one would invite a reader to state a preference that
+    can never matter. `coverage` is what the automatic choice is made on, so the
+    reader can see why the default is what it is.
+    """
+    tenant_id = get_current_tenant_id()
+
+    # The same figures the analysis uses to resolve its own primary source, so
+    # the card cannot name one connector while the bundle counted another.
+    coverage: dict[str, dict[str, int]] = {}
+    for (metric_type, source_id), samples in (
+        await metric_source_coverage(session, tenant_id)
+    ).items():
+        coverage.setdefault(metric_type, {})[source_id] = samples
+
+    source_types = {
+        str(source_id): source_type
+        for source_id, source_type in (
+            await session.execute(
+                select(DataSource.id, DataSource.source_type).where(
+                    DataSource.tenant_id == tenant_id
+                )
+            )
+        ).all()
+    }
+    preferences = await primary_source_preferences(session, tenant_id)
+
+    ambiguous = []
+    for metric_type, by_source in sorted(coverage.items()):
+        if len(by_source) < 2:
+            continue
+        primary, reason = resolve_primary_source(
+            sorted(by_source),
+            preference=preferences.get(metric_type),
+            coverage=by_source,
+        )
+        ambiguous.append(
+            {
+                "metric_type": metric_type,
+                "definition": _definition_payload(metric_type),
+                "primary_source_id": primary,
+                # preference or coverage — a stable identifier, not prose (rule 17).
+                "primary_reason": reason,
+                "sources": [
+                    {
+                        "source_id": source_id,
+                        "source_type": source_types.get(source_id),
+                        "sample_count": samples,
+                    }
+                    for source_id, samples in sorted(
+                        by_source.items(), key=lambda item: (-item[1], item[0])
+                    )
+                ],
+            }
+        )
+
+    return {"tenant_id": tenant_id, "metrics": ambiguous}
+
+
+@app.put("/api/v1/data/metrics/source-preferences/{metric_type}")
+async def set_metric_source_preference(
+    metric_type: str,
+    req: MetricSourcePreferenceRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    """Name the connector that answers for one metric.
+
+    The choice survives a connector that later reports more: it is a statement
+    about which device the reader trusts, and volume does not overrule it.
+    """
+    tenant_id = get_current_tenant_id()
+    canonical = _canonical_or_400(metric_type)
+
+    source = await _resolve_source(session, tenant_id, source_id=req.primary_source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Connector not found")
+
+    statement = insert(MetricSourcePreference).values(
+        id=str(uuid.uuid4()),
+        tenant_id=tenant_id,
+        metric_type=canonical,
+        primary_source_id=source.id,
+        updated_at=datetime.now(timezone.utc),
+    ).on_conflict_do_update(
+        index_elements=["tenant_id", "metric_type"],
+        set_={
+            "primary_source_id": source.id,
+            "updated_at": datetime.now(timezone.utc),
+        },
+    )
+    await session.execute(statement)
+    await session.commit()
+    # The stored analysis was computed against the previous choice, so it is now
+    # wrong rather than merely old. Queue a fresh one instead of waiting for the
+    # next data change, which may be hours away.
+    await _queue_insights_refresh(tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "metric_type": canonical,
+        "primary_source_id": source.id,
+        "primary_reason": REASON_PREFERENCE,
+    }
+
+
+@app.delete("/api/v1/data/metrics/source-preferences/{metric_type}", status_code=200)
+async def clear_metric_source_preference(
+    metric_type: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """Drop a stated preference and go back to deciding by coverage."""
+    tenant_id = get_current_tenant_id()
+    canonical = _canonical_or_400(metric_type)
+    await session.execute(
+        delete(MetricSourcePreference).where(
+            MetricSourcePreference.tenant_id == tenant_id,
+            MetricSourcePreference.metric_type == canonical,
+        )
+    )
+    await session.commit()
+    await _queue_insights_refresh(tenant_id)
+    return {
+        "tenant_id": tenant_id,
+        "metric_type": canonical,
+        "primary_reason": REASON_COVERAGE,
+    }
+
+
+def _canonical_or_400(metric_type: str) -> str:
+    try:
+        return canonical_metric_type(metric_type)
+    except UnknownMetricTypeError:
+        raise HTTPException(
+            status_code=400, detail="Unknown metric type"
+        ) from None
+
+
+async def _queue_insights_refresh(tenant_id: str) -> None:
+    """Ask for a fresh insights bundle after something changed what it means.
+
+    Its own session and never fatal: a preference was saved either way, and a
+    report that fails to queue is recomputed by the next scheduler tick.
+    """
+    try:
+        async with async_session_maker() as session:
+            await acquire_report_lock(session, tenant_id, "insights")
+            if not await has_in_flight_report(
+                session, tenant_id, "insights", now=datetime.now(timezone.utc)
+            ):
+                await enqueue_report_run(
+                    session,
+                    tenant_id=tenant_id,
+                    kind="insights",
+                    trigger="manual",
+                    request_id=get_current_request_id() or str(uuid.uuid4()),
+                )
+            await session.commit()
+    except Exception as exc:  # noqa: BLE001 - the preference is saved either way
+        logger.warning(
+            "Could not queue an insights refresh for tenant=%s (%s)",
+            tenant_id,
+            type(exc).__name__,
+        )
 
 
 @app.get("/api/v1/data/metrics/types")
@@ -2414,7 +2770,7 @@ async def list_metric_types(
             MetricMappingRule.action == "adopt",
         )
     )
-    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
+    custom_definitions = custom_definitions_from_rules(list(custom_rules.scalars()))
 
     return {
         "tenant_id": tenant_id,
@@ -2531,7 +2887,7 @@ async def get_metrics_summary(
             MetricMappingRule.action == "adopt",
         )
     )
-    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
+    custom_definitions = custom_definitions_from_rules(list(custom_rules.scalars()))
 
     summary = {}
     for metric_name, aggregate in aggregates.items():
@@ -2590,73 +2946,23 @@ async def get_data_gaps(
     daily is judged against calendar days; one sampled continuously is judged
     against the rate it actually kept. Metrics that simply happen when they happen
     are not judged at all — see `Cadence`.
+
+    Computed on demand, because the window is a parameter and a caller may ask for
+    any of them. The dashboard does not use this: it reads the scheduled run from
+    `/api/v1/data/reports/gaps`, which is the same computation over a fixed window
+    and costs one indexed row. See `core.reports`.
     """
     tenant_id = get_current_tenant_id()
     if end_date < start_date or (end_date - start_date).days > 366:
         raise HTTPException(status_code=400, detail="Date range must contain at most 367 ordered days")
 
-    custom_rules = await session.execute(
-        select(MetricMappingRule).where(
-            MetricMappingRule.tenant_id == tenant_id,
-            MetricMappingRule.action == "adopt",
-        )
-    )
-    custom_definitions = _custom_definitions(list(custom_rules.scalars()))
-    cadence_overrides = {
-        key: definition.cadence for key, definition in custom_definitions.items()
-    }
-
-    window_start = datetime.combine(start_date, datetime.min.time(), tzinfo=timezone.utc)
-    window_end = datetime.combine(
-        end_date + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc
-    )
-
-    # Filtered in SQL, not in Python. Half the registry is event-driven and would
-    # be discarded after Postgres had selected, transferred and decoded it — and
-    # the discarded half is the high-volume one, GPS traces and per-minute samples.
-    judged = [
-        key
-        for key, definition in METRIC_CATALOG.items()
-        if definition.cadence in (Cadence.DAILY, Cadence.CONTINUOUS)
-    ]
-    judged.extend(
-        key
-        for key, definition in custom_definitions.items()
-        if definition.cadence in (Cadence.DAILY, Cadence.CONTINUOUS)
-    )
-    result = await session.execute(
-        select(DataPoint.metric_type, DataPoint.timestamp).where(
-            DataPoint.tenant_id == tenant_id,
-            DataPoint.metric_type.in_(judged),
-            DataPoint.timestamp >= window_start,
-            DataPoint.timestamp < window_end,
-        )
-    )
-    rows = result.all()
-
-    # The reader's own zone, not UTC. Without this the parameter added for exactly
-    # this purpose was exercised only by its unit test, and the first and last day
-    # of every window stayed misreported.
-    gaps = detect_daily_gaps(
-        rows,
-        start_date,
-        end_date,
+    return await compute_gaps_report(
+        session,
+        tenant_id,
+        start_date=start_date,
+        end_date=end_date,
         local_timezone=_window_timezone(offset_minutes),
-        cadence_overrides=cadence_overrides,
     )
-    cadence_gaps = detect_cadence_gaps(
-        rows,
-        TimeRange(window_start, window_end),
-        cadence_overrides=cadence_overrides,
-    )
-    return {
-        "tenant_id": tenant_id,
-        "gaps": gaps,
-        "missing_count": sum(len(g["missing_dates"]) for g in gaps),
-        # Continuous metrics report interrupted spans rather than missing days:
-        # a calendar day is the wrong unit for something sampled every minute.
-        "cadence_gaps": cadence_gaps,
-    }
 
 
 @app.post("/api/v1/data/import", status_code=202)
@@ -2707,21 +3013,332 @@ async def get_cross_source_conflicts(
     tolerance: float = Query(0.05, ge=0, le=1),
     session: AsyncSession = Depends(get_session),
 ):
-    """Return ambiguous same-day values across tenant-owned sources for user review."""
-    tenant_id = get_current_tenant_id()
-    rows = await session.execute(
-        select(DataPoint).where(DataPoint.tenant_id == tenant_id).order_by(DataPoint.timestamp.desc()).limit(5000)
+    """Return ambiguous same-day values across tenant-owned sources for user review.
+
+    On demand because `tolerance` is a parameter. The dashboard reads the scheduled
+    run from `/api/v1/data/reports/conflicts` instead.
+    """
+    return await compute_conflicts_report(
+        session, get_current_tenant_id(), tolerance=tolerance
     )
-    points = [
-        {"id": point.id, "source_id": point.source_id, "metric_type": point.metric_type,
-         "timestamp": point.timestamp, "value": point.value}
-        for point in rows.scalars()
-    ]
-    conflicts = find_cross_source_conflicts(points, tolerance)
-    for conflict in conflicts:
-        for candidate in conflict["candidates"]:
-            candidate["timestamp"] = candidate["timestamp"].isoformat()
-    return {"tenant_id": tenant_id, "conflicts": conflicts}
+
+
+@app.get("/api/v1/data/day")
+async def get_day_story(
+    day: date | None = Query(None, description="Calendar day in the reader's zone; default today"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the day is bounded in it",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """One day as a reader experiences it: lanes, a timeline, and how current it is.
+
+    A separate endpoint rather than a client assembling `/api/v1/data/metrics`
+    calls, for three reasons the client cannot solve on its own: day rollups are
+    bucketed in UTC and that endpoint takes no timezone, so a reader two hours
+    east gets a day running 22:00 to 22:00; a whole day would otherwise be one
+    unfiltered query sharing a single `limit` between a GPS trace and per-minute
+    heart rate, which truncates silently; and the rule deciding which connector
+    answers for a metric two of them report existed only over gRPC. See
+    `core.daily_story`.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (
+        datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)
+    ).date()
+    target = day or reader_today
+    if target > reader_today:
+        raise HTTPException(status_code=400, detail="That day has not happened yet")
+    if (reader_today - target).days > 366:
+        raise HTTPException(status_code=400, detail="Only the last 367 days can be told")
+
+    return await build_day_story(
+        session, tenant_id, day=target, offset_minutes=offset_minutes
+    )
+
+
+# ─── Workouts ───────────────────────────────────────────────
+
+
+@app.get("/api/v1/data/workouts")
+async def list_workouts(
+    start_date: date | None = Query(None, description="First calendar day, reader's zone"),
+    end_date: date | None = Query(None, description="Last calendar day, reader's zone"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the range is bounded in it",
+    ),
+    category: Literal["all", "workout", "strength"] = Query("all"),
+    limit: int = Query(50, ge=1, le=MAX_LIST_SESSIONS),
+    session: AsyncSession = Depends(get_session),
+):
+    """Every workout and strength session in a range, newest first.
+
+    A session is a group of points, not a row: see `core.workouts`. The reader's
+    offset bounds the range through the same `day_window` the daily story uses,
+    because a reader whose day starts at a different moment on two pages of one
+    product is being told two different things about one dataset.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date()
+    last = end_date or reader_today
+    first = start_date or (last - timedelta(days=30))
+    if first > last:
+        raise HTTPException(status_code=400, detail="start_date is after end_date")
+    if (last - first).days > MAX_LIST_DAYS:
+        raise HTTPException(
+            status_code=400, detail=f"At most {MAX_LIST_DAYS} days can be listed at once"
+        )
+
+    return await build_workout_list(
+        session,
+        tenant_id,
+        start_date=first,
+        end_date=last,
+        offset_minutes=offset_minutes,
+        category=category,
+        limit=limit,
+    )
+
+
+@app.get("/api/v1/data/workouts/{session_key}")
+async def get_workout_detail(
+    session_key: str,
+    pad_seconds: int = Query(
+        DEFAULT_PAD_SECONDS,
+        ge=0,
+        le=MAX_PAD_SECONDS,
+        description="Seconds of slack at each end, for fixes just outside the session",
+    ),
+    stream_points: int = Query(DEFAULT_STREAM_POINTS, ge=1, le=MAX_STREAM_POINTS),
+    route_points: int = Query(DEFAULT_ROUTE_POINTS, ge=1, le=MAX_ROUTE_POINTS),
+    session: AsyncSession = Depends(get_session),
+):
+    """One session, and every reading any connector took while it was happening.
+
+    The key is unsigned on purpose. Every query behind this filters on the tenant
+    the Gateway injected (rule 2), so a forged key can only ever address the
+    caller's own workspace — which is what makes it uninteresting to forge, and
+    what `SessionDetailIsTenantScoped` model-checks.
+    """
+    tenant_id = get_current_tenant_id()
+    try:
+        ref = decode_session_key(session_key)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_session_key", "message": "That is not a session key."},
+        ) from None
+
+    try:
+        return await build_workout_detail(
+            session,
+            tenant_id,
+            ref,
+            pad_seconds=pad_seconds,
+            stream_points=stream_points,
+            route_points=route_points,
+        )
+    except SessionNotFound:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "session_not_found", "message": "No such session in this workspace."},
+        ) from None
+
+
+# ─── Precomputed Reports ────────────────────────────────────
+
+
+def _validated_report_kind(kind: str) -> str:
+    if kind not in REPORT_KINDS:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown report kind. Expected one of: {', '.join(REPORT_KINDS)}"
+        )
+    return kind
+
+
+@app.get("/api/v1/data/reports/{kind}")
+async def get_report(
+    kind: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """The newest completed run of one report, with the time it was computed.
+
+    Never computes. A reader gets the last good answer or an explicit
+    ``never_computed``, and in both cases learns whether newer data has arrived
+    since — `stale` is a comparison of two timestamps, not a recomputation.
+    """
+    tenant_id = get_current_tenant_id()
+    kind = _validated_report_kind(kind)
+    run = await latest_successful_report(session, tenant_id, kind)
+    high_water = await tenant_data_high_water(session, tenant_id)
+    payload = report_payload(run, stale=report_is_stale(run, high_water))
+    payload["kind"] = kind
+    payload["running"] = await has_in_flight_report(
+        session, tenant_id, kind, now=datetime.now(timezone.utc)
+    )
+    return payload
+
+
+class RefreshReportRequest(BaseModel):
+    """What to compute, when the caller wants something other than the default.
+
+    A window is part of a report's identity, not a filter over it: a 30-day gap
+    scan and a 365-day one are different answers, so asking for another window
+    asks for another run. Bounded here rather than trusted, because this is the
+    one place a reader can size the work a background job will do.
+    """
+
+    window_days: int | None = Field(None, ge=1, le=366)
+    tolerance: float | None = Field(None, ge=0, le=1)
+    offset_minutes: int | None = Field(None, ge=-16 * 60, le=16 * 60)
+    days: int | None = Field(None, ge=14, le=365)
+    # Restricts the insights bundle to one connector. Not validated against the
+    # tenant's connectors here: the Analysis Service reads through Core's
+    # tenant-scoped gRPC API, so an identifier from elsewhere returns nothing
+    # rather than another workspace's data.
+    source_id: str | None = Field(None, max_length=64)
+    # Declared, because a field this model does not declare is dropped in
+    # silence: the dashboard sent `compare_to_previous`, Pydantic discarded it,
+    # and the worker then read `False` from every run — so `period_comparisons`
+    # was permanently empty and nothing anywhere reported a problem.
+    compare_to_previous: bool | None = None
+
+
+@app.post("/api/v1/data/reports/{kind}/refresh", status_code=202)
+async def refresh_report(
+    kind: str,
+    req: RefreshReportRequest | None = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Ask for one report to be recomputed now.
+
+    202 rather than the result: the caller's request is that the work *start*, and
+    an insights run is computed by another service entirely. The dashboard polls
+    `GET /api/v1/data/reports/{kind}` while `running` is true.
+
+    An already-running report is not queued a second time — the response says so
+    and the caller waits for the run that exists, which is what stops a row of
+    impatient clicks from becoming a row of identical scans.
+    """
+    tenant_id = get_current_tenant_id()
+    kind = _validated_report_kind(kind)
+    now = datetime.now(timezone.utc)
+    request_id = get_current_request_id() or str(uuid.uuid4())
+    params = resolved_report_params(
+        kind,
+        {
+            key: value
+            for key, value in (req.model_dump() if req else {}).items()
+            if value is not None
+        },
+    )
+
+    # Waited on, not tried: a second click must re-check the guard after the first
+    # has committed, or both pass it. Same reasoning as `acquire_connector_lock`.
+    await acquire_report_lock(session, tenant_id, kind)
+    if await has_in_flight_report(session, tenant_id, kind, now=now):
+        # What the in-flight run is actually computing. A reader who asked for a
+        # 365-day window while a scheduled 30-day run was under way otherwise got
+        # `started: false` and no way to see that the answer arriving is not the
+        # one they asked for.
+        running = (
+            await session.execute(
+                select(ReportRun)
+                .where(
+                    ReportRun.tenant_id == tenant_id,
+                    ReportRun.kind == kind,
+                    ReportRun.status.in_(("queued", "running")),
+                )
+                .order_by(ReportRun.started_at.desc())
+                .limit(1)
+            )
+        ).scalars().first()
+        await session.commit()
+        return {
+            "kind": kind,
+            "status": "already_running",
+            "started": False,
+            "running_params": (running.params or {}) if running else {},
+            "requested_params": params,
+        }
+
+    if kind in CORE_COMPUTED_KINDS:
+        run = await open_report_run(
+            session,
+            tenant_id=tenant_id,
+            kind=kind,
+            trigger="manual",
+            request_id=request_id,
+            params=params,
+        )
+        run_id = run.id
+        await session.commit()
+        # Computed outside the request. Doing it inline would hold this connection
+        # for the length of a full scan and give the caller a timeout instead of an
+        # acknowledgement; a process that dies mid-computation leaves a run that
+        # `expire_stale_report_runs` fails, rather than one that is lost.
+        _spawn_background_report(tenant_id, kind, run_id)
+        return {"kind": kind, "status": "running", "started": True, "run_id": run_id}
+
+    run = await enqueue_report_run(
+        session,
+        tenant_id=tenant_id,
+        kind=kind,
+        trigger="manual",
+        request_id=request_id,
+        params=params,
+    )
+    run_id = run.id
+    await session.commit()
+    return {"kind": kind, "status": "queued", "started": True, "run_id": run_id}
+
+
+# The event loop keeps only a weak reference to a task, so one with no strong
+# reference anywhere can be collected mid-await. For a report that means the run
+# sits `running` until `expire_stale_report_runs` fails it half an hour later,
+# while the dashboard polls every 2.5 seconds for an answer that is not coming.
+_background_reports: set[asyncio.Task[None]] = set()
+
+
+def _spawn_background_report(tenant_id: str, kind: str, run_id: str) -> None:
+    """Start a report computation and keep it alive until it finishes."""
+    task = asyncio.create_task(_compute_report_in_background(tenant_id, kind, run_id))
+    _background_reports.add(task)
+    task.add_done_callback(_background_reports.discard)
+
+
+async def _compute_report_in_background(tenant_id: str, kind: str, run_id: str) -> None:
+    """Finish a run that `refresh_report` opened, in its own session."""
+    try:
+        async with async_session_maker() as session:
+            run = (
+                await session.execute(
+                    select(ReportRun).where(
+                        ReportRun.tenant_id == tenant_id, ReportRun.id == run_id
+                    )
+                )
+            ).scalars().first()
+            if run is None:
+                return
+            try:
+                payload = await compute_core_report(
+                    session, tenant_id, kind, run.params or {}
+                )
+            except Exception as exc:
+                logger.exception("Manual report %s failed for tenant=%s", kind, tenant_id)
+                fail_report_run(run, "report_failed", type(exc).__name__)
+            else:
+                finish_report_run(run, payload)
+            await session.commit()
+    except Exception:
+        # The run is left in flight and `expire_stale_report_runs` will fail it.
+        logger.exception("Background report task for %s could not complete", kind)
 
 
 @app.get("/api/v1/data/analysis/correlations")

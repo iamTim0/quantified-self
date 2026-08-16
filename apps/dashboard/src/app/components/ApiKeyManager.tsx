@@ -331,7 +331,7 @@ export default function ApiKeyManager({
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder={t("apikeys.namePlaceholder")}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus:border-[#0d5c3a]"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-visible:border-[#0d5c3a]"
             />
           </label>
           <label>
@@ -343,7 +343,7 @@ export default function ApiKeyManager({
               onChange={(e) =>
                 setExpiresInDays(e.target.value === "" ? "" : Number(e.target.value))
               }
-              className="rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-ring"
             >
               <option value="">{t("apikeys.noExpiry")}</option>
               <option value={90}>{t("quality.windowDays", { count: 90 })}</option>

@@ -8,7 +8,27 @@
  */
 
 export type Aggregation = "average" | "sum" | "last" | "max";
-export type IngestResolution = "raw" | "minute" | "hour" | "day";
+export type IngestResolution = "raw" | "second" | "minute" | "hour" | "day";
+
+/**
+ * What a strength exercise trains. Stable lowercase identifiers, translated in the
+ * dashboard through `muscle.<value>` keys — a service never sends the prose.
+ */
+export type MuscleGroup =
+  | "chest"
+  | "back"
+  | "shoulders"
+  | "biceps"
+  | "triceps"
+  | "forearms"
+  | "quads"
+  | "hamstrings"
+  | "glutes"
+  | "calves"
+  | "core"
+  | "full_body"
+  | "cardio"
+  | "other";
 
 export interface MetricDefinition {
   key: string;
@@ -24,7 +44,8 @@ export interface MetricDefinition {
   plausibleMax: number | null;
   precision: number;
   ingestResolution: IngestResolution;
-  rawRetentionDays: number;
+  /** Days fine-grained points are kept. `null` means they are never purged. */
+  rawRetentionDays: number | null;
 }
 
 export interface MetricNamespace {
@@ -33,6 +54,24 @@ export interface MetricNamespace {
   labelDe: string;
   labelEn: string;
 }
+
+/** Every muscle group, in registry order. */
+export const MUSCLE_GROUPS: MuscleGroup[] = [
+  "chest",
+  "back",
+  "shoulders",
+  "biceps",
+  "triceps",
+  "forearms",
+  "quads",
+  "hamstrings",
+  "glutes",
+  "calves",
+  "core",
+  "full_body",
+  "cardio",
+  "other",
+];
 
 export const METRIC_CATALOG: Record<string, MetricDefinition> = {
   "steps": {
@@ -572,7 +611,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMin: 20.0,
     plausibleMax: 250.0,
     precision: 0,
-    ingestResolution: "minute",
+    ingestResolution: "second",
     rawRetentionDays: 90,
   },
   "heart_rate_average": {
@@ -1383,7 +1422,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 1440.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_distance": {
     key: "workout_distance",
@@ -1398,7 +1437,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 500.0,
     precision: 2,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_energy": {
     key: "workout_energy",
@@ -1413,7 +1452,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 15000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_energy_resting": {
     key: "workout_energy_resting",
@@ -1428,7 +1467,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 5000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_average": {
     key: "workout_heart_rate_average",
@@ -1443,7 +1482,22 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 230.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
+  },
+  "workout_heart_rate": {
+    key: "workout_heart_rate",
+    unit: "bpm",
+    aggregation: "average",
+    category: "workout",
+    labelDe: "Trainingspuls (Verlauf)",
+    labelEn: "Workout heart rate (series)",
+    sources: ["apple_health"],
+    aliases: [],
+    plausibleMin: 20.0,
+    plausibleMax: 250.0,
+    precision: 0,
+    ingestResolution: "second",
+    rawRetentionDays: 365,
   },
   "workout_heart_rate_max": {
     key: "workout_heart_rate_max",
@@ -1458,7 +1512,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 240.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_zone_1": {
     key: "workout_heart_rate_zone_1",
@@ -1473,7 +1527,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_zone_2": {
     key: "workout_heart_rate_zone_2",
@@ -1488,7 +1542,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_zone_3": {
     key: "workout_heart_rate_zone_3",
@@ -1503,7 +1557,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_zone_4": {
     key: "workout_heart_rate_zone_4",
@@ -1518,7 +1572,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_heart_rate_zone_5": {
     key: "workout_heart_rate_zone_5",
@@ -1533,7 +1587,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_steps": {
     key: "workout_steps",
@@ -1548,7 +1602,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 200000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_speed_average": {
     key: "workout_speed_average",
@@ -1563,7 +1617,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 120.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_speed_max": {
     key: "workout_speed_max",
@@ -1578,7 +1632,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 200.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_cadence": {
     key: "workout_cadence",
@@ -1593,7 +1647,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 300.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_cycling_cadence": {
     key: "workout_cycling_cadence",
@@ -1608,7 +1662,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 250.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_cycling_power": {
     key: "workout_cycling_power",
@@ -1623,7 +1677,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 2000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_elevation_gain": {
     key: "workout_elevation_gain",
@@ -1632,13 +1686,13 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     category: "workout",
     labelDe: "Höhenmeter (Aufstieg)",
     labelEn: "Elevation gain",
-    sources: ["apple_health"],
+    sources: ["apple_health", "whoop"],
     aliases: [],
     plausibleMin: 0.0,
     plausibleMax: 15000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_elevation_loss": {
     key: "workout_elevation_loss",
@@ -1653,7 +1707,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 15000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_lap_length": {
     key: "workout_lap_length",
@@ -1668,7 +1722,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 10000.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_swim_cadence": {
     key: "workout_swim_cadence",
@@ -1683,7 +1737,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 200.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_swimming_strokes": {
     key: "workout_swimming_strokes",
@@ -1698,7 +1752,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "workout_intensity": {
     key: "workout_intensity",
@@ -1713,7 +1767,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 30.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "whoop_workout_strain": {
     key: "whoop_workout_strain",
@@ -1728,7 +1782,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 21.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_set_weight": {
     key: "strength_set_weight",
@@ -1743,7 +1797,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 1000.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_set_reps": {
     key: "strength_set_reps",
@@ -1758,7 +1812,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 1000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_set_volume": {
     key: "strength_set_volume",
@@ -1773,7 +1827,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 100000.0,
     precision: 1,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_set_heart_rate_max": {
     key: "strength_set_heart_rate_max",
@@ -1788,7 +1842,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 240.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_session_volume": {
     key: "strength_session_volume",
@@ -1803,7 +1857,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 1000000.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "strength_session_sets": {
     key: "strength_session_sets",
@@ -1818,7 +1872,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 500.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "location_point": {
     key: "location_point",
@@ -1833,7 +1887,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 1.0,
     precision: 0,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "location_latitude": {
     key: "location_latitude",
@@ -1848,7 +1902,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 90.0,
     precision: 6,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "location_longitude": {
     key: "location_longitude",
@@ -1863,7 +1917,7 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     plausibleMax: 180.0,
     precision: 6,
     ingestResolution: "raw",
-    rawRetentionDays: 90,
+    rawRetentionDays: null,
   },
   "calendar_event_count": {
     key: "calendar_event_count",

@@ -158,3 +158,81 @@ pre,
   align-items: center !important;
   justify-content: center !important;
 }
+
+/* ── Focus, motion and native-control theming ─────────────────────────────
+   Three findings from the interface audit, fixed where they belong: globally,
+   rather than 46 times inline. */
+
+/*
+ * Tell the browser which palette its own widgets should use.
+ *
+ * The 16 native `<select>` elements in this app draw their dropdown list,
+ * scrollbar and focus ring from the OS, not from our CSS, and without this
+ * declaration Windows in dark mode renders them dark-on-dark. The interface is
+ * a light one — three `dark:` utilities in the whole codebase — so it says so
+ * once, here, rather than leaving each control to guess.
+ */
+:root {
+  color-scheme: light;
+}
+
+/*
+ * A visible focus indicator for anything that removed the default one.
+ *
+ * `outline-none` appears 46 times; 30 paired it with a `focus:ring` and 16 put
+ * nothing back, so tabbing through the analysis page lost the cursor entirely
+ * (WCAG 2.4.7, level AA). One class, applied at those 46 sites.
+ *
+ * `:focus-visible` rather than `:focus` is the other half: `:focus` fires on
+ * mouse click too, which is the flash of ring after clicking a button that made
+ * people reach for `outline-none` in the first place. The browser's own
+ * heuristic already knows the difference — for a text input it matches on click
+ * as well, which is what a text input should do.
+ */
+/* No `border-radius` here: an outline already follows the element's own corner
+   radius in every current browser, and setting it would overwrite whatever
+   rounding the element was given. */
+.focus-ring:focus-visible {
+  outline: 2px solid #0d5c3a;
+  outline-offset: 1px;
+}
+
+/*
+ * Stop moving for anyone who asked things to stop moving.
+ *
+ * 26 `animate-spin` and 2 `animate-pulse`, and no reduced-motion handling at
+ * all. Continuous rotation is the specific trigger for vestibular disorders,
+ * and `animate-spin` is this app's loading indicator, so it appears on every
+ * import, sync and report run.
+ *
+ * The spinner still has to read as "working", so it pulses instead of
+ * vanishing — a stopped spinner and a finished job look identical, which would
+ * trade an accessibility problem for a correctness one. Transitions are
+ * shortened rather than removed so state changes stay legible.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .animate-spin {
+    animation: reduced-motion-pulse 1.6s ease-in-out infinite;
+  }
+
+  .animate-pulse {
+    animation: reduced-motion-pulse 1.6s ease-in-out infinite;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@keyframes reduced-motion-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}

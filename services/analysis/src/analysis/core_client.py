@@ -18,6 +18,7 @@ Two things this has to get right that a naive client would not:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -44,6 +45,42 @@ PAGE_SIZE = 1000
 # A window is bounded by the API (14-365 days), so this only ever trips on a bug
 # in paging -- a token that fails to advance would otherwise loop forever.
 MAX_PAGES = 500
+
+#: Pages of sets one bundle will read. A year of five sessions a week at twenty
+#: sets is roughly five thousand, so this covers it without an unbounded loop.
+MAX_SET_PAGES = 10
+
+
+@dataclass(frozen=True)
+class StrengthSet:
+    """One resistance set, as Core reassembled it.
+
+    A set is stored as up to four points sharing a `set_id`; Core puts them back
+    together because the grouping key — the exercise name — lives in JSONB, which
+    this service may not read (rules 1 and 3).
+    """
+
+    at: datetime
+    session_id: str
+    source_id: str
+    exercise_title: str
+    #: Canonical MuscleGroup identifier, or empty when the provider stated none.
+    muscle_group: str
+    weight_kg: float
+    reps: float
+    volume_kg: float
+    set_number: int
+    #: False for a bodyweight set. Not the same as `weight_kg == 0`, which a
+    #: provider may legitimately state.
+    has_weight: bool
+
+
+@dataclass(frozen=True)
+class StrengthSetsResponse:
+    sets: list[StrengthSet]
+    #: The window held more sets than the pages read. A shortened answer says so
+    #: rather than reading as a quiet training block.
+    truncated: bool
 
 
 class CoreUnavailable(Exception):
@@ -77,6 +114,21 @@ class MetricSeriesIssue:
     code: str
     metric_type: str
     source_ids: list[str] = field(default_factory=list)
+    # For AMBIGUOUS_METRIC_SOURCE: which source answers, and how Core decided.
+    # Empty from a Core too old to send it, which is the one case this service
+    # still has to drop the metric rather than pick a source at random.
+    primary_source_id: str = ""
+    primary_reason: str = ""
+
+
+@dataclass(frozen=True)
+class DueAnalysisReport:
+    """One insight run Core has queued and this service has claimed."""
+
+    run_id: str
+    tenant_id: str
+    params: dict[str, object] = field(default_factory=dict)
+    request_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -274,10 +326,79 @@ class CoreClient:
                     code=issue.code,
                     metric_type=issue.metric_type,
                     source_ids=list(issue.source_ids),
+                    primary_source_id=issue.primary_source_id,
+                    primary_reason=issue.primary_reason,
                 )
                 for issue in response.issues
             ],
         )
+
+    async def fetch_strength_sets(
+        self,
+        tenant_id: str,
+        *,
+        start: datetime,
+        end: datetime,
+        request_id: str,
+        source_id: str | None = None,
+    ) -> StrengthSetsResponse:
+        """Every resistance set in a bounded window, paged.
+
+        The one call in this client that reads a *metadata* dimension. It exists as
+        its own RPC rather than a grouping option on `fetch_metric_series` because
+        that message is the interface every analysis depends on, and an
+        almost-always-empty dimension there would be a field every future reader had
+        to reason about.
+        """
+        collected: list[StrengthSet] = []
+        token = ""
+        truncated = False
+
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                for _ in range(MAX_SET_PAGES):
+                    query = pb.QueryStrengthSetsRequest(
+                        tenant_id=tenant_id,
+                        start_time=_timestamp(start),
+                        end_time=_timestamp(end),
+                        pagination=common_pb.PaginationRequest(page_token=token),
+                    )
+                    if source_id is not None:
+                        query.source_id = source_id
+                    response = await stub.QueryStrengthSets(
+                        query, metadata=_metadata(request_id)
+                    )
+                    collected.extend(
+                        StrengthSet(
+                            at=row.at.ToDatetime().replace(tzinfo=timezone.utc),
+                            session_id=row.session_id,
+                            source_id=row.source_id,
+                            exercise_title=row.exercise_title,
+                            muscle_group=row.muscle_group,
+                            weight_kg=row.weight_kg,
+                            reps=row.reps,
+                            volume_kg=row.volume_kg,
+                            set_number=int(row.set_number),
+                            has_weight=row.has_weight,
+                        )
+                        for row in response.sets
+                    )
+                    token = response.pagination.next_page_token
+                    if not token:
+                        break
+                else:
+                    # The loop ran out rather than the data. Reported, not raised:
+                    # a partial training history still answers "am I getting
+                    # stronger", where an exception answers nothing.
+                    truncated = True
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC strength set query failed: {exc.code().name}"
+            ) from exc
+
+        return StrengthSetsResponse(sets=collected, truncated=truncated)
+
 
     async def fetch_metric_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         """Canonical or registered dynamic metric names stored for one tenant."""
@@ -352,3 +473,74 @@ class CoreClient:
                 f"Core gRPC session validation failed: {exc.code().name}"
             ) from exc
         return response.valid, response.code
+
+    async def claim_due_analysis_reports(
+        self, *, limit: int, request_id: str
+    ) -> list[DueAnalysisReport]:
+        """Take queued insight runs off Core's work list.
+
+        Claiming and listing are one call on purpose: Core marks each run
+        `running` in the transaction that returns it, so two Analysis replicas
+        polling at the same moment cannot both compute the same tenant's bundle.
+        """
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                response = await stub.ListDueAnalysisReports(
+                    pb.ListDueAnalysisReportsRequest(limit=limit),
+                    metadata=_metadata(request_id),
+                )
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC report claim failed: {exc.code().name}"
+            ) from exc
+
+        claimed: list[DueAnalysisReport] = []
+        for report in response.reports:
+            try:
+                params = json.loads(report.params_json or "{}")
+            except ValueError:
+                params = {}
+            claimed.append(
+                DueAnalysisReport(
+                    run_id=report.run_id,
+                    tenant_id=report.tenant_id,
+                    params=params if isinstance(params, dict) else {},
+                    request_id=report.request_id or request_id,
+                )
+            )
+        return claimed
+
+    async def put_analysis_report(
+        self,
+        *,
+        run_id: str,
+        tenant_id: str,
+        payload: dict[str, object] | None,
+        error_code: str = "",
+        request_id: str,
+    ) -> str:
+        """Hand a finished bundle back to Core, which owns the storage (rule 1).
+
+        Returns Core's machine code: STORED, RUN_NOT_FOUND, or
+        RUN_ALREADY_FINISHED. The last is not an error — it means Core timed the
+        run out while this one was still computing, and refusing the late result
+        is correct because a replacement may already have been queued.
+        """
+        try:
+            async with grpc.aio.insecure_channel(self._target) as channel:
+                stub = pb_grpc.CoreDataServiceStub(channel)
+                response = await stub.PutAnalysisReport(
+                    pb.PutAnalysisReportRequest(
+                        run_id=run_id,
+                        tenant_id=tenant_id,
+                        payload_json=json.dumps(payload or {}),
+                        error_code=error_code,
+                    ),
+                    metadata=_metadata(request_id),
+                )
+        except grpc.aio.AioRpcError as exc:
+            raise CoreUnavailable(
+                f"Core gRPC report write failed: {exc.code().name}"
+            ) from exc
+        return response.code

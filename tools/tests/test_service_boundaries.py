@@ -21,6 +21,7 @@ a substring search flags that sentence as the violation it denies.
 """
 
 import ast
+import re
 from pathlib import Path
 
 import pytest
@@ -258,3 +259,31 @@ def test_only_core_holds_migrations():
         }
     )
     assert not elsewhere, f"migrations belong to services/{OWNER} alone: {elsewhere}"
+
+
+def test_every_migration_revision_id_fits_the_version_column():
+    """Rule 7: a migration must apply, and a too-long id makes one that cannot.
+
+    Alembic stores the current revision in `alembic_version.version_num`, which
+    it creates as `VARCHAR(32)`. A longer id is not caught at import time or by
+    any linter: the migration runs its `upgrade()`, creates its tables, and then
+    fails on the version bump with `StringDataRightTruncationError`. What is left
+    behind is a database whose schema has moved and whose recorded version has
+    not — and the failure surfaces during a deploy, not during review.
+
+    Caught here because it is a property of the file, so it costs nothing to
+    check and does not need a database to find.
+    """
+    versions = REPO_ROOT / "services" / "core" / "alembic" / "versions"
+    pattern = re.compile(r'^revision:\s*str\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+
+    too_long = []
+    for path in sorted(versions.glob("*.py")):
+        match = pattern.search(path.read_text(encoding="utf-8"))
+        if match and len(match.group(1)) > 32:
+            too_long.append(f"{path.name}: {match.group(1)} ({len(match.group(1))} chars)")
+
+    assert not too_long, (
+        "alembic_version.version_num is VARCHAR(32); these revision ids would "
+        f"apply their schema change and then fail to record it: {too_long}"
+    )

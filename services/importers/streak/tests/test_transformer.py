@@ -132,3 +132,168 @@ def test_a_set_without_a_usable_timestamp_is_skipped():
     assert all(dp["metadata"].get("workout_id") != "w2" for dp in result)
     keys = [dp["idempotency_key"] for dp in result]
     assert len(keys) == len(set(keys))
+
+
+def _payload(**workout_overrides):
+    workout = {
+        "id": 501,
+        "title": "Leg Day",
+        "category": "Legs",
+        "createdAt": "2026-08-15T17:00:00Z",
+        "sets": [
+            {
+                "id": 9001,
+                "setNumber": 1,
+                "weight": 100.0,
+                "reps": 5,
+                "createdAt": "2026-08-15T17:05:00Z",
+                "exercise": {"title": "Back Squat", "category": "Legs"},
+            },
+            {
+                "id": 9002,
+                "setNumber": 2,
+                "weight": 110.0,
+                "reps": 3,
+                "createdAt": "2026-08-15T17:12:00Z",
+                "exercise": {"title": "Back Squat", "category": "Legs"},
+            },
+        ],
+    }
+    workout.update(workout_overrides)
+    return {"workouts": [workout]}
+
+
+TENANT = "00000000-0000-0000-0000-000000000001"
+SOURCE = "22222222-2222-2222-2222-222222222222"
+
+
+def test_sets_and_the_session_summary_share_one_session_id():
+    """Verifies Fizzbee Invariant: SessionGroupingIsStable.
+
+    Sets are stamped minutes apart, so before a session id every set was its own
+    event and the summary was a third one.
+    """
+    points = transform_streak_export_json(_payload(), TENANT, SOURCE)
+
+    ids = {p["metadata"]["session_id"] for p in points}
+    assert len(ids) == 1, "one workout is one session"
+    assert next(iter(ids)).startswith("streak:")
+
+    kinds = {p["metric_type"] for p in points}
+    assert "strength_set_weight" in kinds
+    assert "strength_session_volume" in kinds
+
+
+def test_the_session_id_is_stable_across_re_imports():
+    first = transform_streak_export_json(_payload(), TENANT, SOURCE)
+    second = transform_streak_export_json(_payload(), TENANT, SOURCE)
+    assert first[0]["metadata"]["session_id"] == second[0]["metadata"]["session_id"]
+
+
+def test_the_session_states_no_end_it_cannot_know():
+    """Streak sends no end, so none is claimed — the read path derives the span."""
+    points = transform_streak_export_json(_payload(), TENANT, SOURCE)
+    assert all("session_end" not in p["metadata"] for p in points)
+    assert points[0]["metadata"]["session_origin"] == "provider"
+
+
+def test_the_provider_category_is_mapped_and_also_kept():
+    points = transform_streak_export_json(_payload(), TENANT, SOURCE)
+    sets = [p for p in points if p["metric_type"] == "strength_set_weight"]
+    assert sets[0]["metadata"]["muscle_group"] == "quads"
+    assert sets[0]["metadata"]["exercise_category"] == "Legs", "the raw word survives"
+
+
+def test_a_german_category_maps_to_the_same_group():
+    """A localised category list must not split one muscle group into two."""
+    german = _payload(category="Beine")
+    german["workouts"][0]["sets"][0]["exercise"]["category"] = "Beine"
+    points = transform_streak_export_json(german, TENANT, SOURCE)
+    sets = [p for p in points if p["metric_type"] == "strength_set_weight"]
+    assert sets[0]["metadata"]["muscle_group"] == "quads"
+
+
+def test_a_bodyweight_session_still_emits_its_summary():
+    """Pull-ups have reps and no weight, and used to produce no session at all.
+
+    `total_workout_sets` was incremented inside the weight branch, so a whole
+    calisthenics workout reached the summary with a count of zero and emitted
+    nothing — the sets were stored, the session they belonged to was not.
+    """
+    bodyweight = _payload(
+        title="Calisthenics",
+        sets=[
+            {
+                "id": 9101,
+                "setNumber": 1,
+                "reps": 12,
+                "createdAt": "2026-08-15T17:05:00Z",
+                "exercise": {"title": "Pull-up", "category": "Back"},
+            }
+        ],
+    )
+    points = transform_streak_export_json(bodyweight, TENANT, SOURCE)
+    kinds = {p["metric_type"] for p in points}
+
+    assert "strength_session_sets" in kinds
+    sets_point = next(p for p in points if p["metric_type"] == "strength_session_sets")
+    assert sets_point["value"] == 1.0
+    # No volume was liftable, so the session's volume is honestly zero.
+    volume = next(p for p in points if p["metric_type"] == "strength_session_volume")
+    assert volume["value"] == 0.0
+
+
+def test_unread_provider_fields_are_named_in_the_field_report():
+    """Rule 19: a field that arrives and is not stored must still be visible."""
+    from shared_schemas.field_report import FieldReportCollector
+
+    payload = _payload()
+    payload["workouts"][0]["rpe"] = 8
+    payload["workouts"][0]["sets"][0]["restSeconds"] = 90
+    payload["workouts"][0]["sets"][0]["exercise"]["equipment"] = "barbell"
+
+    report = FieldReportCollector()
+    transform_streak_export_json(payload, TENANT, SOURCE, report=report)
+    paths = {sighting.path for sighting in report.build().unmapped}
+
+    assert "workouts[].rpe" in paths
+    assert "workouts[].sets[].restSeconds" in paths
+    assert "workouts[].sets[].exercise.equipment" in paths
+
+
+def test_an_unrecognised_muscle_category_is_reported_not_swallowed():
+    """`other` must never be the quiet answer to a provider renaming its list."""
+    from shared_schemas.field_report import FieldReportCollector
+
+    payload = _payload()
+    payload["workouts"][0]["sets"][0]["exercise"]["category"] = "Kettlebell Complex"
+
+    report = FieldReportCollector()
+    points = transform_streak_export_json(payload, TENANT, SOURCE, report=report)
+    sets = [p for p in points if p["metric_type"] == "strength_set_weight"]
+
+    assert sets[0]["metadata"]["muscle_group"] == "other"
+    assert sets[0]["metadata"]["exercise_category"] == "Kettlebell Complex"
+    paths = {s.path for s in report.build().unmapped}
+    assert "workouts[].sets[].exercise.category" in paths
+
+
+def test_the_session_block_does_not_change_the_idempotency_key():
+    """Verifies Fizzbee Invariant: NoDuplicateData."""
+    points = transform_streak_export_json(_payload(), TENANT, SOURCE)
+    weight = next(p for p in points if p["metric_type"] == "strength_set_weight")
+    assert weight["idempotency_key"] == generate_idempotency_key(
+        TENANT, f"{SOURCE}_9001", "strength_set_weight", "2026-08-15T17:05:00+00:00"
+    )
+
+
+def test_the_field_report_names_what_streak_keeps_too():
+    """A report listing only what is dropped is half a report."""
+    from shared_schemas.field_report import FieldReportCollector
+
+    report = FieldReportCollector()
+    transform_streak_export_json(_payload(), TENANT, SOURCE, report=report)
+    mapped = {sighting.path: sighting.metric_type for sighting in report.build().mapped}
+
+    assert mapped.get("workouts[].sets[].weight") == "strength_set_weight"
+    assert mapped.get("workouts[].sets[].reps") == "strength_set_reps"

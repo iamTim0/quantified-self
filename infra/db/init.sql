@@ -70,6 +70,13 @@ CREATE INDEX idx_data_points_tenant_metric_time ON data_points (tenant_id, metri
 CREATE INDEX idx_data_points_tenant_source_time ON data_points (tenant_id, source_id, timestamp DESC);
 CREATE INDEX idx_data_points_metadata ON data_points USING GIN (metadata);
 CREATE INDEX idx_data_points_location_geom ON data_points USING GIST (location_geom);
+-- What the workout list and the workout detail filter on. Partial, because most
+-- rows never carry a session — a location fix, a meal, a night's sleep — and an
+-- index over the whole hypertable to serve the fraction that do is paid for on
+-- every write. Mirrors migration 023.
+CREATE INDEX idx_data_points_tenant_session
+    ON data_points (tenant_id, (metadata->>'session_id'), timestamp)
+    WHERE metadata ? 'session_id';
 
 -- Keep location_geom in step with the coordinates in `metadata`.
 --

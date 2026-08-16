@@ -1,0 +1,108 @@
+# Safe replacement of the shared JetStream ingestion stream.
+#
+# The reset is an operator action, not a tenant data operation. The subject gate
+# models the broker update that makes a final pending-count check meaningful:
+# normal importer publishes must not be acknowledged after the gate and before
+# the stream is deleted.
+
+ACTORS = ["owner", "member"]
+
+action Init:
+    stream_exists = True
+    stream_subject = "qs.ingest.>"
+    retention = "limits"
+    desired_retention = "workqueue"
+    consumer_active = True
+    pending = 0
+    ack_pending = 0
+    reset_in_progress = False
+    reset_actor = ""
+    gate_was_set = False
+    deleted_with_pending = False
+    active_reset_count = 0
+    warning_visible = True
+    status = "idle"
+    failure = ""
+
+atomic action ImporterPublish:
+    require stream_exists == True
+    require stream_subject == "qs.ingest.>"
+    pending = pending + 1
+
+atomic action ConsumerStoresAndAcks:
+    require pending > 0
+    pending = pending - 1
+
+atomic action ResetRequest:
+    actor = oneof(ACTORS)
+    require actor == "owner"
+    require reset_in_progress == False
+    require active_reset_count == 0
+    reset_in_progress = True
+    reset_actor = actor
+    active_reset_count = active_reset_count + 1
+    failure = ""
+    status = "requested"
+
+atomic action ResetGate:
+    require reset_in_progress == True
+    require stream_exists == True
+    stream_subject = "qs.internal.ingestion-reset-gate"
+    gate_was_set = True
+
+atomic action ResetRefused:
+    require reset_in_progress == True
+    require gate_was_set == True
+    require pending > 0 or ack_pending > 0
+    stream_subject = "qs.ingest.>"
+    reset_in_progress = False
+    active_reset_count = active_reset_count - 1
+    failure = "pending_events"
+    status = "refused"
+
+atomic action ResetDelete:
+    require reset_in_progress == True
+    require gate_was_set == True
+    require pending == 0 and ack_pending == 0
+    stream_exists = False
+    consumer_active = False
+    deleted_with_pending = pending > 0 or ack_pending > 0
+
+atomic action ResetRecreate:
+    require reset_in_progress == True
+    require stream_exists == False
+    stream_exists = True
+    stream_subject = "qs.ingest.>"
+    retention = desired_retention
+    consumer_active = True
+    reset_in_progress = False
+    active_reset_count = active_reset_count - 1
+    warning_visible = False
+    status = "completed"
+
+always assertion OnlyOperatorCanReset:
+    return status in ["idle", "refused"] or reset_actor == "owner"
+
+always assertion AtMostOneResetInProgress:
+    return active_reset_count <= 1
+
+always assertion DeleteOnlyWhenDrained:
+    return deleted_with_pending == False
+
+always assertion PublishGatePrecedesFinalDrainCheck:
+    return status != "completed" or gate_was_set == True
+
+always assertion PublishGateOnlyDuringReset:
+    return stream_subject != "qs.internal.ingestion-reset-gate" or reset_in_progress == True
+
+always assertion RetentionMismatchIsVisible:
+    return retention == desired_retention or warning_visible == True
+
+always assertion SuccessfulResetHasDesiredRetention:
+    return status != "completed" or (stream_exists == True and retention == desired_retention)
+
+always assertion SuccessfulResetHasActiveConsumer:
+    return status != "completed" or consumer_active == True
+
+always assertion FailedResetNeverReportsSuccess:
+    return not (failure != "" and status == "completed")

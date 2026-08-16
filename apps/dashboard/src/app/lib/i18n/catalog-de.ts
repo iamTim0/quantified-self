@@ -31,6 +31,8 @@ export const de: Record<MessageKey, string> = {
   "lang.switchTo": "Auf {language} umstellen",
 
   // ── Sidebar ─────────────────────────────────────────────────────────────────
+  "nav.primary": "Hauptnavigation",
+  "nav.more": "Mehr",
   "sidebar.menu": "Menü",
   "sidebar.general": "Allgemein",
   "sidebar.overview": "Übersicht",
@@ -38,6 +40,7 @@ export const de: Record<MessageKey, string> = {
   "sidebar.quality": "Datenqualität",
   "sidebar.analysis": "Analysen",
   "sidebar.chat": "KI-Chat",
+  "sidebar.workouts": "Trainings",
   "sidebar.connectors": "Connectors",
   "sidebar.docs": "Dokumentation",
   "sidebar.docsTitle": "Zentrale Plattform-Dokumentation öffnen",
@@ -137,6 +140,61 @@ export const de: Record<MessageKey, string> = {
     "Deshalb starten die Dienste trotz der obigen Punkte. Mit einem produktiven ENVIRONMENT verweigern Core und Gateway den Start, solange ein Wert ein veröffentlichter Standard ist.",
   "warning.development_environment.action":
     "Für ein echtes Deployment ENVIRONMENT=production setzen.",
+  "warning.ingestion_stream_retention_mismatch.title":
+    "Der Ingestion-Stream verwendet die falsche Aufbewahrungsrichtlinie",
+  "warning.ingestion_stream_retention_mismatch.detail":
+    "Der Stream verwendet derzeit {actual_retention}; erforderlich ist {expected_retention}. Ein Owner kann ihn zurücksetzen, nachdem bestätigt wurde, dass die Warteschlange leer ist.",
+  "warning.ingestion_stream_retention_mismatch.action":
+    "Ein Owner kann den Ingestion-Stream nach der Bestätigung einer leeren Warteschlange im Dashboard zurücksetzen.",
+  "warning.ingestion_stream_retention_mismatch.confirm":
+    "Ingestion-Stream jetzt zurücksetzen? Core fährt nur fort, wenn beide offenen Zähler null sind; während des Zurücksetzens pausiert die Veröffentlichung der Importer kurz.",
+  "warning.ingestion_stream_retention_mismatch.controlDetail":
+    "Diese Steuerung ist nur für den Owner des Arbeitsbereichs verfügbar. Core prüft beide Consumer-Zähler, pausiert normale Importer-Subjects und erstellt anschließend Stream und Subscription neu.",
+  "warning.ingestion_stream_retention_mismatch.reset": "Ingestion-Stream zurücksetzen",
+  "warning.ingestion_stream_retention_mismatch.resetBusy": "Ingestion-Stream wird zurückgesetzt…",
+  "warning.ingestion_stream_retention_mismatch.resetDone": "Stream zurückgesetzt",
+  "warning.ingestion_stream_retention_mismatch.resetSuccess":
+    "Der Stream wurde neu erstellt und die Consumer-Subscription ist bereit.",
+  "warning.ingestion_stream_retention_mismatch.resetPendingTitle":
+    "Zurücksetzen abgelehnt: Events sind noch offen",
+  "warning.ingestion_stream_retention_mismatch.resetPendingDetail":
+    "Es wurde nichts gelöscht. Offene Events: {pending}; ausstehende Bestätigungen: {ackPending}.",
+  "warning.ingestion_stream_retention_mismatch.countUnavailable": "nicht verfügbar",
+  "warning.ingestion_stream_retention_mismatch.resetFailedTitle":
+    "Zurücksetzen konnte nicht abgeschlossen werden",
+  "warning.ingestion_stream_retention_mismatch.resetFailedDetail":
+    "Es wurde nichts gelöscht. Vor einem neuen Versuch die Operator-Alternative in der Dokumentation prüfen.",
+
+  // ── Daily story ────────────────────────────────────────────────────────────
+  "day.eyebrow": "Dein Tag",
+  "day.title": "Was passiert ist",
+  "day.subtitle":
+    "Gestern ist ein abgeschlossener Tag. Heute wird so weit gezeigt, wie deine Connectoren gemeldet haben.",
+  "day.loadFailed": "Dein Tag konnte nicht geladen werden. Die Daten sind davon nicht betroffen.",
+  "day.retry": "Erneut versuchen",
+  "day.yesterday": "Gestern",
+  "day.today": "Heute",
+  "day.stillArriving": "Kommt noch",
+  "day.nothingRecorded": "Für diesen Tag wurde nichts aufgezeichnet.",
+  "day.timeline": "Im Tagesverlauf",
+  "day.timelineTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
+  "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
+  "day.answeredBy":
+    "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
+  "day.laneSleep": "Schlaf",
+  "day.laneActivity": "Aktivität",
+  "day.laneWorkout": "Workouts",
+  "day.laneStrength": "Kraft",
+  "day.laneHeart": "Herz",
+  "day.laneNutrition": "Ernährung",
+  "day.laneBody": "Körper",
+  "day.laneLocation": "Orte",
+  "day.laneCalendar": "Kalender",
+  "day.laneEnvironment": "Wetter",
+  "day.laneHome": "Zuhause",
+  "day.laneCustom": "Eigene Metriken",
+  "day.laneOther": "Sonstiges",
 
   // ── Overview ────────────────────────────────────────────────────────────
   "overview.title": "Übersicht",
@@ -254,6 +312,7 @@ export const de: Record<MessageKey, string> = {
   "chart.refresh": "Diagramm aktualisieren",
   "chart.emptyPeriod": "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
   "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
+  "map.routeAria": "Karte der aufgezeichneten Route",
   "map.tilesFailed":
     "Die Karte konnte nicht geladen werden. Es wird die Vektor-Darstellung verwendet.",
   "map.loading": "GPS-Daten werden geladen…",
@@ -265,6 +324,9 @@ export const de: Record<MessageKey, string> = {
   "map.privacyLead":
     "Es werden keine Standortdaten an Kartenanbieter übertragen. Beim Laden der Kacheln wird der betrachtete Kartenausschnitt für den Anbieter sichtbar.",
   "map.empty": "Keine GPS-Punkte im gewählten Zeitraum.",
+  "map.pointCount": "{count} Punkte",
+  "map.simplifiedTo": "auf {count} vereinfacht",
+  "map.vectorMode": "Vektor-Darstellung",
 
   // ── Map privacy detail ──────────────────────────────────────────────────
   "map.privacyDetail":
@@ -875,7 +937,30 @@ export const de: Record<MessageKey, string> = {
     "Es liegen noch keine Daten für Analysen vor. Richte einen Connector ein und importiere Daten für mindestens zwei Wochen.",
   "analysis.excludedForQuality": "{count} wegen zu dünner Datenlage ausgeblendet",
   "analysis.ambiguousSources":
-    "{count} Metrik(en) kommen aus mehreren Connectoren. Sie bleiben ausgeblendet, bis eine Quelle ausgewählt ist, damit Werte nicht doppelt gezählt werden.",
+    "{count} Metrik(en) werden von mehreren Connectoren gemeldet. Eine davon antwortet, weil eine Addition denselben Wert doppelt zählen würde.",
+  "analysis.ambiguousUnresolved":
+    "{count} Metrik(en) kommen aus mehreren Connectoren und haben keine Primärquelle, deshalb bleiben sie ausgeblendet.",
+  "analysis.primaryByCoverage": "automatisch gewählt — vollständigste Quelle",
+  "analysis.primaryByPreference": "deine Auswahl",
+  "analysis.chooseSource": "Quelle wählen",
+
+  // ─── Precomputed reports ──────────────────────────────────
+  "report.computedAt": "Berechnet {timestamp}",
+  "report.neverComputed": "Noch nicht berechnet",
+  "report.running": "Wird berechnet…",
+  "report.stale": "Neue Daten seitdem",
+  "report.recompute": "Neu berechnen",
+  "report.pendingFirstRun":
+    "Das wird nach einem Import im Hintergrund berechnet. Jetzt starten, um es sofort zu sehen.",
+
+  // ─── Primary source selection ─────────────────────────────
+  "sources.title": "Metriken aus mehreren Connectoren",
+  "sources.intro":
+    "Diese Metriken kommen von mehr als einem Connector. Werte werden nie addiert — ein Connector antwortet, und du kannst festlegen, welcher.",
+  "sources.none": "Keine Metrik wird von mehr als einem Connector gemeldet.",
+  "sources.automatic": "Automatisch (vollständigste Quelle)",
+  "sources.saveFailed": "Konnte nicht gespeichert werden. Bitte erneut versuchen.",
+  "sources.samples": "{count} Werte",
   "analysis.allMetricsQualify": "alle Metriken erfüllen die Mindestanforderungen",
   "analysis.significantRelationships": "Signifikante Zusammenhänge",
   "analysis.ofPairsChecked": "von {count} geprüften Paaren",
@@ -978,5 +1063,111 @@ export const de: Record<MessageKey, string> = {
   "chat.errorLoginRequired": "Verbinde dein ChatGPT-Abonnement, bevor du eine Nachricht sendest.",
   "chat.errorResponse": "Der Assistent konnte diese Antwort nicht abschließen.",
   "chat.errorStream": "Die Chat-Verbindung wurde unterbrochen.",
+  // ── Trainings ───────────────────────────────────────────────────────────
+  "workouts.title": "Trainings",
+  "workouts.subtitle":
+    "Jede Einheit und alles, was die anderen Connectoren währenddessen aufgezeichnet haben.",
+  "workouts.loading": "Einheiten werden geladen …",
+  "workouts.empty": "Keine Einheiten in diesem Zeitraum.",
+  "workouts.emptyHint":
+    "Trainings kommen von Apple Health, WHOOP und Streak. Ein Connector, der noch nicht gelaufen ist, ist etwas anderes als ein Ruhetag.",
+  "workouts.filterAll": "Alle",
+  "workouts.filterWorkout": "Ausdauer",
+  "workouts.filterStrength": "Kraft",
+  "workouts.range30": "Letzte 30 Tage",
+  "workouts.range90": "Letzte 90 Tage",
+  "workouts.range365": "Letztes Jahr",
+  "workouts.approximate": "Nach Zeit und Name gruppiert",
+  "workouts.approximateHint":
+    "Diese Einheit wurde importiert, bevor Trainings eine Kennung trugen. Ihre Punkte sind über Zeitstempel und Titel gruppiert: zwei gleich gestempelte Einheiten können als eine erscheinen, eine Einheit als zwei.",
+  "workouts.scanTruncated":
+    "Dieser Zeitraum enthält mehr Zeilen, als ein Durchlauf liest. Wähle einen kürzeren Zeitraum, um alles zu sehen.",
+  "workouts.back": "Alle Trainings",
+  "workouts.exercises_one": "{count} Übung",
+  "workouts.exercises_other": "{count} Übungen",
+  "workouts.sets_one": "{count} Satz",
+  "workouts.sets_other": "{count} Sätze",
+  "workouts.notFound": "Diese Einheit gibt es in diesem Workspace nicht.",
+  "workouts.clamped":
+    "Diese Einheit nennt ein Ende mehr als 12 Stunden nach ihrem Beginn; das gezeigte Fenster ist deshalb begrenzt.",
+  "workouts.measures": "Was die Einheit angibt",
+  "workouts.derived": "Aus {fields} berechnet, nicht vom Anbieter angegeben",
+  "workouts.providerValue": "Anbieter nannte {value} {unit}",
+  "workouts.route": "Strecke",
+  "workouts.routeMeasured": "Entlang der Spur gemessen: {distance}",
+  "workouts.routeFixes_one": "{count} GPS-Punkt",
+  "workouts.routeFixes_other": "{count} GPS-Punkte",
+  "workouts.routeFallback":
+    "Aus den gespeicherten Koordinaten gezeichnet; diese Punkte sind älter als die Geometriespalte.",
+  "workouts.streams": "Während der Einheit",
+  "workouts.streamBucket": "Ein Punkt je {seconds} s",
+  "workouts.streamRange": "Spanne {min}–{max}",
+  "workouts.streamTruncated": "Für die Darstellung gekürzt.",
+  "workouts.strength": "Sätze",
+  "workouts.strengthTruncated": "Mehr Sätze, als eine Antwort zurückgibt.",
+  "workouts.topSet": "Bester Satz",
+  "workouts.totalVolume": "Volumen",
+  "workouts.totalReps": "Wiederholungen",
+  "workouts.setNumber": "Satz",
+  "workouts.weight": "Gewicht",
+  "workouts.reps": "Wdh.",
+  "workouts.volume": "Volumen",
+  "workouts.surroundings": "Zur selben Zeit aufgezeichnet",
+  "workouts.surroundingsHint":
+    "Diese Connectoren wissen nichts vom Training. Sie stehen hier, weil ihre Messwerte hineinfallen.",
+  "workouts.noStreams": "Keine sekundengenaue Reihe für diese Einheit.",
+  "workouts.noStrength": "Keine Sätze für diese Einheit erfasst.",
+
+  // ── Muskelgruppen ───────────────────────────────────────────────────────
+  "muscle.chest": "Brust",
+  "muscle.back": "Rücken",
+  "muscle.shoulders": "Schultern",
+  "muscle.biceps": "Bizeps",
+  "muscle.triceps": "Trizeps",
+  "muscle.forearms": "Unterarme",
+  "muscle.quads": "Oberschenkel",
+  "muscle.hamstrings": "Beinbeuger",
+  "muscle.glutes": "Gesäß",
+  "muscle.calves": "Waden",
+  "muscle.core": "Rumpf",
+  "muscle.full_body": "Ganzkörper",
+  "muscle.cardio": "Ausdauer",
+  "muscle.other": "Sonstiges",
+
+  // ── Kraftentwicklung ────────────────────────────────────────────────────
+  "analysis.tabStrength": "Kraft",
+  "analysis.strengthEmpty":
+    "Kein Krafttraining in diesem Zeitraum. Sätze kommen über den Streak-Connector.",
+  "analysis.strengthTruncated":
+    "Mehr Sätze, als eine Auswertung liest. Die ältesten sind nicht enthalten.",
+  "analysis.strengthBalance": "Wohin die Arbeit ging",
+  "analysis.strengthBalanceHint":
+    "Sätze je Muskelgruppe. Ein Anteil, keine Summe: was gedrückt wurde, sagt erst neben dem etwas, was gezogen wurde.",
+  "analysis.strengthExercise": "Übung",
+  "analysis.strengthSessions": "Einheiten",
+  "analysis.strengthBest": "Bester Satz",
+  "analysis.strengthOneRm": "Geschätztes 1RM",
+  "analysis.strengthDirection": "Richtung",
+  "analysis.strengthTooFew": "Weniger als {count} Einheiten — zu wenig für eine Richtung.",
+  "analysis.strengthBasis.estimated_1rm": "Gemessen am geschätzten Einer-Maximum",
+  "analysis.strengthBasis.volume": "Gemessen am Gesamtvolumen",
+  "analysis.strengthBasis.reps":
+    "An den Wiederholungen gemessen, da es eine Körpergewichtsübung ist",
+  "analysis.strengthBasis.none": "Keine Grundlage",
+  "analysis.direction.rising": "Steigend",
+  "analysis.direction.falling": "Fallend",
+  "analysis.direction.flat": "Gleichbleibend",
+
+  // ── Wochentage ──────────────────────────────────────────────────────────
+  "weekday.monday": "Montag",
+  "weekday.tuesday": "Dienstag",
+  "weekday.wednesday": "Mittwoch",
+  "weekday.thursday": "Donnerstag",
+  "weekday.friday": "Freitag",
+  "weekday.saturday": "Samstag",
+  "weekday.sunday": "Sonntag",
+
+  "nav.skipToContent": "Zum Inhalt springen",
+
   // --- End of catalogue ---
 };

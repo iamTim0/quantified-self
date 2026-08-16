@@ -509,7 +509,7 @@ export default function ImportDialog({
                       setStart(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
                   />
                 </label>
                 <label className="block">
@@ -523,7 +523,7 @@ export default function ImportDialog({
                       setEnd(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus:border-[#0d5c3a]"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
                   />
                 </label>
               </div>
@@ -622,7 +622,7 @@ export default function ImportDialog({
                 <>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
                     <div
-                      className="h-full rounded-full bg-[#0d5c3a] transition-all"
+                      className="h-full rounded-full bg-[#0d5c3a] transition-colors"
                       style={{
                         width: `${Math.min(
                           100,

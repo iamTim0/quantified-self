@@ -7,6 +7,21 @@ without sharing their meaning: `strength_set_heart_rate_max` is the peak pulse
 within one set of an exercise, `workout_heart_rate_max` the peak across a whole
 session, and the two reading as variants of each other is precisely the confusion
 the registry exists to remove.
+
+Three things this file gained when the workout detail view was built:
+
+* **A session block.** Every point carries `session_id` (`shared_schemas.sessions`),
+  derived from the workout id Streak already states. Before that, the only thing
+  joining a session's rows was their timestamps, and a set is stamped a minute after
+  the set before it -- so eighteen sets were eighteen unrelated events.
+* **A canonical muscle group.** Streak's `exercise.category` *is* the muscle group,
+  but it is Streak's word for it. It is kept verbatim in `exercise_category` and
+  mapped onto this platform's own vocabulary in `muscle_group`, so a provider
+  rename, a localised category list or a second strength source cannot silently
+  split one group into two.
+* **A field report.** This was the only importer without one, which meant every
+  field Streak sends and we do not read vanished with no trace -- the exact outcome
+  rule 19 forbids. It is also how we find out what Streak actually sends.
 """
 
 import logging
@@ -14,7 +29,10 @@ from datetime import datetime, timezone
 from typing import Any
 
 from shared_schemas import idempotency_key, provenance
+from shared_schemas.field_report import FieldReportCollector
 from shared_schemas.metrics import canonical_metric_type
+from shared_schemas.muscles import MuscleGroup, resolve_muscle_group
+from shared_schemas.sessions import session_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +49,59 @@ METRIC_SET_VOLUME = canonical_metric_type("strength_set_volume")
 METRIC_SET_HEART_RATE_MAX = canonical_metric_type("strength_set_heart_rate_max")
 METRIC_SESSION_VOLUME = canonical_metric_type("strength_session_volume")
 METRIC_SESSION_SETS = canonical_metric_type("strength_session_sets")
+
+#: Workout-level fields the transformer reads. Anything else Streak sends is named
+#: in the field report instead of disappearing.
+WORKOUT_READ_FIELDS = frozenset({"id", "title", "category", "createdAt", "deload", "notes", "sets"})
+
+#: The same, per set.
+SET_READ_FIELDS = frozenset(
+    {"id", "setNumber", "weight", "reps", "maxPulse", "createdAt", "notes", "exercise"}
+)
+
+#: And per exercise.
+EXERCISE_READ_FIELDS = frozenset({"title", "category"})
+
+
+def _muscle_group(raw: str, report: FieldReportCollector | None) -> str:
+    """Streak's category as one of ours, reporting anything we do not recognise.
+
+    An unrecognised category still becomes a value -- `other` -- because dropping the
+    set would be worse. What must not happen is it becoming `other` *quietly*: a
+    provider that renames its category list would then look exactly like a user who
+    logs uncategorised exercises, forever. So the raw string is named in the field
+    report, where the Data Quality Center can show it.
+    """
+    resolved = resolve_muscle_group(raw)
+    if resolved is not None:
+        return resolved.value
+    if raw and report is not None:
+        report.unmapped("workouts[].sets[].exercise.category", raw)
+    return MuscleGroup.OTHER.value
+
+
+def report_mapped(
+    report: FieldReportCollector | None, path: str, value: Any, metric_type: str
+) -> None:
+    """Name a field that *did* become a data point.
+
+    Without this the Data Quality Center could say what Streak drops and nothing
+    about what it keeps — half a report, and the half that reads as an accusation.
+    Every other importer files both sides.
+    """
+    if report is not None:
+        report.mapped(path, value, metric_type)
+
+
+def _report_unread(
+    report: FieldReportCollector | None, path: str, payload: dict[str, Any], known: frozenset[str]
+) -> None:
+    """Name every field at this level we did not look at."""
+    if report is None:
+        return
+    for key, value in payload.items():
+        if key not in known:
+            report.unmapped(f"{path}.{key}", value)
 
 
 def parse_timestamp(date_str: Any) -> str | None:
@@ -57,7 +128,10 @@ def parse_timestamp(date_str: Any) -> str | None:
 
 
 def transform_streak_export_json(
-    payload: dict[str, Any], tenant_id: str, source_id: str
+    payload: dict[str, Any],
+    tenant_id: str,
+    source_id: str,
+    report: FieldReportCollector | None = None,
 ) -> list[dict[str, Any]]:
     """Transform Streak 2.0 REST export payload into standardized DataPoints."""
     data_points: list[dict[str, Any]] = []
@@ -65,6 +139,8 @@ def transform_streak_export_json(
     workouts = payload.get("workouts") or []
     if not isinstance(workouts, list):
         return data_points
+
+    _report_unread(report, "payload", payload, frozenset({"workouts"}))
 
     for workout in workouts:
         if not isinstance(workout, dict):
@@ -77,13 +153,32 @@ def transform_streak_export_json(
         if workout_ts is None:
             continue
 
+        _report_unread(report, "workouts[]", workout, WORKOUT_READ_FIELDS)
+
         sets = workout.get("sets") or []
         if not isinstance(sets, list):
             sets = []
 
+        # One session block for the whole workout, shared by every set and by the
+        # summary points below. `workout.id` is Streak's own identifier, so the id
+        # is stated rather than derived and stays stable across re-imports.
+        #
+        # No `end`. Streak does not state one, and the last set's timestamp -- the
+        # obvious substitute -- would arrive in `session_end` looking exactly like a
+        # figure the provider gave, on a block whose `session_origin` says
+        # `provider`. The read path derives the same span from the session's own
+        # rows, where it is visibly a derivation rather than a claim.
+        session = session_metadata(
+            source_type="streak",
+            source_id=source_id,
+            provider_session_id=workout_id or None,
+            start=workout_ts,
+            label=workout_title,
+            derived_from=("createdAt", "title"),
+        )
+
         total_workout_volume = 0.0
         total_workout_sets = 0
-        total_workout_reps = 0.0
 
         for set_item in sets:
             if not isinstance(set_item, dict):
@@ -98,7 +193,10 @@ def transform_streak_export_json(
             if set_ts is None:
                 continue
 
+            _report_unread(report, "workouts[].sets[]", set_item, SET_READ_FIELDS)
+
             exercise = set_item.get("exercise") if isinstance(set_item.get("exercise"), dict) else {}
+            _report_unread(report, "workouts[].sets[].exercise", exercise, EXERCISE_READ_FIELDS)
             exercise_title = str(exercise.get("title") or "Exercise")
             exercise_cat = str(exercise.get("category") or workout_category)
 
@@ -108,11 +206,15 @@ def transform_streak_export_json(
                 "workout_title": workout_title,
                 "workout_category": workout_category,
                 "exercise_title": exercise_title,
+                # Both: the provider's own word, and ours. The first is evidence,
+                # the second is what anything downstream may group on.
                 "exercise_category": exercise_cat,
+                "muscle_group": _muscle_group(exercise_cat, report),
                 "set_id": set_id,
                 "set_number": set_num,
                 "notes": set_item.get("notes") or workout.get("notes"),
                 "deload": bool(workout.get("deload", False)),
+                **session,
             }
             idempotency_source_id = f"{source_id}_{set_id}"
 
@@ -135,12 +237,18 @@ def transform_streak_export_json(
                     ),
                     "source_type": "streak",
                 }
+                report_mapped(report, "workouts[].sets[].weight", weight, METRIC_SET_WEIGHT)
                 data_points.append(dp_weight)
 
             # 2. Reps metric
             if isinstance(reps, (int, float)) and not isinstance(reps, bool):
                 reps_val = float(reps)
-                total_workout_reps += reps_val
+                # A set is a set once it has repetitions. This used to be counted
+                # inside the weight branch below, so a bodyweight session -- pull-ups,
+                # dips, an entire calisthenics workout -- reached the summary with
+                # `total_workout_sets == 0` and emitted no session points at all.
+                # The sets were stored; the session they belonged to was not.
+                total_workout_sets += 1
                 dp_reps = {
                     "tenant_id": tenant_id,
                     "source_id": source_id,
@@ -154,13 +262,13 @@ def transform_streak_export_json(
                     ),
                     "source_type": "streak",
                 }
+                report_mapped(report, "workouts[].sets[].reps", reps, METRIC_SET_REPS)
                 data_points.append(dp_reps)
 
                 # Set Volume (weight * reps)
                 if isinstance(weight, (int, float)) and not isinstance(weight, bool):
                     set_vol = float(weight) * reps_val
                     total_workout_volume += set_vol
-                    total_workout_sets += 1
                     dp_vol = {
                         "tenant_id": tenant_id,
                         "source_id": source_id,
@@ -176,6 +284,11 @@ def transform_streak_export_json(
                             **provenance(METRIC_SET_VOLUME, set_vol),
                             "derived_from": ["weight", "reps"],
                             "derived_by": "product",
+                            # Two operands. Trivial here, stated anyway: the
+                            # anti-pattern list names all three fields together,
+                            # and a reader should not have to know which
+                            # operations happen to make the count interesting.
+                            "sample_count": 2,
                         },
                         "idempotency_key": generate_idempotency_key(
                             tenant_id, idempotency_source_id, METRIC_SET_VOLUME, set_ts
@@ -202,6 +315,9 @@ def transform_streak_export_json(
                     ),
                     "source_type": "streak",
                 }
+                report_mapped(
+                    report, "workouts[].sets[].maxPulse", max_pulse, METRIC_SET_HEART_RATE_MAX
+                )
                 data_points.append(dp_pulse)
 
         # 4. Summary Workout Volume
@@ -211,7 +327,11 @@ def transform_streak_export_json(
                 "workout_id": workout_id,
                 "workout_title": workout_title,
                 "workout_category": workout_category,
+                "muscle_group": _muscle_group(workout_category, report),
                 "notes": workout.get("notes"),
+                # The same block the sets carry, so the summary and the sets it
+                # summarises are one session rather than two.
+                **session,
             }
             dp_w_vol = {
                 "tenant_id": tenant_id,

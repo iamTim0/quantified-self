@@ -34,6 +34,7 @@ import uuid
 from concurrent import futures
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import grpc
 from google.protobuf.json_format import ParseDict
@@ -50,10 +51,19 @@ from core.db.models import (
     DataPoint,
     DataSource,
     MetricRollup,
+    ReportRun,
     RevokedAccessToken,
     User,
 )
 from core.db.session import async_session_maker
+from core.reports import (
+    claim_due_analysis_runs,
+    fail_report_run,
+    finish_report_run,
+    metric_source_coverage,
+    primary_source_preferences,
+    resolve_primary_source,
+)
 from core.rollup_coverage import may_hold_points_outside_day_rollups
 from core.security.tokens import TokenError, verify_service_credential
 from core.tracing import get_current_request_id, set_current_request_id
@@ -67,6 +77,12 @@ MAX_PAGE_SIZE = 5000
 MAX_SERIES_METRICS = 100
 MAX_SERIES_BUCKETS = 100_000
 MAX_SERIES_RANGE = timedelta(days=366)
+
+#: Sets one `QueryStrengthSets` page may return, and the ceiling a caller may ask
+#: for. A year of five sessions a week at twenty sets is about five thousand, so a
+#: default page covers a training block and the maximum covers the year.
+DEFAULT_SET_PAGE = 1000
+MAX_SET_PAGE = 5000
 
 AUTH_METADATA_KEY = "authorization"
 REQUEST_ID_METADATA_KEY = "x-request-id"
@@ -612,12 +628,44 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             if series_count * len(buckets) > MAX_SERIES_BUCKETS:
                 raise ValueError("Metric series is too large")
 
+            # Only fetched when something is actually ambiguous. Most tenants have
+            # one connector per metric and pay nothing for this.
+            ambiguous = [
+                metric_type
+                for metric_type in metric_order
+                if len(metric_sources.get(metric_type, ())) > 1
+            ]
+            preferences: dict[str, str] = {}
+            coverage: dict[tuple[str, str], int] = {}
+            if ambiguous:
+                # Whole-history coverage, not the window's. A primary source is a
+                # property of the workspace, so resolving it from whatever window
+                # this call happens to ask for would make the analysed series
+                # change identity between two views — and would disagree with the
+                # picker card, which counts everything. See `metric_source_coverage`.
+                async with async_session_maker() as pref_session:
+                    preferences = await primary_source_preferences(
+                        pref_session, tenant_id
+                    )
+                    coverage = await metric_source_coverage(pref_session, tenant_id)
+
             response = pb.QueryMetricSeriesResponse()
             for metric_type in metric_order:
                 source_ids = sorted(metric_sources.get(metric_type, ()))
                 if len(source_ids) > 1:
+                    primary, reason = resolve_primary_source(
+                        source_ids,
+                        preference=preferences.get(metric_type),
+                        coverage={
+                            source_id: coverage.get((metric_type, source_id), 0)
+                            for source_id in source_ids
+                        },
+                    )
                     issue = response.issues.add(
-                        code="AMBIGUOUS_METRIC_SOURCE", metric_type=metric_type
+                        code="AMBIGUOUS_METRIC_SOURCE",
+                        metric_type=metric_type,
+                        primary_source_id=primary,
+                        primary_reason=reason,
                     )
                     issue.source_ids.extend(source_ids)
                 for source_id in source_ids:
@@ -634,6 +682,97 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                         point.sample_count = aggregate.sample_count
                         if (value := aggregate.value) is not None:
                             point.value = value
+            return response
+
+    async def QueryStrengthSets(
+        self, request: pb.QueryStrengthSetsRequest, context: grpc.aio.ServicerContext
+    ) -> pb.QueryStrengthSetsResponse:
+        """Resistance sets in a bounded window, reassembled into rows.
+
+        A set is stored as up to four points sharing a `set_id` — its weight, its
+        repetitions, the volume they make and the peak pulse during it. No consumer
+        wants those apart, and the thing they need to group by, `exercise_title`,
+        lives in JSONB where only Core can read it (rule 1).
+
+        This exists rather than a `group_by_metadata_key` dimension on
+        `QueryMetricSeries` because that would put an almost-always-empty field into
+        the one interface every analysis depends on, for a single caller. A
+        purpose-built message says what a set is instead.
+        """
+        async with _guard(context):
+            tenant_id = _require_tenant(request.tenant_id)
+            start = _from_timestamp(request.start_time)
+            end = _from_timestamp(request.end_time)
+            if start is None or end is None:
+                raise ValueError("start_time and end_time are required")
+            if end <= start:
+                raise ValueError("end_time must be after start_time")
+            if end - start > MAX_SERIES_RANGE:
+                raise ValueError(
+                    f"Range must not exceed {MAX_SERIES_RANGE.days} days"
+                )
+
+            page_size = request.pagination.page_size or DEFAULT_SET_PAGE
+            page_size = max(1, min(page_size, MAX_SET_PAGE))
+            cursor, _legacy = _decode_page_token(request.pagination.page_token)
+
+            stmt = select(DataPoint).where(
+                DataPoint.tenant_id == tenant_id,
+                DataPoint.timestamp >= start,
+                DataPoint.timestamp < end,
+                DataPoint.metric_type.in_(sorted(_SET_METRIC_FIELDS)),
+            )
+            if request.HasField("source_id"):
+                stmt = stmt.where(
+                    DataPoint.source_id == _require_source_id(request.source_id)
+                )
+            if request.exercise_titles:
+                stmt = stmt.where(
+                    DataPoint.metadata_.op("->>")("exercise_title").in_(
+                        list(request.exercise_titles)
+                    )
+                )
+            if request.muscle_groups:
+                stmt = stmt.where(
+                    DataPoint.metadata_.op("->>")("muscle_group").in_(
+                        list(request.muscle_groups)
+                    )
+                )
+            if cursor is not None:
+                cursor_timestamp, cursor_id = cursor
+                stmt = stmt.where(
+                    or_(
+                        DataPoint.timestamp > cursor_timestamp,
+                        and_(
+                            DataPoint.timestamp == cursor_timestamp,
+                            DataPoint.id > cursor_id,
+                        ),
+                    )
+                )
+            stmt = stmt.order_by(DataPoint.timestamp, DataPoint.id)
+            # Four metrics make one set, so the row budget is the page size times
+            # that, plus one row to tell a full page from an exhausted window.
+            row_budget = page_size * len(_SET_METRIC_FIELDS)
+            stmt = stmt.limit(row_budget + 1)
+
+            async with async_session_maker() as session:
+                rows = (await session.execute(stmt)).scalars().all()
+
+            truncated = len(rows) > row_budget
+            rows = rows[:row_budget]
+            sets, last_row = _assemble_sets(rows)
+
+            # A partial trailing set is dropped rather than reported half-filled: a
+            # bench press whose weight arrived and whose reps did not is not a set,
+            # and the next page starts before it so nothing is lost.
+            if truncated and sets:
+                sets = sets[:-1]
+
+            response = pb.QueryStrengthSetsResponse(sets=sets, truncated=truncated)
+            if truncated and last_row is not None:
+                response.pagination.next_page_token = _encode_page_token(
+                    last_row.timestamp, str(last_row.id)
+                )
             return response
 
     async def GetDataPoint(
@@ -748,6 +887,93 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                 return pb.ValidateUserSessionResponse(valid=False, code="SESSION_ENDED")
             return pb.ValidateUserSessionResponse(valid=True, code="VALID")
 
+    async def ListDueAnalysisReports(
+        self, request: pb.ListDueAnalysisReportsRequest, context: grpc.aio.ServicerContext
+    ) -> pb.ListDueAnalysisReportsResponse:
+        """Hand out queued insight runs, claiming them in the same transaction.
+
+        Deliberately not tenant-scoped in the request: this is a worker asking for
+        work across the deployment, in the same way the sync scheduler looks at
+        every connector. Each run it receives names its own tenant, and everything
+        the worker then reads is scoped to that tenant (rule 2).
+        """
+        async with _guard(context):
+            limit = max(1, min(int(request.limit or 10), 50))
+            async with async_session_maker() as session:
+                runs = await claim_due_analysis_runs(session, limit=limit)
+                reports = [
+                    pb.DueAnalysisReport(
+                        run_id=str(run.id),
+                        tenant_id=str(run.tenant_id),
+                        params_json=json.dumps(run.params or {}),
+                        request_id=run.request_id or "",
+                    )
+                    for run in runs
+                ]
+                await session.commit()
+            return pb.ListDueAnalysisReportsResponse(reports=reports)
+
+    async def PutAnalysisReport(
+        self, request: pb.PutAnalysisReportRequest, context: grpc.aio.ServicerContext
+    ) -> pb.PutAnalysisReportResponse:
+        """Store a finished insights bundle against the run it was claimed for.
+
+        Scoped by tenant *and* run id, so a worker cannot write a result into
+        another tenant's report by presenting the wrong identifier.
+        """
+        async with _guard(context):
+            tenant_id = _require_tenant(request.tenant_id)
+            if not request.run_id:
+                raise ValueError("run_id is required")
+
+            async with async_session_maker() as session:
+                run = (
+                    await session.execute(
+                        select(ReportRun).where(
+                            ReportRun.tenant_id == tenant_id,
+                            ReportRun.id == request.run_id,
+                            # The kind too, not only the identifier. Scoping by
+                            # tenant and id alone let an insights bundle be
+                            # stored into the same tenant's `gaps` run, and it
+                            # was safe only because `ListDueAnalysisReports`
+                            # happens to hand out insights runs exclusively —
+                            # a guarantee held by the caller, which is the kind
+                            # that stops holding when someone adds a second one.
+                            ReportRun.kind == "insights",
+                        )
+                    )
+                ).scalars().first()
+                if run is None:
+                    return pb.PutAnalysisReportResponse(
+                        stored=False, code="RUN_NOT_FOUND"
+                    )
+                if run.status in ("success", "error"):
+                    # A retry after Core already timed the run out. Refused rather
+                    # than applied: the timeout may have queued a replacement, and
+                    # a late result must not overwrite a newer one.
+                    return pb.PutAnalysisReportResponse(
+                        stored=False, code="RUN_ALREADY_FINISHED"
+                    )
+
+                if request.error_code:
+                    # `message` is the operator's English fallback, so it has to
+                    # say something the code does not already say on its own.
+                    fail_report_run(
+                        run,
+                        request.error_code,
+                        f"The Analysis Service could not compute this report ({request.error_code}).",
+                    )
+                else:
+                    try:
+                        payload = json.loads(request.payload_json or "{}")
+                    except ValueError:
+                        raise ValueError("payload_json is not valid JSON") from None
+                    if not isinstance(payload, dict):
+                        raise ValueError("payload_json must encode an object")
+                    finish_report_run(run, payload)
+                await session.commit()
+            return pb.PutAnalysisReportResponse(stored=True, code="STORED")
+
 
 class _guard:
     """Authenticate, bind the correlation id, and map errors to status codes."""
@@ -773,6 +999,77 @@ class _guard:
         logger.exception("[req_id=%s] gRPC handler failed", get_current_request_id())
         await self._context.abort(grpc.StatusCode.INTERNAL, "Internal error")
         return True
+
+
+#: The four metrics that together describe one set, and the proto field each fills.
+_SET_METRIC_FIELDS: dict[str, str] = {
+    "strength_set_weight": "weight_kg",
+    "strength_set_reps": "reps",
+    "strength_set_volume": "volume_kg",
+    "strength_set_heart_rate_max": "heart_rate_max",
+}
+
+
+def _set_identity(point: DataPoint) -> tuple[str, str]:
+    """What makes two points the same set.
+
+    `set_id` where the provider states one; the instant otherwise, which is what
+    separates one set from the next when it does not. Paired with the exercise so
+    two exercises logged in the same second cannot merge.
+    """
+    metadata = point.metadata_ or {}
+    exercise = str(metadata.get("exercise_title") or "")
+    stated = metadata.get("set_id")
+    identity = str(stated) if stated else point.timestamp.isoformat()
+    return (exercise, identity)
+
+
+def _assemble_sets(rows: list[DataPoint]) -> tuple[list[pb.StrengthSet], DataPoint | None]:
+    """Turn per-metric points back into one row per set, in time order."""
+    grouped: dict[tuple[str, str], dict[str, Any]] = {}
+    order: list[tuple[str, str]] = []
+    last_row: DataPoint | None = None
+    for point in rows:
+        last_row = point
+        key = _set_identity(point)
+        entry = grouped.get(key)
+        if entry is None:
+            metadata = point.metadata_ or {}
+            entry = grouped[key] = {
+                "at": point.timestamp,
+                "session_id": str(metadata.get("session_id") or ""),
+                "source_id": str(point.source_id),
+                "exercise_title": str(metadata.get("exercise_title") or ""),
+                "muscle_group": str(metadata.get("muscle_group") or ""),
+                "set_number": int(metadata.get("set_number") or 0),
+            }
+            order.append(key)
+        entry["at"] = min(entry["at"], point.timestamp)
+        field = _SET_METRIC_FIELDS.get(point.metric_type)
+        if field is not None and point.value is not None:
+            entry[field] = float(point.value)
+
+    sets: list[pb.StrengthSet] = []
+    for key in order:
+        entry = grouped[key]
+        weight = entry.get("weight_kg")
+        message = pb.StrengthSet(
+            session_id=entry["session_id"],
+            source_id=entry["source_id"],
+            exercise_title=entry["exercise_title"],
+            muscle_group=entry["muscle_group"],
+            reps=entry.get("reps", 0.0),
+            volume_kg=entry.get("volume_kg", 0.0),
+            set_number=entry["set_number"],
+            # Distinct from a weight of zero, which a provider may legitimately
+            # state and which `weight_kg == 0` alone cannot tell apart from a
+            # bodyweight set.
+            has_weight=weight is not None,
+            weight_kg=weight or 0.0,
+        )
+        message.at.FromDatetime(entry["at"])
+        sets.append(message)
+    return sets, last_row
 
 
 def _encode_page_token(timestamp: datetime, point_id: str) -> str:

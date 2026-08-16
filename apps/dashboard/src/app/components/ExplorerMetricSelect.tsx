@@ -95,7 +95,7 @@ export default function ExplorerMetricSelect({
           onClick={() => setOpen((previous) => !previous)}
           aria-expanded={open}
           aria-haspopup="listbox"
-          className="flex min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none transition-colors hover:border-slate-300 focus:border-[#0d5c3a]"
+          className="flex sm:min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none transition-colors hover:border-slate-300 focus-visible:border-[#0d5c3a]"
         >
           <span className="truncate">{summary()}</span>
           <ChevronDown
@@ -116,7 +116,7 @@ export default function ExplorerMetricSelect({
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder={t("explorer.metricFilterPlaceholder")}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 outline-none focus:border-[#0d5c3a]"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
                 />
               </div>
               <div className="mt-2 flex items-center justify-between px-0.5 text-[11px] font-bold">

@@ -171,5 +171,42 @@ counted twice.
 `whoop_recovery_score`, `whoop_strain` and `whoop_sleep_performance` keep their vendor prefix:
 they are WHOOP's own figures, with no equivalent at any other source.
 
+## The polled path now says as much as the export
+
+A polled sync used to emit four workout metrics where the emailed export emitted
+eleven — so the connector reported *less* when it was working normally than when
+somebody uploaded an archive. That gap is closed:
+
+| Metric | Where it comes from |
+| --- | --- |
+| `workout_heart_rate_max` | `score.max_heart_rate`, which was simply never read |
+| `workout_elevation_gain` | `score.altitude_gain_meter`, likewise |
+| `workout_duration` | `end − start`, declared `derived_by: "difference"` |
+| `workout_heart_rate_zone_1` … `_5` | `score.zone_duration.*` as a share of the session, declared `derived_by: "share"` |
+
+The last two are figures WHOOP implies rather than states, so both declare how they
+were reached (rule 19). That needed two verbs the registry had not used before —
+`difference` for a span between two instants and `share` for a part as a percentage
+of a whole — and extending that vocabulary is a decision written down here rather
+than one a transformer makes on its own.
+
+WHOOP sends **six** zone buckets against the registry's five metrics. `zone_zero` is
+the time spent *below* zone 1: not a zone anyone trains in, but part of the session.
+It counts toward the denominator and travels as `zone_below_one_ms` metadata, so the
+five shares deliberately fall short of 100 % and the payload says why. Folding it
+into zone 1 would inflate the lowest band; dropping it would make the shares sum to
+more than the session.
+
+A workout point also carries a `session_id`, so WHOOP's figures for a session join
+the Apple Watch's trace of the same hour — see
+[Workout detail](../features/workout-detail.md).
+
+The polled path also files a **field report** now. It only ever had one on the export
+path, which meant every WHOOP field this importer does not read vanished without
+trace on the path that actually runs every six hours (rule 19).
+
+WHOOP's API exposes no heart-rate stream at any endpoint, so the per-second trace on
+a workout page comes from Apple Health.
+
 The full definition of every metric — its unit, its aggregation and the former names that
 still point at it — is in [Metrics](../metrics.md).

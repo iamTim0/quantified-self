@@ -34,11 +34,16 @@ nav:
       - Weather: importers/weather.md
       - Calendar: importers/calendar.md
   - Features:
+      - The daily story: features/daily-story.md
+      - Workout detail: features/workout-detail.md
       - Smart and force import: features/smart-import.md
       - Data resolution and rollups: features/data-resolution.md
       - Data quality: features/data-quality.md
+      - Ingestion stream reset: features/ingestion-stream-reset.md
       - Uploading an export file: features/file-import.md
       - Correlations and simple analyses: features/correlations.md
+      - Precomputed reports: features/precomputed-reports.md
+      - Metrics from several connectors: features/metric-source-selection.md
       - Stateless MCP analytics: features/mcp.md
       - AI chat: features/ai-chat.md
       - GPS visualization: features/gps-visualization.md

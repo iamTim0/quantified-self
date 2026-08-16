@@ -234,6 +234,7 @@ dashboard picks whichever matches the reader's language.
 | `workout_energy` | Workout energy | `kcal` | `sum` | apple_health, whoop | `workout_active_energy`, `workout_kilojoule` |
 | `workout_energy_resting` | Workout resting energy | `kcal` | `sum` | apple_health | `workout_basal_energy_burned` |
 | `workout_heart_rate_average` | Workout heart rate (average) | `bpm` | `average` | apple_health, whoop | `workout_avg_heart_rate`, `workout_average_heart_rate` |
+| `workout_heart_rate` | Workout heart rate (series) | `bpm` | `average` | apple_health | — |
 | `workout_heart_rate_max` | Workout heart rate (max) | `bpm` | `max` | apple_health, whoop | `workout_max_heart_rate` |
 | `workout_heart_rate_zone_1` | Workout heart-rate zone 1 | `%` | `average` | whoop | `heart_rate_zone_1` |
 | `workout_heart_rate_zone_2` | Workout heart-rate zone 2 | `%` | `average` | whoop | `heart_rate_zone_2` |
@@ -246,7 +247,7 @@ dashboard picks whichever matches the reader's language.
 | `workout_cadence` | Cadence | `spm` | `average` | apple_health | — |
 | `workout_cycling_cadence` | Cycling cadence | `rpm` | `average` | apple_health | — |
 | `workout_cycling_power` | Cycling power | `W` | `average` | apple_health | — |
-| `workout_elevation_gain` | Elevation gain | `m` | `sum` | apple_health | — |
+| `workout_elevation_gain` | Elevation gain | `m` | `sum` | apple_health, whoop | — |
 | `workout_elevation_loss` | Elevation loss | `m` | `sum` | apple_health | — |
 | `workout_lap_length` | Lap length | `m` | `last` | apple_health | — |
 | `workout_swim_cadence` | Swim cadence | `spm` | `average` | apple_health | — |

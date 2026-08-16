@@ -129,6 +129,7 @@ const de: Record<SectionId, ReactNode> = {
         Cookies zu Werbe-, Tracking- oder Analysezwecken verwendet und keine Daten an Dritte
         weitergegeben. Gesetzt werden:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -179,6 +180,7 @@ const de: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         <code>HttpOnly</code> bedeutet, dass die beiden Zugangs-Cookies für JavaScript im Browser
         nicht lesbar sind. Sie können damit auch bei einer Sicherheitslücke in der Oberfläche nicht
@@ -210,6 +212,7 @@ const de: Record<SectionId, ReactNode> = {
         Sie entscheiden selbst, welche Connectoren Sie einrichten. Ohne Einrichtung werden keine
         Daten von Dritten abgerufen. Je nach Auswahl werden verarbeitet:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -256,6 +259,7 @@ const de: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         Rechtsgrundlage: Art. 6 Abs. 1 lit. a und Art. 9 Abs. 2 lit. a DSGVO (Einwilligung), erteilt
         durch die Einrichtung des jeweiligen Connectors.
@@ -323,6 +327,15 @@ const de: Record<SectionId, ReactNode> = {
       <p>
         Zugangsdaten, Token und API-Schlüssel werden nicht protokolliert. Der Webserver bzw. die
         Hosting-Infrastruktur kann darüber hinaus Zugriffsprotokolle inklusive IP-Adresse führen.
+      </p>
+      <p>
+        Zum Schutz vor dem automatisierten Durchprobieren von Passwörtern werden{" "}
+        <strong>fehlgeschlagene Anmeldeversuche</strong> gezählt. Gespeichert werden ausschließlich
+        der Zeitpunkt und ein <strong>SHA-256-Hashwert</strong> der eingegebenen E-Mail-Adresse
+        sowie der IP-Adresse — nicht die Werte selbst. Für die Zählung genügt der Vergleich zweier
+        Hashwerte; im Klartext wäre dies ein Verzeichnis aller Adressen, unter denen jemand eine
+        Anmeldung versucht hat. Die Einträge werden nach <strong>15 Minuten</strong> automatisch
+        gelöscht, eine erfolgreiche Anmeldung löscht die Einträge des betreffenden Kontos sofort.
       </p>
       <p>
         Rechtsgrundlage: Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an einem sicheren und
@@ -560,6 +573,7 @@ const en: Record<SectionId, ReactNode> = {
         advertising, tracking or analytics, and no data is passed to third parties. The cookies set
         are:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -610,6 +624,7 @@ const en: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         <code>HttpOnly</code> means the two access cookies cannot be read by JavaScript in the
         browser. They therefore cannot be read out and passed to a third party even if the interface
@@ -640,6 +655,7 @@ const en: Record<SectionId, ReactNode> = {
         You decide which connectors you set up. Without one, no data is retrieved from any third
         party. Depending on your choices, the following is processed:
       </p>
+      <div className="overflow-x-auto">
       <table>
         <thead>
           <tr>
@@ -686,6 +702,7 @@ const en: Record<SectionId, ReactNode> = {
           </tr>
         </tbody>
       </table>
+      </div>
       <p>
         Legal basis: Art. 6 (1) (a) and Art. 9 (2) (a) GDPR (consent), given by setting up the
         connector in question.
@@ -750,6 +767,15 @@ const en: Record<SectionId, ReactNode> = {
       <p>
         Credentials, tokens and API keys are not logged. The web server or hosting infrastructure
         may additionally keep access logs including the IP address.
+      </p>
+      <p>
+        To protect against automated password guessing, <strong>failed sign-in attempts</strong>{" "}
+        are counted. Only the time and a <strong>SHA-256 hash</strong> of the submitted email
+        address and of the IP address are stored — not the values themselves. Counting needs
+        nothing more than a comparison of two hashes; in plain text this would be a record of every
+        address anyone had tried to sign in as. Entries are deleted automatically after{" "}
+        <strong>15 minutes</strong>, and a successful sign-in clears that account&rsquo;s entries
+        immediately.
       </p>
       <p>
         Legal basis: Art. 6 (1) (f) GDPR (legitimate interest in secure and functioning operation).

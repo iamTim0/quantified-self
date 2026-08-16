@@ -14,9 +14,15 @@ import uvicorn
 from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from shared_schemas import health_payload
+from shared_schemas.field_report import FieldReportCollector
 
 from streak_importer.auth import extract_presented_key, resolve_api_key
-from streak_importer.client import close_sync_run, open_sync_run, report_sync_progress
+from streak_importer.client import (
+    close_sync_run,
+    open_sync_run,
+    report_sync_progress,
+    send_field_report,
+)
 from streak_importer.config import settings
 from streak_importer.transformer import transform_streak_export_json
 
@@ -196,9 +202,10 @@ async def ingest_streak_payload(
     workout_count = len(payload.get("workouts") or [])
 
     published_count = 0
+    field_report = FieldReportCollector()
     try:
         events = transform_streak_export_json(
-            payload, tenant_id=tenant_id, source_id=source_id
+            payload, tenant_id=tenant_id, source_id=source_id, report=field_report
         )
         await report_sync_progress(
             tenant_id,
@@ -235,6 +242,16 @@ async def ingest_streak_payload(
             points_received=published_count,
         )
         raise HTTPException(status_code=500, detail="The Streak import failed.") from None
+
+    # Filed after the events, and before the run is closed: a report that named
+    # fields for an import that then failed would describe a payload nothing stored.
+    await send_field_report(
+        tenant_id,
+        source_id,
+        field_report.build(),
+        req_id=x_request_id,
+        sync_run_id=sync_run_id,
+    )
 
     await close_sync_run(
         tenant_id,

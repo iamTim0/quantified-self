@@ -23,6 +23,7 @@ from .metrics import (
     DYNAMIC_NAMESPACES,
     METRIC_ALIASES,
     METRIC_CATALOG,
+    NEVER_PURGED_CATEGORIES,
     Aggregation,
     IngestResolution,
     MetricCategory,
@@ -37,7 +38,9 @@ from .metrics import (
     is_known_metric_type,
     metrics_for_source,
 )
+from .muscles import MUSCLE_GROUP_ALIASES, MuscleGroup, resolve_muscle_group
 from .service_metadata import health_payload, service_version, source_commit
+from .sessions import SESSION_KEYS, session_metadata
 from .upload_spool import (
     DEFAULT_CHUNK_BYTES,
     DEFAULT_TTL_SECONDS,
@@ -57,6 +60,9 @@ __all__ = [
     "MAX_TRACKED_PATHS",
     "METRIC_ALIASES",
     "METRIC_CATALOG",
+    "MUSCLE_GROUP_ALIASES",
+    "NEVER_PURGED_CATEGORIES",
+    "SESSION_KEYS",
     "Aggregation",
     "FieldReport",
     "FieldReportCollector",
@@ -68,6 +74,7 @@ __all__ = [
     "MetricDefinition",
     "MetricNamespace",
     "MetricUnit",
+    "MuscleGroup",
     "OffsetMismatch",
     "SpoolTooLarge",
     "UnknownMetricTypeError",
@@ -88,7 +95,9 @@ __all__ = [
     "is_known_metric_type",
     "metrics_for_source",
     "provenance",
+    "resolve_muscle_group",
     "service_version",
+    "session_metadata",
     "source_commit",
     "value_kind",
 ]

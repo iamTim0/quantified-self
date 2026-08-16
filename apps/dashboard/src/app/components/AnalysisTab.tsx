@@ -7,13 +7,19 @@ import {
   BookOpen,
   CalendarClock,
   ChevronDown,
+  Dumbbell,
   Info,
   RefreshCw,
   ShieldQuestion,
   TrendingUp,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
-import { useI18n, useT, type MessageKey } from "../lib/i18n/provider";
+import { plural, useI18n, useT, type MessageKey } from "../lib/i18n/provider";
+import { useReport, type ReportParams } from "../lib/reports";
+import { describeMetric } from "../lib/metrics/catalog";
+import MetricSourcePicker from "./MetricSourcePicker";
+import ReportStatus from "./ReportStatus";
+import { muscleKey } from "./WorkoutsTab";
 
 /**
  * Analysis dashboard.
@@ -124,6 +130,51 @@ interface Quality {
   note: string;
 }
 
+/**
+ * Per-exercise progression, from `insights.strength`.
+ *
+ * `basis` says what "stronger" was measured *as*, because it differs per
+ * exercise: a loaded lift trends on its estimated one-rep max, a high-rep lift on
+ * volume, and a bodyweight exercise on repetitions — the last because its volume
+ * is zero at every session and calling that flat would be a wrong answer.
+ */
+interface StrengthTrend {
+  direction: string;
+  basis: string;
+  change_pct_over_window: number;
+  r_squared: number;
+  sample_size: number;
+}
+
+interface StrengthExercise {
+  exercise_title: string;
+  muscle_group: string | null;
+  sessions: number;
+  total_sets: number;
+  total_volume_kg: number;
+  best_set_weight_kg: number | null;
+  best_set_day: string | null;
+  latest_estimated_1rm_kg: number | null;
+  trend: StrengthTrend | null;
+}
+
+interface StrengthGroup {
+  muscle_group: string;
+  volume_kg: number;
+  sets: number;
+  volume_share_pct: number | null;
+  set_share_pct: number;
+}
+
+interface Strength {
+  exercises: StrengthExercise[];
+  muscle_groups: StrengthGroup[];
+  sets_analysed: number;
+  truncated: boolean;
+  min_sessions_for_trend: number;
+  disclaimer: string;
+}
+
 interface Insights {
   provenance: {
     analysis_version: string;
@@ -136,7 +187,15 @@ interface Insights {
   metrics_analysed: string[];
   metrics_excluded_for_quality: string[];
   metric_source_ids?: Record<string, string[]>;
-  source_issues?: { code: string; metric_type: string; source_ids: string[] }[];
+  source_issues?: {
+    code: string;
+    metric_type: string;
+    source_ids: string[];
+    /** Which source answers. Empty from a Core that could not resolve it. */
+    primary_source_id?: string;
+    /** `preference` or `coverage` — an identifier the client branches on (rule 17). */
+    primary_reason?: string;
+  }[];
   data_quality: Record<string, Quality>;
   correlations: Correlation[];
   lagged_correlations: LaggedCorrelation[];
@@ -144,6 +203,7 @@ interface Insights {
   anomalies: Record<string, Anomaly>;
   routines: Record<string, Routine>;
   period_comparisons: Record<string, unknown>;
+  strength?: Strength;
   docs_url?: string;
 }
 
@@ -153,16 +213,148 @@ interface AnalysisSource {
   display_name?: string;
 }
 
-type Section = "overview" | "correlations" | "trends" | "anomalies" | "routines" | "quality";
+type Section =
+  | "overview"
+  | "correlations"
+  | "trends"
+  | "strength"
+  | "anomalies"
+  | "routines"
+  | "quality";
 
 const SECTIONS: { id: Section; labelKey: MessageKey; icon: React.ElementType }[] = [
   { id: "overview", labelKey: "analysis.tabOverview", icon: Activity },
   { id: "correlations", labelKey: "analysis.tabCorrelations", icon: Activity },
   { id: "trends", labelKey: "analysis.tabTrends", icon: TrendingUp },
+  { id: "strength", labelKey: "analysis.tabStrength", icon: Dumbbell },
   { id: "anomalies", labelKey: "analysis.tabAnomalies", icon: AlertTriangle },
   { id: "routines", labelKey: "analysis.tabRoutines", icon: CalendarClock },
   { id: "quality", labelKey: "analysis.tabQuality", icon: ShieldQuestion },
 ];
+
+/**
+ * Per-exercise progression.
+ *
+ * Its own component so `strength` arrives non-optional: inline, TypeScript loses
+ * the narrowing from the guard the moment the value is read inside a `.map()`
+ * callback, and the alternative is a non-null assertion on every line.
+ */
+function StrengthSection({ strength, weightUnit }: { strength: Strength; weightUnit: string }) {
+  const { t, formatNumber } = useI18n();
+  return (
+    <>
+      <p className="text-xs text-slate-500">{strength.disclaimer}</p>
+      {strength.truncated && (
+        <p className="text-xs text-amber-700">{t("analysis.strengthTruncated")}</p>
+      )}
+
+      {strength.muscle_groups.length > 0 && (
+        <article className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h3 className="mb-1 text-sm font-bold text-slate-900">{t("analysis.strengthBalance")}</h3>
+          <p className="mb-3 text-xs text-slate-500">{t("analysis.strengthBalanceHint")}</p>
+          <div className="space-y-1.5">
+            {strength.muscle_groups.map((group) => (
+              <div key={group.muscle_group} className="flex items-center gap-2">
+                <span className="w-28 shrink-0 truncate text-xs text-slate-600">
+                  {t(muscleKey(group.muscle_group))}
+                </span>
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-[#1d4ed8]"
+                    style={{ width: `${group.set_share_pct}%` }}
+                  />
+                </div>
+                <span className="w-24 shrink-0 text-right text-[11px] text-slate-500">
+                  {t(plural(group.sets, "workouts.sets_one", "workouts.sets_other"), {
+                    count: group.sets,
+                  })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </article>
+      )}
+
+      <div className="overflow-x-auto rounded-2xl border border-slate-200">
+        <table className="w-full min-w-[560px] text-xs">
+          <thead className="bg-slate-50 text-left">
+            <tr>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthExercise")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthSessions")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthBest")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthOneRm")}
+              </th>
+              <th className="px-3 py-2 font-semibold text-slate-600">
+                {t("analysis.strengthDirection")}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {strength.exercises.map((exercise) => (
+              <tr key={exercise.exercise_title} className="border-t border-slate-100">
+                <td className="px-3 py-2">
+                  <span className="font-semibold text-slate-800">{exercise.exercise_title}</span>
+                  {exercise.muscle_group && (
+                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
+                      {t(muscleKey(exercise.muscle_group))}
+                    </span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-600">{exercise.sessions}</td>
+                <td className="px-3 py-2 text-slate-600">
+                  {exercise.best_set_weight_kg === null
+                    ? "—"
+                    : `${formatNumber(exercise.best_set_weight_kg)} ${weightUnit}`}
+                </td>
+                <td className="px-3 py-2 text-slate-600">
+                  {exercise.latest_estimated_1rm_kg === null
+                    ? "—"
+                    : `${formatNumber(exercise.latest_estimated_1rm_kg)} ${weightUnit}`}
+                </td>
+                <td className="px-3 py-2">
+                  {exercise.trend === null ? (
+                    <span
+                      className="text-slate-400"
+                      title={t("analysis.strengthTooFew", {
+                        count: strength.min_sessions_for_trend,
+                      })}
+                    >
+                      —
+                    </span>
+                  ) : (
+                    <span
+                      className={
+                        exercise.trend.direction === "rising"
+                          ? "font-semibold text-[#1d4ed8]"
+                          : exercise.trend.direction === "falling"
+                            ? "font-semibold text-[#b91c1c]"
+                            : "text-slate-500"
+                      }
+                      title={t(`analysis.strengthBasis.${exercise.trend.basis}` as MessageKey)}
+                    >
+                      {t(`analysis.direction.${exercise.trend.direction}` as MessageKey)}{" "}
+                      <span className="font-normal text-slate-400">
+                        {exercise.trend.change_pct_over_window > 0 ? "+" : ""}
+                        {formatNumber(exercise.trend.change_pct_over_window)} %
+                      </span>
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
 
 export default function AnalysisTab({
   apiBase,
@@ -173,64 +365,81 @@ export default function AnalysisTab({
   tenantId?: string;
   refreshTrigger?: number;
 }) {
-  const { t, formatDate } = useI18n();
-  const [data, setData] = useState<Insights | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { t, locale, formatDate } = useI18n();
+  // From the registry: the unit a set weight is stored in is declared once.
+  const weightUnit = describeMetric("strength_set_weight", locale).unit;
   const [section, setSection] = useState<Section>("overview");
 
-  const [windowDays, setWindowDays] = useState(90);
   const [minStrength, setMinStrength] = useState(0.2);
   const [onlySignificant, setOnlySignificant] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [sources, setSources] = useState<AnalysisSource[]>([]);
-  const [selectedSource, setSelectedSource] = useState("all");
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams({
-        days: String(windowDays),
-        min_strength: String(minStrength),
-        compare_to_previous: "true",
-      });
-      if (selectedSource !== "all") params.set("source_id", selectedSource);
-      const [res, sourceRes] = await Promise.all([
-        apiFetch(`${apiBase}/api/v1/analysis/insights?${params}`),
-        apiFetch(`${apiBase}/api/v1/data/sources`, {
-          headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
-        }),
-      ]);
-      if (!res.ok) throw new Error(t("analysis.loadFailed"));
-      if (sourceRes.ok) {
-        const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
-        setSources(sourceData.connectors ?? []);
-      }
-      setData(await res.json());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
+  /**
+   * The bundle comes from a scheduled run, not from this page opening.
+   *
+   * It is a paged read of the whole window followed by correlations, lagged
+   * correlations, trends, anomalies, weekday patterns and period comparisons —
+   * so its cost grew with the amount of data a workspace held, and two readers
+   * opening this tab paid it twice for one answer. Core queues a run when the
+   * data changes; the Analysis Service computes it; this reads the result.
+   *
+   * `windowDays` and `selectedSource` change what is computed, so they ask for a
+   * new run. `minStrength` does not: the coefficients are all in the payload, so
+   * it filters what is already here and applies instantly.
+   */
+  const report = useReport<Insights>(apiBase, "insights");
+  const data = report.result;
+  const loading = report.loading || report.running;
+  // The window and connector the stored run used. Read from the run rather than
+  // held in state, so the selectors always show what is on screen rather than
+  // what was last clicked.
+  const windowDays = Number(report.params?.days ?? 90);
+  const selectedSource = String(report.params?.source_id ?? "all");
+
+  const requestRun = useCallback(
+    (days: number, sourceId: string) => {
+      const params: ReportParams = { days, compare_to_previous: true };
+      if (sourceId !== "all") params.source_id = sourceId;
+      void report.refresh(params);
+    },
+    [report],
+  );
+
+  const loadSources = useCallback(async () => {
+    const sourceRes = await apiFetch(`${apiBase}/api/v1/data/sources`, {
+      headers: tenantId ? { "X-Tenant-ID": tenantId } : undefined,
+    });
+    if (sourceRes.ok) {
+      const sourceData = (await sourceRes.json()) as { connectors?: AnalysisSource[] };
+      setSources(sourceData.connectors ?? []);
     }
-    // `t` belongs here: without it the error message keeps the language captured at
-    // first render, so switching to German left this one string in English.
-  }, [apiBase, minStrength, selectedSource, t, tenantId, windowDays]);
+  }, [apiBase, tenantId]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       await Promise.resolve();
-      if (!cancelled) await load();
+      if (!cancelled) await loadSources();
     })();
     return () => {
       cancelled = true;
     };
-  }, [load, refreshTrigger]);
+  }, [loadSources, refreshTrigger]);
 
   const correlations = useMemo(
-    () => (data?.correlations ?? []).filter((c) => !onlySignificant || c.significant),
-    [data, onlySignificant],
+    () =>
+      (data?.correlations ?? []).filter(
+        (c) =>
+          (!onlySignificant || c.significant) &&
+          // Applied here, not sent to the server. The stored bundle is computed
+          // with no strength floor so that changing this filters instantly
+          // instead of queueing a run — but the filter has to actually exist:
+          // for a while the selector was bound to state nothing read, so picking
+          // "moderate" changed nothing and two comments claimed otherwise.
+          Math.abs(c.coefficient) >= minStrength,
+      ),
+    [data, minStrength, onlySignificant],
   );
 
   // Square matrix over the metrics that actually appear in a shown pair.
@@ -254,10 +463,20 @@ export default function AnalysisTab({
     );
   }
 
-  if (error) {
+  // No run has ever finished for this workspace. Not an error — the bundle is
+  // computed after an import, and this is what a reader sees before the first
+  // one has run. The button is the way out, so it is offered rather than hidden.
+  if (report.status === "never_computed" && !report.loading) {
     return (
-      <section className="rounded-3xl border border-red-200 bg-red-50 p-6 text-sm text-red-700">
-        {error}
+      <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6">
+        <p className="text-sm text-slate-600">{t("report.pendingFirstRun")}</p>
+        <ReportStatus
+          computedAt={null}
+          stale={false}
+          running={report.running}
+          neverComputed
+          onRefresh={() => requestRun(windowDays, selectedSource)}
+        />
       </section>
     );
   }
@@ -291,8 +510,11 @@ export default function AnalysisTab({
           {t("analysis.window")}
           <select
             value={windowDays}
-            onChange={(e) => setWindowDays(Number(e.target.value))}
-            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            // A different window is a different bundle, so this queues a run.
+            // `minStrength` below is not: it filters coefficients already here.
+            onChange={(e) => requestRun(Number(e.target.value), selectedSource)}
+            disabled={report.running}
+            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50"
           >
             {[30, 90, 180, 365].map((days) => (
               <option key={days} value={days}>
@@ -306,7 +528,7 @@ export default function AnalysisTab({
           <select
             value={minStrength}
             onChange={(e) => setMinStrength(Number(e.target.value))}
-            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+            className="ml-2 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring"
           >
             <option value={0}>{t("analysis.all")}</option>
             {[20, 40, 60].map((percent) => (
@@ -321,8 +543,9 @@ export default function AnalysisTab({
             {t("analysis.source")}
             <select
               value={selectedSource}
-              onChange={(e) => setSelectedSource(e.target.value)}
-              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none"
+              onChange={(e) => requestRun(windowDays, e.target.value)}
+              disabled={report.running}
+              className="ml-2 max-w-56 rounded-xl border border-slate-200 px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50"
             >
               <option value="all">{t("analysis.allSources")}</option>
               {sources.map((source) => (
@@ -401,12 +624,35 @@ export default function AnalysisTab({
             />
           </div>
 
+          {/*
+            Two different situations, and conflating them is what made the old
+            single notice misleading. A metric with a primary source *is* being
+            analysed, attributed to one connector; a metric without one is still
+            left out. Only the second is a gap the reader has to act on.
+          */}
           {(data.source_issues?.length ?? 0) > 0 && (
-            <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
-              {t("analysis.ambiguousSources", {
-                count: data.source_issues?.length ?? 0,
-              })}
-            </p>
+            <div className="space-y-3">
+              {(() => {
+                const issues = data.source_issues ?? [];
+                const resolved = issues.filter((issue) => issue.primary_source_id);
+                const unresolved = issues.length - resolved.length;
+                return (
+                  <>
+                    {resolved.length > 0 && (
+                      <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
+                        {t("analysis.ambiguousSources", { count: resolved.length })}
+                      </p>
+                    )}
+                    {unresolved > 0 && (
+                      <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
+                        {t("analysis.ambiguousUnresolved", { count: unresolved })}
+                      </p>
+                    )}
+                  </>
+                );
+              })()}
+              <MetricSourcePicker apiBase={apiBase} />
+            </div>
           )}
 
           {/*
@@ -569,6 +815,16 @@ export default function AnalysisTab({
                 )}
               </article>
             ))
+          )}
+        </div>
+      )}
+
+      {data && section === "strength" && (
+        <div className="space-y-4">
+          {!data.strength || data.strength.exercises.length === 0 ? (
+            <EmptyNote>{t("analysis.strengthEmpty")}</EmptyNote>
+          ) : (
+            <StrengthSection strength={data.strength} weightUnit={weightUnit} />
           )}
         </div>
       )}
@@ -979,11 +1235,33 @@ function Sparkline({ values }: { values: (number | null)[] }) {
   );
 }
 
+/**
+ * The seven identifiers the Analysis Service sends, and their labels.
+ *
+ * A lookup rather than the templated cast `muscleKey` uses, because this value
+ * can arrive from a *stored* report: a run computed before the server stopped
+ * sending German words still holds `"Montag"`, and `t("weekday.Montag")` would
+ * render that key as visible text. An unrecognised value falls back to the
+ * server's own string — the posture rule 17 sets out for deployment warnings,
+ * and here it means an old report stays readable until it is recomputed, which
+ * happens on the next import or within twelve hours at the latest.
+ */
+const WEEKDAY_KEYS: Record<string, MessageKey> = {
+  monday: "weekday.monday",
+  tuesday: "weekday.tuesday",
+  wednesday: "weekday.wednesday",
+  thursday: "weekday.thursday",
+  friday: "weekday.friday",
+  saturday: "weekday.saturday",
+  sunday: "weekday.sunday",
+};
+
 function WeekdayChart({
   data,
 }: {
   data: { weekday: string; mean: number | null; sample_size: number }[];
 }) {
+  const t = useT();
   const values = data.map((d) => d.mean).filter((v): v is number => v !== null);
   if (values.length === 0) return null;
   const max = Math.max(...values);
@@ -992,7 +1270,9 @@ function WeekdayChart({
     <div className="space-y-1">
       {data.map((d) => (
         <div key={d.weekday} className="flex items-center gap-2 text-[11px]">
-          <span className="w-20 shrink-0 text-slate-500">{d.weekday}</span>
+          <span className="w-20 shrink-0 text-slate-500">
+            {WEEKDAY_KEYS[d.weekday] ? t(WEEKDAY_KEYS[d.weekday]) : d.weekday}
+          </span>
           <span className="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100">
             {d.mean !== null && (
               <span

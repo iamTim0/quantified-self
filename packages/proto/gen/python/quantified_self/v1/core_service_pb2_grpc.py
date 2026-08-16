@@ -45,6 +45,11 @@ class CoreDataServiceStub:
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.SerializeToString,
                 response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.FromString,
                 _registered_method=True)
+        self.QueryStrengthSets = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/QueryStrengthSets',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.FromString,
+                _registered_method=True)
         self.GetDataPoint = channel.unary_unary(
                 '/quantified_self.v1.CoreDataService/GetDataPoint',
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.GetDataPointRequest.SerializeToString,
@@ -65,6 +70,16 @@ class CoreDataServiceStub:
                 request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
                 response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
                 _registered_method=True)
+        self.ListDueAnalysisReports = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/ListDueAnalysisReports',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.FromString,
+                _registered_method=True)
+        self.PutAnalysisReport = channel.unary_unary(
+                '/quantified_self.v1.CoreDataService/PutAnalysisReport',
+                request_serializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.SerializeToString,
+                response_deserializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.FromString,
+                _registered_method=True)
 
 
 class CoreDataServiceServicer:
@@ -77,6 +92,12 @@ class CoreDataServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def QueryMetricSeries(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def QueryStrengthSets(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -106,6 +127,18 @@ class CoreDataServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListDueAnalysisReports(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PutAnalysisReport(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CoreDataServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -118,6 +151,11 @@ def add_CoreDataServiceServicer_to_server(servicer, server):
                     servicer.QueryMetricSeries,
                     request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.FromString,
                     response_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.SerializeToString,
+            ),
+            'QueryStrengthSets': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryStrengthSets,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.SerializeToString,
             ),
             'GetDataPoint': grpc.unary_unary_rpc_method_handler(
                     servicer.GetDataPoint,
@@ -138,6 +176,16 @@ def add_CoreDataServiceServicer_to_server(servicer, server):
                     servicer.ValidateUserSession,
                     request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.FromString,
                     response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.SerializeToString,
+            ),
+            'ListDueAnalysisReports': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListDueAnalysisReports,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.SerializeToString,
+            ),
+            'PutAnalysisReport': grpc.unary_unary_rpc_method_handler(
+                    servicer.PutAnalysisReport,
+                    request_deserializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.FromString,
+                    response_serializer=quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -194,6 +242,33 @@ class CoreDataService:
             '/quantified_self.v1.CoreDataService/QueryMetricSeries',
             quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesRequest.SerializeToString,
             quantified__self_dot_v1_dot_core__service__pb2.QueryMetricSeriesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueryStrengthSets(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/QueryStrengthSets',
+            quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.QueryStrengthSetsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -302,6 +377,60 @@ class CoreDataService:
             '/quantified_self.v1.CoreDataService/ValidateUserSession',
             quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionRequest.SerializeToString,
             quantified__self_dot_v1_dot_core__service__pb2.ValidateUserSessionResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListDueAnalysisReports(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/ListDueAnalysisReports',
+            quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.ListDueAnalysisReportsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PutAnalysisReport(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/quantified_self.v1.CoreDataService/PutAnalysisReport',
+            quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportRequest.SerializeToString,
+            quantified__self_dot_v1_dot_core__service__pb2.PutAnalysisReportResponse.FromString,
             options,
             channel_credentials,
             insecure,

@@ -32,6 +32,17 @@ interface LocaleContextValue {
   intlLocale: string;
   formatDate: (value: string | number | Date | null | undefined) => string;
   formatDateTime: (value: string | number | Date | null | undefined) => string;
+  /** Clock time alone, for a timeline where the date is already the heading. */
+  formatTime: (value: string | number | Date | null | undefined) => string;
+  /**
+   * A date-only string (`YYYY-MM-DD`), rendered as that calendar day.
+   *
+   * `formatDate` is wrong for these: `new Date("2026-08-16")` is parsed as UTC
+   * midnight by specification, and `Intl` then renders it in the runtime's own
+   * zone — so every reader west of UTC saw the day before. A heading reading
+   * "Yesterday — Aug 14" above data for the 15th is worse than no heading.
+   */
+  formatDay: (value: string | null | undefined) => string;
   formatNumber: (value: number, options?: Intl.NumberFormatOptions) => string;
 }
 
@@ -69,6 +80,10 @@ export function LocaleProvider({
       dateStyle: "medium",
       timeStyle: "short",
     });
+    // Built from the chosen language like the two above, not from the browser's:
+    // `toLocaleTimeString(undefined, …)` follows the operating system, so a
+    // reader who switched the interface to German still got a 12-hour clock.
+    const timeFormat = new Intl.DateTimeFormat(intlLocale, { timeStyle: "short" });
 
     const parse = (input: string | number | Date | null | undefined): Date | null => {
       if (input === null || input === undefined || input === "") return null;
@@ -88,6 +103,17 @@ export function LocaleProvider({
       formatDateTime: (input) => {
         const date = parse(input);
         return date ? dateTimeFormat.format(date) : EMPTY;
+      },
+      formatTime: (input) => {
+        const date = parse(input);
+        return date ? timeFormat.format(date) : EMPTY;
+      },
+      formatDay: (input) => {
+        if (!input) return EMPTY;
+        // The `T00:00:00` is the whole fix: without a zone designator the string
+        // is parsed as *local* midnight, which is the day the caller meant.
+        const date = parse(/^\d{4}-\d{2}-\d{2}$/.test(input) ? `${input}T00:00:00` : input);
+        return date ? dateFormat.format(date) : EMPTY;
       },
       formatNumber: (input, options) =>
         Number.isFinite(input) ? new Intl.NumberFormat(intlLocale, options).format(input) : EMPTY,

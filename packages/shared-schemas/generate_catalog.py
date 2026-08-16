@@ -35,6 +35,7 @@ from shared_schemas.metrics import (
     METRIC_ALIASES,
     METRIC_CATALOG,
 )
+from shared_schemas.muscles import MuscleGroup
 
 OUTPUT = REPO_ROOT / "apps" / "dashboard" / "src" / "app" / "lib" / "metrics" / "catalog.ts"
 DOCS = REPO_ROOT / "docs" / "metrics.md"
@@ -77,7 +78,14 @@ HEADER = """/**
  */
 
 export type Aggregation = "average" | "sum" | "last" | "max";
-export type IngestResolution = "raw" | "minute" | "hour" | "day";
+export type IngestResolution = "raw" | "second" | "minute" | "hour" | "day";
+
+/**
+ * What a strength exercise trains. Stable lowercase identifiers, translated in the
+ * dashboard through `muscle.<value>` keys — a service never sends the prose.
+ */
+export type MuscleGroup =
+%%MUSCLE_GROUP_UNION%%
 
 export interface MetricDefinition {
   key: string;
@@ -93,7 +101,8 @@ export interface MetricDefinition {
   plausibleMax: number | null;
   precision: number;
   ingestResolution: IngestResolution;
-  rawRetentionDays: number;
+  /** Days fine-grained points are kept. `null` means they are never purged. */
+  rawRetentionDays: number | null;
 }
 
 export interface MetricNamespace {
@@ -199,9 +208,24 @@ def render() -> str:
 
     aliases = [f"  {_ts(alias)}: {_ts(canonical)}," for alias, canonical in sorted(METRIC_ALIASES.items())]
 
+    # The union is spliced rather than hardcoded so that adding a MuscleGroup
+    # member in Python is a TypeScript compile error everywhere the dashboard
+    # switches on one — the same guarantee the metric catalog already gives.
+    header = HEADER.replace(
+        "%%MUSCLE_GROUP_UNION%%",
+        "\n".join(f"  | {_ts(group.value)}" for group in MuscleGroup) + ";",
+    )
+
+    muscle_groups = [f"  {_ts(group.value)}," for group in MuscleGroup]
+
     return "\n".join(
         [
-            HEADER,
+            header,
+            "/** Every muscle group, in registry order. */",
+            "export const MUSCLE_GROUPS: MuscleGroup[] = [",
+            *muscle_groups,
+            "];",
+            "",
             "export const METRIC_CATALOG: Record<string, MetricDefinition> = {",
             *definitions,
             "};",

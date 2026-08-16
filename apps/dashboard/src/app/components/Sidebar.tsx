@@ -17,14 +17,11 @@ import {
 
 import { useT } from "../lib/i18n/provider";
 
-export type TabType =
-  | "overview"
-  | "explorer"
-  | "quality"
-  | "analysis"
-  | "chat"
-  | "connectors"
-  | "profile";
+// Declared in `navigation.ts` beside its label, icon and phone grouping, so a
+// destination cannot be added here and silently forgotten on mobile.
+import type { TabType } from "./navigation";
+
+export type { TabType };
 
 interface SidebarProps {
   activeTab: TabType;
@@ -74,7 +71,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
                 <button
                   key={item.id}
                   onClick={() => onTabChange(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all ${
+                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     isActive
                       ? "bg-[#0d5c3a] text-white shadow-lg shadow-[#0d5c3a]/20"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
@@ -104,7 +101,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
               href="/docs/"
               target="_blank"
               rel="noreferrer"
-              className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all"
+              className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-colors"
               title={t("sidebar.docsTitle")}
             >
               <div className="flex items-center gap-3">
@@ -116,7 +113,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
 
             <button
               onClick={() => onTabChange("profile")}
-              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold transition-all ${
+              className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 activeTab === "profile"
                   ? "bg-[#0d5c3a] text-white shadow-lg shadow-[#0d5c3a]/20"
                   : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
@@ -132,7 +129,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
 
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-all"
+              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
             >
               <LogOut className="w-4 h-4 text-rose-400" />
               <span>{t("sidebar.logout")}</span>

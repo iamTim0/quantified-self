@@ -35,12 +35,12 @@ export default function TopHeader({
       {/* No "refreshes every 30 seconds" line: the interval it described is gone, and
           the refresh button below is how the page reloads on purpose. The header was
           `justify-between` only because that text was the left half of it. */}
-      <div className="flex items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
         <a
           href="/docs/"
           target="_blank"
           rel="noreferrer"
-          className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+          className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm"
           title={t("sidebar.docsTitle")}
         >
           <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
@@ -48,19 +48,21 @@ export default function TopHeader({
         </a>
         <button
           onClick={onRefresh}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 transition-all shadow-sm"
+          aria-label={t("header.refresh")}
+          className="flex min-h-11 items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm"
           title={t("header.refreshTitle")}
         >
           <RefreshCw className="w-3.5 h-3.5" />
-          <span>{t("header.refresh")}</span>
+          <span className="hidden sm:inline">{t("header.refresh")}</span>
         </button>
         {/* Add Connector Button (Primary Dark Emerald) */}
         <button
           onClick={onOpenConfigureModal}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white text-xs font-bold transition-all shadow-md shadow-[#0d5c3a]/20"
+          aria-label={t("header.addConnector")}
+          className="flex min-h-11 items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-[#0d5c3a]/20"
         >
           <Plus className="w-3.5 h-3.5" />
-          <span>{t("header.addConnector")}</span>
+          <span className="hidden sm:inline">{t("header.addConnector")}</span>
         </button>
 
         <LanguageSwitcher />
@@ -70,7 +72,7 @@ export default function TopHeader({
         {/* User Profile Pill */}
         <button
           onClick={onNavigateToProfile}
-          className="flex items-center gap-3 pl-2 pr-3 py-1.5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 transition-all shadow-sm group"
+          className="flex items-center gap-3 pl-2 pr-3 py-1.5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm group"
         >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-xs flex items-center justify-center shadow-inner">
             {getInitials(userName)}

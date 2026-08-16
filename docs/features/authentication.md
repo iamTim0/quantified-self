@@ -230,6 +230,76 @@ Two properties of that command are deliberate: the password comes from a prompt 
 argument, and a second call with the same address aborts instead of quietly replacing the existing
 password.
 
+## Repeated failures are refused
+
+Nothing rate-limited sign-in: no attempt counter, no lockout, no backoff, and no middleware at the
+edge either. bcrypt made each guess cost something, which made a credential-stuffing run slow
+rather than impossible.
+
+Failed sign-ins against one address are now counted: **ten in fifteen minutes** and it stops
+answering. That is well past mistyping a password and well short of a wordlist.
+
+Three properties are worth stating because each one is a way this is usually got wrong:
+
+- **The count is checked before the password is verified**, so a refused caller does not get to
+  spend the server's bcrypt either. Otherwise the endpoint stays a way to burn CPU after it has
+  stopped being a way to guess passwords.
+- **It keys on the address as submitted**, not on the account that was found. If a throttle only
+  engaged for addresses that exist, `429` would mean "this account is real" — which is the
+  [enumeration oracle](#a-wrong-password-and-an-unknown-address-cost-the-same) closed just below,
+  reintroduced through the status code immediately after being closed through timing.
+- **A successful sign-in clears that address's failures.** Otherwise somebody signing in from six
+  devices a day would eventually lock themselves out of their own workspace, which is a denial of
+  service we would have written ourselves.
+
+A refused request answers `429` with a `Retry-After` header and the stable code
+`too_many_attempts` (rule 17). The counter stores a SHA-256 digest of the address, never the
+address — a plaintext table here would be a record of every address anyone had tried to sign in
+as, which is more sensitive than what it protects.
+
+### Why there is no per-client limit
+
+A per-client counter stops **spraying**: one common password tried against many addresses, where
+each account only ever sees a single failure so an account counter never trips. It is the standard
+companion to the limit above, and it is deliberately absent.
+
+Spraying needs many *real* accounts to be worth anything. This platform ships with
+`ALLOW_REGISTRATION` off and one owner account created by `python -m core.create_owner`; against a
+single account, spraying collapses into exactly the attack the account counter already stops.
+
+The cost would not have been the counting — it is knowing who the client is. Behind a proxy the
+socket peer is the proxy, and `X-Forwarded-For` is append-only with nothing authenticating it, so
+its leftmost entry is whatever the caller typed. Reading that gives a limit bypassed by sending one
+header, which is worse than no limit because it reads as coverage. Doing it properly needs a
+configured count of trusted proxy hops — a setting whose wrong value degrades silently, carried for
+an attack this deployment does not face.
+
+If the workspace ever gains a real user base, this is the thing to add back, and
+`test_login_throttle.py` pins its absence so that reinstating it is a deliberate act rather than a
+half-wired one.
+
+### A wrong password and an unknown address cost the same
+
+The handler used to read:
+
+```python
+if not user or not pwd_context.verify(req.password, user.password_hash):
+```
+
+Python's `or` short-circuits. When the address was unknown, `not user` was true and **bcrypt never
+ran** — the response came back in microseconds. When the address existed and only the password was
+wrong, bcrypt ran first, costing a few hundred milliseconds. That difference is measurable over the
+network with no special tooling, and it turned the endpoint into an account-enumeration oracle: an
+attacker learned which addresses were real before spending a single guess on them.
+
+A password is now verified on both paths — against the account's hash when there is one, against a
+fixed dummy hash when there is not — so the two branches cost the same. Both answer `401` with an
+identical body.
+
+This matters more here than on a general-purpose site. The addresses in this platform are attached
+to health data, so "does this person have an account" is itself disclosure, quite apart from being
+the reconnaissance step for the guessing the throttle above exists to stop.
+
 ## The server-side route guard
 
 A deep link to `/profile` without a session no longer renders the shell first, waits for

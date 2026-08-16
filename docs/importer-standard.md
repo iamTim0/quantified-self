@@ -98,6 +98,62 @@ Two consequences worth stating outright:
 
 See [Metrics](metrics.md) for the rules, the full catalog and how to add an entry.
 
+### Sessions
+
+**An importer that emits any `workout_*` or `strength_*` metric MUST write a session block onto
+every point of that session.** Without one, a workout is not an entity anywhere in the platform:
+it arrives as a fan of unrelated rows — a duration, a distance, a dozen heart-rate figures, a GPS
+trace, a set of squats — and the only thing joining them is a shared timestamp and a metadata
+string. That join fails in both directions: two sessions a provider stamped alike merge into one,
+and one session whose points differ by a second splits into two.
+
+The block comes from **one helper and only that helper**:
+
+```python
+from shared_schemas.sessions import session_metadata
+
+session = session_metadata(
+    source_type="garmin",
+    source_id=source_id,           # inside the digest: two watches are two sessions
+    provider_session_id=activity.get("activityId"),
+    start=activity["startTimeGMT"],
+    end=activity.get("endTimeGMT"),  # omitted entirely when the provider states none
+    label=activity.get("activityName"),
+    derived_from=("startTimeGMT", "activityName"),
+)
+```
+
+Merge `session` into the metadata of **every** point the session produces — its summary figures,
+each set, each GPS fix, each sample. A point without it is a point the workout page cannot find.
+
+Four things about that call are contract rather than style:
+
+- **Never hand-roll the digest.** It is one function for the reason `events.py` documents about
+  the idempotency hash: that one was copied nine times, all nine happened to agree, and nothing
+  checked that they did. A session id derived two ways is a workout that appears twice.
+- **`provider_session_id` when the provider states one**, and the block then declares
+  `session_origin: "provider"`. The digest of a stated id depends only on the connector and the
+  id, which is also what makes such a session recoverable later by
+  [`core.session_backfill`](operations.md).
+- **`derived_from` is mandatory when there is no stated id** — `session_metadata` raises without
+  it. A derived value that does not say it was derived is a value nobody can audit (rule 19).
+- **Never invent an end.** `session_end` is omitted when the provider gives none; the read path
+  widens a window it can measure and clamps one it cannot, and it can only tell those apart if a
+  missing end stays missing.
+
+Adding a session-emitting importer also means adding it to the parametrised list in
+`packages/shared-schemas/tests/test_importer_sessions.py`, which asserts that every importer
+declaring a `workout_*` or `strength_*` metric calls `session_metadata` and does not compute a
+digest of its own. That test fails for a new importer by design — a convention nothing checks is
+a convention that lasts one importer.
+
+Nothing in the read path is per-source: the workout list and the detail endpoint key on
+`metadata->>'session_id'` and on the registry's categories, never on a `source_type`. A new
+workout source needs the transformer call and one row in that test, and no change to
+`core/workouts.py` at all.
+
+See [Workout detail](features/workout-detail.md) for what the session block buys the reader.
+
 ## Contract-first importer definition
 
 Every importer has a machine-readable `importer.contract.json` in its service root.

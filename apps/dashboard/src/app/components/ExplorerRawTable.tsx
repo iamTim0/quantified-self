@@ -13,6 +13,11 @@ import type { DataPointItem } from "./ExplorerTab";
  * Rows are capped for the DOM's sake, not silently: the count above states how many
  * matched and the note below states how many are drawn, because a table that shows
  * a hundred rows out of nine hundred and says nothing reads as the whole answer.
+ *
+ * The cap is well past the 50 rows at which the interface guidelines ask for
+ * virtualization, so each row also carries `content-visibility: auto` — the
+ * off-screen ones cost no layout or paint, and unlike a virtualizer they are
+ * still in the DOM for find-in-page and for a screen reader.
  */
 const MAX_ROWS = 200;
 
@@ -60,7 +65,18 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                   const { label, unit, precision } = describeMetric(point.metric_type, locale);
                   const itemName = point.metadata?.food_name || point.metadata?.name;
                   return (
-                    <tr key={point.id} className="font-mono transition-colors hover:bg-slate-50">
+                    // `content-visibility-auto` skips layout and paint for rows
+                    // scrolled out of view. 200 rows is four times the threshold
+                    // at which the interface guidelines ask for virtualization,
+                    // and a virtualizer for a table this size would cost more
+                    // than it saves — this is one utility and the rows stay in
+                    // the DOM, so Ctrl+F and screen readers still find them.
+                    // `contain-intrinsic-size` reserves each row's height so the
+                    // scrollbar does not jump as they render.
+                    <tr
+                      key={point.id}
+                      className="[contain-intrinsic-size:auto_2.5rem] [content-visibility:auto] font-mono transition-colors hover:bg-slate-50"
+                    >
                       {/*
                         Formatted for the reader, exact in the tooltip. The stored
                         instant is what someone reconciling against the database

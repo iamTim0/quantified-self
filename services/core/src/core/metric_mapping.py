@@ -6,6 +6,7 @@ alter the registry itself.
 """
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -184,3 +185,49 @@ def replay_value(
     copied["units"] = mapping.source_unit.value
     converted = convert(float(value), mapping.source_unit, mapping.target_unit)
     return converted, copied
+
+
+def custom_definitions_from_rules(
+    rules: Sequence[Any],
+) -> dict[str, MetricDefinition]:
+    """Return valid tenant-local adopted definitions, ignoring corrupt legacy rows.
+
+    Lives here rather than beside its first caller because it has three now — the
+    metric endpoints, the summary and the gap report — and a private copy in a
+    request module is not something a background job can import without dragging
+    the whole API in with it.
+
+    Takes rows rather than a session: the caller owns the query, and this is a pure
+    function over `MetricMappingRule`-shaped objects.
+    """
+    definitions: dict[str, MetricDefinition] = {}
+    ambiguous: set[str] = set()
+    for rule in rules:
+        if rule.action != "adopt" or not rule.target_metric_type:
+            continue
+        try:
+            mapping = validate_mapping(
+                raw_metric_type=rule.raw_metric_type,
+                action=rule.action,
+                target_metric_type=rule.target_metric_type,
+                source_unit=rule.source_unit,
+                target_unit=rule.target_unit,
+                aggregation=rule.aggregation,
+                cadence=rule.cadence,
+            )
+            definition = custom_metric_definition(mapping)
+        except ValueError:
+            continue
+        if rule.target_metric_type in ambiguous:
+            continue
+        existing = definitions.get(rule.target_metric_type)
+        if existing is None:
+            definitions[rule.target_metric_type] = definition
+        elif existing != definition:
+            # Older installations may contain conflicting rows from before the
+            # one-name-one-definition check existed. Never present an arbitrary
+            # definition as authoritative for data whose unit or aggregation is
+            # ambiguous; omit it until an administrator repairs the rules.
+            definitions.pop(rule.target_metric_type, None)
+            ambiguous.add(rule.target_metric_type)
+    return definitions

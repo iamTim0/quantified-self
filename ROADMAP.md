@@ -204,3 +204,46 @@ lets the tenant answer it.
 - [x] Update Fizzbee specifications and invariant-referencing test docstrings for new distributed behavior.
 - [ ] Run linting, type checking, unit/integration/E2E tests and the MkDocs build; record unavailable external services, failures, risks and follow-up work.
 - [ ] **Automated Release Workflow**: Implement a release workflow that automatically derives the version bump from conventional commits (e.g. `feat:`, `fix:`), generates changelogs, and publishes releases.
+
+## 🔵 Phase 11: Follow-ups from the quality audit (Planned)
+
+Raised by an audit against the Chrome web-quality skills, Vercel's Web Interface Guidelines and
+Cloudflare's security-audit methodology. The exploitable findings are fixed; these are what was
+deliberately deferred, each with the reason it was not done at the time.
+
+- [x] **Reset the ingestion stream from the dashboard.** Switching JetStream retention needs the
+  stream deleted and recreated, and that is currently a documented `docker exec` on the host
+  ([operations](docs/operations.md#rebuilding-a-workspace-from-scratch)) — the one deploy step that
+  reproduces the 4 GiB outage if it is skipped. The endpoint has to live on **`core-ingest`**, not
+  the API role: that process owns the JetStream consumer, so it can delete and resubscribe in one
+  go, where a delete from elsewhere leaves it subscribed to a stream that no longer exists and
+  needs a container restart the dashboard cannot perform. Owner-only and *not* tenant-scoped — the
+  stream is shared infrastructure, which makes this the rare operator action in a platform where
+  rule 2 otherwise applies everywhere. Keep the `num_pending == 0 and num_ack_pending == 0`
+  assertion as the interface: report the counts so the UI can say how many events are still
+  unstored rather than only that it refused. Pair it with a deployment warning for the retention
+  mismatch — Core already logs one — so the control appears when it is needed.
+- [ ] **A CSP nonce, to drop `'unsafe-inline'` from `script-src`.** `'unsafe-eval'` and the unused
+  font and WebSocket origins are gone; this one remains because Next inlines its bootstrap and
+  flight data, so removing it means threading a nonce from middleware through the document. Real
+  risk of a blank page, and worth doing on its own. Until then the CSP is a second layer with a
+  hole in it — React's escaping is the first, and there is no `dangerouslySetInnerHTML` anywhere.
+- [ ] **Confirm HSTS at the edge.** Every Traefik router binds `entrypoints=web`, so TLS terminates
+  upstream at Coolify and HSTS is properly its job — but nothing in this repository proves it is
+  set, and `COOKIE_SECURE` defaults true. A `Secure` cookie is only as good as the guarantee that
+  the first request was HTTPS.
+- [ ] **Heal ingest policies written by the old Explorer bug.** `_retention_days()` returns a tenant
+  policy outright, so a `location_point` row still holding `90` purges GPS despite the registry now
+  saying never. The bug that wrote those rows is fixed and migration 023 makes the column nullable,
+  but it does not backfill. Moot for an instance that was reset; it matters for a populated upgrade.
+- [ ] **A per-client sign-in limit, if this ever gains a real user base.** Removed rather than
+  carried: it stops password spraying, which needs many real accounts, and it requires trusting a
+  client address behind a proxy — a configured hop count whose wrong value degrades silently.
+  `test_login_throttle.py` pins its absence so reinstating it is deliberate.
+- [ ] **Adopt `<dialog>` for the three modals.** `useDialog` gives them Escape, a focus trap and
+  focus restoration by hand; `showModal()` gives all of it plus a genuinely inert background. The
+  three are conditionally rendered rather than imperatively opened, so adopting it changes how they
+  mount.
+- [ ] **Runtime accessibility and performance testing.** The audit was source-derived: no Lighthouse
+  run, no axe scan, nothing measured against a live instance. The loading findings describe
+  sequence, not milliseconds. A single audit pass finds roughly half of what repeated passes find.
