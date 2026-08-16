@@ -13,12 +13,14 @@ from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
     ForeignKeyConstraint,
     Integer,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -873,5 +875,90 @@ class MetricSourcePreference(Base):
             ["data_sources.tenant_id", "data_sources.id"],
             name="fk_metric_source_preferences_tenant_source",
             ondelete="CASCADE",
+        ),
+    )
+
+
+class WorkspaceAiSettings(Base):
+    """Whether this workspace lets a model see its data, and which one.
+
+    Off unless somebody turns it on. Health data leaving the instance for a
+    third-party model changes what the privacy policy has to say, so it is a
+    decision an operator makes deliberately rather than a default they discover
+    afterwards — the same reasoning as `ALLOW_REGISTRATION` being `False`.
+
+    The API key is Fernet-encrypted exactly like a connector credential (rule 12)
+    and is never returned in plaintext by any endpoint; the settings response
+    carries a mask.
+    """
+
+    __tablename__ = "workspace_ai_settings"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    #: `codex` reuses the process-wide Codex login; `litellm` is per workspace.
+    provider: Mapped[str] = mapped_column(String(16), nullable=False, default="codex")
+    encrypted_api_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    chat_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    embedding_model: Mapped[str] = mapped_column(
+        String(128), nullable=False, default="text-embedding-3-small"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+
+class MetricDayEmbedding(Base):
+    """One vector per day and metric category, not per data point.
+
+    A single step count carries no meaning a similarity search could use, and a
+    workspace holding six million points would mean millions of embedding calls
+    and gigabytes of vectors to answer a question nobody asked. A day summarised
+    per category — "sleep on the 14th" — is the smallest unit that says something
+    a reader would search for.
+
+    `summary` is the sentence that was embedded, kept so a reader can see what
+    the model was given. It is built from stored rollups and holds no provider
+    payload (rule 19).
+    """
+
+    __tablename__ = "metric_day_embeddings"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    tenant_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    day: Mapped[Any] = mapped_column(Date, nullable=False)
+    category: Mapped[str] = mapped_column(String(32), nullable=False)
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[Any | None] = mapped_column(Vector(1536), nullable=True)
+    #: Which model produced the vector, so changing models invalidates its own
+    #: rows without a migration.
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id", "day", "category", name="uq_metric_day_embeddings_tenant_day_category"
         ),
     )

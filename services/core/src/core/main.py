@@ -89,6 +89,7 @@ from core.db.models import (
     TenantShare,
     User,
     UserIdentity,
+    WorkspaceAiSettings,
 )
 from core.db.session import async_session_maker, get_session
 from core.db.tenant import _current_tenant_id, get_current_tenant_id
@@ -2830,6 +2831,113 @@ async def get_cross_source_conflicts(
     return await compute_conflicts_report(
         session, get_current_tenant_id(), tolerance=tolerance
     )
+
+
+class WorkspaceAiSettingsRequest(BaseModel):
+    """What a workspace owner may change about its AI configuration.
+
+    `api_key` is write-only: it goes in encrypted and never comes back out. An
+    omitted key on an update keeps the stored one, so saving a model change does
+    not silently clear the credential.
+    """
+
+    enabled: bool
+    provider: Literal["codex", "litellm"] = "codex"
+    api_key: str | None = Field(None, max_length=512)
+    base_url: str | None = Field(None, max_length=255)
+    chat_model: str | None = Field(None, max_length=128)
+    embedding_model: str = Field("text-embedding-3-small", max_length=128)
+
+
+def _ai_settings_payload(settings_row: WorkspaceAiSettings | None) -> dict[str, Any]:
+    """The settings as a client may see them — masked, never decrypted."""
+    if settings_row is None:
+        return {
+            "enabled": False,
+            "provider": "codex",
+            "base_url": None,
+            "chat_model": None,
+            "embedding_model": "text-embedding-3-small",
+            "api_key_set": False,
+            "masked_api_key": None,
+        }
+    return {
+        "enabled": settings_row.enabled,
+        "provider": settings_row.provider,
+        "base_url": settings_row.base_url,
+        "chat_model": settings_row.chat_model,
+        "embedding_model": settings_row.embedding_model,
+        "api_key_set": bool(settings_row.encrypted_api_key),
+        "masked_api_key": (
+            mask_secret(decrypt_secret(settings_row.encrypted_api_key))
+            if settings_row.encrypted_api_key
+            else None
+        ),
+    }
+
+
+@app.get("/api/v1/data/ai/settings")
+async def get_ai_settings(session: AsyncSession = Depends(get_session)):
+    """Whether this workspace has opted into AI features, and how.
+
+    Off for a workspace that has never configured it. Health data leaving the
+    instance for a third-party model is a decision an operator makes, not a
+    default they discover afterwards.
+    """
+    tenant_id = get_current_tenant_id()
+    row = (
+        await session.execute(
+            select(WorkspaceAiSettings).where(WorkspaceAiSettings.tenant_id == tenant_id)
+        )
+    ).scalars().first()
+    return {"tenant_id": tenant_id, **_ai_settings_payload(row)}
+
+
+@app.put("/api/v1/data/ai/settings")
+async def set_ai_settings(
+    req: WorkspaceAiSettingsRequest,
+    _principal: Principal = Depends(require_role("owner", "admin")),
+    session: AsyncSession = Depends(get_session),
+):
+    """Turn AI features on or off for this workspace and name the provider.
+
+    Owner or admin only: it decides whether this workspace's health data is sent
+    to a third party, which is not a per-member preference.
+    """
+    tenant_id = get_current_tenant_id()
+    row = (
+        await session.execute(
+            select(WorkspaceAiSettings).where(WorkspaceAiSettings.tenant_id == tenant_id)
+        )
+    ).scalars().first()
+
+    if req.provider == "litellm" and req.enabled:
+        # A LiteLLM workspace with no endpoint is a configuration that cannot
+        # work; refusing it here beats failing on the first scheduled run.
+        has_key = bool(req.api_key) or bool(row and row.encrypted_api_key)
+        if not req.base_url or not has_key:
+            raise HTTPException(
+                status_code=422,
+                detail="LiteLLM requires base_url and an api_key before it can be enabled",
+            )
+
+    if row is None:
+        row = WorkspaceAiSettings(tenant_id=tenant_id)
+        session.add(row)
+
+    row.enabled = req.enabled
+    row.provider = req.provider
+    row.base_url = req.base_url
+    row.chat_model = req.chat_model
+    row.embedding_model = req.embedding_model
+    if req.api_key:
+        # Fernet at rest, like every connector credential (rule 12).
+        row.encrypted_api_key = encrypt_secret(req.api_key)
+    row.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    await session.refresh(row)
+
+    return {"tenant_id": tenant_id, **_ai_settings_payload(row)}
 
 
 @app.get("/api/v1/data/day")
