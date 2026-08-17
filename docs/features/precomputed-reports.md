@@ -226,14 +226,56 @@ The page polls every 2.5 seconds **only while a run is in flight**. With nothing
 makes exactly one request when it opens and then goes quiet, because nothing it shows can
 change until a run finishes.
 
+## Analysing a longer period
+
+The analysis tab offers 30, 90, 180 and 365 days. Picking one queues a run for that
+window immediately — the request is `POST /api/v1/data/reports/insights/refresh` with
+`{"days": 365}` — and the bell shows it running
+([Background activity](background-jobs.md)).
+
+**It only has to be asked for once.** A scheduled re-run carries the previous run's
+params forward, so once a workspace is on 365 days it stays there: every later
+recomputation is over the same window, triggered by new data rather than by anybody
+clicking. The window is part of the report's identity, not a filter over it.
+
+That is also why the scheduler must not substitute its own default. It did once, and
+two things broke at the same time: the selector snapped back to 90 days under the
+reader, and `offset_minutes` went with it, so a scheduled run silently reverted to
+UTC day boundaries. `test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for`
+pins both.
+
+!!! info "There is no separate nightly job, and deliberately so"
+    A long window does not need one. The expensive run is queued when the data
+    changes and its result is served from storage until the data changes again, so
+    the reader never waits for it — which is what a nightly job would have been for.
+
+    What a nightly job would add is control over *when* the recompute happens: today
+    a 365-day bundle can be recomputed at 14:00, right after an import lands. Whether
+    that is worth deferring depends on how long such a run actually takes, and that
+    is a measurement rather than a guess. `report_runs` records the start and finish
+    of every run, so the answer is already being collected.
+
 ## Failure, timeouts and what a reader sees
 
 - A run that raises is stored as a **failed** run with a stable `message_code`. Failed runs
   are never served, so the reader keeps seeing the last good answer, correctly labelled
   with the time it was computed, instead of an empty page.
-- A run still in flight after **30 minutes** is assumed dead and failed, so one lost run
-  cannot block its kind forever. **Which** failure it was is now said explicitly, because
-  the two have nothing in common but their timing:
+- A run still in flight past its allowance is assumed dead and failed, so one lost run
+  cannot block its kind forever. The allowance is **30 minutes for a 90-day window and
+  scales with `params.days`**, capped at two hours: a 365-day bundle reads four times
+  the history, and a flat limit gave the run most likely to need the time the same
+  budget as the smallest one. A 90-day run keeps exactly what it had, and a kind that
+  states no window — the gap, conflict and day reports, all computed inside Core in
+  seconds — is unaffected.
+
+    The in-flight guard behind the refresh button uses the **same** allowance. If it
+    called a run stale at thirty minutes while the sweep still allowed two hours, a
+    click in minute thirty-one would queue a second run beside the first — the "row of
+    impatient clicks becomes a row of identical scans" that guard exists to prevent,
+    reappearing for exactly the long windows that take longest.
+
+- **Which** failure it was is said explicitly, because the two have nothing in common
+  but their timing:
 
   | Status when it expired | Code | What actually happened |
   | --- | --- | --- |

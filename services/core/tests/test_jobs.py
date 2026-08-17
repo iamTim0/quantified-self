@@ -240,3 +240,77 @@ async def test_a_report_nobody_claimed_says_so_rather_than_blaming_the_clock():
         assert codes["gaps"] == "report_timeout"
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_long_window_is_given_proportionally_longer_to_finish():
+    """A 365-day bundle reads four times the history of a 90-day one.
+
+    A flat thirty minutes gave both the same allowance, so the run most likely to
+    need the time was the one most likely to be killed for taking it. The allowance
+    scales with `params.days`; a 90-day run keeps exactly what it has today.
+    """
+    from core.reports import expire_stale_report_runs
+
+    tenant_id = await create_test_tenant()
+    try:
+        # Forty minutes in: past the flat thirty, inside a 365-day allowance.
+        started = NOW - timedelta(minutes=40)
+        await _report_run(tenant_id, status="running", started_at=started, params={"days": 365})
+        await _report_run(
+            tenant_id, status="running", started_at=started, kind="gaps", params={"days": 90}
+        )
+
+        async with async_session_maker() as session:
+            changed = await expire_stale_report_runs(session, now=NOW, tenant_ids=[tenant_id])
+            await session.commit()
+
+        # Only the 90-day one is past its allowance.
+        assert changed == 1
+        by_kind = {job["subject"]: job for job in (await _jobs(tenant_id))["jobs"]}
+        assert by_kind["insights"]["status"] == "running"
+        assert by_kind["gaps"]["status"] == "error"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_the_in_flight_guard_uses_the_same_allowance_as_the_sweep():
+    """Otherwise a click in minute thirty-one queues a second run beside the first.
+
+    The guard exists to stop a row of impatient clicks becoming a row of identical
+    scans, and it would have stopped doing so exactly for the long windows that take
+    longest.
+    """
+    from core.reports import has_in_flight_report
+
+    tenant_id = await create_test_tenant()
+    try:
+        started = NOW - timedelta(minutes=40)
+        await _report_run(tenant_id, status="running", started_at=started, params={"days": 365})
+
+        async with async_session_maker() as session:
+            assert await has_in_flight_report(session, tenant_id, "insights", now=NOW) is True
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_run_that_states_no_window_keeps_the_flat_allowance():
+    """The gap, conflict and day reports are computed inside Core in seconds.
+
+    They state no `days`, so nothing about them may change.
+    """
+    from core.reports import expire_stale_report_runs
+
+    tenant_id = await create_test_tenant()
+    try:
+        await _report_run(
+            tenant_id, status="running", started_at=NOW - timedelta(minutes=31), kind="day"
+        )
+        async with async_session_maker() as session:
+            changed = await expire_stale_report_runs(session, now=NOW, tenant_ids=[tenant_id])
+            await session.commit()
+        assert changed == 1
+    finally:
+        await cleanup_test_tenant(tenant_id)

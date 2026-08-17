@@ -541,3 +541,66 @@ async def test_high_water_ignores_runs_that_did_not_succeed():
         assert report_is_stale(run, None) is False
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for():
+    """The mechanism that makes a long-range analysis stay a long-range analysis.
+
+    Asking for 365 days is not a one-off: the scheduler carries the last run's
+    params into the next one, so the deep answer is maintained from then on without
+    anybody asking again. Without it a tick replaces a 365-day bundle with the
+    90-day default and the selector snaps back under the reader -- and
+    `offset_minutes` goes with it, so a scheduled run silently reverts to UTC day
+    boundaries.
+
+    The behaviour was described in a comment and covered by nothing.
+    """
+    from core.reports import find_due_reports
+
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id)
+        now = datetime.now(timezone.utc)
+
+        async with async_session_maker() as session:
+            # A finished import, so the workspace has something to report on.
+            session.add(
+                SyncRun(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="oura",
+                    request_id="req_seed",
+                    status="success",
+                    started_at=now - timedelta(hours=2),
+                    finished_at=now - timedelta(hours=1),
+                )
+            )
+            # The reader's own run: a year, in their own timezone.
+            session.add(
+                ReportRun(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    kind="insights",
+                    status="success",
+                    trigger="manual",
+                    request_id="req_reader",
+                    started_at=now - timedelta(hours=3),
+                    finished_at=now - timedelta(hours=3),
+                    covers_data_through=now - timedelta(hours=3),
+                    params={"days": 365, "offset_minutes": 120, "compare_to_previous": True},
+                    payload={},
+                )
+            )
+            await session.commit()
+
+            due = await find_due_reports(session, now=now)
+
+        insights = [item for item in due if item.tenant_id == tenant_id and item.kind == "insights"]
+        assert insights, "a newer import must make the bundle due again"
+        assert insights[0].params["days"] == 365
+        assert insights[0].params["offset_minutes"] == 120
+        assert insights[0].reason == "new_data"
+    finally:
+        await cleanup_test_tenant(tenant_id)

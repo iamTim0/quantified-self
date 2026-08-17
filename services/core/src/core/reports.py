@@ -44,7 +44,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from shared_schemas.metrics import METRIC_CATALOG, Cadence
-from sqlalchemy import case, func, select, update
+from sqlalchemy import Integer, case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.analytics import (
@@ -99,7 +99,19 @@ SOURCE_REASONS: frozenset[str] = frozenset(
 #: it crashed, or the Analysis Service never answered. Without this one lost run
 #: would block a kind forever, which is the failure the sync scheduler already
 #: learned (`core.scheduler.STALE_RUN_AFTER`).
+#:
+#: This is the allowance for a run over :data:`REFERENCE_WINDOW_DAYS`. A larger
+#: window gets proportionally longer — see :func:`stale_after_interval`.
 STALE_RUN_AFTER = timedelta(minutes=30)
+
+#: The window `STALE_RUN_AFTER` is the allowance for. The dashboard's default, so
+#: today's behaviour is unchanged for the window most runs actually use.
+REFERENCE_WINDOW_DAYS = 90
+
+#: The ceiling however large a window is asked for. A run that has been going for
+#: two hours is not slow, it is gone, and the point of failing it is to stop one
+#: lost run blocking its kind forever.
+MAX_STALE_RUN_AFTER = timedelta(hours=2)
 
 #: How stale a report may get with no new data at all. New data is the normal
 #: trigger; this is the backstop that catches a report whose *inputs* changed
@@ -294,22 +306,62 @@ async def latest_failed_report(
     ).scalars().first()
 
 
+def stale_after_interval():
+    """How long a run may take, from what it was asked to compute.
+
+    A flat thirty minutes gave a 365-day insights bundle the same allowance as a
+    90-day one, though it reads four times the history. Whatever the right absolute
+    number turns out to be, a *constant* is the wrong shape: the only run the flat
+    value was ever calibrated against is the default window.
+
+    So the allowance scales with `params.days` and is clamped at both ends. A
+    90-day run keeps exactly the allowance it has today — this cannot shorten
+    anything — and a kind that states no window (the gap, conflict and day reports,
+    all computed inside Core in seconds) falls back to the reference and is
+    unaffected.
+
+    Expressed in SQL because the caller is one bulk `UPDATE` across every tenant,
+    and pulling the runs into Python to divide a number would turn a single
+    statement into a scan.
+    """
+    stated = case(
+        (
+            func.jsonb_typeof(ReportRun.params.op("->")("days")) == "number",
+            cast(ReportRun.params.op("->>")("days"), Integer),
+        ),
+        else_=None,
+    )
+    window = func.greatest(func.coalesce(stated, REFERENCE_WINDOW_DAYS), 1)
+    seconds = STALE_RUN_AFTER.total_seconds() * window / REFERENCE_WINDOW_DAYS
+    bounded = func.least(
+        func.greatest(seconds, STALE_RUN_AFTER.total_seconds()),
+        MAX_STALE_RUN_AFTER.total_seconds(),
+    )
+    return func.make_interval(0, 0, 0, 0, 0, 0, bounded)
+
 async def has_in_flight_report(
     session: AsyncSession, tenant_id: str, kind: str, *, now: datetime
 ) -> bool:
-    """Is a run for this tenant and kind already queued or running (and not stale)?"""
-    cutoff = now - STALE_RUN_AFTER
+    """Is a run for this tenant and kind already queued or running (and not stale)?
+
+    The same allowance `expire_stale_report_runs` uses, and it has to be: if this
+    called a run stale at thirty minutes while the sweep still allowed it two hours,
+    a click in minute thirty-one would queue a second run alongside the first — the
+    "row of impatient clicks becomes a row of identical scans" that this guard exists
+    to prevent, reappearing precisely for the long windows that take longest.
+    """
     found = await session.scalar(
         select(ReportRun.id)
         .where(
             ReportRun.tenant_id == tenant_id,
             ReportRun.kind == kind,
             ReportRun.status.in_(IN_FLIGHT_STATUSES),
-            ReportRun.started_at >= cutoff,
+            ReportRun.started_at >= now - stale_after_interval(),
         )
         .limit(1)
     )
     return found is not None
+
 
 
 async def expire_stale_report_runs(
@@ -347,7 +399,7 @@ async def expire_stale_report_runs(
         .where(
             ReportRun.tenant_id.in_(tenant_ids),
             ReportRun.status.in_(IN_FLIGHT_STATUSES),
-            ReportRun.started_at < now - STALE_RUN_AFTER,
+            ReportRun.started_at < now - stale_after_interval(),
         )
         .values(
             status="error",
@@ -453,7 +505,8 @@ async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueR
                 select(ReportRun.tenant_id, ReportRun.kind).where(
                     ReportRun.tenant_id.in_(tenant_ids),
                     ReportRun.status.in_(IN_FLIGHT_STATUSES),
-                    ReportRun.started_at >= now - STALE_RUN_AFTER,
+                    # Same allowance as the sweep above, for the same reason.
+                    ReportRun.started_at >= now - stale_after_interval(),
                 )
             )
         ).all()
