@@ -44,7 +44,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from shared_schemas.metrics import METRIC_CATALOG, Cadence
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.analytics import (
@@ -321,9 +321,27 @@ async def expire_stale_report_runs(
     The caller is a cross-tenant worker and already holds the tenant list, so
     there is nothing to gain from an unqualified UPDATE and rule 2 admits no
     exceptions — a write that names no tenant is one nobody can reason about.
+
+    **Two different failures, two different codes.** Both used to be
+    `report_timeout`, and they are not the same event:
+
+    - A run still `queued` was never claimed. Nothing computed it, because the
+      Analysis Service is down, is not reachable over gRPC, or has
+      `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped, and the
+      operator has to restart something.
+    - A run that reached `running` *was* claimed and did not finish in time. That
+      one is about the work: either the window is genuinely too large or the worker
+      died mid-computation.
+
+    Telling a reader "the report did not complete before the run timeout" when in
+    fact no worker ever existed sends them looking for a slow query that is not
+    there. `insights` is the only kind Core does not compute itself, so it is the
+    only kind that can be queued and abandoned — which is exactly why this was the
+    one message anybody ever saw.
     """
     if not tenant_ids:
         return 0
+    never_claimed = ReportRun.status == "queued"
     result = await session.execute(
         update(ReportRun)
         .where(
@@ -333,8 +351,18 @@ async def expire_stale_report_runs(
         )
         .values(
             status="error",
-            message="The report did not complete before the run timeout.",
-            message_code="report_timeout",
+            message=case(
+                (
+                    never_claimed,
+                    "No analysis worker claimed this report. The Analysis Service "
+                    "may be stopped or unreachable.",
+                ),
+                else_="The report did not complete before the run timeout.",
+            ),
+            message_code=case(
+                (never_claimed, "report_never_claimed"),
+                else_="report_timeout",
+            ),
             message_params={},
             finished_at=now,
         )

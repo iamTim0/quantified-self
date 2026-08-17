@@ -67,6 +67,7 @@ from core.connectors import (
     supports_file_import,
 )
 from core.daily_story import build_day_story, day_window
+from core.jobs import MAX_JOBS, list_jobs
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -3145,6 +3146,39 @@ async def get_day_track(
             "truncated": False,
         }
     return {**envelope, **track}
+
+
+# ─── Jobs ───────────────────────────────────────────────────
+
+
+@app.get("/api/v1/data/jobs")
+async def list_background_jobs(
+    limit: int = Query(50, ge=1, le=MAX_JOBS),
+    since: datetime | None = Query(
+        None,
+        description="When the reader last looked; anything finished after it is unseen",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Every import and report run this workspace has going on, newest first.
+
+    One list, because the platform's work already lives in two tables and a reader
+    could previously only see either by knowing which page to open. A nightly
+    analysis that failed at 03:00 was visible nowhere until somebody opened the
+    analysis tab and read a sentence about a run timeout.
+
+    A read model over `sync_runs` and `report_runs` — no new table and no second
+    lifecycle. A notification that can disagree with the thing it notifies about is
+    worse than no notification, because the reader then has two sources and no way
+    to tell which is lying.
+
+    `since` is the moment the reader last opened the panel; it is a parameter rather
+    than stored state because "have I seen this" belongs to one person's browser,
+    not to the workspace — stored, two people sharing a workspace would clear each
+    other's notifications.
+    """
+    tenant_id = get_current_tenant_id()
+    return await list_jobs(session, tenant_id, limit=limit, since=since)
 
 
 # ─── Workouts ───────────────────────────────────────────────

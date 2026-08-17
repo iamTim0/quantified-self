@@ -377,6 +377,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
             >
               <TopHeader
+                apiBase={API_BASE}
                 userName={userName}
                 userEmail={userEmail}
                 onOpenConfigureModal={() => handleOpenConfigureModal()}

@@ -5,9 +5,11 @@ import { BookOpen, Plus, RefreshCw } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 import LanguageSwitcher from "./LanguageSwitcher";
+import NotificationBell from "./NotificationBell";
 import ThemeSwitcher from "./ThemeSwitcher";
 
 interface TopHeaderProps {
+  apiBase: string;
   userName: string;
   userEmail: string;
   onOpenConfigureModal: () => void;
@@ -16,6 +18,7 @@ interface TopHeaderProps {
 }
 
 export default function TopHeader({
+  apiBase,
   userName,
   userEmail,
   onOpenConfigureModal,
@@ -46,6 +49,7 @@ export default function TopHeader({
           <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
           <span>{t("header.docs")}</span>
         </a>
+        <NotificationBell apiBase={apiBase} />
         <button
           onClick={onRefresh}
           aria-label={t("header.refresh")}

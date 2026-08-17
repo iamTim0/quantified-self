@@ -997,10 +997,36 @@ export const de: Record<MessageKey, string> = {
     "Die Analyse konnte nicht berechnet werden. Das vorherige Ergebnis ist weiterhin verfügbar.",
   "report.error.report_load_failed":
     "Der gespeicherte Bericht konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
+  "report.error.report_timeout":
+    "Die Analyse wurde gestartet, ist aber nicht rechtzeitig fertig geworden. Sie wird nach dem nächsten Import erneut versucht; ein kürzerer Zeitraum läuft in der Regel durch.",
+  "report.error.report_never_claimed":
+    "Kein Analyse-Worker hat diesen Bericht übernommen. Der Analyse-Dienst ist vermutlich gestoppt oder nicht erreichbar — längeres Warten hilft nicht.",
   "report.error.report_refresh_failed":
     "Der Bericht konnte nicht gestartet werden. Prüfe die Verbindung und versuche es erneut.",
   "report.pendingFirstRun":
     "Das wird nach einem Import im Hintergrund berechnet. Jetzt starten, um es sofort zu sehen.",
+
+  // ─── Hintergrund-Jobs (Benachrichtigungsglocke) ───────────
+  "jobs.title": "Aktivität",
+  "jobs.bell": "Hintergrund-Aktivität",
+  "jobs.bellWithCount": "Hintergrund-Aktivität, {count} neu",
+  "jobs.refresh": "Aktualisieren",
+  "jobs.empty": "In den letzten zwei Wochen ist nichts gelaufen.",
+  "jobs.loadFailed": "Die Aktivitätsliste konnte nicht geladen werden.",
+  "jobs.running": "Läuft…",
+  "jobs.pointsStored": "{count} Werte gespeichert",
+  "jobs.overDays": "Über {days} Tage",
+  "jobs.subject.insights": "Analyse",
+  "jobs.subject.gaps": "Lückensuche",
+  "jobs.subject.conflicts": "Konfliktsuche",
+  "jobs.subject.day": "Tagesübersicht",
+  "jobs.trigger.manual": "Von dir gestartet",
+  "jobs.trigger.scheduled": "Geplant",
+  "jobs.trigger.nightly": "Über Nacht",
+  "jobs.trigger.webhook": "Vom Anbieter gesendet",
+  "jobs.trigger.upload": "Aus einem Upload",
+  "jobs.code.report_timeout": "Gestartet, aber nicht rechtzeitig fertig",
+  "jobs.code.report_never_claimed": "Kein Analyse-Worker hat ihn übernommen",
 
   // ─── Primary source selection ─────────────────────────────
   "sources.title": "Metriken aus mehreren Connectoren",

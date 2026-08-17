@@ -8,6 +8,8 @@ const REPORT_ERROR_KEYS: Record<string, MessageKey> = {
   insights_failed: "report.error.insights_failed",
   report_load_failed: "report.error.report_load_failed",
   report_refresh_failed: "report.error.report_refresh_failed",
+  report_timeout: "report.error.report_timeout",
+  report_never_claimed: "report.error.report_never_claimed",
 };
 
 /**

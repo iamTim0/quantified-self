@@ -231,9 +231,23 @@ change until a run finishes.
 - A run that raises is stored as a **failed** run with a stable `message_code`. Failed runs
   are never served, so the reader keeps seeing the last good answer, correctly labelled
   with the time it was computed, instead of an empty page.
-- A run still `queued` or `running` after **30 minutes** is assumed dead — the replica
-  computing it crashed, or the Analysis worker never answered — and is failed with
-  `report_timeout`. Without that, one lost run would block its kind forever.
+- A run still in flight after **30 minutes** is assumed dead and failed, so one lost run
+  cannot block its kind forever. **Which** failure it was is now said explicitly, because
+  the two have nothing in common but their timing:
+
+  | Status when it expired | Code | What actually happened |
+  | --- | --- | --- |
+  | `queued` | `report_never_claimed` | Nothing ever picked it up. The Analysis Service is stopped, unreachable over gRPC, or has `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped. |
+  | `running` | `report_timeout` | It *was* claimed and did not finish. Either the window is genuinely too large, or the worker died mid-computation. |
+
+    Both used to be `report_timeout`. `insights` is the only kind Core does not compute
+    itself, so it is the only kind that can be queued and abandoned — which is why that one
+    message was the one everybody saw, and why telling a reader their report "did not
+    complete before the run timeout" sent them looking for a slow query that was not there.
+
+    Both codes now have entries in both catalogues. Before, neither did: the dashboard fell
+    through to the server's own English sentence and printed it verbatim to a German
+    reader, which is the client half of rule 17 failing quietly.
 - A late result arriving after Core has timed the run out is **refused**
   (`RUN_ALREADY_FINISHED`), because the timeout may already have queued a replacement and a
   stale result must not overwrite a newer one.

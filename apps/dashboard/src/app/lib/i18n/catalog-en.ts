@@ -984,10 +984,36 @@ export const en = {
     "The analysis could not be computed. The previous result remains available.",
   "report.error.report_load_failed":
     "The saved report could not be loaded. Check the connection and try again.",
+  "report.error.report_timeout":
+    "The analysis was started but did not finish in time. It will be retried after the next import; a shorter period usually completes.",
+  "report.error.report_never_claimed":
+    "No analysis worker picked this report up. The analysis service is probably stopped or unreachable — waiting longer will not help.",
   "report.error.report_refresh_failed":
     "The report could not be started. Check the connection and try again.",
   "report.pendingFirstRun":
     "This is computed in the background after an import. Start it now to see it straight away.",
+
+  // ─── Background jobs (notification bell) ──────────────────
+  "jobs.title": "Activity",
+  "jobs.bell": "Background activity",
+  "jobs.bellWithCount": "Background activity, {count} new",
+  "jobs.refresh": "Refresh",
+  "jobs.empty": "Nothing has run in the last two weeks.",
+  "jobs.loadFailed": "The activity list could not be loaded.",
+  "jobs.running": "Running…",
+  "jobs.pointsStored": "{count} values stored",
+  "jobs.overDays": "Over {days} days",
+  "jobs.subject.insights": "Analysis",
+  "jobs.subject.gaps": "Gap scan",
+  "jobs.subject.conflicts": "Conflict scan",
+  "jobs.subject.day": "Daily story",
+  "jobs.trigger.manual": "Started by you",
+  "jobs.trigger.scheduled": "Scheduled",
+  "jobs.trigger.nightly": "Overnight",
+  "jobs.trigger.webhook": "Pushed by provider",
+  "jobs.trigger.upload": "From an upload",
+  "jobs.code.report_timeout": "Started but did not finish in time",
+  "jobs.code.report_never_claimed": "No analysis worker picked it up",
 
   // ─── Primary source selection ─────────────────────────────
   "sources.title": "Metrics from several connectors",
