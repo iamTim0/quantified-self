@@ -980,8 +980,19 @@ async def process_message(
                 )
 
             if not inserted:
-                logger.info(
-                    f"Duplicate event skipped: tenant={tenant_id} key={idempotency_key}"
+                # `debug`, not `info`. A duplicate is the idempotency key doing its
+                # job (rule 4) — the expected outcome of any re-import — and one line
+                # per duplicate made this the loudest stream in the deployment:
+                # 77,000 lines in 48 hours, of which essentially every one said this.
+                # A real error in that stream is unfindable, which turns a log into a
+                # thing nobody reads.
+                #
+                # Nothing is lost by moving it. The count is already kept per run and
+                # reported: `points_duplicate` on the `SyncRun`, via `_tally` below,
+                # which is where a reader asking "how much of that import was new"
+                # should be looking anyway.
+                logger.debug(
+                    "Duplicate event skipped: tenant=%s key=%s", tenant_id, idempotency_key
                 )
 
             if sync_run_id:
