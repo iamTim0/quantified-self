@@ -5,6 +5,7 @@ import { BookOpen, Plus, RefreshCw } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
 import LanguageSwitcher from "./LanguageSwitcher";
+import ThemeSwitcher from "./ThemeSwitcher";
 
 interface TopHeaderProps {
   userName: string;
@@ -31,16 +32,15 @@ export default function TopHeader({
   };
 
   return (
-    <header className="flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-end gap-4 pb-6 mb-6 border-b border-slate-200/70">
-      {/* No "refreshes every 30 seconds" line: the interval it described is gone, and
-          the refresh button below is how the page reloads on purpose. The header was
-          `justify-between` only because that text was the left half of it. */}
-      <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
+    <header className="mb-6 flex flex-col items-stretch gap-4 border-b border-slate-200/70 pb-6 sm:flex-row sm:items-center sm:justify-end">
+      {/* Every control shares the same 44px track. This keeps the row stable when
+          a translated label or the profile name takes a different width. */}
+      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
         <a
           href="/docs/"
           target="_blank"
           rel="noreferrer"
-          className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm"
+          className="hidden h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50 hover:text-slate-900 sm:flex"
           title={t("sidebar.docsTitle")}
         >
           <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
@@ -49,7 +49,7 @@ export default function TopHeader({
         <button
           onClick={onRefresh}
           aria-label={t("header.refresh")}
-          className="flex min-h-11 items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-white border border-slate-200 text-xs font-semibold text-slate-600 hover:text-slate-900 hover:bg-slate-50 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm"
+          className="flex h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50 hover:text-slate-900"
           title={t("header.refreshTitle")}
         >
           <RefreshCw className="w-3.5 h-3.5" />
@@ -59,7 +59,7 @@ export default function TopHeader({
         <button
           onClick={onOpenConfigureModal}
           aria-label={t("header.addConnector")}
-          className="flex min-h-11 items-center gap-2 px-4 py-2.5 rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-[#0d5c3a]/20"
+          className="flex h-11 items-center gap-2 rounded-2xl bg-[#0d5c3a] px-4 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-[#08432a]"
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">{t("header.addConnector")}</span>
@@ -67,12 +67,14 @@ export default function TopHeader({
 
         <LanguageSwitcher />
 
+        <ThemeSwitcher />
+
         <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
 
         {/* User Profile Pill */}
         <button
           onClick={onNavigateToProfile}
-          className="flex items-center gap-3 pl-2 pr-3 py-1.5 rounded-2xl bg-white border border-slate-200 hover:border-slate-300 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-sm group"
+          className="flex h-11 items-center gap-3 rounded-2xl border border-slate-200 bg-white pl-2 pr-3 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-slate-300 group"
         >
           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-xs flex items-center justify-center shadow-inner">
             {getInitials(userName)}

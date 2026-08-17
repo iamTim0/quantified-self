@@ -22,6 +22,23 @@ import {
  */
 
 test.describe("route guard", () => {
+  test("the local health endpoint stays reachable without a session", async ({ request }) => {
+    /** Verifies Fizzbee Invariant: UnhealthyDependencyIsVisible. */
+    // Playwright's normal base URL is the Gateway, which owns the public
+    // `/healthz` route. This assertion is specifically about Next's route guard,
+    // so address the dashboard process itself instead of accidentally testing
+    // the Gateway's identically named liveness endpoint.
+    const dashboardUrl = process.env.E2E_DASHBOARD_URL ?? "http://127.0.0.1:3000";
+    const response = await request.get(`${dashboardUrl}/healthz`, { maxRedirects: 0 });
+
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-type"]).toContain("application/json");
+    expect(await response.json()).toMatchObject({
+      status: "ok",
+      service: "qs-dashboard",
+    });
+  });
+
   test("a signed-out deep link is redirected before the page renders", async ({ page }) => {
     await page.goto("/profile");
 
@@ -52,6 +69,27 @@ test.describe("route guard", () => {
     await page.goto("/quality");
     await expect(page).toHaveURL(/\/quality$/);
     await expectSignedIn(page);
+  });
+
+  test("the workouts tab navigates to its own route", async ({ page, request }) => {
+    const account = newAccount();
+    await signUp(request, account);
+    await signIn(page, account);
+
+    await page.getByRole("button", { name: "Workouts" }).first().click();
+    await expect(page).toHaveURL(/\/workouts$/);
+    await expect(page.getByRole("heading", { name: "Workouts" })).toBeVisible();
+  });
+
+  test("the selected theme survives a reload", async ({ page, request }) => {
+    const account = newAccount();
+    await signUp(request, account);
+    await signIn(page, account);
+
+    await page.getByRole("button", { name: "Dark" }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
   test("public pages stay reachable while signed out", async ({ page }) => {

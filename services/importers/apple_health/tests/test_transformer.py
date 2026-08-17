@@ -179,6 +179,22 @@ def test_transform_invalid_payload():
     assert events_bad == []
 
 
+def test_future_section_is_reported_beside_a_recognised_payload():
+    """A provider addition is accepted and named instead of silently dropped."""
+    from shared_schemas import FieldReportCollector
+
+    report = FieldReportCollector()
+    events = transform_health_auto_export_json(
+        {"data": {"metrics": [], "futureSection": [{"kind": "new"}]}},
+        "tenant_1",
+        "src_1",
+        report=report,
+    )
+
+    assert events == []
+    assert {item.path for item in report.build().unmapped} == {"data.futureSection"}
+
+
 def test_a_reading_without_a_usable_timestamp_is_skipped():
     """It used to be stamped `now()`, which re-keyed the reading on every poll.
 

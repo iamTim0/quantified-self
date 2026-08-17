@@ -865,11 +865,31 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   );
 
   const periodFilter = (
-    <div className="flex items-center gap-2">
-      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+    <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+      <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
         <Calendar className="h-3.5 w-3.5 text-emerald-600" /> {t("explorer.period")}
       </span>
-      <div className="flex rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
+      <select
+        value={dateRangePreset}
+        onChange={(event) => setDateRangePreset(event.target.value as typeof dateRangePreset)}
+        aria-label={t("explorer.period")}
+        className="h-10 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-900 outline-none focus-visible:border-[#0d5c3a] sm:hidden"
+      >
+        {[
+          { id: "7d", label: t("quality.windowDays", { count: 7 }) },
+          { id: "14d", label: t("quality.windowDays", { count: 14 }) },
+          { id: "30d", label: t("quality.windowDays", { count: 30 }) },
+          { id: "90d", label: t("quality.windowDays", { count: 90 }) },
+          { id: "all", label: t("chart.presetAll") },
+          { id: "custom", label: t("chart.presetCustom") },
+        ].map((preset) => (
+          <option key={preset.id} value={preset.id}>
+            {preset.label}
+          </option>
+        ))}
+      </select>
+
+      <div className="hidden min-w-0 flex-wrap rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs sm:flex">
         {[
           { id: "7d", label: t("quality.windowDays", { count: 7 }) },
           { id: "14d", label: t("quality.windowDays", { count: 14 }) },
@@ -893,19 +913,21 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       </div>
 
       {dateRangePreset === "custom" && (
-        <div className="flex items-center gap-1 text-xs">
+        <div className="flex w-full min-w-0 flex-col items-stretch gap-2 text-xs sm:w-auto sm:flex-row sm:items-center">
           <input
             type="date"
             value={customStartDate}
             onChange={(e) => setCustomStartDate(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a]"
+            aria-label={t("explorer.customStart")}
+            className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a] sm:h-auto"
           />
-          <span className="text-slate-400">{t("chart.rangeTo")}</span>
+          <span className="hidden text-slate-400 sm:inline">{t("chart.rangeTo")}</span>
           <input
             type="date"
             value={customEndDate}
             onChange={(e) => setCustomEndDate(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a]"
+            aria-label={t("explorer.customEnd")}
+            className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-[#0d5c3a] sm:h-auto"
           />
         </div>
       )}

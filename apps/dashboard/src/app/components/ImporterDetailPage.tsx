@@ -17,6 +17,7 @@ import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
+import OperatorRunDiagnostics from "./OperatorRunDiagnostics";
 import type { ConnectorItem } from "./ConnectorsPage";
 import {
   durationLabel,
@@ -33,6 +34,7 @@ interface ImporterDetailPageProps {
   tenantId: string;
   connector: ConnectorItem;
   refreshTrigger: number;
+  userRole: string;
   onOpenConfigureModal: (connector: ConnectorItem) => void;
 }
 
@@ -43,6 +45,7 @@ export default function ImporterDetailPage({
   tenantId,
   connector,
   refreshTrigger,
+  userRole,
   onOpenConfigureModal,
 }: ImporterDetailPageProps) {
   const router = useRouter();
@@ -129,10 +132,10 @@ export default function ImporterDetailPage({
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
               {t("importerDetail.eyebrow")}
             </p>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
               {connector.display_name || connector.source_type}
             </h1>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
               {connector.source_type} · {passive ? t("connectors.passive") : t("connectors.active")}
             </p>
           </div>
@@ -141,7 +144,7 @@ export default function ImporterDetailPage({
           <button
             type="button"
             onClick={() => void loadRuns()}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             {t("header.refresh")}
@@ -158,7 +161,7 @@ export default function ImporterDetailPage({
             <button
               type="button"
               onClick={() => setImportOpen(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               {uploadOnly ? t("connectors.upload") : t("connectors.import")}
@@ -168,7 +171,7 @@ export default function ImporterDetailPage({
       </div>
 
       {error && (
-        <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800">
+        <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-200">
           {error}
         </p>
       )}
@@ -197,10 +200,12 @@ export default function ImporterDetailPage({
       </div>
 
       {latest && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <div className="mb-3 flex items-center gap-2">
             <Clock3 className="h-4 w-4 text-[#0d5c3a]" />
-            <h2 className="text-sm font-bold text-slate-900">{t("importerDetail.latestRun")}</h2>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              {t("importerDetail.latestRun")}
+            </h2>
           </div>
           <div className="grid gap-3 text-xs sm:grid-cols-4">
             <DetailValue label={t("importerDetail.status")} value={t(statusKey(latest.status))} />
@@ -218,18 +223,25 @@ export default function ImporterDetailPage({
             />
           </div>
           {messageForRun(t, latest) && (
-            <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
+            <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
               {messageForRun(t, latest)}
             </p>
           )}
+          <OperatorRunDiagnostics
+            run={latest}
+            userRole={userRole}
+            typicalSeconds={typicalSeconds}
+          />
         </section>
       )}
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-[#0d5c3a]" />
-            <h2 className="text-sm font-bold text-slate-900">{t("importerDetail.historyTitle")}</h2>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              {t("importerDetail.historyTitle")}
+            </h2>
           </div>
           <span className="text-[11px] text-slate-400">
             {t("importerDetail.autoRefresh", { seconds: RUN_REFRESH_MS / 1000 })}
@@ -249,7 +261,7 @@ export default function ImporterDetailPage({
             {runs.map((run) => (
               <article
                 key={run.id}
-                className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4"
+                className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/70"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 items-start gap-2.5">
@@ -267,14 +279,14 @@ export default function ImporterDetailPage({
                         >
                           {t(statusKey(run.status))}
                         </span>
-                        <span className="text-[11px] font-semibold text-slate-700">
+                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
                           {t(triggerKey(run.trigger))}
                         </span>
                         <span className="text-[11px] text-slate-400">
                           {formatDateTime(run.started_at)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-500">
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
                         {t("importerDetail.points", {
                           processed: formatNumber(run.points_processed),
                           accepted: formatNumber(run.points_accepted),
@@ -288,7 +300,7 @@ export default function ImporterDetailPage({
                         })}
                       </p>
                       {run.provider_window_start && run.provider_window_end && (
-                        <p className="mt-1 text-[11px] text-slate-400">
+                        <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                           {t("importerDetail.providerWindow", {
                             start: formatDateTime(run.provider_window_start),
                             end: formatDateTime(run.provider_window_end),
@@ -296,7 +308,7 @@ export default function ImporterDetailPage({
                         </p>
                       )}
                       {run.backlog_at_end !== null && run.backlog_at_end !== undefined && (
-                        <p className="mt-1 text-[11px] text-slate-400">
+                        <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
                           {t("importerDetail.backlog", {
                             count: formatNumber(run.backlog_at_end),
                           })}
@@ -316,16 +328,21 @@ export default function ImporterDetailPage({
                     />
                     <DetailValue
                       label={t("importerDetail.requestId")}
-                      value={run.request_id}
+                      value={run.request_id ?? "—"}
                       mono
                     />
                   </div>
                 </div>
                 {messageForRun(t, run) && (
-                  <p className="mt-3 break-words border-t border-slate-200 pt-3 text-xs text-slate-600">
+                  <p className="mt-3 break-words border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
                     {messageForRun(t, run)}
                   </p>
                 )}
+                <OperatorRunDiagnostics
+                  run={run}
+                  userRole={userRole}
+                  typicalSeconds={typicalSeconds}
+                />
               </article>
             ))}
             {hasMore && (
@@ -333,7 +350,7 @@ export default function ImporterDetailPage({
                 type="button"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
               >
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {loadingMore ? t("importerDetail.loadingMore") : t("importerDetail.loadMore")}

@@ -34,6 +34,19 @@ export type TabType =
   | "connectors"
   | "profile";
 
+/** Canonical URL for every tab. Keeping this exhaustive prevents a tab from
+ * silently falling through to the overview when a new destination is added. */
+export const TAB_PATHS: Record<TabType, string> = {
+  overview: "/",
+  explorer: "/explorer",
+  workouts: "/workouts",
+  quality: "/quality",
+  analysis: "/analysis",
+  chat: "/chat",
+  connectors: "/connectors",
+  profile: "/profile",
+};
+
 export interface NavEntry {
   labelKey: MessageKey;
   icon: LucideIcon;

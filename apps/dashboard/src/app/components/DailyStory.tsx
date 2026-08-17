@@ -1,11 +1,62 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { CircleAlert, Clock, RefreshCw } from "lucide-react";
 import { useI18n, type MessageKey } from "../lib/i18n/provider";
 import { describeMetric } from "../lib/metrics/catalog";
 import { useReport } from "../lib/reports";
 import ReportStatus from "./ReportStatus";
+
+const DayLocationMap = dynamic(() => import("./LocationMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[420px] w-full rounded-3xl border border-slate-200 bg-slate-50" />
+  ),
+});
+
+function DeferredDayLocationMap(props: {
+  apiBase: string;
+  day: string;
+  offsetMinutes: number;
+  refreshTrigger: number;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || visible) return;
+    if (!("IntersectionObserver" in window)) {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "300px" },
+    );
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  return (
+    <div ref={hostRef} className="min-h-[420px]" aria-busy={!visible}>
+      {visible ? (
+        <DayLocationMap {...props} />
+      ) : (
+        <div
+          className="h-[420px] w-full animate-pulse rounded-3xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900"
+          aria-hidden="true"
+        />
+      )}
+    </div>
+  );
+}
 
 /**
  * One day, told in the order it happened.
@@ -15,12 +66,10 @@ import ReportStatus from "./ReportStatus";
  * recorded. Those are real numbers that answer no question a person has in the
  * morning.
  *
- * **Yesterday leads, today follows.** Yesterday is a finished day whose
- * importers have run; today is partial by construction, because the connectors
- * feeding it are on a schedule. Showing today first would put the least complete
- * data at the top and invite every gap to be read as a fact. Each lane says when
- * its connector last ran, so "no workout" and "the workout connector last ran at
- * 06:00" are distinguishable — which on the old page they were not.
+ * **Today leads, yesterday follows.** The current day is the question most
+ * readers ask first, even though it is partial by construction. Each lane says
+ * when its connector last ran, so "no workout" and "the workout connector last
+ * ran at 06:00" are distinguishable — which on the old page they were not.
  *
  * **Read from a stored run, not computed on arrival.** This page first fetched
  * both days on every visit, which meant aggregating a day of points — on a
@@ -149,9 +198,13 @@ function MetricValue({ metric }: { metric: LaneMetric }) {
 function DaySection({
   story,
   offsetMinutes,
+  apiBase,
+  refreshTrigger,
 }: {
   story: DayStory;
   offsetMinutes: number;
+  apiBase: string;
+  refreshTrigger: number;
 }) {
   const { t, formatDay, formatDateTime, formatTime, formatNumber, locale } = useI18n();
   const relative = relativeDay(story.day, offsetMinutes);
@@ -160,11 +213,7 @@ function DaySection({
   // recomputed would tell the reader something about their data that is
   // really about the scheduler.
   const heading =
-    relative === "today"
-      ? t("day.today")
-      : relative === "yesterday"
-        ? t("day.yesterday")
-        : "";
+    relative === "today" ? t("day.today") : relative === "yesterday" ? t("day.yesterday") : "";
 
   const timeline = useMemo(
     () =>
@@ -240,6 +289,15 @@ function DaySection({
         </div>
       )}
 
+      {story.lanes.some((lane) => lane.category === "location") && (
+        <DeferredDayLocationMap
+          apiBase={apiBase}
+          day={story.day}
+          offsetMinutes={offsetMinutes}
+          refreshTrigger={refreshTrigger}
+        />
+      )}
+
       {timeline.length > 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4">
           <h3 className="mb-3 text-xs font-bold uppercase tracking-wider text-emerald-700">
@@ -267,14 +325,28 @@ function DaySection({
   );
 }
 
-export default function DailyStory({ apiBase }: { apiBase: string }) {
+export default function DailyStory({
+  apiBase,
+  refreshTrigger = 0,
+}: {
+  apiBase: string;
+  refreshTrigger?: number;
+}) {
   const { t } = useI18n();
   const report = useReport<DayReport>(apiBase, "day");
-  const [yesterday, today] = report.result?.days ?? [];
 
   // The reader's own offset, so a run computed for somebody else's midnight is
   // recomputed rather than shown. The server records it with the run.
   const offset = -new Date().getTimezoneOffset();
+  const days = useMemo(() => {
+    const rank = (story: DayStory): number => {
+      const relative = relativeDay(story.day, offset);
+      return relative === "today" ? 0 : relative === "yesterday" ? 1 : 2;
+    };
+    return [...(report.result?.days ?? [])].sort(
+      (a, b) => rank(a) - rank(b) || b.day.localeCompare(a.day),
+    );
+  }, [offset, report.result?.days]);
   const requestFresh = () => void report.refresh({ offset_minutes: offset });
 
   if (report.loading) {
@@ -300,6 +372,7 @@ export default function DailyStory({ apiBase }: { apiBase: string }) {
           stale={report.stale}
           running={report.running}
           neverComputed={report.status === "never_computed"}
+          error={report.error}
           onRefresh={requestFresh}
         />
       </header>
@@ -310,8 +383,15 @@ export default function DailyStory({ apiBase }: { apiBase: string }) {
         </p>
       ) : null}
 
-      {yesterday && <DaySection story={yesterday} offsetMinutes={offset} />}
-      {today && <DaySection story={today} offsetMinutes={offset} />}
+      {days.map((story) => (
+        <DaySection
+          key={story.day}
+          story={story}
+          offsetMinutes={offset}
+          apiBase={apiBase}
+          refreshTrigger={refreshTrigger}
+        />
+      ))}
     </div>
   );
 }

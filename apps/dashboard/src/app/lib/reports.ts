@@ -41,6 +41,12 @@ export interface ReportEnvelope<T> {
   covers_data_through: string | null;
   params: Record<string, unknown>;
   result: T | null;
+  /** The newest failed attempt, when one exists after the last good result. */
+  error: {
+    code: string;
+    params: Record<string, string | number | boolean>;
+    message?: string | null;
+  } | null;
 }
 
 export interface ReportState<T> extends ReportEnvelope<T> {
@@ -65,6 +71,7 @@ const EMPTY: Omit<ReportEnvelope<never>, "kind"> = {
   covers_data_through: null,
   params: {},
   result: null,
+  error: null,
 };
 
 /**
@@ -75,7 +82,10 @@ const EMPTY: Omit<ReportEnvelope<never>, "kind"> = {
  * change until a run finishes.
  */
 export function useReport<T>(apiBase: string, kind: ReportKind): ReportState<T> {
-  const [envelope, setEnvelope] = useState<ReportEnvelope<T>>({ kind, ...EMPTY } as ReportEnvelope<T>);
+  const [envelope, setEnvelope] = useState<ReportEnvelope<T>>({
+    kind,
+    ...EMPTY,
+  } as ReportEnvelope<T>);
   const [loading, setLoading] = useState(true);
 
   const reload = useCallback(async () => {
@@ -84,11 +94,21 @@ export function useReport<T>(apiBase: string, kind: ReportKind): ReportState<T> 
     // spinner that nothing would ever stop.
     try {
       const response = await apiFetch(`${apiBase}/api/v1/data/reports/${kind}`);
-      if (!response.ok) return;
+      if (!response.ok) {
+        setEnvelope((current) => ({
+          ...current,
+          running: false,
+          error: { code: "report_load_failed", params: {} },
+        }));
+        return;
+      }
       setEnvelope((await response.json()) as ReportEnvelope<T>);
     } catch {
-      // A network blip is not news the page can act on; the next poll or the
-      // next visit re-reads. What matters is that it does not get stuck.
+      setEnvelope((current) => ({
+        ...current,
+        running: false,
+        error: { code: "report_load_failed", params: {} },
+      }));
     } finally {
       setLoading(false);
     }
@@ -104,13 +124,25 @@ export function useReport<T>(apiBase: string, kind: ReportKind): ReportState<T> 
       // refresh button and both selectors stayed disabled until a reload.
       setEnvelope((current) => ({ ...current, running: true }));
       try {
-        await apiFetch(`${apiBase}/api/v1/data/reports/${kind}/refresh`, {
+        const response = await apiFetch(`${apiBase}/api/v1/data/reports/${kind}/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(params ?? {}),
         });
+        if (!response.ok) {
+          setEnvelope((current) => ({
+            ...current,
+            running: false,
+            error: { code: "report_refresh_failed", params: {} },
+          }));
+          return;
+        }
       } catch {
-        setEnvelope((current) => ({ ...current, running: false }));
+        setEnvelope((current) => ({
+          ...current,
+          running: false,
+          error: { code: "report_refresh_failed", params: {} },
+        }));
         return;
       }
       await reload();

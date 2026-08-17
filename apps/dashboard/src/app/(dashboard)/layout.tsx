@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Sidebar, { TabType } from "../components/Sidebar";
+import { TAB_PATHS } from "../components/navigation";
 import MobileTabBar from "../components/MobileTabBar";
 import TopHeader from "../components/TopHeader";
 import ConnectorModal from "../components/ConnectorModal";
@@ -78,14 +79,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
 
   const getTabFromPathname = (path: string): TabType => {
-    if (path.startsWith("/explorer")) return "explorer";
-    // Matches the detail route too, so the tab stays lit while a session is open.
-    if (path.startsWith("/workouts")) return "workouts";
-    if (path.startsWith("/connectors")) return "connectors";
-    if (path.startsWith("/quality")) return "quality";
-    if (path.startsWith("/analysis")) return "analysis";
-    if (path.startsWith("/chat")) return "chat";
-    if (path.startsWith("/profile") || path.startsWith("/settings")) return "profile";
+    // Match the detail routes too, so the parent tab stays lit while a session
+    // or connector is open. The explicit root check avoids every path matching
+    // the overview prefix.
+    if (path === "/" || path === "/dashboard") return "overview";
+    const match = (Object.entries(TAB_PATHS) as Array<[TabType, string]>).find(
+      ([tab, target]) => tab !== "overview" && (path === target || path.startsWith(`${target}/`)),
+    );
+    if (match) return match[0];
+    if (path.startsWith("/settings")) return "profile";
     return "overview";
   };
 
@@ -93,13 +95,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const handleTabChange = useCallback(
     (tab: TabType) => {
-      if (tab === "explorer") router.push("/explorer");
-      else if (tab === "connectors") router.push("/connectors");
-      else if (tab === "quality") router.push("/quality");
-      else if (tab === "analysis") router.push("/analysis");
-      else if (tab === "chat") router.push("/chat");
-      else if (tab === "profile") router.push("/profile");
-      else router.push("/");
+      router.push(TAB_PATHS[tab]);
     },
     [router],
   );
@@ -369,7 +365,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <main
               id="main-content"
               tabIndex={-1}
-              className="flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
+              className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
             >
               <TopHeader
                 userName={userName}

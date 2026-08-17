@@ -15,6 +15,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from analysis.auth_storage import persist_auth_blob, restore_auth_blob
 from analysis.config import settings
 
 
@@ -70,6 +71,7 @@ class CodexAppServer:
 
             settings.chat_workdir.mkdir(parents=True, exist_ok=True)
             settings.chat_codex_home.mkdir(parents=True, exist_ok=True)
+            restore_auth_blob()
             args = [
                 executable,
                 "app-server",
@@ -173,6 +175,10 @@ class CodexAppServer:
             "account_type": account.get("type"),
             "plan_type": account.get("planType"),
         }
+
+    async def persist_auth(self) -> bool:
+        """Persist Codex's opaque auth cache without inspecting its contents."""
+        return await asyncio.to_thread(persist_auth_blob)
 
     async def start_device_login(self) -> dict[str, str]:
         """Begin ChatGPT device authorization through Codex."""

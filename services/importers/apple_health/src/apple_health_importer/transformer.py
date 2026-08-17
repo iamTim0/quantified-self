@@ -39,6 +39,26 @@ from shared_schemas.sessions import session_metadata
 
 logger = logging.getLogger(__name__)
 
+
+class AppleHealthPayloadError(ValueError):
+    """A safe, machine-readable structural error in a push payload.
+
+    The error deliberately carries only a stable code and bounded parameters.  The
+    payload itself can contain special-category health data, so neither the unknown
+    key nor a value is copied into an exception, a log line, or a sync-run message.
+    """
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        params: Mapping[str, str | int | float | bool] | None = None,
+    ) -> None:
+        self.code = code
+        self.params = dict(params or {})
+        super().__init__(code)
+
+
 #: Prefix for HealthKit types the catalog does not know. Registered as a dynamic
 #: namespace in the registry, so these are legal without being catalogued.
 NAMESPACE = "apple_health_"
@@ -353,6 +373,81 @@ UNREAD_SECTIONS: tuple[str, ...] = (
     "medications",
     "heartRateNotifications",
 )
+
+# Health Auto Export has used both a direct object and a `{data: {...}}` envelope.
+# Keep the accepted vocabulary explicit: accepting any object and then producing zero
+# points made a provider schema change look like a successful empty import.
+HEALTH_AUTO_EXPORT_SECTIONS = frozenset(
+    {
+        "metrics",
+        "workouts",
+        *UNREAD_SECTIONS,
+    }
+)
+HEALTH_AUTO_EXPORT_METADATA_KEYS = frozenset(
+    {"exportedAt", "exported_at", "dataVersion", "version"}
+)
+
+
+def validate_health_auto_export_payload(payload: Any) -> dict[str, Any]:
+    """Validate the push shape and return its data object.
+
+    This is intentionally a structural check, not a provider-value validator.  The
+    transformer remains tolerant of new metric names (they use the registered
+    ``apple_health_`` namespace), while the HTTP boundary rejects a different JSON
+    document entirely instead of acknowledging it as an empty import.
+    """
+    if not isinstance(payload, dict):
+        raise AppleHealthPayloadError("payload_not_object")
+    if not payload:
+        raise AppleHealthPayloadError("payload_empty")
+
+    data_content: Any = payload
+    if "data" in payload:
+        root_keys = set(payload) - {"data", *HEALTH_AUTO_EXPORT_METADATA_KEYS}
+        if root_keys:
+            raise AppleHealthPayloadError("payload_unrecognized")
+        data_content = payload["data"]
+        if not isinstance(data_content, dict):
+            raise AppleHealthPayloadError("payload_data_not_object")
+
+    if not isinstance(data_content, dict):
+        raise AppleHealthPayloadError("payload_data_not_object")
+
+    present_sections = HEALTH_AUTO_EXPORT_SECTIONS.intersection(data_content)
+    if not present_sections:
+        unknown_keys = set(data_content) - HEALTH_AUTO_EXPORT_METADATA_KEYS
+        # An object made solely of an unknown shape is likely the wrong webhook
+        # schema. Do not name its keys in the error because they may be personal.
+        raise AppleHealthPayloadError(
+            "payload_unrecognized" if unknown_keys else "payload_missing_sections"
+        )
+
+    for section in present_sections:
+        value = data_content[section]
+        if not isinstance(value, list):
+            raise AppleHealthPayloadError(
+                "payload_section_not_array", params={"section": section}
+            )
+        if section == "metrics":
+            for metric in value:
+                if not isinstance(metric, dict) or not isinstance(metric.get("name"), str):
+                    raise AppleHealthPayloadError(
+                        "payload_metric_invalid", params={"section": section}
+                    )
+                entries = metric.get("data")
+                if entries is not None and not isinstance(entries, list):
+                    raise AppleHealthPayloadError(
+                        "payload_metric_data_invalid", params={"section": section}
+                    )
+        elif section == "workouts":
+            for workout in value:
+                if not isinstance(workout, dict):
+                    raise AppleHealthPayloadError(
+                        "payload_workout_invalid", params={"section": section}
+                    )
+
+    return data_content
 
 #: Category records have no numeric `value`, but they are still provider data. Event
 #: categories become a count; a mindful session states an interval and becomes its
@@ -686,6 +781,15 @@ def transform_health_auto_export_json(
 
     metrics_list = data_content.get("metrics") or []
     workouts_list = data_content.get("workouts") or []
+
+    # Provider additions beside recognised sections are valid forward-compatible
+    # payloads. They are not discarded: their shape is named in the field report so
+    # the Data Quality Center makes the new section visible without storing its data.
+    unknown_sections = set(data_content) - (
+        HEALTH_AUTO_EXPORT_SECTIONS | HEALTH_AUTO_EXPORT_METADATA_KEYS
+    )
+    for section in sorted(unknown_sections):
+        report.unmapped(f"data.{section}", data_content[section])
 
     for section in UNREAD_SECTIONS:
         entries = data_content.get(section)

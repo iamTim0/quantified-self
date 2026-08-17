@@ -18,7 +18,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
     <div
       role="group"
       aria-label={t("lang.label")}
-      className={`inline-flex overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`inline-flex h-11 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}
     >
       {LOCALES.map((candidate) => {
         const active = candidate === locale;
@@ -29,7 +29,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
             onClick={() => setLocale(candidate)}
             aria-pressed={active}
             title={t("lang.switchTo", { language: LOCALE_LABELS[candidate] })}
-            className={`px-2.5 py-2 text-[11px] font-bold tracking-wider transition-colors ${
+            className={`h-full px-2.5 text-[11px] font-bold tracking-wider transition-colors ${
               active
                 ? "bg-[#0d5c3a] text-white"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"

@@ -5,6 +5,8 @@ import "./globals.css";
 import { LocaleProvider } from "./lib/i18n/provider";
 import { requestLocale } from "./lib/i18n/request";
 import { translate } from "./lib/i18n/translate";
+import { ThemeProvider } from "./lib/theme/provider";
+import { THEME_INIT_SCRIPT } from "./lib/theme/theme";
 
 const outfit = Outfit({
   variable: "--font-outfit",
@@ -27,16 +29,14 @@ const jetbrainsMono = JetBrains_Mono({
  * surface — the colour actually at the top of the viewport once the outer
  * padding collapses at `p-0` on small screens.
  *
- * `colorScheme` is the second half, and it is what stops Windows dark mode
- * rendering the 16 native `<select>` dropdowns dark-on-dark: their list,
- * scrollbar and focus ring come from the OS, not from our CSS. The interface is
- * a light one — three `dark:` utilities in the entire codebase — so it says so
- * once here rather than leaving each control to guess. Also set in
- * `globals.css`, because a `<meta>` tag arrives after first paint.
+ * `colorScheme` is the second half, and it is what stops native `<select>`
+ * dropdowns rendering dark-on-dark. The actual value follows the persisted
+ * dashboard preference in `globals.css`; this metadata is the safe server-side
+ * default before the browser's theme bootstrap runs.
  */
 export const viewport: Viewport = {
   themeColor: "#f8fafc",
-  colorScheme: "light",
+  colorScheme: "light dark",
 };
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -58,9 +58,17 @@ export default async function RootLayout({
     <html
       lang={locale}
       className={`${outfit.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      data-theme="light"
+      data-theme-preference="system"
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-neutral-950 text-white font-sans">
-        <LocaleProvider initialLocale={locale}>{children}</LocaleProvider>
+      <head>
+        <script id="theme-init" dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
+      <body className="min-h-full flex flex-col font-sans">
+        <LocaleProvider initialLocale={locale}>
+          <ThemeProvider>{children}</ThemeProvider>
+        </LocaleProvider>
       </body>
     </html>
   );

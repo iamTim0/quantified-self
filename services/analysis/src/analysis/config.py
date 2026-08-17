@@ -49,12 +49,14 @@ class Settings(BaseSettings):
     MCP_ALLOWED_ORIGINS: str = ""
 
     # The chat uses the official Codex app server and therefore accepts a
-    # ChatGPT subscription login instead of an OpenAI API key. Codex keeps that
-    # credential in the operating-system keyring; the platform never reads,
-    # logs, persists, or forwards it.
+    # ChatGPT subscription login instead of an OpenAI API key. Analysis never
+    # parses or logs the credential. In Compose, Codex's live auth.json remains
+    # on a RAM-backed CODEX_HOME and only an encrypted opaque copy is persisted.
     CHAT_ENABLED: bool = True
     CHAT_CODEX_COMMAND: str = "codex"
-    CHAT_CREDENTIALS_STORE: Literal["keyring", "file"] = "keyring"
+    CHAT_CREDENTIALS_STORE: Literal["keyring", "file", "auto"] = "keyring"
+    ENCRYPTION_KEY: str = "dev-secret-shared-encryption-key-qs-2026"
+    CHAT_AUTH_BLOB_PATH: str = ""
     CHAT_MODEL: str = ""
     CHAT_ALLOWED_ROLES: str = "owner"
     CHAT_THREAD_TTL_MINUTES: int = 720
@@ -120,6 +122,16 @@ class Settings(BaseSettings):
             Path(configured)
             if configured
             else Path(tempfile.gettempdir()) / "quantified-self-codex"
+        )
+
+    @property
+    def chat_auth_blob_path(self) -> Path:
+        """Encrypted opaque Codex auth cache; never the live ``auth.json``."""
+        configured = self.CHAT_AUTH_BLOB_PATH.strip()
+        return (
+            Path(configured)
+            if configured
+            else Path(tempfile.gettempdir()) / "quantified-self-codex-auth.enc"
         )
 
 

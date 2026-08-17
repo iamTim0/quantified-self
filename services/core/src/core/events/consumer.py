@@ -546,7 +546,18 @@ async def _process_batch_message(msg: Any, envelope: dict[str, Any]) -> None:
                 )
 
     if failed:
-        await _retry_or_give_up(msg)
+        if all(
+            isinstance(envelope.get(key), str) and envelope.get(key)
+            for key in ("tenant_id", "source_id", "sync_run_id")
+        ):
+            await _retry_or_give_up(
+                msg,
+                tenant_id=envelope["tenant_id"],
+                source_id=envelope["source_id"],
+                sync_run_id=envelope["sync_run_id"],
+            )
+        else:
+            await _retry_or_give_up(msg)
         return
     await msg.ack()
 
@@ -1030,7 +1041,15 @@ async def process_message(
             source_id,
             type(exc).__name__,
         )
-        await _retry_or_give_up(msg)
+        if tenant_id and source_id and sync_run_id:
+            await _retry_or_give_up(
+                msg,
+                tenant_id=tenant_id,
+                source_id=source_id,
+                sync_run_id=sync_run_id,
+            )
+        else:
+            await _retry_or_give_up(msg)
 
 
 #: Attempts before an event is given up on. A durable consumer's ack window is finite
@@ -1045,7 +1064,76 @@ async def process_message(
 MAX_DELIVERY_ATTEMPTS = 5
 
 
-async def _retry_or_give_up(msg) -> None:
+async def _mark_sync_run_delivery_failure(
+    *,
+    tenant_id: str,
+    source_id: str,
+    sync_run_id: str,
+    attempts: int,
+) -> None:
+    """Close the one run whose event JetStream permanently abandoned.
+
+    The importer has already reported ``loading`` by this point.  If the consumer
+    terminates the final delivery without this transition, ``points_processed`` can
+    never reach ``points_expected`` and that run remains in the dashboard forever.
+    Every predicate names tenant, connector and run so a forged or stale event cannot
+    mutate another import; an already terminal run is left untouched.
+    """
+    if not all(
+        isinstance(value, str) and value
+        for value in (tenant_id, source_id, sync_run_id)
+    ):
+        return
+
+    now = datetime.now(timezone.utc)
+    message = (
+        f"Core stopped retrying this import event after {max(1, attempts)} delivery "
+        "attempts. The import is incomplete; retry the source."
+    )
+    async with async_session_maker() as session:
+        transition = await session.execute(
+            update(SyncRun)
+            .where(
+                SyncRun.id == sync_run_id,
+                SyncRun.tenant_id == tenant_id,
+                SyncRun.source_id == source_id,
+                SyncRun.status.in_(("queued", "running", "loading")),
+                SyncRun.finished_at.is_(None),
+            )
+            .values(
+                status="error",
+                message=message[:512],
+                message_code="core_ingest_delivery_failed",
+                message_params={"attempts": max(1, attempts)},
+                finished_at=now,
+            )
+            .returning(SyncRun.source_id)
+        )
+        changed_source_id = transition.scalar_one_or_none()
+        if changed_source_id is not None:
+            source_result = await session.execute(
+                select(DataSource).where(
+                    DataSource.tenant_id == tenant_id,
+                    DataSource.id == changed_source_id,
+                )
+            )
+            source = source_result.scalars().first()
+            if source is not None:
+                config = dict(source.config or {})
+                config["sync_status"] = "error"
+                config["last_sync_at"] = now.isoformat()
+                config["last_sync_message"] = message[:512]
+                source.config = config
+        await session.commit()
+
+
+async def _retry_or_give_up(
+    msg: Any,
+    *,
+    tenant_id: str | None = None,
+    source_id: str | None = None,
+    sync_run_id: str | None = None,
+) -> None:
     """Leave a message for redelivery, unless it has had enough attempts.
 
     JetStream's `max_deliver` defaults to unlimited, and "unlimited" for an event that
@@ -1060,6 +1148,20 @@ async def _retry_or_give_up(msg) -> None:
 
     if delivered < MAX_DELIVERY_ATTEMPTS:
         return  # Not acked: JetStream redelivers (at-least-once).
+
+    if tenant_id and source_id and sync_run_id:
+        try:
+            await _mark_sync_run_delivery_failure(
+                tenant_id=tenant_id,
+                source_id=source_id,
+                sync_run_id=sync_run_id,
+                attempts=delivered,
+            )
+        except Exception:  # noqa: BLE001 - termination must still release the slot
+            logger.error(
+                "Could not mark the abandoned ingest event's sync run as failed; "
+                "terminating the broker delivery anyway."
+            )
 
     logger.error(
         "Giving up on an event after %d attempts and terminating it. The ack window is "

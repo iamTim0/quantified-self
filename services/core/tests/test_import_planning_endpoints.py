@@ -513,6 +513,21 @@ async def test_sync_history_includes_duration_and_expected_points():
         assert run["status"] == "error"
         assert run["points_expected"] == 42
         assert run["duration_seconds"] == pytest.approx(3.0)
+        assert run["request_id"] == "req-duration"
+        assert run["message"] == "archive rejected"
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            member_response = await ac.get(
+                f"/api/v1/data/sources/{source_id}/sync-runs",
+                headers=auth_headers(tenant_id, role="member"),
+            )
+
+        assert member_response.status_code == 200
+        member_run = member_response.json()["runs"][0]
+        assert member_run["request_id"] is None
+        assert member_run["message"] is None
     finally:
         await cleanup_test_tenant(tenant_id)
 

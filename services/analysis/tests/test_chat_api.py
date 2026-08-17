@@ -57,6 +57,7 @@ class FakeCodex:
 
     def __init__(self, account_type: str | None = "chatgpt") -> None:
         self.account_type = account_type
+        self.persisted = False
         self.tools: list[dict[str, Any]] = []
         self.contexts: list[ToolContext] = []
 
@@ -66,6 +67,10 @@ class FakeCodex:
             "account_type": self.account_type,
             "plan_type": "plus" if self.account_type == "chatgpt" else None,
         }
+
+    async def persist_auth(self) -> bool:
+        self.persisted = True
+        return True
 
     async def start_device_login(self) -> dict[str, str]:
         return {
@@ -183,7 +188,9 @@ def test_non_configured_role_cannot_use_operator_subscription() -> None:
     assert response.status_code == 403
 
 
-def test_status_exposes_plan_but_not_account_identity() -> None:
+def test_status_exposes_plan_but_not_account_identity(_chat_fakes) -> None:
+    """An authenticated account check snapshots the opaque Codex auth cache."""
+    _, codex, _ = _chat_fakes
     with TestClient(app, base_url="http://localhost") as client:
         response = client.get("/api/v1/chat/status", headers=_headers())
     assert response.json() == {
@@ -192,6 +199,7 @@ def test_status_exposes_plan_but_not_account_identity() -> None:
         "plan_type": "plus",
         "code": "READY",
     }
+    assert codex.persisted is True
 
 
 def test_device_login_uses_subscription_flow() -> None:

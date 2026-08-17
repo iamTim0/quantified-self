@@ -431,9 +431,7 @@ export default function DataQualityTab({ apiBase }: Props) {
         computedAt={gapReport.computed_at}
         stale={gapReport.stale || conflictReport.stale}
         running={gapReport.running || conflictReport.running}
-        neverComputed={
-          gapReport.status === "never_computed" && !gapReport.loading
-        }
+        neverComputed={gapReport.status === "never_computed" && !gapReport.loading}
         onRefresh={() => {
           void gapReport.refresh({
             window_days: windowDays,
@@ -558,49 +556,70 @@ export default function DataQualityTab({ apiBase }: Props) {
       )}
 
       {unsupported.length > 0 && (
-        <article className="rounded-3xl border border-amber-200 bg-amber-50/60 p-6">
-          <h2 className="mb-1 font-bold text-amber-900">{t("quality.unsupportedTitle")}</h2>
-          <p className="mb-4 text-xs leading-relaxed text-amber-800">
-            {t("quality.unsupportedHint")}
-          </p>
+        <details className="group rounded-3xl border border-amber-200 bg-amber-50/60 p-6 dark:border-amber-800/70 dark:bg-amber-950/30">
+          <summary className="cursor-pointer list-none font-bold text-amber-950 marker:hidden dark:text-amber-100">
+            <span className="flex items-center justify-between gap-3">
+              <span>{t("quality.unsupportedSummary", { count: unsupported.length })}</span>
+              <span className="text-xs font-semibold text-amber-700 transition group-open:rotate-180 dark:text-amber-300">
+                ↓
+              </span>
+            </span>
+          </summary>
+          <div className="mt-4">
+            <h2 className="mb-1 font-bold text-amber-900 dark:text-amber-100">
+              {t("quality.unsupportedTitle")}
+            </h2>
+            <p className="mb-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+              {t("quality.unsupportedHint")}
+            </p>
+            <p className="mb-4 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+              {t("quality.unsupportedLifecycle")}
+            </p>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-amber-200 text-[11px] font-bold uppercase tracking-wider text-amber-700">
-                  <th className="pb-2 pr-3">{t("quality.unsupportedConnector")}</th>
-                  <th className="pb-2 pr-3">{t("quality.unsupportedField")}</th>
-                  <th className="pb-2 pr-3">{t("quality.unsupportedKind")}</th>
-                  <th className="pb-2 pr-3 text-right">{t("quality.unsupportedSeen")}</th>
-                  <th className="pb-2 text-right">{t("quality.unsupportedLastSeen")}</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-amber-100">
-                {unsupported.map((field) => (
-                  <tr key={`${field.source_id}:${field.field_path}`}>
-                    <td className="py-2 pr-3 font-semibold text-amber-900">
-                      {field.connector_name || field.source_type}
-                    </td>
-                    <td className="py-2 pr-3 font-mono text-amber-900">{field.field_path}</td>
-                    <td className="py-2 pr-3 text-amber-700">{field.value_kind}</td>
-                    <td className="py-2 pr-3 text-right text-amber-700">{field.occurrences}</td>
-                    <td className="py-2 text-right text-amber-700">
-                      {formatDate(field.last_seen_at)}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-amber-200 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:text-amber-300">
+                    <th className="pb-2 pr-3">{t("quality.unsupportedConnector")}</th>
+                    <th className="pb-2 pr-3">{t("quality.unsupportedField")}</th>
+                    <th className="pb-2 pr-3">{t("quality.unsupportedKind")}</th>
+                    <th className="pb-2 pr-3 text-right">{t("quality.unsupportedSeen")}</th>
+                    <th className="pb-2 text-right">{t("quality.unsupportedLastSeen")}</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-amber-100 dark:divide-amber-900">
+                  {unsupported.map((field) => (
+                    <tr key={`${field.source_id}:${field.field_path}`}>
+                      <td className="py-2 pr-3 font-semibold text-amber-900 dark:text-amber-100">
+                        {field.connector_name || field.source_type}
+                      </td>
+                      <td className="py-2 pr-3 font-mono text-amber-900 dark:text-amber-100">
+                        {field.field_path}
+                      </td>
+                      <td className="py-2 pr-3 text-amber-700 dark:text-amber-300">
+                        {field.value_kind}
+                      </td>
+                      <td className="py-2 pr-3 text-right text-amber-700 dark:text-amber-300">
+                        {field.occurrences}
+                      </td>
+                      <td className="py-2 text-right text-amber-700 dark:text-amber-300">
+                        {formatDate(field.last_seen_at)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-          <button
-            type="button"
-            onClick={() => void copyFieldReport()}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
-          >
-            {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
-          </button>
-        </article>
+            <button
+              type="button"
+              onClick={() => void copyFieldReport()}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-900/60"
+            >
+              {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
+            </button>
+          </div>
+        </details>
       )}
 
       {quarantine.length > 0 && (

@@ -137,6 +137,7 @@ from core.reports import (
     fail_report_run,
     finish_report_run,
     has_in_flight_report,
+    latest_failed_report,
     latest_successful_report,
     metric_source_coverage,
     open_report_run,
@@ -3185,8 +3186,22 @@ async def get_report(
     tenant_id = get_current_tenant_id()
     kind = _validated_report_kind(kind)
     run = await latest_successful_report(session, tenant_id, kind)
+    failed = await latest_failed_report(session, tenant_id, kind)
     high_water = await tenant_data_high_water(session, tenant_id)
-    payload = report_payload(run, stale=report_is_stale(run, high_water))
+    # Only expose a failure when it happened after the answer currently served.
+    # An old failed attempt is historical noise once a newer run succeeded.
+    error = (
+        failed
+        if failed is not None
+        and (
+            run is None
+            or failed.finished_at is None
+            or run.finished_at is None
+            or failed.finished_at > run.finished_at
+        )
+        else None
+    )
+    payload = report_payload(run, stale=report_is_stale(run, high_water), error=error)
     payload["kind"] = kind
     payload["running"] = await has_in_flight_report(
         session, tenant_id, kind, now=datetime.now(timezone.utc)
@@ -3504,11 +3519,16 @@ def _run_duration_seconds(run: SyncRun, *, now: datetime | None = None) -> float
     return round((finished_at - started_at).total_seconds(), 1)
 
 
-def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dict[str, Any]:
-    """Serialize the shared run shape used by connector and global history views."""
+def _sync_run_payload(
+    run: SyncRun,
+    *,
+    connector_name: str | None = None,
+    include_diagnostics: bool = False,
+) -> dict[str, Any]:
+    """Serialize the run shape, exposing operator diagnostics only by role."""
     return {
         "id": run.id,
-        "request_id": run.request_id,
+        "request_id": run.request_id if include_diagnostics else None,
         "source_id": run.source_id,
         "source_type": run.source_type,
         "connector_name": connector_name,
@@ -3531,7 +3551,7 @@ def _sync_run_payload(run: SyncRun, *, connector_name: str | None = None) -> dic
         "backlog_at_start": run.backlog_at_start,
         "backlog_at_end": run.backlog_at_end,
         "skipped_ranges": run.skipped_ranges,
-        "message": run.message,
+        "message": run.message if include_diagnostics else None,
         "message_code": run.message_code,
         "message_params": run.message_params or {},
         "started_at": run.started_at.isoformat() if run.started_at else None,
@@ -4063,6 +4083,7 @@ async def list_sync_runs(
     source_ref: str,
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0, le=10000),
+    principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_session),
 ):
     """Import history for one connector, newest first.
@@ -4095,7 +4116,15 @@ async def list_sync_runs(
         "offset": offset,
         "limit": limit,
         "has_more": len(runs) == limit,
-        "runs": [_sync_run_payload(run, connector_name=source.display_name) for run in runs],
+        "runs": [
+            _sync_run_payload(
+                run,
+                connector_name=source.display_name,
+                include_diagnostics=principal.kind == "user"
+                and principal.role in {"owner", "admin"},
+            )
+            for run in runs
+        ],
     }
 
 
@@ -4105,6 +4134,7 @@ async def list_all_sync_runs(
     offset: int = Query(0, ge=0, le=10000),
     status: str | None = Query(None, min_length=1, max_length=32),
     source_type: str | None = Query(None, min_length=1, max_length=64),
+    principal: Principal = Depends(get_current_principal),
     session: AsyncSession = Depends(get_session),
 ):
     """List the tenant's import runs across all connector instances."""
@@ -4128,7 +4158,12 @@ async def list_all_sync_runs(
 
     rows = (await session.execute(query)).all()
     runs = [
-        _sync_run_payload(run, connector_name=connector_name)
+        _sync_run_payload(
+            run,
+            connector_name=connector_name,
+            include_diagnostics=principal.kind == "user"
+            and principal.role in {"owner", "admin"},
+        )
         for run, connector_name in rows
     ]
     return {

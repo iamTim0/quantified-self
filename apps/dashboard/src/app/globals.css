@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 /* Self-hosted so the map needs no third-party script or stylesheet. The former
    unpkg.com CDN load was blocked by our own CSP, which left the map a grey box. */
 @import "leaflet/dist/leaflet.css";
@@ -105,6 +106,31 @@
   --radius: 1.25rem;
 }
 
+[data-theme="dark"] {
+  color-scheme: dark;
+  --background: #0b1220;
+  --foreground: #e5edf7;
+  --card: #111c2d;
+  --card-foreground: #e5edf7;
+  --popover: #111c2d;
+  --popover-foreground: #e5edf7;
+  --primary: #34d399;
+  --primary-hover: #6ee7b7;
+  --primary-foreground: #06261a;
+  --secondary: #18263b;
+  --secondary-foreground: #e5edf7;
+  --muted: #18263b;
+  --muted-foreground: #9fb0c6;
+  --accent: #34d399;
+  --accent-light: #123c31;
+  --accent-foreground: #6ee7b7;
+  --destructive: #fb7185;
+  --destructive-foreground: #2b0a13;
+  --border: #2b3d56;
+  --input: #2b3d56;
+  --ring: #34d399;
+}
+
 body {
   background-color: var(--background);
   color: var(--foreground);
@@ -115,6 +141,99 @@ body {
     system-ui,
     -apple-system,
     sans-serif;
+}
+
+/*
+ * Most dashboard surfaces intentionally use Tailwind's neutral utility names.
+ * These theme translations keep the existing component language coherent while
+ * allowing new screens to use semantic variables directly. The selectors are
+ * scoped to the resolved theme, so the light palette remains byte-for-byte the
+ * default and native controls follow the same `color-scheme` as the shell.
+ */
+[data-theme="dark"] .bg-white {
+  background-color: var(--card) !important;
+}
+[data-theme="dark"] .bg-\[\#f8fafc\],
+[data-theme="dark"] .bg-slate-50 {
+  background-color: var(--background) !important;
+}
+[data-theme="dark"] .bg-\[\#fcfdfe\] {
+  background-color: var(--card) !important;
+}
+[data-theme="dark"] .bg-slate-100 {
+  background-color: var(--secondary) !important;
+}
+[data-theme="dark"] .bg-slate-200,
+[data-theme="dark"] .bg-slate-200\/60 {
+  background-color: #17243a !important;
+}
+[data-theme="dark"] .bg-emerald-50 {
+  background-color: #123c31 !important;
+}
+[data-theme="dark"] .bg-emerald-100 {
+  background-color: #164e3b !important;
+}
+[data-theme="dark"] .bg-amber-50,
+[data-theme="dark"] .bg-amber-100 {
+  background-color: #3c2d16 !important;
+}
+[data-theme="dark"] .bg-rose-50,
+[data-theme="dark"] .bg-red-50 {
+  background-color: #3b1d2a !important;
+}
+[data-theme="dark"] .text-slate-900 {
+  color: var(--foreground) !important;
+}
+[data-theme="dark"] .text-slate-800,
+[data-theme="dark"] .text-slate-700 {
+  color: #d7e3f1 !important;
+}
+[data-theme="dark"] .text-slate-600,
+[data-theme="dark"] .text-slate-500 {
+  color: #aabbd0 !important;
+}
+[data-theme="dark"] .text-slate-400 {
+  color: #8295ad !important;
+}
+[data-theme="dark"] .text-emerald-800,
+[data-theme="dark"] .text-emerald-900 {
+  color: #9ce8c8 !important;
+}
+[data-theme="dark"] .text-amber-800,
+[data-theme="dark"] .text-amber-900 {
+  color: #f6d58b !important;
+}
+[data-theme="dark"] .text-rose-700,
+[data-theme="dark"] .text-red-700,
+[data-theme="dark"] .text-red-800 {
+  color: #fda4af !important;
+}
+[data-theme="dark"] .border-slate-100,
+[data-theme="dark"] .border-slate-200,
+[data-theme="dark"] .border-slate-200\/70,
+[data-theme="dark"] .border-slate-200\/80,
+[data-theme="dark"] .border-slate-300 {
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] .divide-slate-100 > :not(:last-child),
+[data-theme="dark"] .divide-slate-200 > :not(:last-child) {
+  border-color: var(--border) !important;
+}
+[data-theme="dark"] [class~="hover:bg-slate-50"]:hover,
+[data-theme="dark"] [class~="hover:bg-slate-100\/80"]:hover,
+[data-theme="dark"] [class~="hover:bg-slate-100"]:hover {
+  background-color: #1d2c43 !important;
+}
+[data-theme="dark"] [class~="hover:text-slate-900"]:hover {
+  color: var(--foreground) !important;
+}
+[data-theme="dark"] .glass-card {
+  background: var(--card);
+  border-color: var(--border);
+  box-shadow: 0 8px 28px -12px rgba(0, 0, 0, 0.6);
+}
+[data-theme="dark"] .dark-emerald-card {
+  box-shadow: 0 12px 28px -8px rgba(16, 185, 129, 0.25);
 }
 
 code,
@@ -146,7 +265,7 @@ pre,
   min-height: 400px !important;
   border-radius: 1rem !important;
   z-index: 1 !important;
-  background-color: #f1f5f9 !important;
+  background-color: var(--secondary) !important;
 }
 
 .leaflet-tile {
@@ -166,13 +285,12 @@ pre,
 /*
  * Tell the browser which palette its own widgets should use.
  *
- * The 16 native `<select>` elements in this app draw their dropdown list,
- * scrollbar and focus ring from the OS, not from our CSS, and without this
- * declaration Windows in dark mode renders them dark-on-dark. The interface is
- * a light one — three `dark:` utilities in the whole codebase — so it says so
- * once, here, rather than leaving each control to guess.
+ * Native `<select>` elements draw their dropdown list, scrollbar and focus ring
+ * from the OS, not from our CSS. Keep this declaration in step with the
+ * resolved theme so those controls are legible in either palette.
  */
-:root {
+[data-theme="light"],
+:root:not([data-theme="dark"]) {
   color-scheme: light;
 }
 

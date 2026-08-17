@@ -13,7 +13,7 @@ Where several connectors report the same metric, one of them answers for it and 
 says which — values from two connectors are never added or averaged. See
 [Metrics from several connectors](metric-source-selection.md).
 
-## Reading the Pearson coefficient
+## Reading the correlation coefficient
 
 | Absolute value | Strength | Interpretation |
 | --- | --- | --- |
@@ -22,6 +22,63 @@ says which — values from two connectors are never added or averaged. See
 | `0.40–0.59` | moderate | An observable relationship — treat it as a hypothesis. |
 | `0.60–0.79` | strong | A relevant pattern, but not causation. |
 | `0.80–1.00` | very strong | A very clear shared course; check the data quality. |
+
+## What the calculations mean
+
+The bundle is descriptive and exploratory. It is not a clinical instrument, an
+experiment, or a causal model. Every pair is aligned on shared UTC calendar days;
+days with a missing value are not imputed. The minimum overlap is ten days, and
+metrics with insufficient coverage are left out rather than presented as weak
+evidence.
+
+For each eligible pair the service calculates Pearson's product-moment correlation
+for a linear relationship and Spearman's rank correlation for a monotonic
+relationship. The displayed coefficient is the one with the smaller absolute
+magnitude, a conservative choice when outliers or non-linearity make the two
+statistics disagree. The two-sided p-value uses the correlation t statistic with
+`n - 2` degrees of freedom. This test assumes independent paired observations,
+approximately linear residual behaviour for Pearson, and does not repair
+autocorrelation, confounding, measurement error, or missing-not-at-random data.
+See the [NIST Engineering Statistics Handbook](https://www.itl.nist.gov/div898/handbook/)
+for the assumptions and interpretation of correlation statistics.
+The original methods are described by
+[Pearson](https://doi.org/10.1098/rspl.1895.0041) and
+[Spearman](https://doi.org/10.2307/1412159). For why serial correlation reduces
+effective information in time-series inference, see
+[Pyper and Peterman](https://doi.org/10.1139/f98-104).
+
+The matrix tests many pairs at once. Its `q_value` is the Benjamini–Hochberg
+false-discovery-rate adjustment over all eligible pairs in that report; the
+`significant` flag uses `q ≤ 0.05`, not the raw p-value. The unadjusted p-value is
+still shown for auditability. Benjamini and Hochberg's original paper describes
+the procedure and its independence/positive-dependence assumptions:
+[Controlling the False Discovery Rate](https://doi.org/10.1111/j.2517-6161.1995.tb02031.x).
+Pairs are a hypothesis-generating view, so even an adjusted result needs a
+pre-specified follow-up or experiment before it can support a claim.
+
+### Other panels
+
+- **Time-shifted relationships** search lags from one to seven days and retain the
+  strongest absolute Spearman association for each ordered pair. This selection
+  is explicitly exploratory and its p-values are unadjusted across the tested
+  lags and pairs; a time order is not evidence of causation.
+- **Trends** fit an ordinary least-squares line to the daily series and report its
+  slope, `R²`, and a trailing seven-day mean. A low `R²` or a slope smaller than
+  one tenth of the observed spread is labelled flat/uncertain. Seasonality,
+  autocorrelation, and a short window can make a line look more certain than it
+  is.
+- **Outliers** use the personal median and median absolute deviation (MAD). MAD
+  is multiplied by `1.4826` to be comparable with standard deviation under a
+  normal distribution; the normal band is the median ± two scaled MADs and a
+  robust z-score of `2.5` marks an unusual day. MAD is preferable to a mean and
+  standard deviation when long tails are present; see [NIST on robust scale
+  measures](https://itl.nist.gov/div898/handbook/eda/section3/eda356.htm).
+- **Weekday patterns** report the arithmetic mean for each weekday and compare
+  weekday with weekend means only when both groups have enough observations.
+  This is a descriptive comparison, not a test that a weekday causes a value.
+- **Period comparisons** use two windows and a Welch two-sample t-test, allowing
+  unequal variance and sample size. They are still observational comparisons and
+  do not identify why the means differ.
 
 ## Weekday patterns
 
@@ -38,15 +95,10 @@ through `weekday.<id>` in both catalogues, and falls back to whatever the server
 value it does not recognise — which is what keeps a report stored before this change readable
 until it is recomputed.
 
-## Sensible next algorithms
-
-- Spearman correlation for monotonic, non-linear relationships.
-- Rolling correlation for time-dependent patterns.
-- Isolation Forest, or robust z-score scoring, for outliers.
-- Small random-forest regressors per target metric, to estimate feature importance.
-
-All of them must read tenant-scoped through Core over gRPC. The Analysis service never
-opens a database connection of its own.
+All analysis inputs are read tenant-scoped through Core over gRPC. The Analysis
+service never opens a database connection of its own. Whole raw provider payloads
+are not retained; the report carries the selected source, window and analysis
+version so a result can be reproduced after the next import.
 
 ## Strength progression
 

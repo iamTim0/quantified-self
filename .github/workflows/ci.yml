@@ -401,6 +401,11 @@ jobs:
           # real deployment hostname. No deployment host appears in this
           # repository any more: it comes from PUBLIC_HOST at deploy time, so
           # publishing the repository does not publish where it runs.
+          #
+          # These three DOI resolver pages return 403 specifically to Lychee's
+          # automated client while remaining valid persistent identifiers. Keep
+          # the citations and exclude only the blocked identifiers, not DOI links
+          # as a class.
           args: >-
             --no-progress --max-concurrency 4
             --root-dir ${{ github.workspace }}
@@ -409,6 +414,7 @@ jobs:
             --exclude '^https?://127\.0\.0\.1'
             --exclude '^https?://example\.com'
             --exclude '^https?://platform\.openai\.com'
+            --exclude '^https://doi\.org/(10\.1098/rspl\.1895\.0041|10\.1111/j\.2517-6161\.1995\.tb02031\.x|10\.1139/f98-104)$'
             --exclude 'file://.*/legal/'
             'docs/**/*.md' 'README.md'
           fail: true

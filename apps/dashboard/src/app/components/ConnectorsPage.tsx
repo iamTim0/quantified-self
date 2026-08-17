@@ -59,6 +59,7 @@ export interface ConnectorItem {
 interface ConnectorsPageProps {
   apiBase: string;
   tenantId: string;
+  userRole: string;
   /** Refresh data without remounting an open import dialog. */
   refreshTrigger: number;
   onOpenConfigureModal: (connector?: ConnectorItem, sourceType?: string) => void;
@@ -155,6 +156,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
 export default function ConnectorsPage({
   apiBase,
   tenantId,
+  userRole,
   refreshTrigger,
   onOpenConfigureModal,
   connectorId,
@@ -280,6 +282,7 @@ export default function ConnectorsPage({
       <ImporterDetailPage
         apiBase={apiBase}
         tenantId={tenantId}
+        userRole={userRole}
         connector={detailConnector}
         refreshTrigger={refreshTrigger}
         onOpenConfigureModal={(connector) => onOpenConfigureModal(connector)}
@@ -706,6 +709,7 @@ export default function ConnectorsPage({
                 apiBase={apiBase}
                 tenantId={tenantId}
                 refreshTrigger={refreshTrigger}
+                userRole={userRole}
               />
             </div>
           </div>

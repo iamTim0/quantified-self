@@ -71,6 +71,7 @@ async def test_a_report_that_has_never_run_says_so_rather_than_computing():
         assert body["result"] is None
         assert body["computed_at"] is None
         assert body["stale"] is True
+        assert body["error"] is None
 
         # Nothing was written by a read.
         async with async_session_maker() as session:
@@ -80,6 +81,44 @@ async def test_a_report_that_has_never_run_says_so_rather_than_computing():
                 )
             ).scalars().all()
         assert runs == []
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_failed_report_exposes_a_machine_code_and_fallback_message():
+    """A failed first run is visible instead of looking like no computation."""
+    tenant_id = await create_test_tenant()
+    try:
+        now = datetime.now(timezone.utc)
+        async with async_session_maker() as session:
+            session.add(
+                ReportRun(
+                    tenant_id=tenant_id,
+                    kind="insights",
+                    status="error",
+                    trigger="manual",
+                    request_id="req_failure",
+                    message_code="insights_failed_ValueError",
+                    message_params={},
+                    message="The Analysis Service could not compute this report.",
+                    started_at=now - timedelta(minutes=1),
+                    finished_at=now,
+                )
+            )
+            await session.commit()
+
+        async with await _client() as client:
+            response = await client.get(
+                "/api/v1/data/reports/insights", headers=auth_headers(tenant_id)
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "never_computed"
+        assert body["result"] is None
+        assert body["error"]["code"] == "insights_failed_ValueError"
+        assert body["error"]["message"]
     finally:
         await cleanup_test_tenant(tenant_id)
 
