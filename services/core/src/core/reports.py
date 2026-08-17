@@ -354,8 +354,10 @@ async def expire_stale_report_runs(
             message=case(
                 (
                     never_claimed,
-                    "No analysis worker claimed this report. The Analysis Service "
-                    "may be stopped or unreachable.",
+                    (
+                        "No analysis worker claimed this report. The Analysis "
+                        "Service may be stopped or unreachable."
+                    ),
                 ),
                 else_="The report did not complete before the run timeout.",
             ),

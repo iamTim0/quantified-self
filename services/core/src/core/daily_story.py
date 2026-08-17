@@ -537,12 +537,15 @@ async def _logged_entries(
         value = float(row.value) if row.value is not None else None
 
         stated_time = metadata.get("logged_time")
-        if isinstance(stated_time, str) and stated_time:
-            # The earliest real time anything in this meal carried. String compare,
-            # because these are ISO-8601 from one provider and parsing them here
-            # would only add a failure mode to an ordering hint.
-            if group["logged_at"] is None or stated_time < group["logged_at"]:
-                group["logged_at"] = stated_time
+        # The earliest real time anything in this meal carried. String compare,
+        # because these are ISO-8601 from one provider and parsing them here would
+        # only add a failure mode to an ordering hint.
+        if (
+            isinstance(stated_time, str)
+            and stated_time
+            and (group["logged_at"] is None or stated_time < group["logged_at"])
+        ):
+            group["logged_at"] = stated_time
 
         if row.metric_type == "nutrition_meal_energy":
             if value is not None:

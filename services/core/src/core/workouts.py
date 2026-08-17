@@ -43,13 +43,13 @@ from core.daily_story import (
     day_window,
     entry_metric_predicate,
     metric_totals,
-    session_metric_predicate,
-    weighted_average,
     # The adapter, not the shared resolver underneath it: `metric_source_coverage`
     # is keyed by `(metric_type, source_id)` and the resolver wants a per-source
     # map, which is exactly what this converts. Calling the inner one directly
     # passed four positional arguments to a function taking one.
     resolve_primary_source_for,
+    session_metric_predicate,
+    weighted_average,
 )
 from core.db.models import DataPoint, DataSource
 from core.reports import (

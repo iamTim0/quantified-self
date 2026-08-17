@@ -67,7 +67,6 @@ from core.connectors import (
     supports_file_import,
 )
 from core.daily_story import build_day_story, day_window
-from core.jobs import MAX_JOBS, list_jobs
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -111,6 +110,7 @@ from core.ingest_planning import (
     compute_sync_window,
     plan_import,
 )
+from core.jobs import MAX_JOBS, list_jobs
 from core.metric_mapping import (
     MappingAction,
     ValidatedMapping,
