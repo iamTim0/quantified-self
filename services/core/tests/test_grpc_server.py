@@ -846,7 +846,10 @@ async def test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash(grpc_
     run stayed in flight, and thirty minutes later the sweep failed it as a timeout.
     The reader was told the analysis was too slow. It never ran at all.
     """
-    from core.rollup_coverage import forget_day_rollup_coverage, remember_day_rollup_coverage
+    from core.rollup_coverage import (
+        forget_day_rollup_coverage,
+        remember_day_rollup_coverage,
+    )
 
     tenant_id = await create_test_tenant()
     start = datetime.now(timezone.utc).replace(
