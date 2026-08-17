@@ -6,7 +6,6 @@ import Sidebar, { TabType } from "../components/Sidebar";
 import { TAB_PATHS } from "../components/navigation";
 import MobileTabBar from "../components/MobileTabBar";
 import TopHeader from "../components/TopHeader";
-import ConnectorModal from "../components/ConnectorModal";
 import { ConnectorItem } from "../components/ConnectorsPage";
 import AuthScreen, { UserAuthData } from "../components/AuthScreen";
 import LegalFooter from "../components/LegalFooter";
@@ -110,10 +109,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [tenantName, setTenantName] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorItem | undefined>(
-    undefined,
-  );
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
@@ -222,31 +217,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [API_BASE, resetToSignedOut, router]);
 
+  /**
+   * Connector setup is a route now, not a dialog this layout carries.
+   *
+   * The modal lived here for one reason: the header's "+" had to work from any
+   * tab, and a layout is the only thing mounted across all of them. A navigation
+   * does that with no shared state at all — and fixes three things the modal
+   * could not. The browser's back button closes it (on Android, hardware-back
+   * used to close the *page underneath* the open dialog), the URL can be linked
+   * from the documentation, and an interrupted setup can be returned to.
+   *
+   * The signature is unchanged, so the three callers did not have to care which
+   * of the two it is.
+   */
   const handleOpenConfigureModal = useCallback(
     (connector?: ConnectorItem, sourceType?: string) => {
-      if (connector) {
-        setSelectedModalConnector(connector);
-      } else if (sourceType) {
-        // A blank stand-in that only carries the chosen type. `id: ""` is what makes
-        // `isEditing` false downstream, so this opens as "create a new instance"
-        // rather than as an edit of something that does not exist yet.
-        setSelectedModalConnector({
-          id: "",
-          tenant_id: tenantId,
-          source_type: sourceType,
-          display_name: "",
-          status: "active",
-          masked_token: "••••••••",
-          poll_interval_hours: 6,
-          lookback_days: 7,
-          lookback_hours: 168,
-        });
-      } else {
-        setSelectedModalConnector(undefined);
+      if (connector?.id) {
+        router.push(`/connectors/${encodeURIComponent(connector.id)}/edit`);
+        return;
       }
-      setIsModalOpen(true);
+      // A chosen provider goes straight to its form; no choice yet means the
+      // gallery. `?type=` rather than a path segment because the value is a
+      // provider id from the catalogue, not a resource of ours.
+      const type = sourceType ?? connector?.source_type;
+      router.push(type ? `/connectors/new?type=${encodeURIComponent(type)}` : "/connectors/new");
     },
-    [tenantId],
+    [router],
   );
 
   const applyProfileUpdate = useCallback((name: string, email: string, workspaceName: string) => {
@@ -418,33 +414,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <QuarantineAlerts apiBase={API_BASE} />
 
               {children}
-
-              <ConnectorModal
-                isOpen={isModalOpen}
-                onClose={() => {
-                  setIsModalOpen(false);
-                  setSelectedModalConnector(undefined);
-                }}
-                initialSourceType={selectedModalConnector?.source_type}
-                // Which instance is being edited. Without it the modal would create a
-                // new connector every time, instead of updating the one clicked.
-                initialSourceId={selectedModalConnector?.id}
-                initialDisplayName={selectedModalConnector?.display_name}
-                initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
-                initialLookbackDays={selectedModalConnector?.lookback_days || 7}
-                initialLookbackHours={
-                  selectedModalConnector?.lookback_hours ||
-                  (selectedModalConnector?.lookback_days
-                    ? selectedModalConnector.lookback_days * 24
-                    : 168)
-                }
-                // Which kind of connector this is, so editing one fed by uploads does
-                // not silently turn it back into a polled one.
-                initialImportMode={selectedModalConnector?.import_mode}
-                isEditing={Boolean(selectedModalConnector?.id)}
-                tenantId={tenantId}
-                onSaved={triggerRefresh}
-              />
 
               <LegalFooter />
             </main>

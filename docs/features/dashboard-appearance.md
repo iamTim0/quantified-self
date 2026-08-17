@@ -144,6 +144,19 @@ period segmented control into a native select on narrow screens and stacks custo
 start/end dates instead of allowing them to widen the page. Every wide table sits in
 its own horizontal scroll container, so a table never widens the page itself.
 
+### Connector setup is a route
+
+`/connectors/new` (optionally `?type=<provider>`) and
+`/connectors/<id>/edit` replace a dialog that the dashboard layout carried so
+the header's "+" could reach it from any tab. The presentation is unchanged — it
+still renders as an overlay over the shell, because both routes are inside that
+layout — but the browser's back button now closes it, the address can be linked
+from documentation, and an interrupted setup survives a reload.
+
+The dialog's old behaviour was worse than merely stateful: on Android, hardware
+back dismissed the *page underneath* the open dialog, and in an installed app
+that is the only back affordance there is.
+
 Interactive targets are at least 44×44 CSS pixels. The navigation surfaces already
 were; the dialogs were not — the close buttons on the connector and import dialogs,
 the notification panel's refresh and the upload banner's dismiss were between 22 and
