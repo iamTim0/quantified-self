@@ -262,7 +262,13 @@ tasks:
     # exercises the Fernet envelope); everything else they use is stdlib.
     dir: specs
     cmds:
-      - python .agents/scripts/check_invariant_tests.py
+      # Absolute, and quoted for the same reason `test:e2e` quotes it: the task
+      # runs from `specs/`, so a repository-relative path resolves to
+      # `specs/.agents/…` and the invariant check could only ever fail with
+      # "No such file". It failed loudly rather than silently, which is the one
+      # good thing about it -- `task test:all` stopped here and never reached the
+      # spec suite behind it.
+      - python "{{.ROOT_DIR}}/.agents/scripts/check_invariant_tests.py"
       - uv run --with pytest --with cryptography pytest tests
 
   test:service:
