@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
+import ServiceWorkerRegistration from "./components/ServiceWorkerRegistration";
 import { LocaleProvider } from "./lib/i18n/provider";
 import { requestLocale } from "./lib/i18n/request";
 import { translate } from "./lib/i18n/translate";
@@ -56,6 +57,20 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: "Quantified Self Platform",
     description: translate(locale, "auth.tagline"),
+    // Apple ignores the web app manifest and reads these instead, which is why
+    // the icon is declared twice rather than once.
+    appleWebApp: {
+      capable: true,
+      title: "Quantified",
+      statusBarStyle: "default",
+    },
+    icons: {
+      icon: [
+        { url: "/icons/icon.svg", type: "image/svg+xml" },
+        { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+      ],
+      apple: "/icons/apple-touch-icon.png",
+    },
   };
 }
 
@@ -81,6 +96,7 @@ export default async function RootLayout({
         <LocaleProvider initialLocale={locale}>
           <ThemeProvider>{children}</ThemeProvider>
         </LocaleProvider>
+        <ServiceWorkerRegistration />
       </body>
     </html>
   );

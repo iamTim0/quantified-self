@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Offline — Quantified Self Platform</title>
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f8fafc" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0b1220" />
+    <!--
+      Deliberately standalone and bilingual.
+
+      This page is served by the service worker when the network is gone, so it
+      cannot reach the message catalogue, the fonts or any stylesheet — anything
+      it needs has to be in this file. That is also why both languages are
+      printed at once rather than one being chosen: the catalogue is what knows
+      the reader's language, and it is exactly what is unreachable here.
+
+      It states plainly that nothing is stored offline, because a reader who
+      installed an app reasonably expects the opposite, and finding out by seeing
+      empty charts would be worse.
+    -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f8fafc;
+        --card: #ffffff;
+        --ink: #0f172a;
+        --ink-muted: #64748b;
+        --line: #e2e8f0;
+        --brand: #0d5c3a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --card: #111c2d;
+          --ink: #e5edf7;
+          --ink-muted: #9fb0c6;
+          --line: #2b3d56;
+          --brand: #34d399;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right))
+          max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
+        background: var(--bg);
+        color: var(--ink);
+        font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+        line-height: 1.6;
+      }
+      main {
+        max-width: 32rem;
+        width: 100%;
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 1rem;
+        padding: 2rem;
+      }
+      .mark {
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 0.75rem;
+        background: var(--brand);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.25rem;
+      }
+      h1 {
+        font-size: 1.375rem;
+        margin: 0 0 0.5rem;
+      }
+      p {
+        margin: 0 0 0.75rem;
+        color: var(--ink-muted);
+        font-size: 0.9375rem;
+      }
+      hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+        margin: 1.5rem 0;
+      }
+      button {
+        min-height: 2.75rem;
+        padding: 0 1.25rem;
+        border: 0;
+        border-radius: 0.75rem;
+        background: var(--brand);
+        color: #fff;
+        font-weight: 700;
+        font-size: 0.875rem;
+        cursor: pointer;
+      }
+      button:focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="mark" aria-hidden="true">
+        <svg
+          width="22"
+          height="22"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#fff"
+          stroke-width="2.25"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+      </div>
+
+      <h1>You are offline</h1>
+      <p>
+        This app does not keep your health data on the device. Nothing is stored offline, so there
+        is nothing to show until the connection is back.
+      </p>
+      <button type="button" onclick="location.reload()">Try again</button>
+
+      <hr />
+
+      <h1 lang="de">Keine Verbindung</h1>
+      <p lang="de">
+        Diese App speichert deine Gesundheitsdaten nicht auf dem Gerät. Es wird nichts offline
+        vorgehalten, daher gibt es bis zur nächsten Verbindung nichts anzuzeigen.
+      </p>
+      <button type="button" lang="de" onclick="location.reload()">Erneut versuchen</button>
+    </main>
+  </body>
+</html>

@@ -11,7 +11,8 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "notices": "bun run scripts/generate-notices.ts"
+    "notices": "bun run scripts/generate-notices.ts",
+    "icons": "bun run scripts/generate-icons.ts"
   },
   "dependencies": {
     "@types/leaflet": "^1.9.22",
