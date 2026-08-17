@@ -561,7 +561,10 @@ async def test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for():
     tenant_id = await create_test_tenant()
     try:
         source_id = await _seed_source(tenant_id)
-        now = datetime.now(timezone.utc)
+        # A fixed instant, and a quiet one: at UTC+2 this is 02:00 local, so the
+        # 365-day window below is not held back for the night. Wall-clock `now`
+        # made the assertion depend on what time the suite happened to run.
+        now = datetime(2026, 8, 17, 0, 0, tzinfo=timezone.utc)
 
         async with async_session_maker() as session:
             # A finished import, so the workspace has something to report on.
@@ -604,3 +607,146 @@ async def test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for():
         assert insights[0].reason == "new_data"
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_year_long_recompute_waits_for_the_readers_night():
+    """The other half of the long-range analysis: when it runs, not just how wide.
+
+    A 365-day bundle reads a workspace's whole history to redraw a page that is
+    already on screen and already right. Doing that the moment an import lands
+    spends the most expensive computation the platform has at the time it is most
+    in the way. It waits -- and the wait is measured on the *reader's* clock, not
+    the server's, because "the middle of the night" is a fact about the reader.
+    """
+    from core.reports import find_due_reports
+
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed_source(tenant_id)
+        # 15:00 for a reader at UTC+2. The middle of their afternoon.
+        busy = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
+
+        async with async_session_maker() as session:
+            session.add(
+                SyncRun(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    source_type="oura",
+                    request_id="req_seed",
+                    status="success",
+                    started_at=busy - timedelta(hours=2),
+                    finished_at=busy - timedelta(hours=1),
+                )
+            )
+            session.add(
+                ReportRun(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    kind="insights",
+                    status="success",
+                    trigger="manual",
+                    request_id="req_reader",
+                    started_at=busy - timedelta(hours=3),
+                    finished_at=busy - timedelta(hours=3),
+                    covers_data_through=busy - timedelta(hours=3),
+                    params={"days": 365, "offset_minutes": 120},
+                    payload={},
+                )
+            )
+            await session.commit()
+
+            during_the_day = await find_due_reports(session, now=busy)
+            # 02:00 the next morning for the same reader.
+            quiet = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
+            at_night = await find_due_reports(session, now=quiet)
+
+        def insights_for(due):
+            return [i for i in due if i.tenant_id == tenant_id and i.kind == "insights"]
+
+        assert insights_for(during_the_day) == []
+        assert insights_for(at_night), "the night is when the deferred run happens"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_deferred_report_says_so_instead_of_only_saying_stale():
+    """"Stale" invites a reader to press refresh for something already scheduled.
+
+    Which is exactly what they would do, repeatedly, for a report that was going
+    to recompute overnight anyway -- and each press starts the expensive run the
+    deferral existed to move.
+    """
+    from core.db.models import ReportRun as Run
+    from core.reports import report_payload
+
+    busy = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
+    run = Run(
+        tenant_id="t",
+        kind="insights",
+        status="success",
+        trigger="scheduled",
+        request_id="r",
+        finished_at=busy - timedelta(hours=3),
+        params={"days": 365, "offset_minutes": 120},
+        payload={},
+    )
+
+    assert report_payload(run, stale=True, now=busy)["deferred"] is True
+    # In the quiet hour it is simply due, and nothing is being put off.
+    quiet = datetime(2026, 8, 18, 0, 0, tzinfo=timezone.utc)
+    assert report_payload(run, stale=True, now=quiet)["deferred"] is False
+    # And a report nobody is waiting on is not "deferred" either -- there is
+    # nothing to recompute.
+    assert report_payload(run, stale=False, now=busy)["deferred"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_default_window_is_never_held_back():
+    """Every window a reader gets without choosing one behaves exactly as before.
+
+    The deferral is about the 180- and 365-day options. If it reached the default
+    it would turn "the dashboard updates when data arrives" into "the dashboard
+    updates tomorrow", which is a different product.
+    """
+    from core.reports import defer_to_quiet_hours
+
+    busy = datetime(2026, 8, 17, 13, 0, tzinfo=timezone.utc)
+    run = ReportRun(
+        tenant_id="t",
+        kind="insights",
+        status="success",
+        trigger="scheduled",
+        request_id="r",
+        finished_at=busy - timedelta(hours=3),
+        params={},
+        payload={},
+    )
+
+    for days in (None, 7, 30, 90):
+        params = {"offset_minutes": 120} | ({"days": days} if days else {})
+        assert defer_to_quiet_hours(run, params, now=busy) is False, days
+
+    # A run with no recorded offset is not deferred either: guessing the reader's
+    # night would put it in the middle of their afternoon at UTC+12.
+    assert defer_to_quiet_hours(run, {"days": 365}, now=busy) is False
+
+    # A first result is never held back -- an empty page is waiting for an answer.
+    assert defer_to_quiet_hours(None, {"days": 365, "offset_minutes": 120}, now=busy) is False
+
+    # And a night that never comes delays a report rather than cancelling it.
+    stale_run = ReportRun(
+        tenant_id="t",
+        kind="insights",
+        status="success",
+        trigger="scheduled",
+        request_id="r",
+        finished_at=busy - timedelta(hours=40),
+        params={},
+        payload={},
+    )
+    assert (
+        defer_to_quiet_hours(stale_run, {"days": 365, "offset_minutes": 120}, now=busy) is False
+    )

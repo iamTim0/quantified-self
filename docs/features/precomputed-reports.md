@@ -244,16 +244,41 @@ reader, and `offset_minutes` went with it, so a scheduled run silently reverted 
 UTC day boundaries. `test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for`
 pins both.
 
-!!! info "There is no separate nightly job, and deliberately so"
-    A long window does not need one. The expensive run is queued when the data
-    changes and its result is served from storage until the data changes again, so
-    the reader never waits for it — which is what a nightly job would have been for.
+### A long window recomputes overnight
 
-    What a nightly job would add is control over *when* the recompute happens: today
-    a 365-day bundle can be recomputed at 14:00, right after an import lands. Whether
-    that is worth deferring depends on how long such a run actually takes, and that
-    is a measurement rather than a guess. `report_runs` records the start and finish
-    of every run, so the answer is already being collected.
+A 365-day bundle reads a workspace's whole history to redraw a page that is already
+on screen and already right — the result differs from the one being displayed by one
+day in three hundred and sixty-five. Starting that the moment an import lands spends
+the most expensive computation the platform has at the time it is most in the way.
+
+So a **scheduled** recompute over a window longer than the 90-day default waits for
+the reader's quiet hours (01:00–05:00) before it starts. There is no separate nightly
+job: the existing five-minute tick simply declines to pick the report up until the
+hour is right, which means no new lock, no new schedule and nothing to get out of
+step with the sweep that already exists.
+
+The wait is measured on the **reader's** clock, not the server's, because "the middle
+of the night" is a fact about the reader. Every refresh now carries
+`offset_minutes`, and a scheduled re-run inherits it along with the rest of the
+params.
+
+Four things stop this turning into "the report is never fresh":
+
+| Never deferred | Why |
+| --- | --- |
+| A window of 90 days or less | Everything a reader gets without choosing is unaffected. |
+| The first result for a kind | An empty page is waiting for an answer, not for a tidier schedule. |
+| A report already 36 hours old | A night that does not arrive delays a report; it must not cancel one. |
+| A run the reader asked for | Pressing recompute is a statement that you want it now. |
+
+A run stored before the dashboard sent an offset is not deferred either. Guessing
+would be worse than abstaining: at UTC+12, treating UTC as local puts "the middle of
+the night" in the middle of the afternoon.
+
+The reader is told, rather than left to wonder. A deferred report shows **Updates
+overnight** in place of the amber *New data since* badge, because "outdated" reads as
+"forgotten" and invites exactly the refresh the deferral was moving out of the way.
+The flag is `deferred` on the report envelope.
 
 ## Failure, timeouts and what a reader sees
 

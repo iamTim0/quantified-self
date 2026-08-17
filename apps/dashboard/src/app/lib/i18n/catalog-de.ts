@@ -1002,6 +1002,9 @@ export const de: Record<MessageKey, string> = {
   "report.neverComputed": "Noch nicht berechnet",
   "report.running": "Wird berechnet…",
   "report.stale": "Neue Daten seitdem",
+  "report.deferred": "Wird nachts aktualisiert",
+  "report.deferredTitle":
+    "Es sind neue Daten eingetroffen. Ein so langer Zeitraum wird nachts neu berechnet statt während der Arbeit — wenn du nicht warten möchtest, jetzt neu berechnen.",
   "report.recompute": "Neu berechnen",
   "report.failed":
     "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",

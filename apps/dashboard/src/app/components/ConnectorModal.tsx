@@ -547,7 +547,11 @@ export default function ConnectorModal({
       } else if (isPassive) {
         // Push connectors authenticate with tenant-bound API keys managed separately
         // (see ApiKeyManager), so there is no provider credential to enter here.
-        payloadConfig = { ...(payloadConfig || {}), auth_mode: "api_key" };
+        // oxlint calls the `?? {}` redundant here and it is not: `payloadConfig`
+        // is `Record<string, any> | undefined`, and TypeScript rejects spreading
+        // a union that includes `undefined` (TS2698) even though the runtime
+        // would be fine with it. The type check is the stronger of the two.
+        payloadConfig = { ...(payloadConfig ?? {}), auth_mode: "api_key" };
       } else if (!finalToken && !isEditing) {
         setError(t("modal.needApiKeyOrGenerate", { provider: selectedProvider.name }));
         setLoading(false);
@@ -555,7 +559,7 @@ export default function ConnectorModal({
       }
 
       if (supportsFileImport && !fileOnly) {
-        payloadConfig = { ...(payloadConfig || {}), import_mode: null };
+        payloadConfig = { ...(payloadConfig ?? {}), import_mode: null };
       }
 
       const res = await apiFetch(`${apiBase}/api/v1/data/sources/configure`, {

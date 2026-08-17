@@ -23,6 +23,7 @@ const REPORT_ERROR_KEYS: Record<string, MessageKey> = {
 export default function ReportStatus({
   computedAt,
   stale,
+  deferred = false,
   running,
   neverComputed,
   error,
@@ -30,6 +31,13 @@ export default function ReportStatus({
 }: {
   computedAt: string | null;
   stale: boolean;
+  /**
+   * Stale on purpose: a window of years is recomputed overnight rather than the
+   * moment an import lands. Without saying so, "outdated" reads as "forgotten"
+   * and invites the reader to press recompute for something already scheduled —
+   * which starts the very run the deferral moved out of their way.
+   */
+  deferred?: boolean;
   running: boolean;
   neverComputed: boolean;
   error?: {
@@ -79,9 +87,18 @@ export default function ReportStatus({
       ) : null}
 
       {stale && !running && !neverComputed ? (
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-          {t("report.stale")}
-        </span>
+        deferred ? (
+          <span
+            className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-700/50 dark:text-slate-300"
+            title={t("report.deferredTitle")}
+          >
+            {t("report.deferred")}
+          </span>
+        ) : (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+            {t("report.stale")}
+          </span>
+        )
       ) : null}
 
       <button

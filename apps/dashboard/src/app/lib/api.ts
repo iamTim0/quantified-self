@@ -133,7 +133,7 @@ export async function apiUpload(
       xhr.withCredentials = true;
 
       for (const [name, value] of Object.entries({
-        ...(options.headers ?? {}),
+        ...options.headers,
         ...csrfHeaders(),
       })) {
         xhr.setRequestHeader(name, value);

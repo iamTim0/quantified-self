@@ -118,6 +118,27 @@ MAX_STALE_RUN_AFTER = timedelta(hours=2)
 #: without an import — a mapping rule adopted, a connector deleted.
 MAX_REPORT_AGE = timedelta(hours=12)
 
+#: A scheduled recompute over a window longer than this waits for a quiet hour.
+#:
+#: The dashboard's own default is 90 days, so everything a reader sees without
+#: choosing anything is unaffected — this is about the 180- and 365-day windows,
+#: which read years of a workspace's history to redraw a page that was already
+#: correct. Nothing here touches an on-demand run: asking for one is a statement
+#: that you want it now.
+DEFER_WINDOW_OVER_DAYS = REFERENCE_WINDOW_DAYS
+
+#: The reader's *local* hours a deferred recompute may start in, as [start, end).
+#: Local, because the point is that it happens while nobody is looking, and which
+#: hours those are is a fact about the reader and not about the server.
+QUIET_HOUR_START = 1
+QUIET_HOUR_END = 5
+
+#: However long the quiet hour fails to arrive. A Core that was down all night, a
+#: laptop whose clock offset changed, a workspace read from two time zones — none
+#: of those should mean "never". Comfortably longer than a day, so it only fires
+#: when a night has genuinely been missed rather than merely been late.
+MAX_DEFERRAL = timedelta(hours=36)
+
 #: Default window for the gap scan, in days. The reader can ask for another, but
 #: a scheduled run has to pick one, and this is what the dashboard opens with.
 DEFAULT_GAP_WINDOW_DAYS = 30
@@ -469,6 +490,79 @@ def report_is_stale(run: ReportRun | None, high_water: datetime | None) -> bool:
     return datetime.now(timezone.utc) - run.finished_at >= MAX_REPORT_AGE
 
 
+def window_days(params: dict[str, Any] | None) -> int | None:
+    """The window a run was asked for, when it names one.
+
+    `None` rather than a default: a kind that takes no window at all — the day
+    report answers for one day — must not be treated as having a small one, and a
+    default would make "not applicable" and "90" the same value.
+    """
+    raw = (params or {}).get("days")
+    if raw is None:
+        return None
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return days if days > 0 else None
+
+
+def reader_local_hour(now: datetime, params: dict[str, Any] | None) -> int | None:
+    """The hour of the clock the reader of this report is looking at.
+
+    `None` when the run does not record an offset, which is the honest answer for
+    a run stored before the dashboard sent one. A guess would be worse than an
+    absence: at UTC+12, treating UTC as local puts "the middle of the night" in
+    the middle of the afternoon.
+    """
+    raw = (params or {}).get("offset_minutes")
+    if raw is None:
+        return None
+    try:
+        offset = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if abs(offset) > 14 * 60:
+        return None
+    return (now + timedelta(minutes=offset)).hour
+
+
+def defer_to_quiet_hours(
+    latest: ReportRun | None, params: dict[str, Any] | None, *, now: datetime
+) -> bool:
+    """Whether this scheduled recompute should wait for the reader's night.
+
+    A 365-day insights run reads a workspace's whole history to redraw a page that
+    is already on screen and already correct. Doing that the moment an import lands
+    spends the most expensive computation the platform has at the time it is most
+    in the way, and the result differs from the one on screen by one day in three
+    hundred and sixty-five.
+
+    Four things stop this becoming "the report is never fresh":
+
+    * only windows longer than `DEFER_WINDOW_OVER_DAYS`, so every default is
+      unaffected;
+    * never when there is no result yet — a reader with an empty page is waiting
+      for a first answer, not for a tidier schedule;
+    * never past `MAX_DEFERRAL`, so a night that does not arrive delays a report
+      rather than cancelling it;
+    * never for a run the reader asked for. This is `find_due_reports` only; a
+      refresh is a statement that you want it now, and it is why deferring is
+      reasonable at all.
+    """
+    days = window_days(params)
+    if days is None or days <= DEFER_WINDOW_OVER_DAYS:
+        return False
+    if latest is None or latest.finished_at is None:
+        return False
+    if now - latest.finished_at >= MAX_DEFERRAL:
+        return False
+    hour = reader_local_hour(now, params)
+    if hour is None:
+        return False
+    return not (QUIET_HOUR_START <= hour < QUIET_HOUR_END)
+
+
 async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueReport]:
     """Every tenant/kind pair whose report needs recomputing.
 
@@ -544,6 +638,12 @@ async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueR
                 continue
             latest = latest_by_key.get((tenant_id, kind))
             if not report_is_stale(latest, high_water):
+                continue
+            # Stale and worth recomputing, but not necessarily right now: a window
+            # of years waits for the reader's night. Checked after staleness so a
+            # deferred report keeps being offered every tick until a quiet hour
+            # arrives, rather than being consumed by the first tick that saw it.
+            if defer_to_quiet_hours(latest, dict(latest.params or {}) if latest else {}, now=now):
                 continue
             reason = "no_report" if latest is None else (
                 "new_data"
@@ -998,12 +1098,18 @@ def report_payload(
     *,
     stale: bool,
     error: ReportRun | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """The wire shape of a stored report.
 
     `computed_at` and `stale` travel with the result on purpose: a reader shown a
     precomputed number is entitled to know when it was true, and a number with no
     date on it is the reason on-the-fly computation felt safer than it was.
+
+    `deferred` is the same courtesy applied to the other direction. A long-window
+    report that is stale and waiting for a quiet hour looks, without it, exactly
+    like one the scheduler has forgotten — and "stale" invites a reader to press
+    refresh over and over for something that was already going to happen.
     """
     if run is None:
         payload: dict[str, Any] = {
@@ -1025,6 +1131,9 @@ def report_payload(
             "params": run.params or {},
             "result": run.payload,
         }
+    payload["deferred"] = stale and defer_to_quiet_hours(
+        run, dict(run.params or {}) if run else {}, now=now or datetime.now(timezone.utc)
+    )
     payload["error"] = (
         {
             "code": error.message_code or "report_failed",

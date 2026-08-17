@@ -677,6 +677,7 @@ export default function AnalysisTab({
       <ReportStatus
         computedAt={report.computed_at}
         stale={report.stale}
+        deferred={report.deferred}
         running={report.running}
         neverComputed={report.status === "never_computed"}
         error={report.error}

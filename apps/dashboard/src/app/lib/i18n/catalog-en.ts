@@ -990,6 +990,9 @@ export const en = {
   "report.neverComputed": "Not computed yet",
   "report.running": "Computing…",
   "report.stale": "New data since",
+  "report.deferred": "Updates overnight",
+  "report.deferredTitle":
+    "New data has arrived. A window this long is recomputed during the night rather than while you are working — recompute now if you would rather not wait.",
   "report.recompute": "Recompute",
   "report.failed": "The last computation failed; the previous result remains available.",
   "report.error.report_failed":

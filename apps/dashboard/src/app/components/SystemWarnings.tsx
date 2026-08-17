@@ -92,7 +92,7 @@ function field(
 ): string {
   const key = `warning.${warning.code}.${part}`;
   if (!(key in en)) return fallback;
-  return t(key as MessageKey, { generate: GENERATE_SECRET, ...(warning.params ?? {}) });
+  return t(key as MessageKey, { generate: GENERATE_SECRET, ...warning.params });
 }
 
 /** Where a dismissal is remembered, and for how long. */
