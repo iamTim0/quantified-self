@@ -333,15 +333,15 @@ export default function ImportDialog({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
-      <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+      <div className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-surface shadow-xl">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-2.5">
             <CalendarRange className="h-5 w-5 text-brand" />
             <div>
-              <h2 className="text-base font-bold text-slate-900">
+              <h2 className="text-base font-bold text-ink">
                 {t("import.title", { name: sourceName })}
               </h2>
-              <p className="text-[11px] text-slate-500">{t("import.subtitle")}</p>
+              <p className="text-[11px] text-ink-muted">{t("import.subtitle")}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -356,7 +356,7 @@ export default function ImportDialog({
                 onClick={onClose}
                 aria-label={t("import.minimize")}
                 title={t("import.minimizeHint")}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink-secondary"
               >
                 <Minus className="h-5 w-5" />
               </button>
@@ -364,7 +364,7 @@ export default function ImportDialog({
             <button
               onClick={onClose}
               aria-label={t("import.close")}
-              className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              className="flex min-h-11 min-w-11 items-center justify-center rounded-full text-ink-muted hover:bg-surface-muted hover:text-ink-secondary"
             >
               <X className="h-5 w-5" />
             </button>
@@ -378,7 +378,7 @@ export default function ImportDialog({
             remains is what such a connector does have — progress and history.
           */}
           {passive && (
-            <p className="rounded-2xl border border-violet-200 bg-violet-50 px-3.5 py-2.5 text-[11px] leading-relaxed text-violet-900">
+            <p className="rounded-2xl border border-info-line bg-info-soft px-3.5 py-2.5 text-[11px] leading-relaxed text-info-ink">
               {t("import.passiveExplainer")}
             </p>
           )}
@@ -390,11 +390,11 @@ export default function ImportDialog({
             connector, so a reading that is already stored stays one reading.
           */}
           {fileImport && providerType && (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
-              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-sky-900">
+            <div className="rounded-2xl border border-info-line bg-sky-50/70 p-4">
+              <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-info-ink">
                 <Upload className="h-3.5 w-3.5" /> {t("import.uploadLegend")}
               </h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-sky-900">
+              <p className="mt-1 text-[11px] leading-relaxed text-info-ink">
                 {t(
                   providerType === "apple_health"
                     ? "import.uploadHintAppleHealth"
@@ -408,7 +408,7 @@ export default function ImportDialog({
                   aria-label={t("import.uploadChoose")}
                   disabled={uploading}
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="min-w-0 flex-1 text-[11px] text-slate-600 file:mr-3 file:rounded-xl file:border-0 file:bg-white file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900 disabled:opacity-50"
+                  className="min-w-0 flex-1 text-[11px] text-ink-muted file:mr-3 file:rounded-xl file:border-0 file:bg-surface file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900 disabled:opacity-50"
                 />
                 <button
                   onClick={handleUpload}
@@ -431,14 +431,14 @@ export default function ImportDialog({
                 an empty file picker.
               */}
               {upload?.phase === "done" && (
-                <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] text-emerald-800">
+                <p className="mt-3 rounded-xl border border-ok-line bg-ok-soft px-3 py-2 text-[11px] text-ok-ink">
                   {t("import.uploadAccepted")}
                 </p>
               )}
 
               {upload && upload.phase !== "done" && (
                 <div className="mt-3" aria-label={t("import.uploadProgress")}>
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-sky-900">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-info-ink">
                     <span className="truncate" title={upload.fileName}>
                       {upload.fileName}
                     </span>
@@ -464,7 +464,7 @@ export default function ImportDialog({
                     />
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] text-sky-900">
+                    <span className="text-[11px] text-info-ink">
                       {upload.phase === "assembling" && t("upload.assembling")}
                       {upload.phase === "uploading" && t("import.uploadInParts")}
                       {upload.phase === "cancelled" && t("upload.cancelledBody")}
@@ -473,7 +473,7 @@ export default function ImportDialog({
                     {uploading && (
                       <button
                         onClick={() => cancelUpload(upload.id)}
-                        className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-red-700 hover:bg-red-50"
+                        className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-danger-ink-on-soft hover:bg-danger-soft"
                       >
                         {t("upload.cancel")}
                       </button>
@@ -499,7 +499,7 @@ export default function ImportDialog({
               {/* Range */}
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-muted">
                     {t("import.from")}
                   </span>
                   <input
@@ -509,11 +509,11 @@ export default function ImportDialog({
                       setStart(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-brand"
+                    className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-ink outline-none focus-visible:border-brand"
                   />
                 </label>
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-slate-500">
+                  <span className="mb-1.5 block text-xs font-bold uppercase tracking-wider text-ink-muted">
                     {t("import.to")}
                   </span>
                   <input
@@ -523,28 +523,28 @@ export default function ImportDialog({
                       setEnd(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-brand"
+                    className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-ink outline-none focus-visible:border-brand"
                   />
                 </label>
               </div>
 
               {plan?.window_reason && !rangeTouched && (
-                <p className="text-[11px] leading-relaxed text-slate-500">
-                  <span className="font-semibold text-slate-600">{t("import.suggestion")}</span>{" "}
+                <p className="text-[11px] leading-relaxed text-ink-muted">
+                  <span className="font-semibold text-ink-muted">{t("import.suggestion")}</span>{" "}
                   {t("import.windowSuggested")}
                 </p>
               )}
 
               {/* Mode */}
               <fieldset className="space-y-2">
-                <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+                <legend className="mb-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
                   {t("import.modeLegend")}
                 </legend>
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
                     mode === "smart"
-                      ? "border-brand bg-emerald-50/60"
-                      : "border-slate-200 bg-white"
+                      ? "border-brand bg-ok-soft"
+                      : "border-line bg-surface"
                   }`}
                 >
                   <input
@@ -555,10 +555,10 @@ export default function ImportDialog({
                     className="mt-0.5"
                   />
                   <span>
-                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-ink">
                       <ShieldCheck className="h-4 w-4 text-brand" /> {t("import.smartLabel")}
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-muted">
                       {t("import.smartHint")}
                     </span>
                   </span>
@@ -567,8 +567,8 @@ export default function ImportDialog({
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
                     mode === "force"
-                      ? "border-amber-500 bg-amber-50/60"
-                      : "border-slate-200 bg-white"
+                      ? "border-amber-500 bg-warn-soft"
+                      : "border-line bg-surface"
                   }`}
                 >
                   <input
@@ -579,10 +579,10 @@ export default function ImportDialog({
                     className="mt-0.5"
                   />
                   <span>
-                    <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                      <Zap className="h-4 w-4 text-amber-600" /> {t("import.forceLabel")}
+                    <span className="flex items-center gap-1.5 text-sm font-bold text-ink">
+                      <Zap className="h-4 w-4 text-warn" /> {t("import.forceLabel")}
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
+                    <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-muted">
                       {t("import.forceBody")}
                     </span>
                   </span>
@@ -590,9 +590,9 @@ export default function ImportDialog({
               </fieldset>
 
               {mode === "force" && (
-                <div className="flex gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 p-3.5">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                  <p className="text-[11px] leading-relaxed text-amber-900">
+                <div className="flex gap-2.5 rounded-2xl border border-warn-line bg-warn-soft p-3.5">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
+                  <p className="text-[11px] leading-relaxed text-warn-ink">
                     {t("import.forceWarning")} {t("import.forceHint")}
                   </p>
                 </div>
@@ -609,18 +609,18 @@ export default function ImportDialog({
             worse than an honest number.
           */}
           {running && (
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+            <div className="rounded-2xl border border-ok-line bg-ok-soft p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-emerald-800">
+                <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ok-ink">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
                   {running.status === "loading" ? t("import.loadingCore") : t("import.running")}
                 </h3>
-                {typicalHint && <span className="text-[11px] text-emerald-700">{typicalHint}</span>}
+                {typicalHint && <span className="text-[11px] text-ok-ink">{typicalHint}</span>}
               </div>
 
               {(running.points_expected ?? running.points_received) > 0 ? (
                 <>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
+                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-ok-soft">
                     <div
                       className="h-full rounded-full bg-brand transition-colors"
                       style={{
@@ -635,7 +635,7 @@ export default function ImportDialog({
                       }}
                     />
                   </div>
-                  <p className="mt-1.5 text-[11px] text-emerald-900">
+                  <p className="mt-1.5 text-[11px] text-ok-ink">
                     {t("import.progressOf", {
                       done: running.points_processed,
                       total: running.points_expected ?? running.points_received,
@@ -643,7 +643,7 @@ export default function ImportDialog({
                   </p>
                 </>
               ) : (
-                <p className="text-[11px] text-emerald-900">
+                <p className="text-[11px] text-ok-ink">
                   {t("import.progressCounted", { count: running.points_processed })}
                 </p>
               )}
@@ -652,41 +652,41 @@ export default function ImportDialog({
 
           {/* Plan preview — only meaningful where an import can be planned. */}
           {!passive && (
-            <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div className="rounded-2xl border border-line bg-page p-4">
               <div className="mb-2 flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-ink-muted">
                   {t("import.previewLegend")}
                 </h3>
-                {planning && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                {planning && <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-muted" />}
               </div>
 
               {!plan && !planning && (
-                <p className="text-xs text-slate-500">{t("import.noAnalysis")}</p>
+                <p className="text-xs text-ink-muted">{t("import.noAnalysis")}</p>
               )}
 
               {plan && (
                 <div className="space-y-2.5">
-                  <p className="text-xs leading-relaxed text-slate-700">{plan.reason}</p>
+                  <p className="text-xs leading-relaxed text-ink-secondary">{plan.reason}</p>
 
                   {plan.confidence === "low" && (
-                    <p className="rounded-xl bg-slate-100 px-3 py-2 text-[11px] text-slate-600">
+                    <p className="rounded-xl bg-surface-muted px-3 py-2 text-[11px] text-ink-muted">
                       {t("import.tooIrregular")}
                     </p>
                   )}
 
                   {plan.skipped_ranges.length > 0 && (
                     <div>
-                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-ink-muted">
                         <SkipForward className="h-3.5 w-3.5" /> {t("import.willSkip")}
                       </p>
                       <ul className="space-y-1">
                         {plan.skipped_ranges.map((r) => (
                           <li
                             key={`${r.start}-${r.end}`}
-                            className="flex items-center justify-between rounded-lg bg-white px-2.5 py-1.5 text-[11px] text-slate-600"
+                            className="flex items-center justify-between rounded-lg bg-surface px-2.5 py-1.5 text-[11px] text-ink-muted"
                           >
                             <span className="font-mono">{formatRange(formatDateTime, r)}</span>
-                            <span className="text-slate-400">{durationLabel(t, r)}</span>
+                            <span className="text-ink-muted">{durationLabel(t, r)}</span>
                           </li>
                         ))}
                       </ul>
@@ -698,13 +698,13 @@ export default function ImportDialog({
                       <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand">
                         <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
                       </p>
-                      <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
+                      <div className="flex items-center justify-between rounded-lg border border-ok-line bg-ok-soft px-2.5 py-1.5 text-[11px] text-ok-ink">
                         <span className="font-mono">{formatRange(formatDateTime, effective)}</span>
                         <span>{durationLabel(t, effective)}</span>
                       </div>
                     </div>
                   ) : (
-                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ok-ink">
                       <CheckCircle2 className="h-3.5 w-3.5" /> {t("import.nothingToImportShort")}
                     </p>
                   )}
@@ -726,27 +726,27 @@ export default function ImportDialog({
 
           {/* History */}
           {runs.length > 0 && (
-            <details className="rounded-2xl border border-slate-200 bg-white p-4">
-              <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+            <details className="rounded-2xl border border-line bg-surface p-4">
+              <summary className="flex cursor-pointer items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
                 <History className="h-3.5 w-3.5" /> {t("import.recent", { count: runs.length })}
               </summary>
               <ul className="mt-3 space-y-2">
                 {runs.map((run) => (
-                  <li key={run.id} className="rounded-xl bg-slate-50 px-3 py-2 text-[11px]">
+                  <li key={run.id} className="rounded-xl bg-page px-3 py-2 text-[11px]">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-slate-700">
+                      <span className="font-semibold text-ink-secondary">
                         {formatDateTime(run.started_at)}
                       </span>
                       <span className="flex items-center gap-1.5">
                         {run.mode === "force" && (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 font-bold text-amber-800">
+                          <span className="rounded bg-warn-soft px-1.5 py-0.5 font-bold text-warn-ink">
                             force
                           </span>
                         )}
-                        <span className="text-slate-500">{run.status}</span>
+                        <span className="text-ink-muted">{run.status}</span>
                       </span>
                     </div>
-                    <p className="mt-0.5 text-slate-500">
+                    <p className="mt-0.5 text-ink-muted">
                       {t("import.runCounts", {
                         accepted: run.points_accepted,
                         duplicate: run.points_duplicate,
@@ -755,7 +755,7 @@ export default function ImportDialog({
                       })}
                     </p>
                     {messageForRun(t, run) && (
-                      <p className="mt-0.5 text-slate-400">{messageForRun(t, run)}</p>
+                      <p className="mt-0.5 text-ink-muted">{messageForRun(t, run)}</p>
                     )}
                   </li>
                 ))}
@@ -764,21 +764,21 @@ export default function ImportDialog({
           )}
 
           {error && (
-            <p className="rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+            <p className="rounded-2xl border border-danger-line bg-danger-soft px-3.5 py-2.5 text-xs text-danger-ink-on-soft">
               {error}
             </p>
           )}
           {result && (
-            <p className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-xs text-emerald-800">
+            <p className="rounded-2xl border border-ok-line bg-ok-soft px-3.5 py-2.5 text-xs text-ok-ink">
               {result}
             </p>
           )}
         </div>
 
-        <div className="flex items-center justify-end gap-2.5 border-t border-slate-100 px-6 py-4">
+        <div className="flex items-center justify-end gap-2.5 border-t border-line px-6 py-4">
           <button
             onClick={onClose}
-            className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+            className="rounded-2xl px-4 py-2.5 text-sm font-semibold text-ink-muted hover:bg-surface-muted"
           >
             {passive ? t("common.close") : t("common.cancel")}
           </button>

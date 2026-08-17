@@ -18,7 +18,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
     <div
       role="group"
       aria-label={t("lang.label")}
-      className={`inline-flex h-11 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm ${className}`}
+      className={`inline-flex h-11 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm ${className}`}
     >
       {LOCALES.map((candidate) => {
         const active = candidate === locale;
@@ -32,7 +32,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
             className={`h-full px-2.5 text-[11px] font-bold tracking-wider transition-colors ${
               active
                 ? "bg-brand text-brand-ink"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
+                : "text-ink-muted hover:bg-page hover:text-ink"
             }`}
           >
             {LOCALE_SHORT[candidate]}

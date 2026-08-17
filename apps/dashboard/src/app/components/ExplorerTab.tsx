@@ -24,11 +24,15 @@ import { useI18n, type MessageKey } from "../lib/i18n/provider";
 import { describeMetric, type Aggregation } from "../lib/metrics/catalog";
 import ExplorerMetricSelect, { type MetricOption } from "./ExplorerMetricSelect";
 import ExplorerRawTable from "./ExplorerRawTable";
-import ExplorerMetricOverview, { type MetricSummaryEntry } from "./ExplorerMetricOverview";
+import ExplorerMetricOverview, {
+  type IngestPolicy,
+  type MetricSummaryEntry,
+  type StorableResolution,
+} from "./ExplorerMetricOverview";
 
 const ExplorerChart = dynamic(() => import("./ExplorerChart"), {
   ssr: false,
-  loading: () => <div className="h-80 w-full rounded-2xl border border-slate-200 bg-slate-50" />,
+  loading: () => <div className="h-80 w-full rounded-2xl border border-line bg-page" />,
 });
 
 export interface DataPointItem {
@@ -225,7 +229,15 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
    */
   const [chosenMetrics, setChosenMetrics] = useState<string[] | null>(null);
   const [selectedSource, setSelectedSource] = useState("all");
-  const [importResolution, setImportResolution] = useState<Resolution>("auto");
+  /**
+   * The stored ingest policy per metric, as Core reports it.
+   *
+   * This used to be one `Resolution` in the filter bar, initialised to "auto" and
+   * never read back from the server — so the control stated a value that was not
+   * the stored one, and changing it wrote that guess onto *every selected metric*
+   * at once. It now shows what is actually stored, per metric, on the overview.
+   */
+  const [ingestPolicies, setIngestPolicies] = useState<Record<string, IngestPolicy>>({});
   const [chartType, setChartType] = useState<"area" | "line" | "bar">("area");
   const [dateRangePreset, setDateRangePreset] = useState<
     "7d" | "14d" | "30d" | "90d" | "all" | "custom"
@@ -427,6 +439,19 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     }
   }, [apiBase, tenantId]);
 
+  const loadIngestPolicies = useCallback(async () => {
+    try {
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy`, {
+        headers: { "X-Tenant-ID": tenantId },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { policies?: Record<string, IngestPolicy> };
+      setIngestPolicies(data.policies || {});
+    } catch (err) {
+      console.error("Failed to fetch the ingest policies:", err);
+    }
+  }, [apiBase, tenantId]);
+
   const loadSavedViews = useCallback(async () => {
     try {
       const res = await apiFetch(`${apiBase}/api/v1/data/explorer/views`, {
@@ -452,14 +477,27 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     void (async () => {
       await Promise.resolve();
       if (cancelled) return;
-      await Promise.all([loadSummary(), loadMetricTypes(), loadSources(), loadSavedViews()]);
+      await Promise.all([
+        loadSummary(),
+        loadMetricTypes(),
+        loadSources(),
+        loadSavedViews(),
+        loadIngestPolicies(),
+      ]);
       if (!cancelled) setLoading(false);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [tenantId, loadSummary, loadMetricTypes, loadSources, loadSavedViews]);
+  }, [
+    tenantId,
+    loadSummary,
+    loadMetricTypes,
+    loadSources,
+    loadSavedViews,
+    loadIngestPolicies,
+  ]);
 
   const visiblePoints = view === "raw" ? rawPoints : chartPoints;
 
@@ -515,26 +553,31 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     void loadRawPoints(selectedMetrics);
   }, [tenantId, view, selectedMetrics, loadRawPoints]);
 
-  const saveImportResolution = useCallback(
-    async (resolution: Resolution) => {
-      if (resolution === "auto" || selectedMetrics.length === 0) return;
-      await Promise.all(
-        selectedMetrics.map((metric) =>
-          apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
-            // Resolution only. Sending a retention here wrote ninety days onto
-            // whatever metric was selected, including the workout, strength and
-            // location metrics the registry keeps forever — and the next purge
-            // deleted them.
-            body: JSON.stringify({ resolution }),
-          }),
-        ),
-      );
-      if (view === "raw") await loadRawPoints(selectedMetrics);
-      else await loadChartPoints(selectedMetrics);
+  /**
+   * Store one metric's ingest resolution, deliberately one metric at a time.
+   *
+   * This is a **write that changes what future imports keep**, not a display
+   * filter, and it used to live in the filter bar between the source and period
+   * selects — where changing it fired immediately, without confirmation, across
+   * every currently selected metric. It now sits on the overview row of the
+   * single metric it affects, behind an explicit apply step.
+   */
+  const applyIngestResolution = useCallback(
+    async (metric: string, resolution: StorableResolution) => {
+      const res = await apiFetch(`${apiBase}/api/v1/data/metrics/ingest-policy/${metric}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-Tenant-ID": tenantId },
+        // Resolution only. Sending a retention here wrote ninety days onto
+        // whatever metric was selected, including the workout, strength and
+        // location metrics the registry keeps forever — and the next purge
+        // deleted them.
+        body: JSON.stringify({ resolution }),
+      });
+      if (!res.ok) return false;
+      await loadIngestPolicies();
+      return true;
     },
-    [apiBase, tenantId, selectedMetrics, loadChartPoints, loadRawPoints, view],
+    [apiBase, tenantId, loadIngestPolicies],
   );
 
   const availableSources = useMemo<ExplorerSource[]>(() => {
@@ -574,7 +617,9 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             dateRangePreset,
             searchQuery,
             view,
-            importResolution: importResolution === "auto" ? undefined : importResolution,
+            // No `importResolution`: a saved *view* is a description of a query,
+            // and this field was a storage setting that had no business being
+            // restored by loading one.
           },
           is_shared: false,
         }),
@@ -616,17 +661,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     if (cfg.dateRangePreset) setDateRangePreset(cfg.dateRangePreset);
     if (cfg.searchQuery !== undefined) setSearchQuery(cfg.searchQuery);
     if (cfg.view) setView(cfg.view);
-    if (cfg.importResolution) setImportResolution(cfg.importResolution);
+    // `cfg.importResolution` is deliberately not applied. It is a *storage*
+    // setting that older versions wrote into a saved view; restoring a view must
+    // not silently rewrite what future imports keep.
     // A saved view describes a query across all metrics, so a single-metric scope
     // left over from a drill-down would silently contradict it.
     if (metricScope !== null) {
       setMetricScope(null);
     }
-  };
-
-  const handleImportResolutionChange = (resolution: Resolution) => {
-    setImportResolution(resolution);
-    void saveImportResolution(resolution);
   };
 
   /** Changing the selection triggers one fresh request per selected metric. */
@@ -823,13 +865,13 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
   const sourceFilter = (
     <div className="flex items-center gap-2">
-      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
+      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
         <Layers className="h-3.5 w-3.5 text-brand" /> {t("explorer.source")}
       </span>
       <select
         value={selectedSource}
         onChange={(e) => setSelectedSource(e.target.value)}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus-visible:border-brand"
+        className="rounded-2xl border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink outline-none focus-visible:border-brand"
       >
         <option value="all">{t("explorer.allSources")}</option>
         {availableSources.map((source) => (
@@ -844,36 +886,16 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     </div>
   );
 
-  const importResolutionFilter = (
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-bold uppercase tracking-wider text-slate-400">
-        {t("explorer.importResolution")}
-      </span>
-      <select
-        value={importResolution}
-        onChange={(event) => handleImportResolutionChange(event.target.value as Resolution)}
-        title={t("explorer.importResolutionHint")}
-        className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none focus-visible:border-brand"
-      >
-        <option value="auto">{t("explorer.resolutionAuto")}</option>
-        <option value="raw">{t("explorer.resolutionRaw")}</option>
-        <option value="minute">{t("explorer.resolutionMinute")}</option>
-        <option value="hour">{t("explorer.resolutionHour")}</option>
-        <option value="day">{t("explorer.resolutionDay")}</option>
-      </select>
-    </div>
-  );
-
   const periodFilter = (
     <div className="flex min-w-0 flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-      <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-        <Calendar className="h-3.5 w-3.5 text-emerald-600" /> {t("explorer.period")}
+      <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
+        <Calendar className="h-3.5 w-3.5 text-ok" /> {t("explorer.period")}
       </span>
       <select
         value={dateRangePreset}
         onChange={(event) => setDateRangePreset(event.target.value as typeof dateRangePreset)}
         aria-label={t("explorer.period")}
-        className="h-10 w-full min-w-0 rounded-2xl border border-slate-200 bg-slate-50 px-3 text-xs font-bold text-slate-900 outline-none focus-visible:border-brand sm:hidden"
+        className="h-10 w-full min-w-0 rounded-2xl border border-line bg-page px-3 text-xs font-bold text-ink outline-none focus-visible:border-brand sm:hidden"
       >
         {[
           { id: "7d", label: t("quality.windowDays", { count: 7 }) },
@@ -889,7 +911,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         ))}
       </select>
 
-      <div className="hidden min-w-0 flex-wrap rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs sm:flex">
+      <div className="hidden min-w-0 flex-wrap rounded-2xl border border-line bg-surface-muted p-1 text-xs sm:flex">
         {[
           { id: "7d", label: t("quality.windowDays", { count: 7 }) },
           { id: "14d", label: t("quality.windowDays", { count: 14 }) },
@@ -904,7 +926,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             className={`rounded-xl px-3 py-1 font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
               dateRangePreset === preset.id
                 ? "bg-brand text-brand-ink shadow-xs"
-                : "text-slate-500 hover:text-slate-900"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             {preset.label}
@@ -919,15 +941,15 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             value={customStartDate}
             onChange={(e) => setCustomStartDate(e.target.value)}
             aria-label={t("explorer.customStart")}
-            className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-brand sm:h-auto"
+            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
           />
-          <span className="hidden text-slate-400 sm:inline">{t("chart.rangeTo")}</span>
+          <span className="hidden text-ink-muted sm:inline">{t("chart.rangeTo")}</span>
           <input
             type="date"
             value={customEndDate}
             onChange={(e) => setCustomEndDate(e.target.value)}
             aria-label={t("explorer.customEnd")}
-            className="h-10 min-w-0 rounded-xl border border-slate-200 bg-white px-2.5 py-1 text-[11px] text-slate-800 outline-none focus-visible:border-brand sm:h-auto"
+            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
           />
         </div>
       )}
@@ -936,35 +958,35 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
   const fullTextSearch = (
     <div className="relative">
-      <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+      <Search className="absolute left-3.5 top-3 h-4 w-4 text-ink-muted" />
       <input
         type="text"
         placeholder={t("explorer.searchPlaceholder")}
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
+        className="w-full rounded-2xl border border-line bg-surface py-2.5 pl-10 pr-4 text-xs text-ink outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
       />
     </div>
   );
 
   const seriesQueryNote =
     selectedMetrics.length > 0 ? (
-      <p className="text-[11px] leading-relaxed text-slate-400">
+      <p className="text-[11px] leading-relaxed text-ink-muted">
         {t(view === "chart" ? "explorer.seriesQueryNote" : "explorer.rawSeriesQueryNote")}
       </p>
     ) : null;
 
   const scopeBanner =
     metricScope !== null ? (
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3.5 py-2.5">
-        <span className="text-[11px] font-bold text-emerald-900">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ok-line bg-ok-soft px-3.5 py-2.5">
+        <span className="text-[11px] font-bold text-ok-ink">
           {t("explorer.scopeActive", {
             metric: describeMetric(metricScope, locale).label,
           })}
         </span>
         <button
           onClick={clearScope}
-          className="rounded-xl border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-800 transition-colors hover:bg-emerald-100"
+          className="rounded-xl border border-ok-line bg-surface px-2.5 py-1 text-[11px] font-bold text-ok-ink transition-colors hover:bg-ok-soft"
         >
           {t("explorer.scopeClear")}
         </button>
@@ -977,24 +999,24 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         <div>
           <div className="flex items-center gap-2">
             <Database className="h-5 w-5 text-brand" />
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900">
+            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
               {t("explorer.title")}
             </h1>
           </div>
-          <p className="mt-1 text-xs text-slate-500">{t("explorer.subtitle")}</p>
+          <p className="mt-1 text-xs text-ink-muted">{t("explorer.subtitle")}</p>
         </div>
         <button
           onClick={refresh}
-          className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 shadow-xs [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50"
+          className="flex items-center gap-2 rounded-2xl border border-line bg-surface px-4 py-2.5 text-xs font-bold text-ink-secondary shadow-xs [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-page"
         >
-          <RefreshCw className={`h-3.5 w-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw className={`h-3.5 w-3.5 text-ink-muted ${loading ? "animate-spin" : ""}`} />
           <span>{t("explorer.refresh")}</span>
         </button>
       </div>
 
       {/* The three views. Which controls make sense depends on the one chosen, so the
           filter bar below is composed per view rather than shown whole and half-inert. */}
-      <div className="flex flex-wrap gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
+      <div className="flex flex-wrap gap-1 rounded-2xl border border-line bg-surface-muted p-1">
         {VIEW_TABS.map((tab) => {
           const Icon = tab.icon;
           const isActive = view === tab.id;
@@ -1005,8 +1027,8 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               aria-current={isActive}
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 isActive
-                  ? "bg-white text-brand shadow-xs"
-                  : "text-slate-500 hover:text-slate-900"
+                  ? "bg-surface text-brand shadow-xs"
+                  : "text-ink-muted hover:text-ink"
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -1017,7 +1039,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       </div>
 
       {view !== "overview" && (
-        <div className="glass-card space-y-3 rounded-3xl border border-slate-200/80 bg-white p-5">
+        <div className="glass-card space-y-3 rounded-3xl border border-line bg-surface p-5">
           <div className="flex items-center justify-between">
             <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-brand">
               <Bookmark className="h-3.5 w-3.5" /> {t("explorer.savedViews")}
@@ -1025,7 +1047,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {!isSavingView ? (
               <button
                 onClick={() => setIsSavingView(true)}
-                className="flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-1.5 text-xs font-bold text-brand transition-colors hover:bg-emerald-100"
+                className="flex items-center gap-1.5 rounded-xl border border-ok-line bg-ok-soft px-3.5 py-1.5 text-xs font-bold text-brand transition-colors hover:bg-ok-soft"
               >
                 <Save className="h-3.5 w-3.5" /> {t("explorer.saveCurrent")}
               </button>
@@ -1037,7 +1059,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   placeholder={t("explorer.viewNamePlaceholder")}
                   value={newViewName}
                   onChange={(e) => setNewViewName(e.target.value)}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-900 outline-none focus-visible:border-brand"
+                  className="rounded-xl border border-line bg-surface px-3 py-1.5 text-xs text-ink outline-none focus-visible:border-brand"
                 />
                 <button
                   onClick={handleSaveCurrentView}
@@ -1048,7 +1070,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 <button
                   onClick={() => setIsSavingView(false)}
                   aria-label={t("common.cancel")}
-                  className="p-1 text-slate-400 hover:text-slate-900"
+                  className="p-1 text-ink-muted hover:text-ink"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1065,13 +1087,13 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-3.5 py-1.5 text-xs font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     activeViewId === saved.id
                       ? "border-brand bg-brand text-brand-ink shadow-xs"
-                      : "border-slate-200 bg-slate-50 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+                      : "border-line bg-page text-ink-muted hover:border-line hover:text-ink"
                   }`}
                 >
                   <span>{saved.name}</span>
                   <button
                     onClick={(e) => handleDeleteView(saved.id, e)}
-                    className="ml-1 text-slate-400 transition-colors hover:text-rose-500"
+                    className="ml-1 text-ink-muted transition-colors hover:text-danger-ink-on-soft"
                     title={t("explorer.deleteView")}
                     aria-label={t("explorer.deleteView")}
                   >
@@ -1081,14 +1103,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-slate-400">{t("explorer.noViews")}</p>
+            <p className="text-xs text-ink-muted">{t("explorer.noViews")}</p>
           )}
         </div>
       )}
 
       {view === "chart" && (
         <>
-          <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6">
+          <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-4">
                 <ExplorerMetricSelect
@@ -1097,11 +1119,10 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                   onChange={handleMetricChange}
                 />
                 {sourceFilter}
-                {importResolutionFilter}
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex rounded-2xl border border-slate-200 bg-slate-100 p-1 text-xs">
+                <div className="flex rounded-2xl border border-line bg-surface-muted p-1 text-xs">
                   {(
                     [
                       { id: "area", icon: AreaChart, titleKey: "chart.typeArea" },
@@ -1119,7 +1140,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                         className={`rounded-xl p-1.5 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                           chartType === option.id
                             ? "bg-brand text-brand-ink shadow-xs"
-                            : "text-slate-500 hover:text-slate-900"
+                            : "text-ink-muted hover:text-ink"
                         }`}
                       >
                         <Icon className="h-4 w-4" />
@@ -1135,18 +1156,20 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {seriesQueryNote}
           </div>
 
+          {/* No `aggregation` prop: each series label already states its own
+              aggregation through the catalogue, and one dialect for the whole
+              chart was a lie the moment two selected metrics disagreed. */}
           <ExplorerChart
             dates={timelineData.dates}
             series={timelineData.series}
             chartType={chartType}
-            aggregation={chartTooltipAggregation}
           />
         </>
       )}
 
       {view === "raw" && (
         <>
-          <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6">
+          <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6">
             <div className="flex flex-wrap items-center gap-4">
               <ExplorerMetricSelect
                 options={metricOptions}
@@ -1154,7 +1177,6 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                 onChange={handleMetricChange}
               />
               {sourceFilter}
-              {importResolutionFilter}
             </div>
             {periodFilter}
             {fullTextSearch}
@@ -1168,15 +1190,15 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
       {view === "overview" && (
         <>
-          <div className="glass-card rounded-3xl border border-slate-200/80 bg-white p-5">
+          <div className="glass-card rounded-3xl border border-line bg-surface p-5">
             <div className="relative">
-              <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-3 h-4 w-4 text-ink-muted" />
               <input
                 type="text"
                 placeholder={t("explorer.metricFilterPlaceholder")}
                 value={overviewSearch}
                 onChange={(e) => setOverviewSearch(e.target.value)}
-                className="w-full rounded-2xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-xs text-slate-900 outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
+                className="w-full rounded-2xl border border-line bg-surface py-2.5 pl-10 pr-4 text-xs text-ink outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
               />
             </div>
           </div>
@@ -1186,65 +1208,67 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             failed={summaryFailed}
             search={overviewSearch}
             onShowRaw={handleShowRaw}
+            policies={ingestPolicies}
+            onApplyResolution={applyIngestResolution}
           />
         </>
       )}
 
       {inspectPoint && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
-          <div className="w-full max-w-lg space-y-4 rounded-3xl border border-slate-200/90 bg-white p-6 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div className="w-full max-w-lg space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
                 <Database className="h-4 w-4 text-brand" />
-                <h3 className="text-sm font-bold text-slate-900">{t("explorer.inspectorTitle")}</h3>
+                <h3 className="text-sm font-bold text-ink">{t("explorer.inspectorTitle")}</h3>
               </div>
               <button
                 onClick={() => setInspectPoint(null)}
                 aria-label={t("common.close")}
-                className="text-slate-400 hover:text-slate-900"
+                className="text-ink-muted hover:text-ink"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="space-y-2 font-mono text-xs">
-              <div className="flex justify-between gap-4 text-slate-500">
+              <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colId")}</span>
-                <span className="truncate font-bold text-slate-900">{inspectPoint.id}</span>
+                <span className="truncate font-bold text-ink">{inspectPoint.id}</span>
               </div>
-              <div className="flex justify-between gap-4 text-slate-500">
+              <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colMetric")}</span>
                 <span className="truncate font-bold text-brand">
                   {inspectPoint.metric_type}
                 </span>
               </div>
-              <div className="flex justify-between gap-4 text-slate-500">
+              <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colValue")}</span>
-                <span className="font-bold text-slate-900">
+                <span className="font-bold text-ink">
                   {inspectPoint.value}
                   {describeMetric(inspectPoint.metric_type, locale).unit && (
-                    <span className="ml-1 font-normal text-slate-500">
+                    <span className="ml-1 font-normal text-ink-muted">
                       {describeMetric(inspectPoint.metric_type, locale).unit}
                     </span>
                   )}
                 </span>
               </div>
-              <div className="flex justify-between gap-4 text-slate-500">
+              <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colTimestamp")}</span>
-                <span className="text-slate-700">{inspectPoint.timestamp}</span>
+                <span className="text-ink-secondary">{inspectPoint.timestamp}</span>
               </div>
-              <div className="flex justify-between gap-4 text-slate-500">
+              <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colIdempotencyKey")}</span>
-                <span className="max-w-50 truncate text-[10px] text-slate-400">
+                <span className="max-w-50 truncate text-[10px] text-ink-muted">
                   {inspectPoint.idempotency_key}
                 </span>
               </div>
 
               <div className="pt-2">
-                <span className="mb-1 block font-sans font-bold text-slate-500">
+                <span className="mb-1 block font-sans font-bold text-ink-muted">
                   {t("explorer.inspectorMetadata")}
                 </span>
-                <pre className="max-h-48 overflow-x-auto rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[11px] text-emerald-400">
+                <pre className="max-h-48 overflow-x-auto rounded-2xl border border-line bg-code p-3 text-meta text-code-ink">
                   {JSON.stringify(inspectPoint.metadata || {}, null, 2)}
                 </pre>
               </div>
@@ -1253,7 +1277,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setInspectPoint(null)}
-                className="rounded-2xl border border-slate-200 bg-slate-100 px-4 py-2 text-xs font-bold text-slate-700 transition-colors hover:bg-slate-200"
+                className="rounded-2xl border border-line bg-surface-muted px-4 py-2 text-xs font-bold text-ink-secondary transition-colors hover:bg-surface-muted"
               >
                 {t("common.close")}
               </button>

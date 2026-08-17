@@ -124,18 +124,18 @@ export default function ImporterDetailPage({
             type="button"
             onClick={() => router.push("/connectors")}
             aria-label={t("importerDetail.back")}
-            className="mt-1 rounded-xl border border-slate-200 bg-white p-2 text-slate-600 shadow-sm hover:bg-slate-50"
+            className="mt-1 rounded-xl border border-line bg-surface p-2 text-ink-muted shadow-sm hover:bg-page"
           >
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
               {t("importerDetail.eyebrow")}
             </p>
-            <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
+            <h1 className="text-3xl font-extrabold tracking-tight text-ink">
               {connector.display_name || connector.source_type}
             </h1>
-            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-xs text-ink-muted">
               {connector.source_type} · {passive ? t("connectors.passive") : t("connectors.active")}
             </p>
           </div>
@@ -144,7 +144,7 @@ export default function ImporterDetailPage({
           <button
             type="button"
             onClick={() => void loadRuns()}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+            className="inline-flex items-center gap-2 rounded-2xl border border-line bg-surface px-3.5 py-2 text-xs font-semibold text-ink-secondary shadow-sm hover:bg-page"
           >
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
             {t("header.refresh")}
@@ -161,7 +161,7 @@ export default function ImporterDetailPage({
             <button
               type="button"
               onClick={() => setImportOpen(true)}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              className="inline-flex items-center gap-2 rounded-2xl border border-line bg-surface px-3.5 py-2 text-xs font-semibold text-ink-secondary hover:bg-page"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               {uploadOnly ? t("connectors.upload") : t("connectors.import")}
@@ -171,7 +171,7 @@ export default function ImporterDetailPage({
       </div>
 
       {error && (
-        <p className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-200">
+        <p className="rounded-2xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-200">
           {error}
         </p>
       )}
@@ -200,10 +200,10 @@ export default function ImporterDetailPage({
       </div>
 
       {latest && (
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <section className="rounded-3xl border border-line bg-surface p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <Clock3 className="h-4 w-4 text-brand" />
-            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-bold text-ink">
               {t("importerDetail.latestRun")}
             </h2>
           </div>
@@ -223,7 +223,7 @@ export default function ImporterDetailPage({
             />
           </div>
           {messageForRun(t, latest) && (
-            <p className="mt-3 rounded-2xl bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <p className="mt-3 rounded-2xl bg-page px-3 py-2 text-xs text-ink-muted">
               {messageForRun(t, latest)}
             </p>
           )}
@@ -235,25 +235,25 @@ export default function ImporterDetailPage({
         </section>
       )}
 
-      <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <section className="rounded-3xl border border-line bg-surface p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <History className="h-4 w-4 text-brand" />
-            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-bold text-ink">
               {t("importerDetail.historyTitle")}
             </h2>
           </div>
-          <span className="text-[11px] text-slate-400">
+          <span className="text-[11px] text-ink-muted">
             {t("importerDetail.autoRefresh", { seconds: RUN_REFRESH_MS / 1000 })}
           </span>
         </div>
 
         {loading && runs.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-12 text-xs text-slate-500">
+          <div className="flex items-center justify-center gap-2 py-12 text-xs text-ink-muted">
             <Loader2 className="h-4 w-4 animate-spin" /> {t("importerDetail.loading")}
           </div>
         ) : runs.length === 0 ? (
-          <p className="rounded-2xl bg-slate-50 px-4 py-8 text-center text-xs text-slate-500">
+          <p className="rounded-2xl bg-page px-4 py-8 text-center text-xs text-ink-muted">
             {t("importerDetail.noRuns")}
           </p>
         ) : (
@@ -261,16 +261,16 @@ export default function ImporterDetailPage({
             {runs.map((run) => (
               <article
                 key={run.id}
-                className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-800/70"
+                className="rounded-2xl border border-line bg-page p-4"
               >
                 <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div className="flex min-w-0 items-start gap-2.5">
                     {run.status === "success" ? (
-                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-ok" />
                     ) : run.status === "error" ? (
-                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+                      <XCircle className="mt-0.5 h-4 w-4 shrink-0 text-danger-ink-on-soft" />
                     ) : (
-                      <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                      <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
                     )}
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -279,14 +279,14 @@ export default function ImporterDetailPage({
                         >
                           {t(statusKey(run.status))}
                         </span>
-                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                        <span className="text-[11px] font-semibold text-ink-secondary">
                           {t(triggerKey(run.trigger))}
                         </span>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[11px] text-ink-muted">
                           {formatDateTime(run.started_at)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                      <p className="mt-1 text-[11px] text-ink-muted">
                         {t("importerDetail.points", {
                           processed: formatNumber(run.points_processed),
                           accepted: formatNumber(run.points_accepted),
@@ -300,7 +300,7 @@ export default function ImporterDetailPage({
                         })}
                       </p>
                       {run.provider_window_start && run.provider_window_end && (
-                        <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                        <p className="mt-1 text-[11px] text-ink-muted">
                           {t("importerDetail.providerWindow", {
                             start: formatDateTime(run.provider_window_start),
                             end: formatDateTime(run.provider_window_end),
@@ -308,7 +308,7 @@ export default function ImporterDetailPage({
                         </p>
                       )}
                       {run.backlog_at_end !== null && run.backlog_at_end !== undefined && (
-                        <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                        <p className="mt-1 text-[11px] text-ink-muted">
                           {t("importerDetail.backlog", {
                             count: formatNumber(run.backlog_at_end),
                           })}
@@ -316,7 +316,7 @@ export default function ImporterDetailPage({
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-slate-500 sm:grid-cols-4 lg:min-w-[430px]">
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-ink-muted sm:grid-cols-4 lg:min-w-[430px]">
                     <DetailValue label={t("importerDetail.mode")} value={t(modeKey(run.mode))} />
                     <DetailValue
                       label={t("importerDetail.duration")}
@@ -334,7 +334,7 @@ export default function ImporterDetailPage({
                   </div>
                 </div>
                 {messageForRun(t, run) && (
-                  <p className="mt-3 break-words border-t border-slate-200 pt-3 text-xs text-slate-600 dark:border-slate-700 dark:text-slate-300">
+                  <p className="mt-3 break-words border-t border-line pt-3 text-xs text-ink-muted">
                     {messageForRun(t, run)}
                   </p>
                 )}
@@ -350,7 +350,7 @@ export default function ImporterDetailPage({
                 type="button"
                 onClick={() => void loadMore()}
                 disabled={loadingMore}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                className="flex w-full items-center justify-center gap-2 rounded-2xl border border-line bg-surface px-4 py-3 text-xs font-semibold text-ink-secondary hover:bg-page disabled:opacity-50"
               >
                 {loadingMore && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                 {loadingMore ? t("importerDetail.loadingMore") : t("importerDetail.loadMore")}
@@ -389,15 +389,15 @@ function SummaryCard({
 }) {
   const valueClass =
     tone === "success"
-      ? "text-emerald-700"
+      ? "text-ok-ink"
       : tone === "error"
-        ? "text-rose-700"
+        ? "text-danger-ink-on-soft"
         : tone === "active"
-          ? "text-amber-700"
-          : "text-slate-900";
+          ? "text-warn-ink"
+          : "text-ink";
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+    <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">{label}</p>
       <p className={`mt-2 text-lg font-extrabold ${valueClass}`}>{value}</p>
     </div>
   );
@@ -414,8 +414,8 @@ function DetailValue({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`mt-0.5 truncate text-[11px] text-slate-700 ${mono ? "font-mono" : ""}`}>
+      <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">{label}</p>
+      <p className={`mt-0.5 truncate text-[11px] text-ink-secondary ${mono ? "font-mono" : ""}`}>
         {value}
       </p>
     </div>

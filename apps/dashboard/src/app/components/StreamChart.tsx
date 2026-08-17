@@ -21,15 +21,24 @@ import type { StreamPoint } from "./WorkoutDetail";
  * produce the same two.
  *
  * **Colour.** One series, so one hue and no legend — the heading names it
- * (dataviz: a legend for two or more). `#1d4ed8` is the strong blue `AnalysisTab`
- * already documents, and it passes the palette validator's lightness, chroma and
- * contrast checks against this surface. Values and labels wear text tokens, never
+ * (dataviz: a legend for two or more). Values and labels wear text tokens, never
  * the series colour.
+ *
+ * Every colour here is a CSS variable rather than a hex literal, which is what
+ * makes this chart follow the theme at all. The `[data-theme="dark"]` block in
+ * `globals.css` rewrites Tailwind *utility classes*; a hex in a `stroke`
+ * attribute is not a class, so the grid used to draw a light-theme `#e2e8f0` on
+ * a dark card. An SVG presentation attribute resolves `var()` directly, so this
+ * needs no JavaScript — unlike the canvas charts, which need `useChartTheme`.
  */
 
-const SERIES = "#1d4ed8";
-const BAND = "rgba(29, 78, 216, 0.14)";
-const INK_MUTED = "#94a3b8";
+const SERIES = "var(--chart-series)";
+const BAND = "var(--chart-series-band)";
+/* `--muted-foreground` (#64748b, 4.71:1 on white), not the slate-400 this held
+   before: #94a3b8 is 2.56:1 and these are axis labels, which are text. */
+const INK_MUTED = "var(--muted-foreground)";
+const GRID = "var(--border)";
+const HALO = "var(--card)";
 
 const WIDTH = 760;
 const HEIGHT = 200;
@@ -92,13 +101,13 @@ export default function StreamChart({
   const active = hover === null ? null : plot.usable[hover];
 
   return (
-    <figure className="glass-card space-y-2 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+    <figure className="glass-card space-y-2 rounded-2xl border border-line bg-surface p-4 shadow-sm">
       <figcaption className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-sm font-bold text-slate-900">
+        <span className="text-sm font-bold text-ink">
           {described.label}
-          {unit && <span className="ml-1 text-xs font-semibold text-slate-400">{unit}</span>}
+          {unit && <span className="ml-1 text-xs font-semibold text-ink-muted">{unit}</span>}
         </span>
-        <span className="text-[11px] text-slate-400">
+        <span className="text-[11px] text-ink-muted">
           {t("workouts.streamBucket", { seconds: bucketSeconds })} ·{" "}
           {t("workouts.streamRange", {
             min: formatNumber(plot.minV, { maximumFractionDigits: described.precision }),
@@ -126,7 +135,7 @@ export default function StreamChart({
                   x2={WIDTH - PAD.right}
                   y1={yy}
                   y2={yy}
-                  stroke="#e2e8f0"
+                  stroke={GRID}
                   strokeWidth={1}
                 />
                 <text x={4} y={yy + 3} fontSize={10} fill={INK_MUTED}>
@@ -156,7 +165,7 @@ export default function StreamChart({
                 cy={plot.y(active.avg as number)}
                 r={4}
                 fill={SERIES}
-                stroke="#ffffff"
+                stroke={HALO}
                 strokeWidth={2}
               />
             </g>
@@ -180,7 +189,7 @@ export default function StreamChart({
         </svg>
       </div>
 
-      <div className="flex min-h-4 flex-wrap justify-between gap-2 text-[11px] text-slate-500">
+      <div className="flex min-h-4 flex-wrap justify-between gap-2 text-[11px] text-ink-muted">
         <span>
           {active
             ? `${formatDateTime(active.t)} · ${formatNumber(active.avg as number, {
@@ -195,7 +204,7 @@ export default function StreamChart({
               }`
             : ""}
         </span>
-        {truncated && <span className="text-amber-700">{t("workouts.streamTruncated")}</span>}
+        {truncated && <span className="text-warn-ink">{t("workouts.streamTruncated")}</span>}
       </div>
     </figure>
   );

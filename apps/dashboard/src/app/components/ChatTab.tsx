@@ -308,26 +308,26 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
 
   if (checking) {
     return (
-      <div className="mt-8 flex min-h-[520px] items-center justify-center rounded-3xl border border-slate-200 bg-white">
+      <div className="mt-8 flex min-h-[520px] items-center justify-center rounded-3xl border border-line bg-surface">
         <LoaderCircle className="text-brand-strong h-6 w-6 animate-spin" aria-hidden="true" />
-        <span className="ml-3 text-sm font-medium text-slate-600">{t("chat.statusChecking")}</span>
+        <span className="ml-3 text-sm font-medium text-ink-muted">{t("chat.statusChecking")}</span>
       </div>
     );
   }
 
   return (
-    <section className="mt-8 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-      <header className="flex flex-col gap-4 border-b border-slate-100 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
+    <section className="mt-8 overflow-hidden rounded-3xl border border-line bg-surface shadow-sm">
+      <header className="flex flex-col gap-4 border-b border-line px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <Bot className="text-brand-strong h-5 w-5" aria-hidden="true" />
-            <h1 className="text-xl font-bold text-slate-900">{t("chat.title")}</h1>
+            <h1 className="text-xl font-bold text-ink">{t("chat.title")}</h1>
           </div>
-          <p className="mt-1 text-sm text-slate-500">{t("chat.subtitle")}</p>
+          <p className="mt-1 text-sm text-ink-muted">{t("chat.subtitle")}</p>
         </div>
         {status?.authenticated && (
           <div className="flex items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800">
+            <span className="inline-flex items-center gap-2 rounded-full bg-ok-soft px-3 py-1.5 text-xs font-semibold text-ok-ink">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               {t("chat.statusReady", { plan: status.plan_type ?? t("common.unknown") })}
             </span>
@@ -335,7 +335,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
               type="button"
               onClick={newConversation}
               disabled={sending}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              className="inline-flex items-center gap-2 rounded-xl border border-line px-3 py-2 text-sm font-semibold text-ink-muted hover:bg-page disabled:cursor-not-allowed disabled:opacity-40"
             >
               <MessageCirclePlus className="h-4 w-4" aria-hidden="true" />
               {t("chat.newConversation")}
@@ -349,24 +349,24 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
           <div className="bg-brand-soft text-brand-strong mx-auto flex h-14 w-14 items-center justify-center rounded-2xl">
             <Bot className="h-7 w-7" aria-hidden="true" />
           </div>
-          <h2 className="mt-5 text-lg font-bold text-slate-900">
+          <h2 className="mt-5 text-lg font-bold text-ink">
             {status?.code === "CODEX_UNAVAILABLE"
               ? t("chat.unavailableTitle")
               : t("chat.loginTitle")}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-slate-500">
+          <p className="mt-2 text-sm leading-6 text-ink-muted">
             {status?.code === "CODEX_UNAVAILABLE" ? t("chat.unavailableBody") : t("chat.loginBody")}
           </p>
 
           {login ? (
-            <div className="mt-7 rounded-2xl border border-slate-200 bg-slate-50 p-5 text-left">
-              <p className="text-sm font-semibold text-slate-700">{t("chat.deviceInstruction")}</p>
+            <div className="mt-7 rounded-2xl border border-line bg-page p-5 text-left">
+              <p className="text-sm font-semibold text-ink-secondary">{t("chat.deviceInstruction")}</p>
               <div className="bg-surface ring-line mt-4 flex items-center justify-between gap-3 rounded-xl px-4 py-3 ring-1">
                 <div>
-                  <span className="block text-xs font-medium text-slate-400">
+                  <span className="block text-xs font-medium text-ink-muted">
                     {t("chat.deviceCodeLabel")}
                   </span>
-                  <code className="text-lg font-bold tracking-widest text-slate-900">
+                  <code className="text-lg font-bold tracking-widest text-ink">
                     {login.user_code}
                   </code>
                 </div>
@@ -375,7 +375,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
                   onClick={copyCode}
                   title={t("chat.copyCode")}
                   aria-label={t("chat.copyCode")}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  className="rounded-lg p-2 text-ink-muted hover:bg-surface-muted"
                 >
                   {copied ? <Check className="h-5 w-5" /> : <Clipboard className="h-5 w-5" />}
                 </button>
@@ -389,7 +389,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
                 {t("chat.openLogin")}
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
               </a>
-              <p className="mt-3 text-center text-xs text-slate-400">{t("chat.waitingForLogin")}</p>
+              <p className="mt-3 text-center text-xs text-ink-muted">{t("chat.waitingForLogin")}</p>
             </div>
           ) : (
             status?.available && (
@@ -409,8 +409,8 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
           <div className="bg-surface-muted/60 h-[min(60vh,540px)] overflow-y-auto overscroll-contain px-4 py-6 sm:h-[540px] sm:px-8">
             {messages.length === 0 && (
               <div className="mx-auto mt-24 max-w-xl text-center">
-                <h2 className="text-lg font-bold text-slate-800">{t("chat.welcomeTitle")}</h2>
-                <p className="mt-2 text-sm leading-6 text-slate-500">{t("chat.welcomeBody")}</p>
+                <h2 className="text-lg font-bold text-ink-secondary">{t("chat.welcomeTitle")}</h2>
+                <p className="mt-2 text-sm leading-6 text-ink-muted">{t("chat.welcomeBody")}</p>
               </div>
             )}
             <div className="mx-auto max-w-3xl space-y-5">
@@ -446,7 +446,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
                     )}
                   </div>
                   {message.role === "user" && (
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-200 text-slate-600">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-muted text-ink-muted">
                       <User className="h-5 w-5" aria-hidden="true" />
                     </div>
                   )}
@@ -486,7 +486,7 @@ export default function ChatTab({ apiBase }: { apiBase: string }) {
                 )}
               </button>
             </div>
-            <p className="mt-2 text-center text-xs text-slate-400">{t("chat.disclaimer")}</p>
+            <p className="mt-2 text-center text-xs text-ink-muted">{t("chat.disclaimer")}</p>
           </form>
         </>
       )}

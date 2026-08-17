@@ -15,7 +15,8 @@ import {
 } from "chart.js";
 import { Line, Bar } from "react-chartjs-2";
 
-import { useT } from "../lib/i18n/provider";
+import { useI18n } from "../lib/i18n/provider";
+import { useChartTheme } from "../lib/theme/chart";
 
 ChartJS.register(
   CategoryScale,
@@ -46,16 +47,11 @@ interface ExplorerChartProps {
     values: number[];
   }>;
   chartType: "area" | "line" | "bar";
-  aggregation: "sum" | "avg" | "max" | "raw";
 }
 
-export default function ExplorerChart({
-  dates,
-  series,
-  chartType,
-  aggregation,
-}: ExplorerChartProps) {
-  const t = useT();
+export default function ExplorerChart({ dates, series, chartType }: ExplorerChartProps) {
+  const { t, formatNumber } = useI18n();
+  const theme = useChartTheme();
   const chartData = {
     labels: dates,
     datasets: series.map((s) => ({
@@ -82,45 +78,58 @@ export default function ExplorerChart({
       legend: {
         position: "top" as const,
         labels: {
-          color: "#334155",
+          color: theme.ink,
           font: { family: "var(--font-outfit), 'Outfit', sans-serif", size: 12, weight: 600 },
           usePointStyle: true,
           boxWidth: 8,
         },
       },
       tooltip: {
-        backgroundColor: "#0f172a",
-        borderColor: "#334155",
+        backgroundColor: theme.surface,
+        borderColor: theme.line,
         borderWidth: 1,
-        titleColor: "#ffffff",
+        titleColor: theme.surfaceInk,
         titleFont: { family: "var(--font-outfit), sans-serif", size: 13, weight: 700 },
-        bodyColor: "#cbd5e1",
+        bodyColor: theme.surfaceInk,
         bodyFont: { family: "var(--font-jetbrains-mono), monospace", size: 12 },
         padding: 12,
         cornerRadius: 12,
         callbacks: {
-          label: (ctx: any) => `${ctx.dataset.label}: ${ctx.raw} (${aggregation.toUpperCase()})`,
+          // The dataset label already reads "Steps (count) · WHOOP · Sum" — metric,
+          // unit, source and aggregation, all through the catalogue. This used to
+          // append `(${aggregation.toUpperCase()})` on top of that: the same fact
+          // a second time, as an uppercased English identifier in user-visible
+          // text, and *wrong* whenever the selected metrics disagreed on their
+          // aggregation, because the caller fell back to "raw" — labelling a
+          // daily SUM rollup as RAW, a provenance claim the point cannot carry.
+          //
+          // The value goes through `formatNumber` like every other number in the
+          // app; it was the one place a raw JS float reached a reader.
+          label: (ctx: any) =>
+            `${ctx.dataset.label}: ${
+              typeof ctx.raw === "number" ? formatNumber(ctx.raw) : t("common.unknown")
+            }`,
         },
       },
     },
     scales: {
       x: {
         ticks: {
-          color: "#64748b",
+          color: theme.inkMuted,
           font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 500 },
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 12,
         },
-        grid: { color: "#f1f5f9" },
+        grid: { color: theme.line },
       },
       y: {
         type: "linear" as const,
         ticks: {
-          color: "#64748b",
+          color: theme.inkMuted,
           font: { family: "var(--font-jetbrains-mono), monospace", size: 10, weight: 600 },
         },
-        grid: { color: "#f1f5f9" },
+        grid: { color: theme.line },
       },
     },
   };

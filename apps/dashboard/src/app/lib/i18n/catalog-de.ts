@@ -196,8 +196,18 @@ export const de: Record<MessageKey, string> = {
   "day.mealOther": "Sonstiges",
   "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
   "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
-  "day.answeredBy":
-    "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
+  "day.vsPreviousDay": "ggü. Vortag",
+  "day.expandAll": "Alle aufklappen",
+  "day.collapseAll": "Alle zuklappen",
+  "day.mapSection": "Wo der Tag stattfand",
+  "day.valueCount_one": "{count} Wert",
+  "day.valueCount_other": "{count} Werte",
+  "day.eventCount_one": "{count} Eintrag",
+  "day.eventCount_other": "{count} Einträge",
+  "day.mealCount_one": "{count} Mahlzeit",
+  "day.mealCount_other": "{count} Mahlzeiten",
+  "day.multiSourceNote":
+    "Wo mehrere Connectoren einen Wert gemeldet haben, steht die angezeigte Quelle in Klammern. Beide werden nie addiert.",
   "day.laneSleep": "Schlaf",
   "day.laneActivity": "Aktivität",
   "day.laneWorkout": "Workouts",
@@ -235,6 +245,10 @@ export const de: Record<MessageKey, string> = {
   "quality.conflictsDetail": "Abweichungen über 5 %",
   "quality.conflictsNone": "Keine auffälligen konkurrierenden Quellen.",
   "quality.conflictsHelp": "Einheiten und bevorzugte Primärquelle prüfen.",
+  "quality.conflictsListTitle": "Welche Messwerte sich widersprechen",
+  "quality.conflictsListHint":
+    "Dieselbe Metrik am selben Tag, von zwei Connectoren unterschiedlich gemeldet. Beide Werte bleiben erhalten; welcher verwendet wird, entscheidet die primäre Quelle pro Metrik.",
+  "quality.conflictsMore": "{count} weitere Widersprüche nicht angezeigt",
   "quality.recommendationComplete": "Datenbasis wirkt vollständig.",
   "quality.recommendationMinor": "Leichte Lücken: Analyse nutzbar, aber Trends prüfen.",
   "quality.recommendationSerious":
@@ -319,10 +333,6 @@ export const de: Record<MessageKey, string> = {
   "quality.backfillSource": "{source} nachladen",
   "quality.backfillHint":
     "Der Importdialog schlägt den benötigten Zeitraum vor und überspringt bereits vorhandene Bereiche.",
-  "quality.conflictsNoneLong": "Keine widersprüchlichen Messwerte gefunden.",
-  "quality.conflictsSome": "{count} Messwerte weichen zwischen Quellen deutlich voneinander ab.",
-  "quality.conflictsAdvice":
-    "Bei Konflikten sollte die zuverlässigste Quelle pro Metrik priorisiert und die Einheit im Importer-Transformer geprüft werden.",
 
   // ── Charts and map ──────────────────────────────────────────────────────
   "chart.calories": "Kalorien (kcal)",
@@ -614,6 +624,9 @@ export const de: Record<MessageKey, string> = {
   "profile.changing": "Wird geändert…",
   "profile.encryptionNote":
     "Connector-Tokens werden vor der Speicherung mit Fernet AES-256 verschlüsselt.",
+  "profile.appearance": "Darstellung und Sprache",
+  "profile.language": "Sprache der Oberfläche",
+  "profile.theme": "Erscheinungsbild",
   "profile.workspaceDetails": "Workspace und Mandanten-ID",
   "profile.tenantId": "Mandanten-ID (UUID)",
   "profile.copy": "Kopieren",
@@ -746,11 +759,14 @@ export const de: Record<MessageKey, string> = {
     "Noch keine gespeicherten Ansichten. Filter einstellen und auf „Aktuelle Ansicht speichern“ klicken.",
   "explorer.source": "Quelle:",
   "explorer.allSources": "Alle Quellen",
-  "explorer.importResolution": "Importauflösung:",
-  "explorer.importResolutionHint":
-    "Dies ändert die Auflösung zukünftiger Importe für die ausgewählten Metriken.",
-  "explorer.resolutionAuto": "Registerstandard",
+  "explorer.colStorage": "Speicherung",
+  "explorer.storageHint":
+    "Die Speicherung legt fest, wie fein eine Metrik beim Eintreffen abgelegt wird. Sie wirkt nur auf künftige Importe — bereits gespeicherte Punkte bleiben unberührt.",
+  "explorer.storageApply": "Übernehmen",
+  "explorer.storageIsDefault": "Registerstandard",
+  "explorer.storageIsOverride": "Für diesen Workspace gesetzt",
   "explorer.resolutionRaw": "Rohdaten",
+  "explorer.resolutionSecond": "Sekunde",
   "explorer.resolutionMinute": "Minute",
   "explorer.resolutionHour": "Stunde",
   "explorer.resolutionDay": "Tag",
@@ -1108,6 +1124,12 @@ export const de: Record<MessageKey, string> = {
   "analysis.matrixCellAria": "{first} und {second}: Korrelationskoeffizient {value}",
   "analysis.strongestTitle": "Auffälligste Zusammenhänge",
   "analysis.matrixTitle": "Korrelationsmatrix",
+  "analysis.matrixSize": "{count} Metriken",
+  "analysis.runTitle": "Welcher Lauf das ist",
+  "analysis.runSummary": "{days} Tage · {source}",
+  "analysis.runNote":
+    "Fenster oder Quelle zu ändern startet einen neuen Analyselauf, der einige Minuten dauert. Die Filter darunter ändern nur die Anzeige.",
+  "analysis.laggedTruncated": "Zeigt {shown} von {total}.",
   "analysis.matrixAria": "Korrelationsmatrix der Metriken",
   "analysis.interpretationTitle": "Interpretation",
   "analysis.sharedDays": "Gemeinsame Tage: {count}",
@@ -1242,6 +1264,8 @@ export const de: Record<MessageKey, string> = {
     "Diese Einheit wurde importiert, bevor Trainings eine Kennung trugen. Ihre Punkte sind über Zeitstempel und Titel gruppiert: zwei gleich gestempelte Einheiten können als eine erscheinen, eine Einheit als zwei.",
   "workouts.scanTruncated":
     "Dieser Zeitraum enthält mehr Zeilen, als ein Durchlauf liest. Wähle einen kürzeren Zeitraum, um alles zu sehen.",
+  "workouts.listTruncated":
+    "Zeigt die neuesten {count} Sitzungen in diesem Zeitraum. Wähle einen kürzeren Zeitraum, um ältere zu erreichen.",
   "workouts.back": "Alle Trainings",
   "workouts.exercises_one": "{count} Übung",
   "workouts.exercises_other": "{count} Übungen",

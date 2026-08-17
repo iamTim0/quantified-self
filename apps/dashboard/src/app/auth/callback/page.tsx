@@ -86,12 +86,12 @@ function CallbackInner() {
   }, [complete]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">
-      <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center">
+    <main className="flex min-h-dvh items-center justify-center bg-surface-muted p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">
+      <div className="w-full max-w-md rounded-3xl border border-line bg-surface p-8 text-center">
         {error ? (
           <>
-            <h1 className="mb-2 text-lg font-bold text-slate-900">{t("auth.callbackTitle")}</h1>
-            <p className="mb-5 text-sm leading-relaxed text-slate-600">{error}</p>
+            <h1 className="mb-2 text-lg font-bold text-ink">{t("auth.callbackTitle")}</h1>
+            <p className="mb-5 text-sm leading-relaxed text-ink-muted">{error}</p>
             <Link
               href="/"
               className="inline-block rounded-2xl bg-brand px-5 py-2.5 text-sm font-bold text-brand-ink"
@@ -100,7 +100,7 @@ function CallbackInner() {
             </Link>
           </>
         ) : (
-          <p className="text-sm text-slate-600">{t(status)}</p>
+          <p className="text-sm text-ink-muted">{t(status)}</p>
         )}
       </div>
     </main>
@@ -114,8 +114,8 @@ export default function OidcCallbackPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-slate-100">
-          <p className="text-sm text-slate-500">{t("auth.callbackWorking")}</p>
+        <main className="flex min-h-dvh items-center justify-center bg-surface-muted">
+          <p className="text-sm text-ink-muted">{t("auth.callbackWorking")}</p>
         </main>
       }
     >

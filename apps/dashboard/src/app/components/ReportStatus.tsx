@@ -64,7 +64,7 @@ export default function ReportStatus({
     : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
       {running ? (
         <span className="inline-flex items-center gap-1.5">
           <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -81,7 +81,7 @@ export default function ReportStatus({
       )}
 
       {error && !running ? (
-        <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800 dark:bg-red-500/15 dark:text-red-300">
+        <span className="rounded-full bg-danger-soft px-2 py-0.5 font-medium text-danger-ink-on-soft dark:text-red-300">
           {errorText}
         </span>
       ) : null}
@@ -89,13 +89,13 @@ export default function ReportStatus({
       {stale && !running && !neverComputed ? (
         deferred ? (
           <span
-            className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-700/50 dark:text-slate-300"
+            className="rounded-full bg-surface-muted px-2 py-0.5 font-medium text-ink-muted dark:bg-slate-700/50"
             title={t("report.deferredTitle")}
           >
             {t("report.deferred")}
           </span>
         ) : (
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
+          <span className="rounded-full bg-warn-soft px-2 py-0.5 font-medium text-warn-ink">
             {t("report.stale")}
           </span>
         )
@@ -105,7 +105,7 @@ export default function ReportStatus({
         type="button"
         onClick={onRefresh}
         disabled={running}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-medium text-ink-secondary transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" />
         {t("report.recompute")}

@@ -25,7 +25,7 @@ import type { GpsPoint } from "./LocationMap";
 
 const LocationMap = dynamic(() => import("./LocationMap"), {
   ssr: false,
-  loading: () => <div className="h-[420px] w-full rounded-3xl border border-slate-200 bg-slate-50" />,
+  loading: () => <div className="h-[420px] w-full rounded-3xl border border-line bg-page" />,
 });
 
 interface Measure {
@@ -168,7 +168,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
   const back = (
     <button
       onClick={onBack}
-      className="flex min-h-9 items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-900"
+      className="flex min-h-9 items-center gap-1.5 text-xs font-semibold text-ink-muted hover:text-ink"
     >
       <ArrowLeft className="h-4 w-4" />
       {t("workouts.back")}
@@ -179,7 +179,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
     return (
       <div className="space-y-4">
         {back}
-        <p className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-400">
+        <p className="rounded-3xl border border-line bg-surface p-6 text-sm text-ink-muted">
           {t("workouts.loading")}
         </p>
       </div>
@@ -190,7 +190,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
     return (
       <div className="space-y-4">
         {back}
-        <p className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-600">
+        <p className="rounded-3xl border border-line bg-surface p-6 text-sm text-ink-muted">
           {t("workouts.notFound")}
         </p>
       </div>
@@ -213,20 +213,20 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
       {back}
 
       <header className="space-y-1">
-        <h2 className="text-xl font-extrabold text-slate-900">
+        <h2 className="text-xl font-extrabold text-ink">
           {body.title || t(categoryLabel(body.category))}
         </h2>
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-ink-muted">
           {formatDateTime(body.window.start)} – {formatDateTime(body.window.end)}
         </p>
         {body.identity === "timestamp_title" && (
-          <p className="flex items-start gap-2 pt-1 text-xs text-amber-700">
+          <p className="flex items-start gap-2 pt-1 text-xs text-warn-ink">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {t("workouts.approximateHint")}
           </p>
         )}
         {body.window.clamped && (
-          <p className="flex items-start gap-2 pt-1 text-xs text-amber-700">
+          <p className="flex items-start gap-2 pt-1 text-xs text-warn-ink">
             <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             {t("workouts.clamped")}
           </p>
@@ -235,7 +235,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
 
       {/* What the session states about itself */}
       <section className="space-y-2">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
           {t("workouts.measures")}
         </h3>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -244,24 +244,24 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
             return (
               <div
                 key={measure.metric_type}
-                className="glass-card rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm"
+                className="glass-card rounded-2xl border border-line bg-surface p-4 shadow-sm"
               >
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
                   {described.label}
                 </p>
-                <p className="mt-1 text-lg font-extrabold text-slate-900">
+                <p className="mt-1 text-lg font-extrabold text-ink">
                   {formatNumber(measure.value, {
                     maximumFractionDigits: described.precision,
                   })}{" "}
-                  <span className="text-xs font-semibold text-slate-400">{measure.unit}</span>
+                  <span className="text-xs font-semibold text-ink-muted">{measure.unit}</span>
                 </p>
                 {measure.derived_by && measure.derived_from && (
-                  <p className="mt-1 text-[11px] text-slate-400">
+                  <p className="mt-1 text-[11px] text-ink-muted">
                     {t("workouts.derived", { fields: measure.derived_from.join(", ") })}
                   </p>
                 )}
                 {measure.provider_value !== null && measure.units && (
-                  <p className="mt-0.5 text-[11px] text-slate-400">
+                  <p className="mt-0.5 text-[11px] text-ink-muted">
                     {t("workouts.providerValue", {
                       value: formatNumber(measure.provider_value, {
                         maximumFractionDigits: 3,
@@ -279,12 +279,12 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
       {/* The route */}
       {body.route && routePoints.length > 0 && (
         <section className="space-y-2">
-          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+          <h3 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-ink-muted">
             <MapPin className="h-3.5 w-3.5" />
             {t("workouts.route")}
           </h3>
           <LocationMap points={routePoints} showHeader={false} />
-          <p className="flex flex-wrap gap-x-3 text-[11px] text-slate-500">
+          <p className="flex flex-wrap gap-x-3 text-[11px] text-ink-muted">
             <span>
               {t(
                 plural(
@@ -311,11 +311,11 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
 
       {/* Series recorded inside the session */}
       <section className="space-y-2">
-        <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+        <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
           {t("workouts.streams")}
         </h3>
         {body.streams.length === 0 ? (
-          <p className="rounded-2xl border border-slate-200 bg-white p-4 text-xs text-slate-400">
+          <p className="rounded-2xl border border-line bg-surface p-4 text-xs text-ink-muted">
             {t("workouts.noStreams")}
           </p>
         ) : (
@@ -337,37 +337,37 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
       {/* Sets, grouped by exercise */}
       {body.strength.exercises.length > 0 && (
         <section className="space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
             {t("workouts.strength")}
           </h3>
           {body.strength.set_rows_truncated && (
-            <p className="text-[11px] text-amber-700">{t("workouts.strengthTruncated")}</p>
+            <p className="text-[11px] text-warn-ink">{t("workouts.strengthTruncated")}</p>
           )}
           <div className="space-y-3">
             {body.strength.exercises.map((exercise) => (
               <div
                 key={exercise.exercise_title}
-                className="glass-card overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-sm"
+                className="glass-card overflow-hidden rounded-2xl border border-line bg-surface shadow-sm"
               >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line p-4">
                   <div className="flex min-w-0 items-center gap-2">
-                    <span className="truncate text-sm font-bold text-slate-900">
+                    <span className="truncate text-sm font-bold text-ink">
                       {exercise.exercise_title}
                     </span>
                     {exercise.muscle_group && (
                       <span
-                        className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600"
+                        className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] text-ink-muted"
                         title={exercise.exercise_category ?? undefined}
                       >
                         {t(muscleKey(exercise.muscle_group))}
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-3 text-[11px] text-slate-500">
+                  <div className="flex gap-3 text-[11px] text-ink-muted">
                     {exercise.top_set_weight !== null && (
                       <span>
                         {t("workouts.topSet")}:{" "}
-                        <b className="text-slate-800">
+                        <b className="text-ink-secondary">
                           {formatNumber(exercise.top_set_weight, {
                             maximumFractionDigits: 1,
                           })}{" "}
@@ -377,20 +377,20 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                     )}
                     <span>
                       {t("workouts.totalVolume")}:{" "}
-                      <b className="text-slate-800">
+                      <b className="text-ink-secondary">
                         {formatNumber(exercise.total_volume, { maximumFractionDigits: 0 })}{" "}
                         {volumeUnit}
                       </b>
                     </span>
                     <span>
                       {t("workouts.totalReps")}:{" "}
-                      <b className="text-slate-800">{formatNumber(exercise.total_reps)}</b>
+                      <b className="text-ink-secondary">{formatNumber(exercise.total_reps)}</b>
                     </span>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[420px] text-left text-xs">
-                    <thead className="text-[11px] uppercase tracking-wide text-slate-400">
+                    <thead className="text-[11px] uppercase tracking-wide text-ink-muted">
                       <tr>
                         <th className="px-4 py-2 font-semibold">{t("workouts.setNumber")}</th>
                         <th className="px-4 py-2 font-semibold">{t("workouts.weight")}</th>
@@ -398,10 +398,10 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                         <th className="px-4 py-2 font-semibold">{t("workouts.volume")}</th>
                       </tr>
                     </thead>
-                    <tbody className="text-slate-700">
+                    <tbody className="text-ink-secondary">
                       {exercise.sets.map((set, index) => (
-                        <tr key={`${set.at}-${index}`} className="border-t border-slate-50">
-                          <td className="px-4 py-2 text-slate-400">
+                        <tr key={`${set.at}-${index}`} className="border-t border-line">
+                          <td className="px-4 py-2 text-ink-muted">
                             {set.set_number ?? index + 1}
                           </td>
                           <td className="px-4 py-2 font-semibold">
@@ -412,7 +412,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                                 })} ${weightUnit}`}
                           </td>
                           <td className="px-4 py-2">{set.reps ?? "—"}</td>
-                          <td className="px-4 py-2 text-slate-500">
+                          <td className="px-4 py-2 text-ink-muted">
                             {set.volume === undefined
                               ? "—"
                               : `${formatNumber(set.volume, {
@@ -433,28 +433,28 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
       {/* Everything else recorded in the same window */}
       {body.surroundings.length > 0 && (
         <section className="space-y-2">
-          <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+          <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
             {t("workouts.surroundings")}
           </h3>
-          <p className="text-[11px] text-slate-500">{t("workouts.surroundingsHint")}</p>
+          <p className="text-[11px] text-ink-muted">{t("workouts.surroundingsHint")}</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {body.surroundings.map((row) => {
               const described = describeMetric(row.metric_type, locale);
               return (
                 <div
                   key={`${row.metric_type}-${row.source_type}`}
-                  className="flex items-baseline justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white px-4 py-3"
+                  className="flex items-baseline justify-between gap-2 rounded-2xl border border-line bg-surface px-4 py-3"
                 >
-                  <span className="min-w-0 truncate text-xs text-slate-600">
+                  <span className="min-w-0 truncate text-xs text-ink-muted">
                     {described.label}
                   </span>
-                  <span className="shrink-0 text-sm font-bold text-slate-900">
+                  <span className="shrink-0 text-sm font-bold text-ink">
                     {row.value === null
                       ? "—"
                       : formatNumber(row.value, {
                           maximumFractionDigits: described.precision,
                         })}{" "}
-                    <span className="text-[11px] font-semibold text-slate-400">{row.unit}</span>
+                    <span className="text-[11px] font-semibold text-ink-muted">{row.unit}</span>
                   </span>
                 </div>
               );

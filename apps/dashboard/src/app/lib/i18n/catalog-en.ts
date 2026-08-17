@@ -194,8 +194,18 @@ export const en = {
   "day.mealOther": "Other",
   "day.lastImport": "This connector last imported {timestamp}",
   "day.neverImported": "This connector has never completed an import",
-  "day.answeredBy":
-    "Answered by {source}. Another connector also reports this metric; the two are never added together.",
+  "day.vsPreviousDay": "vs. the day before",
+  "day.expandAll": "Expand all",
+  "day.collapseAll": "Collapse all",
+  "day.mapSection": "Where the day happened",
+  "day.valueCount_one": "{count} value",
+  "day.valueCount_other": "{count} values",
+  "day.eventCount_one": "{count} event",
+  "day.eventCount_other": "{count} events",
+  "day.mealCount_one": "{count} meal",
+  "day.mealCount_other": "{count} meals",
+  "day.multiSourceNote":
+    "Where more than one connector reported a value, the source in brackets is the one shown. The two are never added together.",
   "day.laneSleep": "Sleep",
   "day.laneActivity": "Activity",
   "day.laneWorkout": "Workouts",
@@ -233,6 +243,10 @@ export const en = {
   "quality.conflictsDetail": "Deviations above 5 %",
   "quality.conflictsNone": "No competing sources worth a second look.",
   "quality.conflictsHelp": "Check the units and which source should be the primary one.",
+  "quality.conflictsListTitle": "Which measurements disagree",
+  "quality.conflictsListHint":
+    "The same metric on the same day, reported differently by two connectors. Both readings are kept; choosing a primary source per metric decides which one is used.",
+  "quality.conflictsMore": "{count} further disagreements not shown",
   "quality.recommendationComplete": "The data looks complete.",
   "quality.recommendationMinor": "Small gaps: usable for analysis, but check the trends.",
   "quality.recommendationSerious":
@@ -317,10 +331,6 @@ export const en = {
   "quality.backfillSource": "Backfill {source}",
   "quality.backfillHint":
     "The import dialog proposes the period that is missing and skips what is already stored.",
-  "quality.conflictsNoneLong": "No contradictory measurements found.",
-  "quality.conflictsSome": "{count} measurements differ noticeably between sources.",
-  "quality.conflictsAdvice":
-    "Where sources conflict, pick the most reliable one per metric and check the unit in the importer's transformer.",
 
   // ── Charts and map ──────────────────────────────────────────────────────
   "chart.calories": "Calories (kcal)",
@@ -610,6 +620,9 @@ export const en = {
   "profile.changing": "Changing…",
   "profile.encryptionNote":
     "Connector tokens are encrypted with Fernet AES-256 before they are stored.",
+  "profile.appearance": "Appearance and language",
+  "profile.language": "Interface language",
+  "profile.theme": "Theme",
   "profile.workspaceDetails": "Workspace and tenant ID",
   "profile.tenantId": "Tenant ID (UUID)",
   "profile.copy": "Copy",
@@ -738,11 +751,14 @@ export const en = {
     "No saved views yet. Configure the filters and press “Save the current view”.",
   "explorer.source": "Source:",
   "explorer.allSources": "All sources",
-  "explorer.importResolution": "Import resolution:",
-  "explorer.importResolutionHint":
-    "This changes the resolution of future imports for the selected metrics.",
-  "explorer.resolutionAuto": "Registry default",
+  "explorer.colStorage": "Storage",
+  "explorer.storageHint":
+    "Storage sets how finely a metric is kept when it arrives. It applies to future imports only — points already stored are untouched.",
+  "explorer.storageApply": "Apply",
+  "explorer.storageIsDefault": "Registry default",
+  "explorer.storageIsOverride": "Set for this workspace",
   "explorer.resolutionRaw": "Raw",
+  "explorer.resolutionSecond": "Second",
   "explorer.resolutionMinute": "Minute",
   "explorer.resolutionHour": "Hour",
   "explorer.resolutionDay": "Day",
@@ -1093,6 +1109,12 @@ export const en = {
   "analysis.matrixCellAria": "{first} and {second}: correlation coefficient {value}",
   "analysis.strongestTitle": "Strongest relationships",
   "analysis.matrixTitle": "Correlation matrix",
+  "analysis.matrixSize": "{count} metrics",
+  "analysis.runTitle": "Which run this is",
+  "analysis.runSummary": "{days} days · {source}",
+  "analysis.runNote":
+    "Changing the window or the source starts a new analysis run, which takes a few minutes. The filters below only change what is shown.",
+  "analysis.laggedTruncated": "Showing {shown} of {total}.",
   "analysis.matrixAria": "Correlation matrix of metrics",
   "analysis.interpretationTitle": "Interpretation",
   "analysis.sharedDays": "Shared days: {count}",
@@ -1227,6 +1249,8 @@ export const en = {
     "This session was imported before workouts carried an identifier, so its points are grouped by timestamp and title. Two sessions stamped alike can appear as one, and one session can appear as two.",
   "workouts.scanTruncated":
     "This period holds more rows than one scan reads. Narrow the range to see everything.",
+  "workouts.listTruncated":
+    "Showing the newest {count} sessions in this period. Narrow the range to reach older ones.",
   "workouts.back": "All workouts",
   "workouts.exercises_one": "{count} exercise",
   "workouts.exercises_other": "{count} exercises",

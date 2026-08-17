@@ -48,19 +48,19 @@ export default function OperatorRunDiagnostics({
     run.duration_seconds >= Math.max(300, (typicalSeconds ?? 0) * 2);
 
   return (
-    <section className="mt-3 rounded-2xl border border-slate-300 bg-slate-100/80 p-3 text-[11px] text-slate-700 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-200">
-      <p className="font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+    <section className="mt-3 rounded-2xl border border-line bg-surface-muted p-3 text-[11px] text-ink-secondary dark:bg-slate-800/80">
+      <p className="font-bold uppercase tracking-wide text-ink-muted">
         {t("importerDetail.operatorDiagnostics")}
       </p>
       <dl className="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
         <div>
-          <dt className="font-semibold text-slate-500 dark:text-slate-400">
+          <dt className="font-semibold text-ink-muted">
             {t("importerDetail.operatorPhase")}
           </dt>
           <dd>{t(statusKey(run.status))}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500 dark:text-slate-400">
+          <dt className="font-semibold text-ink-muted">
             {t("importerDetail.operatorProgress")}
           </dt>
           <dd>
@@ -74,26 +74,26 @@ export default function OperatorRunDiagnostics({
           </dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500 dark:text-slate-400">
+          <dt className="font-semibold text-ink-muted">
             {t("importerDetail.operatorElapsed")}
           </dt>
           <dd>{durationLabel(t, formatNumber, run.duration_seconds)}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-slate-500 dark:text-slate-400">
+          <dt className="font-semibold text-ink-muted">
             {t("importerDetail.requestId")}
           </dt>
           <dd className="break-all font-mono">{run.request_id}</dd>
         </div>
       </dl>
       {message && (
-        <p className="mt-3 break-words border-t border-slate-200 pt-3 dark:border-slate-700">
+        <p className="mt-3 break-words border-t border-line pt-3">
           <span className="font-semibold">{t("importerDetail.operatorMessage")}: </span>
           {message}
         </p>
       )}
       {active && (
-        <p className="mt-2 text-slate-600 dark:text-slate-300">
+        <p className="mt-2 text-ink-muted">
           {stalled
             ? t("importerDetail.operatorStalled")
             : t("importerDetail.operatorActiveGuidance")}

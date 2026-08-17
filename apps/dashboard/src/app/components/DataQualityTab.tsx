@@ -1,21 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  BookOpen,
-  CalendarX2,
-  Lightbulb,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, BookOpen, CalendarX2, Lightbulb, RefreshCw } from "lucide-react";
 import ImportDialog from "./ImportDialog";
 import ReportStatus from "./ReportStatus";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
 import { useReport } from "../lib/reports";
-import { CANONICAL_KEYS } from "../lib/metrics/catalog";
+import { CANONICAL_KEYS, describeMetric } from "../lib/metrics/catalog";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
 // prop is kept only for call-site compatibility with the other tabs.
@@ -48,10 +41,42 @@ type GapReport = {
   missing_count: number;
 };
 
-/** The stored result of a scheduled cross-source conflict run. */
-type ConflictReport = {
-  conflicts: unknown[];
+/**
+ * One connector's reading inside a disagreement.
+ *
+ * `source_id` is the connector *instance*, which is what makes two rows of the
+ * same `source_type` distinguishable — two Apple Health connectors can disagree
+ * with each other.
+ */
+type ConflictCandidate = {
+  id: string;
+  source_id: string;
+  metric_type: string;
+  timestamp: string;
+  value: number | null;
 };
+
+/** Same metric, same day, values from different connectors beyond the tolerance. */
+type Conflict = {
+  metric_type: string;
+  date: string;
+  candidates: ConflictCandidate[];
+};
+
+/**
+ * The stored result of a scheduled cross-source conflict run.
+ *
+ * This was `unknown[]`, and only `.length` was ever read — so the page stated a
+ * count and gave advice about items it had no way to show. A number the reader
+ * cannot investigate is an accusation, not a finding; the shape is written out
+ * here because `core.analytics.find_cross_source_conflicts` has always sent it.
+ */
+type ConflictReport = {
+  conflicts: Conflict[];
+};
+
+/** How many disagreements the list shows before it says how many it is hiding. */
+const CONFLICTS_SHOWN = 6;
 
 /**
  * One provider field that arrives and is not stored.
@@ -144,6 +169,19 @@ type MappingDraft = {
 };
 
 /** Contiguous runs of missing days, so "12 days" becomes a usable backfill range. */
+/**
+ * A connector instance's readable name.
+ *
+ * Falls back to the raw `source_id`, not to a placeholder: a connector can be
+ * deleted while the points it wrote remain, and "unknown" in both rows of a
+ * disagreement would make the two readings indistinguishable — which is the one
+ * thing this list exists to do.
+ */
+function connectorLabel(connectors: Connector[], sourceId: string): string {
+  const match = connectors.find((connector) => connector.source_id === sourceId);
+  return match?.display_name?.trim() || match?.source_type || sourceId;
+}
+
 function toRanges(dates: string[]): { start: string; end: string; days: number }[] {
   const sorted = [...dates].sort();
   const ranges: { start: string; end: string; days: number }[] = [];
@@ -171,7 +209,7 @@ const gapRecommendation = (t: Translate, missingDays: number): string => {
 };
 
 export default function DataQualityTab({ apiBase }: Props) {
-  const { t, formatDate, formatNumber } = useI18n();
+  const { t, locale, formatDate, formatNumber } = useI18n();
 
   // The two expensive scans, read from their scheduled run rather than computed
   // on arrival. `windowDays` is the window the *run* used, not a live query
@@ -181,7 +219,8 @@ export default function DataQualityTab({ apiBase }: Props) {
   const conflictReport = useReport<ConflictReport>(apiBase, "conflicts");
   const gaps: Gap[] = gapReport.result?.gaps ?? [];
   const cadenceGaps: CadenceGap[] = gapReport.result?.cadence_gaps ?? [];
-  const conflicts = conflictReport.result?.conflicts?.length ?? 0;
+  const conflictItems: Conflict[] = conflictReport.result?.conflicts ?? [];
+  const conflicts = conflictItems.length;
   const windowDays = Number(gapReport.params?.window_days ?? 30);
 
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -321,10 +360,10 @@ export default function DataQualityTab({ apiBase }: Props) {
   const quarantineWarningClasses = (code: QuarantineWarningCode) => {
     if (code === "quarantine_values_refused" || code === "quarantine_full") {
       return {
-        container: "border-rose-300 bg-rose-50",
+        container: "border-rose-300 bg-danger-soft",
         title: "text-rose-950",
         text: "text-rose-900",
-        icon: "text-rose-700",
+        icon: "text-danger-ink-on-soft",
       };
     }
     if (code === "quarantine_near_full") {
@@ -337,16 +376,16 @@ export default function DataQualityTab({ apiBase }: Props) {
     }
     if (code === "quarantine_half_full") {
       return {
-        container: "border-amber-300 bg-amber-50",
-        title: "text-amber-950",
-        text: "text-amber-900",
-        icon: "text-amber-700",
+        container: "border-warn-line bg-warn-soft",
+        title: "text-warn-ink",
+        text: "text-warn-ink",
+        icon: "text-warn-ink",
       };
     }
     return {
-      container: "border-violet-300 bg-violet-50",
-      title: "text-violet-950",
-      text: "text-violet-900",
+      container: "border-violet-300 bg-info-soft",
+      title: "text-info-ink",
+      text: "text-info-ink",
       icon: "text-violet-700",
     };
   };
@@ -426,14 +465,14 @@ export default function DataQualityTab({ apiBase }: Props) {
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-widest text-ok-ink">
             {t("quality.eyebrow")}
           </p>
-          <h1 className="text-3xl font-extrabold text-slate-900">{t("quality.title")}</h1>
-          <p className="mt-2 text-sm text-slate-500">{t("quality.subtitle")}</p>
+          <h1 className="text-3xl font-extrabold text-ink">{t("quality.title")}</h1>
+          <p className="mt-2 text-sm text-ink-muted">{t("quality.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-slate-500">
+          <label className="text-xs font-semibold text-ink-muted">
             {t("quality.window")}
             <select
               value={windowDays}
@@ -446,7 +485,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                 })
               }
               disabled={gapReport.running}
-              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus-ring disabled:opacity-50"
+              className="ml-2 rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-secondary outline-none focus-ring disabled:opacity-50"
             >
               {[7, 30, 90, 180, 365].map((days) => (
                 <option key={days} value={days}>
@@ -455,7 +494,7 @@ export default function DataQualityTab({ apiBase }: Props) {
               ))}
             </select>
           </label>
-          {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
+          {loading && <RefreshCw className="h-5 w-5 animate-spin text-ok-ink" />}
         </div>
       </div>
 
@@ -477,13 +516,13 @@ export default function DataQualityTab({ apiBase }: Props) {
         {cards.map(({ title, value, icon: Icon, detail, help }) => (
           <article
             key={title}
-            className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="rounded-3xl border border-line bg-surface p-5 shadow-sm"
           >
-            <Icon className="mb-5 h-6 w-6 text-emerald-700" />
-            <p className="text-sm font-semibold text-slate-500">{title}</p>
-            <p className="text-4xl font-black text-slate-900">{value}</p>
-            <p className="mt-2 text-xs text-slate-400">{detail}</p>
-            <p className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">
+            <Icon className="mb-5 h-6 w-6 text-ok-ink" />
+            <p className="text-sm font-semibold text-ink-muted">{title}</p>
+            <p className="text-4xl font-black text-ink">{value}</p>
+            <p className="mt-2 text-xs text-ink-muted">{detail}</p>
+            <p className="mt-3 rounded-2xl bg-ok-soft p-3 text-xs font-semibold text-ok-ink">
               {help}
             </p>
           </article>
@@ -493,8 +532,8 @@ export default function DataQualityTab({ apiBase }: Props) {
       {quarantineCapacity.length > 0 && (
         <article className="space-y-3" aria-live={quarantineCapacityLiveMode}>
           <div>
-            <h2 className="font-bold text-slate-900">{t("quality.quarantineCapacityTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t("quality.quarantineCapacityIntro")}</p>
+            <h2 className="font-bold text-ink">{t("quality.quarantineCapacityTitle")}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{t("quality.quarantineCapacityIntro")}</p>
           </div>
           {quarantineCapacity.map((capacity) => {
             const classes = quarantineWarningClasses(capacity.warning_code);
@@ -535,17 +574,17 @@ export default function DataQualityTab({ apiBase }: Props) {
         </article>
       )}
 
-      <article className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+      <article className="rounded-3xl border border-warn-line bg-warn-soft p-5">
         <div className="flex gap-3">
-          <Lightbulb className="h-5 w-5 shrink-0 text-amber-700" />
+          <Lightbulb className="h-5 w-5 shrink-0 text-warn-ink" />
           <div>
-            <h2 className="font-bold text-slate-900">{t("quality.explainTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t("quality.explainBody")}</p>
+            <h2 className="font-bold text-ink">{t("quality.explainTitle")}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{t("quality.explainBody")}</p>
             <a
               href="/docs/features/data-quality/"
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 underline"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-warn-ink underline"
             >
               <BookOpen className="h-3.5 w-3.5" /> {t("quality.explainDocs")}
             </a>
@@ -565,18 +604,18 @@ export default function DataQualityTab({ apiBase }: Props) {
         stopped for a week" rather than "no value on the 3rd".
       */}
       {cadenceGaps.length > 0 && (
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-1 font-bold text-slate-900">{t("quality.interruptionsTitle")}</h2>
-          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.interruptionsTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-ink-muted">
             {t("quality.interruptionsHint")}
           </p>
           <ul className="space-y-2">
             {cadenceGaps.map((gap) => (
-              <li key={gap.metric_type} className="rounded-2xl bg-slate-50 px-3.5 py-2.5">
-                <div className="text-xs font-bold text-slate-900">{gap.metric_type}</div>
+              <li key={gap.metric_type} className="rounded-2xl bg-page px-3.5 py-2.5">
+                <div className="text-xs font-bold text-ink">{gap.metric_type}</div>
                 <ul className="mt-1 space-y-0.5">
                   {gap.missing_ranges.slice(0, 5).map((range) => (
-                    <li key={range.start} className="text-[11px] text-slate-600">
+                    <li key={range.start} className="text-[11px] text-ink-muted">
                       {formatDate(range.start)} – {formatDate(range.end)}
                     </li>
                   ))}
@@ -588,16 +627,16 @@ export default function DataQualityTab({ apiBase }: Props) {
       )}
 
       {newlySupported.length > 0 && (
-        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-6 dark:border-emerald-800/70 dark:bg-emerald-950/30">
-          <h2 className="mb-1 font-bold text-emerald-950 dark:text-emerald-100">
+        <section className="rounded-3xl border border-ok-line bg-ok-soft p-6 dark:border-emerald-800/70">
+          <h2 className="mb-1 font-bold text-ok-ink dark:text-emerald-100">
             {t("quality.newlySupportedTitle", { count: String(newlySupported.length) })}
           </h2>
-          <p className="mb-4 text-xs leading-relaxed text-emerald-900 dark:text-emerald-200">
+          <p className="mb-4 text-xs leading-relaxed text-ok-ink">
             {t("quality.newlySupportedHint")}
           </p>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
-              <thead className="text-emerald-900 dark:text-emerald-200">
+              <thead className="text-ok-ink">
                 <tr>
                   <th className="py-1 pr-4 font-semibold">{t("quality.colConnector")}</th>
                   <th className="py-1 pr-4 font-semibold">{t("quality.colField")}</th>
@@ -606,7 +645,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                   <th className="py-1 font-semibold">{t("quality.colHistory")}</th>
                 </tr>
               </thead>
-              <tbody className="text-emerald-950 dark:text-emerald-100">
+              <tbody className="text-ok-ink dark:text-emerald-100">
                 {newlySupported.map((field) => (
                   <tr
                     key={`${field.source_id}:${field.field_path}`}
@@ -641,30 +680,30 @@ export default function DataQualityTab({ apiBase }: Props) {
       )}
 
       {unsupported.length > 0 && (
-        <details className="group rounded-3xl border border-amber-200 bg-amber-50/60 p-6 dark:border-amber-800/70 dark:bg-amber-950/30">
-          <summary className="cursor-pointer list-none font-bold text-amber-950 marker:hidden dark:text-amber-100">
+        <details className="group rounded-3xl border border-warn-line bg-warn-soft p-6">
+          <summary className="cursor-pointer list-none font-bold text-warn-ink marker:hidden">
             <span className="flex items-center justify-between gap-3">
               <span>{t("quality.unsupportedSummary", { count: unsupported.length })}</span>
-              <span className="text-xs font-semibold text-amber-700 transition group-open:rotate-180 dark:text-amber-300">
+              <span className="text-xs font-semibold text-warn-ink transition group-open:rotate-180">
                 ↓
               </span>
             </span>
           </summary>
           <div className="mt-4">
-            <h2 className="mb-1 font-bold text-amber-900 dark:text-amber-100">
+            <h2 className="mb-1 font-bold text-warn-ink">
               {t("quality.unsupportedTitle")}
             </h2>
-            <p className="mb-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+            <p className="mb-2 text-xs leading-relaxed text-warn-ink">
               {t("quality.unsupportedHint")}
             </p>
-            <p className="mb-4 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
+            <p className="mb-4 text-xs leading-relaxed text-warn-ink">
               {t("quality.unsupportedLifecycle")}
             </p>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-amber-200 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:text-amber-300">
+                  <tr className="border-b border-warn-line text-[11px] font-bold uppercase tracking-wider text-warn-ink">
                     <th className="pb-2 pr-3">{t("quality.unsupportedConnector")}</th>
                     <th className="pb-2 pr-3">{t("quality.unsupportedField")}</th>
                     <th className="pb-2 pr-3">{t("quality.unsupportedKind")}</th>
@@ -672,22 +711,22 @@ export default function DataQualityTab({ apiBase }: Props) {
                     <th className="pb-2 text-right">{t("quality.unsupportedLastSeen")}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-amber-100 dark:divide-amber-900">
+                <tbody className="divide-y divide-warn-line">
                   {unsupported.map((field) => (
                     <tr key={`${field.source_id}:${field.field_path}`}>
-                      <td className="py-2 pr-3 font-semibold text-amber-900 dark:text-amber-100">
+                      <td className="py-2 pr-3 font-semibold text-warn-ink">
                         {field.connector_name || field.source_type}
                       </td>
-                      <td className="py-2 pr-3 font-mono text-amber-900 dark:text-amber-100">
+                      <td className="py-2 pr-3 font-mono text-warn-ink">
                         {field.field_path}
                       </td>
-                      <td className="py-2 pr-3 text-amber-700 dark:text-amber-300">
+                      <td className="py-2 pr-3 text-warn-ink">
                         {field.value_kind}
                       </td>
-                      <td className="py-2 pr-3 text-right text-amber-700 dark:text-amber-300">
+                      <td className="py-2 pr-3 text-right text-warn-ink">
                         {field.occurrences}
                       </td>
-                      <td className="py-2 text-right text-amber-700 dark:text-amber-300">
+                      <td className="py-2 text-right text-warn-ink">
                         {formatDate(field.last_seen_at)}
                       </td>
                     </tr>
@@ -699,7 +738,7 @@ export default function DataQualityTab({ apiBase }: Props) {
             <button
               type="button"
               onClick={() => void copyFieldReport()}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-900/60"
+              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-warn-line bg-surface px-3.5 py-2 text-xs font-semibold text-warn-ink hover:bg-warn-soft"
             >
               {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
             </button>
@@ -708,9 +747,9 @@ export default function DataQualityTab({ apiBase }: Props) {
       )}
 
       {quarantine.length > 0 && (
-        <article className="rounded-3xl border border-violet-200 bg-violet-50/60 p-6">
-          <h2 className="mb-1 font-bold text-violet-950">{t("quality.quarantineTitle")}</h2>
-          <p className="mb-4 text-xs leading-relaxed text-violet-900">
+        <article className="rounded-3xl border border-info-line bg-info-soft p-6">
+          <h2 className="mb-1 font-bold text-info-ink">{t("quality.quarantineTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-info-ink">
             {t("quality.quarantineHint")}
           </p>
           <div className="space-y-4">
@@ -718,13 +757,13 @@ export default function DataQualityTab({ apiBase }: Props) {
               const key = `${metric.source_id}:${metric.raw_metric_type}`;
               const draft = draftFor(metric);
               return (
-                <div key={key} className="rounded-2xl border border-violet-200 bg-white p-4">
+                <div key={key} className="rounded-2xl border border-info-line bg-surface p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="font-mono text-sm font-semibold text-slate-900">
+                      <p className="font-mono text-sm font-semibold text-ink">
                         {metric.raw_metric_type}
                       </p>
-                      <p className="mt-1 text-xs text-slate-500">
+                      <p className="mt-1 text-xs text-ink-muted">
                         {t("quality.quarantineConnectorDetail", {
                           connector: metric.connector_name || metric.source_type,
                           count: metric.points,
@@ -738,7 +777,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                           action: event.target.value as MappingDraft["action"],
                         })
                       }
-                      className="rounded-xl border border-violet-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
+                      className="rounded-xl border border-info-line bg-surface px-2.5 py-1.5 text-xs text-ink-secondary"
                       aria-label={t("quality.mappingDecision")}
                     >
                       <option value="map">{t("quality.mappingMap")}</option>
@@ -756,7 +795,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                           onChange={(event) =>
                             updateDraft(metric, { target_metric_type: event.target.value })
                           }
-                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                          className="rounded-xl border border-line px-2.5 py-2 text-xs"
                           aria-label={t("quality.mappingTarget")}
                         >
                           {CANONICAL_KEYS.map((keyName) => (
@@ -772,7 +811,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                             updateDraft(metric, { target_metric_type: event.target.value })
                           }
                           placeholder={t("quality.mappingCustomName")}
-                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                          className="rounded-xl border border-line px-2.5 py-2 text-xs"
                           aria-label={t("quality.mappingTarget")}
                         />
                       )}
@@ -782,7 +821,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                           updateDraft(metric, { source_unit: event.target.value })
                         }
                         placeholder={t("quality.mappingSourceUnit")}
-                        className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                        className="rounded-xl border border-line px-2.5 py-2 text-xs"
                         aria-label={t("quality.mappingSourceUnit")}
                       />
                       {draft.action === "adopt" && (
@@ -793,7 +832,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                               updateDraft(metric, { target_unit: event.target.value })
                             }
                             placeholder={t("quality.mappingTargetUnit")}
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            className="rounded-xl border border-line px-2.5 py-2 text-xs"
                             aria-label={t("quality.mappingTargetUnit")}
                           />
                           <select
@@ -803,7 +842,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                                 aggregation: event.target.value as MappingDraft["aggregation"],
                               })
                             }
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            className="rounded-xl border border-line px-2.5 py-2 text-xs"
                             aria-label={t("quality.mappingAggregation")}
                           >
                             <option value="average">{t("quality.mappingAverage")}</option>
@@ -818,7 +857,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                                 cadence: event.target.value as MappingDraft["cadence"],
                               })
                             }
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
+                            className="rounded-xl border border-line px-2.5 py-2 text-xs"
                             aria-label={t("quality.mappingCadence")}
                           >
                             <option value="daily">{t("quality.mappingDaily")}</option>
@@ -831,14 +870,14 @@ export default function DataQualityTab({ apiBase }: Props) {
                   )}
 
                   {draft.action === "keep" && (
-                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
+                    <label className="mt-3 flex items-center gap-2 text-xs text-ink-muted">
                       <input
                         type="checkbox"
                         checked={draft.keep_indefinitely}
                         onChange={(event) =>
                           updateDraft(metric, { keep_indefinitely: event.target.checked })
                         }
-                        className="rounded border-slate-300"
+                        className="rounded border-line"
                       />
                       {t("quality.mappingKeepIndefinitely")}
                     </label>
@@ -860,20 +899,20 @@ export default function DataQualityTab({ apiBase }: Props) {
       )}
 
       <div className="grid gap-5 lg:grid-cols-2">
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-1 font-bold text-slate-900">{t("quality.largestGaps")}</h2>
-          <p className="mb-4 text-xs text-slate-500">{t("quality.largestGapsHint")}</p>
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.largestGaps")}</h2>
+          <p className="mb-4 text-xs text-ink-muted">{t("quality.largestGapsHint")}</p>
 
           {gaps.length === 0 ? (
-            <p className="text-sm text-slate-400">{t("quality.noGaps", { days: windowDays })}</p>
+            <p className="text-sm text-ink-muted">{t("quality.noGaps", { days: windowDays })}</p>
           ) : (
             gaps.slice(0, 6).map((gap) => {
               const ranges = toRanges(gap.missing_dates);
               return (
-                <div key={gap.metric_type} className="border-b border-slate-100 py-3">
+                <div key={gap.metric_type} className="border-b border-line py-3">
                   <div className="flex justify-between text-sm">
-                    <span className="font-medium text-slate-700">{gap.metric_type}</span>
-                    <span className="font-bold text-amber-600">
+                    <span className="font-medium text-ink-secondary">{gap.metric_type}</span>
+                    <span className="font-bold text-warn">
                       {t(plural(gap.missing_dates.length, "common.days_one", "common.days_other"), {
                         count: gap.missing_dates.length,
                       })}
@@ -883,16 +922,16 @@ export default function DataQualityTab({ apiBase }: Props) {
                     {ranges.slice(0, 3).map((r) => (
                       <li
                         key={`${r.start}-${r.end}`}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]"
+                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
                       >
-                        <span className="font-mono text-slate-600">
+                        <span className="font-mono text-ink-muted">
                           {r.start === r.end
                             ? formatDate(`${r.start}T00:00:00Z`)
                             : `${formatDate(`${r.start}T00:00:00Z`)} – ${formatDate(
                                 `${r.end}T00:00:00Z`,
                               )}`}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-ink-muted">
                           {t(plural(r.days, "common.days_one", "common.days_other"), {
                             count: r.days,
                           })}
@@ -900,12 +939,12 @@ export default function DataQualityTab({ apiBase }: Props) {
                       </li>
                     ))}
                     {ranges.length > 3 && (
-                      <li className="text-[11px] text-slate-400">
+                      <li className="text-[11px] text-ink-muted">
                         {t("quality.moreRanges", { count: ranges.length - 3 })}
                       </li>
                     )}
                   </ul>
-                  <p className="mt-1.5 text-xs text-slate-500">
+                  <p className="mt-1.5 text-xs text-ink-muted">
                     {gapRecommendation(t, gap.missing_dates.length)}
                   </p>
                 </div>
@@ -914,8 +953,8 @@ export default function DataQualityTab({ apiBase }: Props) {
           )}
 
           {gaps.length > 0 && connectors.length > 0 && (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <p className="mb-2 text-xs font-semibold text-slate-600">
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-2 text-xs font-semibold text-ink-muted">
                 {t("quality.backfillTitle")}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -929,26 +968,86 @@ export default function DataQualityTab({ apiBase }: Props) {
                         sourceName: c.display_name || c.source_type,
                       })
                     }
-                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                    className="rounded-xl border border-ok-line bg-ok-soft px-3 py-1.5 text-[11px] font-semibold text-ok-ink hover:bg-ok-soft"
                   >
                     {t("quality.backfillSource", { source: c.source_type })}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">{t("quality.backfillHint")}</p>
+              <p className="mt-2 text-[11px] text-ink-muted">{t("quality.backfillHint")}</p>
             </div>
           )}
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <ShieldCheck className="mb-4 h-6 w-6 text-emerald-700" />
-          <h2 className="mb-2 font-bold text-slate-900">{t("quality.conflictsTitle")}</h2>
-          <p className="text-sm text-slate-500">
-            {conflicts === 0
-              ? t("quality.conflictsNoneLong")
-              : t("quality.conflictsSome", { count: conflicts })}
-          </p>
-          <p className="mt-3 text-xs text-slate-500">{t("quality.conflictsAdvice")}</p>
+        {/*
+          The disagreements themselves.
+
+          The card that stood here rendered none of them: it branched on
+          `conflicts === 0` — a count that falls back to zero when the scan has
+          never run — and told the reader to "check the units and pick a primary
+          source" for items nothing on the page could name. The scan has always
+          sent metric, day, and every candidate's connector and value; only the
+          client threw them away.
+
+          Which one is right is deliberately not decided here. Both readings are
+          kept, and the choice of a primary source per metric is a separate,
+          explicit act.
+        */}
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.conflictsListTitle")}</h2>
+          <p className="mb-4 text-xs text-ink-muted">{t("quality.conflictsListHint")}</p>
+
+          {conflictReport.status !== "ready" ? (
+            <p className="text-sm text-ink-muted">{t("report.neverComputed")}</p>
+          ) : conflictItems.length === 0 ? (
+            <p className="text-sm text-ink-muted">{t("quality.conflictsNone")}</p>
+          ) : (
+            <>
+              {conflictItems.slice(0, CONFLICTS_SHOWN).map((conflict) => {
+                const described = describeMetric(conflict.metric_type, locale);
+                return (
+                  <div
+                    key={`${conflict.metric_type}:${conflict.date}`}
+                    className="border-b border-line py-3"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                      <span className="font-medium text-ink-secondary">{described.label}</span>
+                      <span className="text-xs text-ink-muted">
+                        {formatDate(`${conflict.date}T00:00:00Z`)}
+                      </span>
+                    </div>
+                    <ul className="mt-1.5 space-y-1">
+                      {conflict.candidates.map((candidate) => (
+                        <li
+                          key={candidate.id}
+                          className="flex items-baseline justify-between gap-3 rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
+                        >
+                          <span className="min-w-0 truncate text-ink-muted">
+                            {connectorLabel(connectors, candidate.source_id)}
+                          </span>
+                          <span className="shrink-0 font-mono tabular-nums text-ink">
+                            {candidate.value === null
+                              ? "—"
+                              : formatNumber(candidate.value, {
+                                  maximumFractionDigits: described.precision,
+                                })}{" "}
+                            <span className="font-normal text-ink-muted">{described.unit}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+              {conflictItems.length > CONFLICTS_SHOWN && (
+                <p className="mt-3 text-[11px] text-ink-muted">
+                  {t("quality.conflictsMore", { count: conflictItems.length - CONFLICTS_SHOWN })}
+                </p>
+              )}
+            </>
+          )}
+
+          <p className="mt-4 text-xs text-ink-muted">{t("quality.conflictsHelp")}</p>
         </article>
       </div>
 

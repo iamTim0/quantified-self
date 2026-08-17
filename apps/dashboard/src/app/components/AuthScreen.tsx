@@ -167,9 +167,9 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     lowered.includes("already registered") || lowered.includes("already exists");
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-100 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
+    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-surface-muted p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
       {/* Background Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="z-10 w-full max-w-md">
@@ -181,22 +181,22 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-brand text-brand-ink mb-4 shadow-xl shadow-brand/20">
             <Activity className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Quantified Self</h1>
-          <p className="text-slate-500 text-xs mt-1.5 font-medium">{t("auth.tagline")}</p>
+          <h1 className="text-3xl font-extrabold text-ink tracking-tight">Quantified Self</h1>
+          <p className="text-ink-muted text-xs mt-1.5 font-medium">{t("auth.tagline")}</p>
         </div>
 
-        <div className="glass-card bg-white border border-slate-200/80 rounded-3xl p-8 shadow-xl">
-          <h2 className="text-xl font-extrabold text-slate-900 mb-6">
+        <div className="glass-card bg-surface border border-line rounded-3xl p-8 shadow-xl">
+          <h2 className="text-xl font-extrabold text-ink mb-6">
             {isLogin ? t("auth.welcomeBack") : t("auth.createAccount")}
           </h2>
 
           {error && (
             <div
               role="alert"
-              className="mb-4 p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-medium space-y-1"
+              className="mb-4 p-3 rounded-2xl bg-danger-soft border border-danger-line text-danger-ink-on-soft text-xs font-medium space-y-1"
             >
               <div className="flex items-center gap-1.5 font-bold">
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <AlertCircle className="w-4 h-4 text-danger-ink-on-soft shrink-0" />
                 <span>{error}</span>
               </div>
               {isAlreadyRegistered && (
@@ -219,12 +219,12 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
               <div>
                 <label
                   htmlFor="auth-name"
-                  className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                  className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
                 >
                   {t("auth.name")}
                 </label>
                 <div className="relative">
-                  <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <User className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                   <input
                     id="auth-name"
                     name="name"
@@ -233,7 +233,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
+                    className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     placeholder="Jane Doe"
                   />
                 </div>
@@ -243,12 +243,12 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <div>
               <label
                 htmlFor="auth-email"
-                className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
               >
                 {t("auth.email")}
               </label>
               <div className="relative">
-                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <Mail className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                 <input
                   id="auth-email"
                   name="email"
@@ -259,7 +259,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
+                  className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   placeholder="you@example.com"
                 />
               </div>
@@ -268,12 +268,12 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <div>
               <label
                 htmlFor="auth-password"
-                className="block text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5"
+                className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
               >
                 {t("auth.password")}
               </label>
               <div className="relative">
-                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                <Lock className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                 <input
                   id="auth-password"
                   name="password"
@@ -284,7 +284,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
+                  className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   placeholder="••••••••"
                 />
               </div>
@@ -305,7 +305,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
           <div className="mt-6 text-center text-xs font-medium space-y-2">
             {allowRegistration ? (
               <div>
-                <span className="text-slate-500">
+                <span className="text-ink-muted">
                   {isLogin ? t("auth.noAccount") : t("auth.haveAccount")}
                 </span>
                 <button
@@ -319,16 +319,16 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                 </button>
               </div>
             ) : (
-              <div className="text-slate-400 text-xs italic">{t("auth.registrationClosed")}</div>
+              <div className="text-ink-muted text-xs italic">{t("auth.registrationClosed")}</div>
             )}
             {providers.length > 0 && (
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
-                  <span className="h-px flex-1 bg-slate-200" />
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  <span className="h-px flex-1 bg-surface-muted" />
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
                     {t("auth.or")}
                   </span>
-                  <span className="h-px flex-1 bg-slate-200" />
+                  <span className="h-px flex-1 bg-surface-muted" />
                 </div>
                 {providers.map((provider) => (
                   <button
@@ -336,7 +336,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     type="button"
                     onClick={() => handleOidcLogin(provider.slug)}
                     disabled={startingProvider !== null}
-                    className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                    className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm font-semibold text-ink-secondary transition-colors hover:bg-page disabled:opacity-50"
                   >
                     {startingProvider === provider.slug
                       ? t("auth.redirecting")
@@ -349,13 +349,13 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
               <a
                 href="/legal/datenschutz"
-                className="text-slate-400 underline transition-colors hover:text-slate-600"
+                className="text-ink-muted underline transition-colors hover:text-ink-muted"
               >
                 {t("footer.privacy")}
               </a>
               <a
                 href="/legal/impressum"
-                className="text-slate-400 underline transition-colors hover:text-slate-600"
+                className="text-ink-muted underline transition-colors hover:text-ink-muted"
               >
                 {t("footer.imprint")}
               </a>

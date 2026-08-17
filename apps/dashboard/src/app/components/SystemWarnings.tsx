@@ -56,18 +56,18 @@ const INGESTION_PENDING_ERROR = "ingestion_reset_pending_events";
 
 const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: MessageKey }> = {
   critical: {
-    box: "border-rose-300 bg-rose-50 text-rose-950",
-    icon: <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" aria-hidden />,
+    box: "border-rose-300 bg-danger-soft text-rose-950",
+    icon: <ShieldAlert className="w-5 h-5 text-danger-ink-on-soft shrink-0" aria-hidden />,
     label: "warnings.severity.critical",
   },
   warning: {
-    box: "border-amber-300 bg-amber-50 text-amber-950",
-    icon: <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />,
+    box: "border-warn-line bg-warn-soft text-warn-ink",
+    icon: <AlertTriangle className="w-5 h-5 text-warn shrink-0" aria-hidden />,
     label: "warnings.severity.warning",
   },
   info: {
-    box: "border-slate-300 bg-slate-50 text-slate-800",
-    icon: <Info className="w-5 h-5 text-slate-500 shrink-0" aria-hidden />,
+    box: "border-line bg-page text-ink-secondary",
+    icon: <Info className="w-5 h-5 text-ink-muted shrink-0" aria-hidden />,
     label: "warnings.severity.info",
   },
 };
@@ -296,7 +296,7 @@ export default function SystemWarnings({
                 <p className="mt-2 text-sm font-semibold">
                   {/* The action is a command or a setting, not advice, so it is
                       rendered as something you can copy. */}
-                  <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[12px] break-all">
+                  <code className="rounded bg-surface/70 px-1.5 py-0.5 font-mono text-[12px] break-all">
                     {field(t, w, "action", w.action)}
                   </code>
                 </p>

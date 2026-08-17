@@ -305,17 +305,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // must not see even the outline of a workspace.
   if (!mounted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
-        <div
-          className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row"
-          // A frame, not a claim about content. Nothing here is real yet, so
-          // nothing here should be announced.
-          aria-hidden="true"
-        >
-          <div className="hidden w-64 shrink-0 border-r border-slate-200/80 bg-white md:block" />
-          <div className="flex-1 p-4 sm:px-6 sm:pt-6 md:p-6 lg:p-8">
-            <div className="h-10 w-56 rounded-xl bg-slate-200/70" />
-          </div>
+      <div
+        className="min-h-dvh md:grid md:grid-cols-[16rem_1fr]"
+        // A frame, not a claim about content. Nothing here is real yet, so
+        // nothing here should be announced.
+        aria-hidden="true"
+      >
+        <div className="hidden border-r border-line bg-surface md:block" />
+        <div className="p-4 sm:px-6 sm:pt-6 md:p-6 lg:p-8">
+          <div className="h-10 w-56 rounded-xl bg-surface-muted" />
         </div>
       </div>
     );
@@ -341,50 +339,73 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         */}
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-900 focus:shadow-lg focus:outline-2 focus:outline-brand"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-ink focus:shadow-lg focus:outline-2 focus:outline-brand"
         >
           {t("nav.skipToContent")}
         </a>
-        <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
-          {/* Main Outer App Window Shell */}
-          <div className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row">
-            {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
-                column of icons sits outside the thumb's reach — `MobileTabBar`
-                takes over below `md`. */}
-            <div className="hidden md:flex">
-              <Sidebar
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                onLogout={handleLogout}
-              />
-            </div>
+        {/*
+          The shell, without the window.
+
+          What stood here was a centred `max-w-[1600px]` card with a shadow,
+          floating on a grey mat. It failed on its own terms: `Sidebar` demanded
+          `min-h-screen` *inside* a card that sat in `lg:p-6`, so the card was
+          always taller than the viewport and every desktop carried a strip of
+          dead scroll; `sm:min-h-[900px]` scrolled the entire frame — sidebar
+          included — off a 768px laptop; and on a large monitor it spent hundreds
+          of pixels a side on decoration while capping the width of the charts
+          that are the point of the product.
+
+          It also made the scroll topology ambiguous. `<main>` declared
+          `overflow-y-auto` while the card had no bounded height, so *something*
+          scrolled but not reliably the document — which is why iOS Safari never
+          collapsed its address bar here, costing ~60px of height permanently on
+          the device with the least of it, and why there was nowhere to put a
+          single `scroll-padding` rule.
+
+          Now: the document scrolls, the sidebar is sticky, the header is sticky,
+          and the reading measure is set on the *content* rather than on the
+          chrome, so a page that needs full bleed can opt out per page.
+        */}
+        <div className="min-h-dvh md:grid md:grid-cols-[16rem_1fr]">
+          {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
+              column of icons sits outside the thumb's reach — `MobileTabBar`
+              takes over below `md`. */}
+          <div className="hidden md:block">
+            <Sidebar
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              onLogout={handleLogout}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <TopHeader
+              apiBase={API_BASE}
+              userName={userName}
+              userEmail={userEmail}
+              activeTab={activeTab}
+              onOpenConfigureModal={() => handleOpenConfigureModal()}
+              onNavigateToProfile={() => handleTabChange("profile")}
+              onRefresh={triggerRefresh}
+            />
 
             {/* Main Content Area.
                 The bottom padding on small screens is the tab bar's height plus
                 the home-indicator inset: without it the last element of every page
                 is unreachable behind the bar.
 
-                Top and side insets matter for the same reason and were absent. The
-                shell is full-bleed below `sm` (`p-0`), so in portrait the first
-                heading of every page sat under the status bar or the notch, and in
-                landscape the content ran into the rounded corners and the camera
-                housing. `max(…)` rather than `calc(… + …)`: on a phone with no
-                cutout the inset is zero and the padding must not collapse, but on
-                one with a 44px inset the 1rem must not be *added* to it. */}
+                Side insets matter for the same reason. The shell is full-bleed
+                below `sm`, so in landscape the content would otherwise run into the
+                rounded corners and the camera housing. `max(…)` rather than
+                `calc(… + …)`: on a phone with no cutout the inset is zero and the
+                padding must not collapse, but on one with a 44px inset the 1rem
+                must not be *added* to it. The top inset now belongs to the sticky
+                header instead, which is what sits against the status bar. */}
             <main
               id="main-content"
               tabIndex={-1}
-              className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
+              className="mx-auto w-full max-w-[1400px] p-4 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+2.5rem)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 sm:pt-6 md:p-6 md:pb-8 lg:p-8"
             >
-              <TopHeader
-                apiBase={API_BASE}
-                userName={userName}
-                userEmail={userEmail}
-                onOpenConfigureModal={() => handleOpenConfigureModal()}
-                onNavigateToProfile={() => handleTabChange("profile")}
-                onRefresh={triggerRefresh}
-              />
-
               {/* Configuration and credential problems, on every tab. Previously
                 these lived only in a startup log and docs/operations.md. */}
               <SystemWarnings apiBase={API_BASE} userRole={userRole} />
@@ -421,15 +442,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <LegalFooter />
             </main>
           </div>
-
-          <UploadBanner />
-
-          <MobileTabBar
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            onLogout={handleLogout}
-          />
         </div>
+
+        <UploadBanner />
+
+        <MobileTabBar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onLogout={handleLogout}
+          onRefresh={triggerRefresh}
+        />
       </ShellProvider>
     </UploadProvider>
   );

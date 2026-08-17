@@ -349,7 +349,7 @@ export default function LocationMap({
 
   if (loading) {
     return (
-      <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-slate-200/80 bg-white p-6 text-xs text-slate-400">
+      <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-line bg-surface p-6 text-xs text-ink-muted">
         {t("map.loading")}
       </div>
     );
@@ -364,21 +364,21 @@ export default function LocationMap({
   const simplified = totalPoints > renderPoints.length;
 
   return (
-    <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
-      <div className="flex flex-col items-start justify-between gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
+    <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-sm">
+      <div className="flex flex-col items-start justify-between gap-3 border-b border-line pb-4 sm:flex-row sm:items-center">
         {showHeader && (
           <div>
-            <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
+            <h3 className="flex items-center gap-2 text-base font-extrabold text-ink">
               <MapPin className="h-5 w-5 text-brand" />
               <span>{t("map.headline")}</span>
             </h3>
-            <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
+            <p className="mt-0.5 text-xs text-ink-muted">{t("map.privacyLead")}</p>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
           {!controlled && !day && (
-            <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
+            <div className="flex rounded-xl border border-ok-line bg-ok-soft p-1 text-xs">
               {(["today", "7d", "30d"] as const).map((f) => (
                 <button
                   key={f}
@@ -386,7 +386,7 @@ export default function LocationMap({
                   className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     dateFilter === f
                       ? "bg-brand text-brand-ink shadow-sm"
-                      : "text-emerald-800 hover:text-emerald-950"
+                      : "text-ok-ink hover:text-ok-ink"
                   }`}
                 >
                   {f === "today" && <Calendar className="h-3 w-3" />}
@@ -406,7 +406,7 @@ export default function LocationMap({
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
               showTiles
                 ? "border-brand bg-brand text-brand-ink"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                : "border-line bg-surface text-ink-secondary hover:bg-page"
             }`}
             title={showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")}
           >
@@ -418,7 +418,7 @@ export default function LocationMap({
             <select
               value={tileProvider}
               onChange={(e) => setTileProvider(e.target.value as TileProvider)}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring"
+              className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus-ring"
             >
               {Object.entries(TILE_PROVIDERS).map(([id, p]) => (
                 <option key={id} value={id}>
@@ -431,14 +431,14 @@ export default function LocationMap({
       </div>
 
       {!showTiles && (
-        <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+        <p className="flex items-start gap-1.5 rounded-2xl bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
           <span>{t("map.privacyDetail")}</span>
         </p>
       )}
 
       {tileError && (
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+        <p className="rounded-2xl border border-warn-line bg-warn-soft px-3 py-2 text-[11px] text-warn-ink">
           {tileError}
         </p>
       )}
@@ -446,10 +446,10 @@ export default function LocationMap({
       {showTiles ? (
         <div
           ref={setMapContainer}
-          className="h-[380px] w-full overflow-hidden rounded-2xl border border-slate-200"
+          className="h-[380px] w-full overflow-hidden rounded-2xl border border-line"
         />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+        <div className="overflow-hidden rounded-2xl border border-line bg-page">
           {svg ? (
             <svg
               viewBox="0 0 800 400"
@@ -498,19 +498,19 @@ export default function LocationMap({
               ))}
             </svg>
           ) : (
-            <div className="flex h-[380px] items-center justify-center text-xs text-slate-400">
+            <div className="flex h-[380px] items-center justify-center text-xs text-ink-muted">
               {t("map.empty")}
             </div>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-muted">
         <span className="flex items-center gap-1.5">
           <Navigation className="h-3.5 w-3.5 text-brand" />
           {t("map.pointCount", { count: formatNumber(totalPoints) })}
           {simplified && (
-            <span className="flex items-center gap-1 text-slate-400">
+            <span className="flex items-center gap-1 text-ink-muted">
               <Layers className="h-3 w-3" />
               {t("map.simplifiedTo", { count: formatNumber(renderPoints.length) })}
             </span>

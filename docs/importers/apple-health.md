@@ -76,9 +76,10 @@ Apple Health samples are aggregated into minute buckets by default; provider-sta
 remain authoritative for day rollups. A derived bucket carries its operation and sample count in
 metadata, so the reduction is auditable without retaining the complete provider payload.
 
-Policies apply to future imports only. Change them under the Explorer's **Import resolution**
-control or through Core's ingest-policy API, then upload a deliberate archive again if historical
-data needs to be rebuilt. The import run shows how many points were published and which provider
+Policies apply to future imports only. Change them in the Explorer's **Overview** view, where each
+metric row carries a **Storage** control showing the resolution currently stored for it, or through
+Core's ingest-policy API; then upload a deliberate archive again if historical data needs to be
+rebuilt. The import run shows how many points were published and which provider
 window was covered; the Data Quality Center names fields that arrived but are not stored. A
 successful upload therefore means "the accepted export was processed", not "Apple Health supplied
 every possible category or date".

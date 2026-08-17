@@ -46,16 +46,16 @@ export default function LegalFooter({ className = "" }: { className?: string }) 
   const source = sourceLink(t);
 
   return (
-    <footer className={`mt-8 border-t border-slate-200 pt-4 text-xs text-slate-500 ${className}`}>
+    <footer className={`mt-8 border-t border-line pt-4 text-xs text-ink-muted ${className}`}>
       <nav aria-label={t("footer.nav")}>
         <ul className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <li>
-            <Link href="/legal/impressum" className="underline hover:text-slate-700">
+            <Link href="/legal/impressum" className="underline hover:text-ink-secondary">
               {t("footer.imprint")}
             </Link>
           </li>
           <li>
-            <Link href="/legal/datenschutz" className="underline hover:text-slate-700">
+            <Link href="/legal/datenschutz" className="underline hover:text-ink-secondary">
               {t("footer.privacy")}
             </Link>
           </li>
@@ -64,7 +64,7 @@ export default function LegalFooter({ className = "" }: { className?: string }) 
               href="/docs/"
               target="_blank"
               rel="noreferrer"
-              className="underline hover:text-slate-700"
+              className="underline hover:text-ink-secondary"
             >
               {t("footer.docs")}
             </a>
@@ -74,7 +74,7 @@ export default function LegalFooter({ className = "" }: { className?: string }) 
               href={source.href}
               target="_blank"
               rel="noreferrer"
-              className="underline hover:text-slate-700"
+              className="underline hover:text-ink-secondary"
             >
               {source.label}
             </a>

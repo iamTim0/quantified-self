@@ -6,7 +6,6 @@ import {
   AlertTriangle,
   BookOpen,
   CalendarClock,
-  ChevronDown,
   Dumbbell,
   Info,
   RefreshCw,
@@ -17,6 +16,7 @@ import { apiFetch } from "../lib/api";
 import { plural, useI18n, useT, type MessageKey, type Translate } from "../lib/i18n/provider";
 import { useReport, type ReportParams } from "../lib/reports";
 import { describeMetric } from "../lib/metrics/catalog";
+import Disclosure from "./Disclosure";
 import MetricSourcePicker from "./MetricSourcePicker";
 import ReportStatus from "./ReportStatus";
 import { muscleKey } from "./WorkoutsTab";
@@ -182,6 +182,23 @@ function correlationColor(r: number): string {
   if (a < 0.7) return arm[1];
   return arm[0];
 }
+
+/** How many of the strongest relationships the overview leads with. */
+const TOP_FINDINGS = 3;
+
+/**
+ * The DOM id of one pair's card, from the `metric_a|metric_b` key.
+ *
+ * Metric names are `[a-z0-9_]`, so the only character needing replacement is the
+ * separator — but it is done here, in one place, so the matrix and the list
+ * cannot disagree about the spelling.
+ */
+function correlationDomId(key: string): string {
+  return `correlation-${key.replace("|", "--")}`;
+}
+
+/** How many lagged pairs the list shows before it states how many it is hiding. */
+const LAGGED_SHOWN = 8;
 
 /** Cell text must stay legible on both the pale and the saturated steps. */
 function cellInk(r: number): string {
@@ -386,34 +403,34 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
   const { t, formatNumber } = useI18n();
   return (
     <>
-      <p className="text-xs text-slate-500 dark:text-slate-400">
+      <p className="text-xs text-ink-muted">
         {t("analysis.strengthDisclaimer")}
       </p>
       {strength.truncated && (
-        <p className="text-xs text-amber-700">{t("analysis.strengthTruncated")}</p>
+        <p className="text-xs text-warn-ink">{t("analysis.strengthTruncated")}</p>
       )}
 
       {strength.muscle_groups.length > 0 && (
-        <article className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="mb-1 text-sm font-bold text-slate-900 dark:text-slate-100">
+        <article className="rounded-2xl border border-line bg-surface p-4">
+          <h3 className="mb-1 text-sm font-bold text-ink">
             {t("analysis.strengthBalance")}
           </h3>
-          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+          <p className="mb-3 text-xs text-ink-muted">
             {t("analysis.strengthBalanceHint")}
           </p>
           <div className="space-y-1.5">
             {strength.muscle_groups.map((group) => (
               <div key={group.muscle_group} className="flex items-center gap-2">
-                <span className="w-28 shrink-0 truncate text-xs text-slate-600 dark:text-slate-300">
+                <span className="w-28 shrink-0 truncate text-xs text-ink-muted">
                   {t(muscleKey(group.muscle_group))}
                 </span>
-                <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-muted">
                   <div
                     className="h-full rounded-full bg-[#1d4ed8] dark:bg-[#60a5fa]"
                     style={{ width: `${group.set_share_pct}%` }}
                   />
                 </div>
-                <span className="w-24 shrink-0 text-right text-[11px] text-slate-500 dark:text-slate-400">
+                <span className="w-24 shrink-0 text-right text-[11px] text-ink-muted">
                   {t(plural(group.sets, "workouts.sets_one", "workouts.sets_other"), {
                     count: group.sets,
                   })}
@@ -424,23 +441,23 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
         </article>
       )}
 
-      <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+      <div className="overflow-x-auto rounded-2xl border border-line">
         <table className="w-full min-w-[560px] text-xs">
-          <thead className="bg-slate-50 text-left dark:bg-slate-800">
+          <thead className="bg-page text-left">
             <tr>
-              <th className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">
+              <th className="px-3 py-2 font-semibold text-ink-muted">
                 {t("analysis.strengthExercise")}
               </th>
-              <th className="px-3 py-2 font-semibold text-slate-600">
+              <th className="px-3 py-2 font-semibold text-ink-muted">
                 {t("analysis.strengthSessions")}
               </th>
-              <th className="px-3 py-2 font-semibold text-slate-600">
+              <th className="px-3 py-2 font-semibold text-ink-muted">
                 {t("analysis.strengthBest")}
               </th>
-              <th className="px-3 py-2 font-semibold text-slate-600">
+              <th className="px-3 py-2 font-semibold text-ink-muted">
                 {t("analysis.strengthOneRm")}
               </th>
-              <th className="px-3 py-2 font-semibold text-slate-600">
+              <th className="px-3 py-2 font-semibold text-ink-muted">
                 {t("analysis.strengthDirection")}
               </th>
             </tr>
@@ -449,27 +466,27 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
             {strength.exercises.map((exercise) => (
               <tr
                 key={exercise.exercise_title}
-                className="border-t border-slate-100 dark:border-slate-800"
+                className="border-t border-line"
               >
                 <td className="px-3 py-2">
-                  <span className="font-semibold text-slate-800 dark:text-slate-100">
+                  <span className="font-semibold text-ink-secondary">
                     {exercise.exercise_title}
                   </span>
                   {exercise.muscle_group && (
-                    <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                    <span className="ml-2 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] text-ink-muted">
                       {t(muscleKey(exercise.muscle_group))}
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                <td className="px-3 py-2 text-ink-muted">
                   {exercise.sessions}
                 </td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                <td className="px-3 py-2 text-ink-muted">
                   {exercise.best_set_weight_kg === null
                     ? "—"
                     : `${formatNumber(exercise.best_set_weight_kg)} ${weightUnit}`}
                 </td>
-                <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                <td className="px-3 py-2 text-ink-muted">
                   {exercise.latest_estimated_1rm_kg === null
                     ? "—"
                     : `${formatNumber(exercise.latest_estimated_1rm_kg)} ${weightUnit}`}
@@ -477,7 +494,7 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                 <td className="px-3 py-2">
                   {exercise.trend === null ? (
                     <span
-                      className="text-slate-400"
+                      className="text-ink-muted"
                       title={t("analysis.strengthTooFew", {
                         count: strength.min_sessions_for_trend,
                       })}
@@ -491,12 +508,12 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                           ? "font-semibold text-[#1d4ed8] dark:text-[#93c5fd]"
                           : exercise.trend.direction === "falling"
                             ? "font-semibold text-[#b91c1c] dark:text-[#fda4af]"
-                            : "text-slate-500"
+                            : "text-ink-muted"
                       }
                       title={t(`analysis.strengthBasis.${exercise.trend.basis}` as MessageKey)}
                     >
                       {t(`analysis.direction.${exercise.trend.direction}` as MessageKey)}{" "}
-                      <span className="font-normal text-slate-400">
+                      <span className="font-normal text-ink-muted">
                         {exercise.trend.change_pct_over_window > 0 ? "+" : ""}
                         {formatNumber(exercise.trend.change_pct_over_window)} %
                       </span>
@@ -528,7 +545,6 @@ export default function AnalysisTab({
 
   const [minStrength, setMinStrength] = useState(0.2);
   const [onlySignificant, setOnlySignificant] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
   const [sources, setSources] = useState<AnalysisSource[]>([]);
 
   /**
@@ -598,6 +614,37 @@ export default function AnalysisTab({
     [data, minStrength, onlySignificant],
   );
 
+  /**
+   * The strongest relationships, sorted here rather than assumed.
+   *
+   * This was `correlations.slice(0, 3)` under a heading that says "strongest",
+   * which rested on an unstated promise that the server returns them in that
+   * order. Sorting by |coefficient| costs nothing and makes the heading true of
+   * whatever arrives.
+   */
+  /**
+   * A matrix cell is a shortcut to that pair's card.
+   *
+   * The cards are native `<details>` now, so "open it" is a property and a
+   * scroll rather than a piece of React state shared between the matrix and the
+   * list. `scroll-padding` on `html` is what keeps the card clear of the sticky
+   * header once it arrives.
+   */
+  const openCorrelation = useCallback((key: string) => {
+    const target = document.getElementById(correlationDomId(key));
+    if (!(target instanceof HTMLDetailsElement)) return;
+    target.open = true;
+    target.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
+
+  const topFindings = useMemo(
+    () =>
+      [...correlations]
+        .sort((a, b) => Math.abs(b.coefficient) - Math.abs(a.coefficient))
+        .slice(0, TOP_FINDINGS),
+    [correlations],
+  );
+
   // Square matrix over the metrics that actually appear in a shown pair.
   const heatmap = useMemo(() => {
     const metrics = Array.from(
@@ -613,7 +660,7 @@ export default function AnalysisTab({
 
   if (loading && !data && !report.error) {
     return (
-      <section className="flex h-64 items-center justify-center text-sm text-slate-400 dark:text-slate-500">
+      <section className="flex h-64 items-center justify-center text-sm text-ink-muted">
         <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> {t("analysis.computing")}
       </section>
     );
@@ -629,16 +676,16 @@ export default function AnalysisTab({
     (!data || report.error)
   ) {
     return (
-      <section className="space-y-4 rounded-3xl border border-slate-200 bg-white p-6 dark:border-slate-700 dark:bg-slate-900">
+      <section className="space-y-4 rounded-3xl border border-line bg-surface p-6">
         {report.error ? (
           <p
             role="alert"
-            className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200"
+            className="rounded-2xl border border-danger-line bg-danger-soft p-4 text-sm text-danger-ink-on-soft"
           >
             {reportErrorText(t, report.error)}
           </p>
         ) : (
-          <p className="text-sm text-slate-600 dark:text-slate-300">
+          <p className="text-sm text-ink-muted">
             {t("report.pendingFirstRun")}
           </p>
         )}
@@ -661,17 +708,17 @@ export default function AnalysisTab({
     <section className="space-y-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-widest text-ok-ink">
             {t("sidebar.analysis")}
           </p>
-          <h1 className="text-3xl font-extrabold text-slate-900 dark:text-slate-100">
+          <h1 className="text-3xl font-extrabold text-ink">
             {t("analysis.title")}
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-2 max-w-2xl text-sm text-ink-muted">
             {t("analysis.subtitleTail")}
           </p>
         </div>
-        {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
+        {loading && <RefreshCw className="h-5 w-5 animate-spin text-ok-ink" />}
       </header>
 
       <ReportStatus
@@ -687,93 +734,90 @@ export default function AnalysisTab({
       {report.error && (
         <p
           role="alert"
-          className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs leading-relaxed text-red-800 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-200"
+          className="rounded-2xl border border-danger-line bg-danger-soft p-4 text-xs leading-relaxed text-danger-ink-on-soft"
         >
           {reportErrorText(t, report.error)}
         </p>
       )}
 
       {/*
-        Filters — one row above the charts.
+        Which run, as opposed to what is shown.
 
-        `items-end` pinned every child to the bottom of the row. The two selects are
-        taller than the checkbox and the docs link, so those two dropped onto the
-        selects' baseline instead of sitting centred in the card. `items-center`
-        aligns them on the row's middle, which is where they look like they belong.
+        These two selects and the four below used to sit in one row and look
+        identical, and they are not remotely the same kind of control. Window and
+        source define *what gets computed*: changing either discards the stored
+        bundle and queues a run that takes minutes. Minimum strength and
+        significance filter coefficients that are already in the browser and apply
+        in the same frame.
+
+        A reader who thinks they are adjusting a filter and instead throws away
+        the answer they were reading has been misled by the interface, not by
+        their own carelessness. So the run parameters live here, in the line that
+        already describes the run — beside "computed at 06:00" — behind a
+        disclosure that names what they do.
       */}
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-          {t("analysis.window")}
-          <select
-            value={windowDays}
-            // A different window is a different bundle, so this queues a run.
-            // `minStrength` below is not: it filters coefficients already here.
-            onChange={(e) => requestRun(Number(e.target.value), selectedSource)}
-            disabled={report.running}
-            className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-          >
-            {[30, 90, 180, 365].map((days) => (
-              <option key={days} value={days}>
-                {t("common.days_other", { count: days })}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-          {t("analysis.minStrength")}
-          <select
-            value={minStrength}
-            onChange={(e) => setMinStrength(Number(e.target.value))}
-            className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
-          >
-            <option value={0}>{t("analysis.all")}</option>
-            {[20, 40, 60].map((percent) => (
-              <option key={percent} value={percent / 100}>
-                {t("analysis.fromPercent", { percent })}
-              </option>
-            ))}
-          </select>
-        </label>
-        {sources.length > 0 && (
-          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-            {t("analysis.source")}
+      <Disclosure
+        title={t("analysis.runTitle")}
+        meta={t("analysis.runSummary", {
+          days: windowDays,
+          source:
+            selectedSource === "all"
+              ? t("analysis.allSources")
+              : (sources.find((source) => source.id === selectedSource)?.display_name ??
+                t("common.unknown")),
+        })}
+        note={t("analysis.runNote")}
+        className=""
+      >
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-xs font-semibold text-ink-muted">
+            {t("analysis.window")}
             <select
-              value={selectedSource}
-              onChange={(e) => requestRun(windowDays, e.target.value)}
+              value={windowDays}
+              onChange={(e) => requestRun(Number(e.target.value), selectedSource)}
               disabled={report.running}
-              className="ml-2 max-w-56 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring disabled:opacity-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100"
+              className="ml-2 min-h-11 rounded-xl border border-line bg-surface px-2.5 text-xs outline-none focus-ring disabled:opacity-50"
             >
-              <option value="all">{t("analysis.allSources")}</option>
-              {sources.map((source) => (
-                <option key={source.id} value={source.id}>
-                  {source.display_name || source.source_type}
+              {[30, 90, 180, 365].map((days) => (
+                <option key={days} value={days}>
+                  {t("common.days_other", { count: days })}
                 </option>
               ))}
             </select>
           </label>
-        )}
-        <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-300">
-          <input
-            type="checkbox"
-            checked={onlySignificant}
-            onChange={(e) => setOnlySignificant(e.target.checked)}
-          />
-          {t("analysis.onlySignificant")}
-        </label>
-        {data?.docs_url && (
-          <a
-            href={data.docs_url}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-brand underline"
-          >
-            <BookOpen className="h-3.5 w-3.5" /> {t("analysis.howToRead")}
-          </a>
-        )}
-      </div>
+          {sources.length > 0 && (
+            <label className="text-xs font-semibold text-ink-muted">
+              {t("analysis.source")}
+              <select
+                value={selectedSource}
+                onChange={(e) => requestRun(windowDays, e.target.value)}
+                disabled={report.running}
+                className="ml-2 min-h-11 max-w-56 rounded-xl border border-line bg-surface px-2.5 text-xs outline-none focus-ring disabled:opacity-50"
+              >
+                <option value="all">{t("analysis.allSources")}</option>
+                {sources.map((source) => (
+                  <option key={source.id} value={source.id}>
+                    {source.display_name || source.source_type}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {data?.docs_url && (
+            <a
+              href={data.docs_url}
+              target="_blank"
+              rel="noreferrer"
+              className="ml-auto inline-flex min-h-11 items-center gap-1.5 text-xs font-semibold text-brand underline"
+            >
+              <BookOpen className="h-3.5 w-3.5" /> {t("analysis.howToRead")}
+            </a>
+          )}
+        </div>
+      </Disclosure>
 
       {/* Section navigation */}
-      <nav className="flex flex-wrap gap-1.5 border-b border-slate-200 pb-2 dark:border-slate-700">
+      <nav className="flex flex-wrap gap-1.5 border-b border-line pb-2">
         {SECTIONS.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
@@ -781,7 +825,7 @@ export default function AnalysisTab({
             className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
               section === id
                 ? "bg-brand text-brand-ink"
-                : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                : "text-ink-muted hover:bg-surface-muted  "
             }`}
           >
             <Icon className="h-3.5 w-3.5" />
@@ -791,7 +835,7 @@ export default function AnalysisTab({
       </nav>
 
       {!hasAnything && (
-        <p className="rounded-2xl border border-slate-200 bg-slate-50 p-6 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+        <p className="rounded-2xl border border-line bg-page p-6 text-sm text-ink-muted">
           {t("analysis.noData")}
         </p>
       )}
@@ -839,12 +883,12 @@ export default function AnalysisTab({
                 return (
                   <>
                     {resolved.length > 0 && (
-                      <p className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-xs leading-relaxed text-blue-900">
+                      <p className="rounded-2xl border border-info-line bg-info-soft p-4 text-xs leading-relaxed text-info-ink">
                         {t("analysis.ambiguousSources", { count: resolved.length })}
                       </p>
                     )}
                     {unresolved > 0 && (
-                      <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
+                      <p className="rounded-2xl border border-warn-line bg-warn-soft p-4 text-xs leading-relaxed text-warn-ink">
                         {t("analysis.ambiguousUnresolved", { count: unresolved })}
                       </p>
                     )}
@@ -861,70 +905,120 @@ export default function AnalysisTab({
             rest of the page in German, so the wording lives in the catalogue instead
             (rule 17: services answer in English, the edge localizes).
           */}
-          <p className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-relaxed text-amber-900">
+          <p className="flex items-start gap-2 rounded-2xl border border-warn-line bg-warn-soft p-4 text-xs leading-relaxed text-warn-ink">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
             {t("analysis.disclaimer")}
           </p>
 
-          {correlations.length > 0 && <TopFindings correlations={correlations.slice(0, 3)} />}
+          {topFindings.length > 0 && <TopFindings correlations={topFindings} />}
 
-          <Provenance provenance={data.provenance} />
+          <Disclosure
+            title={t("analysis.provenanceTitle")}
+            className=""
+          >
+            <Provenance provenance={data.provenance} />
+          </Disclosure>
         </div>
       )}
 
       {data && section === "correlations" && (
         <div className="space-y-5">
+          {/* The display filters, next to the list they filter. Unlike the run
+              parameters above they change nothing on the server and cost nothing
+              to undo. */}
+          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-surface p-3">
+            <label className="text-xs font-semibold text-ink-muted">
+              {t("analysis.minStrength")}
+              <select
+                value={minStrength}
+                onChange={(e) => setMinStrength(Number(e.target.value))}
+                className="ml-2 min-h-11 rounded-xl border border-line bg-surface px-2.5 text-xs outline-none focus-ring"
+              >
+                <option value={0}>{t("analysis.all")}</option>
+                {[20, 40, 60].map((percent) => (
+                  <option key={percent} value={percent / 100}>
+                    {t("analysis.fromPercent", { percent })}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex min-h-11 items-center gap-1.5 text-xs font-semibold text-ink-muted">
+              <input
+                type="checkbox"
+                checked={onlySignificant}
+                onChange={(e) => setOnlySignificant(e.target.checked)}
+              />
+              {t("analysis.onlySignificant")}
+            </label>
+          </div>
+
           {correlations.length === 0 ? (
             <EmptyNote>{t("analysis.noneMatchFilters")}</EmptyNote>
           ) : (
             <>
-              <AnalysisExplainer />
-              <Heatmap
-                metrics={heatmap.metrics}
-                lookup={heatmap.lookup}
-                correlations={correlations}
-                onSelect={(key) => setExpanded(key)}
-              />
+              <Disclosure
+                title={t("analysis.explainerTitle")}
+                className=""
+              >
+                <AnalysisExplainer />
+              </Disclosure>
+
+              {/* `mountOnOpen`: the matrix is a wide sticky-header table that
+                  measures itself, and it is the expert artifact — the cards below
+                  are the answer, this is the tool for interrogating it. */}
+              <Disclosure
+                title={t("analysis.matrixTitle")}
+                meta={t("analysis.matrixSize", { count: heatmap.metrics.length })}
+                mountOnOpen
+                className=""
+              >
+                <Heatmap
+                  metrics={heatmap.metrics}
+                  lookup={heatmap.lookup}
+                  correlations={correlations}
+                  onSelect={openCorrelation}
+                />
+              </Disclosure>
+
               <div className="space-y-2">
-                {correlations.map((c) => {
-                  const key = `${c.metric_a}|${c.metric_b}`;
-                  return (
-                    <CorrelationCard
-                      key={key}
-                      correlation={c}
-                      expanded={expanded === key}
-                      onToggle={() => setExpanded(expanded === key ? null : key)}
-                      provenance={data.provenance}
-                      quality={data.data_quality}
-                    />
-                  );
-                })}
+                {correlations.map((c) => (
+                  <CorrelationCard
+                    key={`${c.metric_a}|${c.metric_b}`}
+                    correlation={c}
+                    provenance={data.provenance}
+                    quality={data.data_quality}
+                  />
+                ))}
+
               </div>
 
               {data.lagged_correlations.length > 0 && (
-                <div>
-                  <h2 className="mb-1 text-sm font-bold text-slate-900 dark:text-slate-100">
-                    {t("analysis.laggedTitle")}
-                  </h2>
-                  <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">
+                <Disclosure
+                  title={t("analysis.laggedTitle")}
+                  meta={t("analysis.sampleSize", {
+                    count: formatNumber(data.lagged_correlations.length),
+                  })}
+                  className=""
+                >
+                  <p className="mb-2 text-xs text-ink-muted">
                     {t("analysis.laggedTail")}
                   </p>
                   <div className="space-y-1.5">
-                    {data.lagged_correlations.slice(0, 8).map((l) => (
+                    {data.lagged_correlations.slice(0, LAGGED_SHOWN).map((l) => (
                       <div
                         key={`${l.metric_a}-${l.metric_b}-${l.lag_days}`}
-                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs dark:border-slate-700 dark:bg-slate-900"
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-xs"
                       >
-                        <span className="font-medium text-slate-700 dark:text-slate-200">
+                        <span className="font-medium text-ink-secondary">
                           {metricLabel(l.metric_a, locale, true)} →{" "}
                           {metricLabel(l.metric_b, locale, true)}{" "}
-                          <span className="text-slate-400 dark:text-slate-500">
+                          <span className="text-ink-muted">
                             {t("analysis.lagDays", { count: l.lag_days })}
                           </span>
                         </span>
                         <span className="flex items-center gap-2">
                           <StrengthBar value={l.coefficient} />
-                          <span className="w-28 text-right text-slate-500 dark:text-slate-400">
+                          <span className="w-28 text-right text-ink-muted">
                             {l.coefficient > 0
                               ? t("analysis.sameDirection")
                               : t("analysis.oppositeDirection")}{" "}
@@ -941,10 +1035,20 @@ export default function AnalysisTab({
                       </div>
                     ))}
                   </div>
-                  <p className="mt-2 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                  {/* Says how many are hidden. This truncated at eight in silence,
+                      in the section whose entire subject is honest uncertainty. */}
+                  {data.lagged_correlations.length > LAGGED_SHOWN && (
+                    <p className="mt-2 text-xs text-ink-muted">
+                      {t("analysis.laggedTruncated", {
+                        shown: LAGGED_SHOWN,
+                        total: data.lagged_correlations.length,
+                      })}
+                    </p>
+                  )}
+                  <p className="mt-2 rounded-xl bg-warn-soft px-3 py-2 text-xs text-warn-ink">
                     {t("analysis.laggedExploratory")}
                   </p>
-                </div>
+                </Disclosure>
               )}
             </>
           )}
@@ -959,26 +1063,26 @@ export default function AnalysisTab({
             Object.entries(data.trends).map(([metric, trend]) => (
               <article
                 key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+                className="rounded-2xl border border-line bg-surface p-4"
               >
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                  <h3 className="text-sm font-bold text-ink">
                     {metricLabel(metric, locale, true)}
                   </h3>
                   <span
                     className={`rounded-lg px-2 py-0.5 text-xs font-bold ${
                       trend.direction === "rising"
-                        ? "bg-blue-50 text-blue-800"
+                        ? "bg-info-soft text-info-ink"
                         : trend.direction === "falling"
-                          ? "bg-red-50 text-red-800"
-                          : "bg-slate-100 text-slate-600"
+                          ? "bg-danger-soft text-danger-ink-on-soft"
+                          : "bg-surface-muted text-ink-muted"
                     }`}
                   >
                     {t(("analysis.direction." + trend.direction) as MessageKey)}
                   </span>
                 </div>
                 <Sparkline values={trend.moving_average_7d} />
-                <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                <p className="mt-2 text-xs text-ink-muted">
                   {interpretationText(
                     t,
                     trend.interpretation_code,
@@ -988,7 +1092,7 @@ export default function AnalysisTab({
                     formatNumber,
                   )}
                 </p>
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-ink-muted">
                   {t("analysis.trendStats", {
                     mean: metricValue(metric, trend.mean, locale, formatNumber),
                     r2: formatNumber(trend.r_squared, { maximumFractionDigits: 3 }),
@@ -1009,12 +1113,12 @@ export default function AnalysisTab({
             Object.entries(data.anomalies).map(([metric, a]) => (
               <article
                 key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+                className="rounded-2xl border border-line bg-surface p-4"
               >
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                <h3 className="text-sm font-bold text-ink">
                   {metricLabel(metric, locale, true)}
                 </h3>
-                <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
+                <p className="mt-1 text-xs text-ink-muted">
                   {interpretationText(
                     t,
                     a.interpretation_code,
@@ -1029,12 +1133,12 @@ export default function AnalysisTab({
                     {a.anomalies.slice(-6).map((x) => (
                       <li
                         key={x.date}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]"
+                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
                       >
-                        <span className="font-mono text-slate-600 dark:text-slate-300">
+                        <span className="font-mono text-ink-muted">
                           {formatDay(x.date)}
                         </span>
-                        <span className="text-slate-700 dark:text-slate-200">
+                        <span className="text-ink-secondary">
                           {metricValue(metric, x.value, locale, formatNumber)} —{" "}
                           {t(
                             ("analysis.anomalyDirection." +
@@ -1045,7 +1149,7 @@ export default function AnalysisTab({
                     ))}
                   </ul>
                 )}
-                <p className="mt-2 text-[11px] text-slate-400">
+                <p className="mt-2 text-[11px] text-ink-muted">
                   {t("analysis.anomalyBasis", { days: formatNumber(a.sample_size) })}
                 </p>
               </article>
@@ -1062,9 +1166,9 @@ export default function AnalysisTab({
             Object.entries(data.routines).map(([metric, r]) => (
               <article
                 key={metric}
-                className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+                className="rounded-2xl border border-line bg-surface p-4"
               >
-                <h3 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+                <h3 className="mb-2 text-sm font-bold text-ink">
                   {metricLabel(metric, locale, true)}
                 </h3>
                 <WeekdayChart
@@ -1074,7 +1178,7 @@ export default function AnalysisTab({
                   formatNumber={formatNumber}
                 />
                 {r.weekend_effect && (
-                  <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                  <p className="mt-2 text-xs text-ink-muted">
                     {interpretationText(
                       t,
                       r.weekend_effect.interpretation_code,
@@ -1103,43 +1207,43 @@ export default function AnalysisTab({
 
       {data && section === "quality" && (
         <div className="space-y-3">
-          <p className="text-xs text-slate-500 dark:text-slate-400">{t("analysis.qualityHint")}</p>
-          <div className="overflow-x-auto rounded-2xl border border-slate-200 dark:border-slate-700">
+          <p className="text-xs text-ink-muted">{t("analysis.qualityHint")}</p>
+          <div className="overflow-x-auto rounded-2xl border border-line">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50 text-left dark:bg-slate-800">
+              <thead className="bg-page text-left">
                 <tr>
-                  <th className="px-3 py-2 font-semibold text-slate-600 dark:text-slate-300">
+                  <th className="px-3 py-2 font-semibold text-ink-muted">
                     {t("analysis.metricLabel")}
                   </th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">
+                  <th className="px-3 py-2 font-semibold text-ink-muted">
                     {t("analysis.colDays")}
                   </th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">
+                  <th className="px-3 py-2 font-semibold text-ink-muted">
                     {t("analysis.coverageLabel")}
                   </th>
-                  <th className="px-3 py-2 font-semibold text-slate-600">
+                  <th className="px-3 py-2 font-semibold text-ink-muted">
                     {t("analysis.statusLabel")}
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {Object.entries(data.data_quality).map(([metric, q]) => (
-                  <tr key={metric} className="border-t border-slate-100 dark:border-slate-800">
-                    <td className="px-3 py-2 font-medium text-slate-700 dark:text-slate-200">
+                  <tr key={metric} className="border-t border-line">
+                    <td className="px-3 py-2 font-medium text-ink-secondary">
                       {metricLabel(metric, locale, true)}
                     </td>
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                    <td className="px-3 py-2 text-ink-muted">
                       {formatNumber(q.observed_days)}/{formatNumber(q.window_days)}
                     </td>
-                    <td className="px-3 py-2 text-slate-600 dark:text-slate-300">
+                    <td className="px-3 py-2 text-ink-muted">
                       {formatNumber(q.coverage_pct, { maximumFractionDigits: 1 })} %
                     </td>
                     <td className="px-3 py-2">
                       <span
                         className={`rounded px-1.5 py-0.5 font-semibold ${
                           q.sufficient
-                            ? "bg-emerald-100 text-emerald-800"
-                            : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                            ? "bg-ok-soft text-ok-ink"
+                            : "bg-surface-muted text-ink-muted dark:bg-slate-700 "
                         }`}
                       >
                         {q.sufficient ? t("analysis.sufficient") : t("analysis.tooThin")}
@@ -1160,17 +1264,17 @@ export default function AnalysisTab({
 
 function StatTile({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900">
-      <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">{label}</p>
-      <p className="text-4xl font-black text-slate-900 dark:text-slate-100">{value}</p>
-      <p className="mt-1 text-xs text-slate-400">{hint}</p>
+    <article className="rounded-3xl border border-line bg-surface p-5">
+      <p className="text-sm font-semibold text-ink-muted">{label}</p>
+      <p className="text-4xl font-black text-ink">{value}</p>
+      <p className="mt-1 text-xs text-ink-muted">{hint}</p>
     </article>
   );
 }
 
 function EmptyNote({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+    <p className="rounded-2xl border border-line bg-page p-5 text-sm text-ink-muted">
       {children}
     </p>
   );
@@ -1207,7 +1311,7 @@ function HeatmapLegend() {
     { color: POS[0], label: t("analysis.scaleStrongSame") },
   ];
   return (
-    <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+    <div className="flex items-center gap-2 text-[11px] text-ink-muted">
       <span>{t("analysis.scaleMin")}</span>
       <span
         className="flex overflow-hidden rounded"
@@ -1227,11 +1331,11 @@ function HeatmapLegend() {
 function AnalysisExplainer() {
   const t = useT();
   return (
-    <article className="rounded-2xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-900/60 dark:bg-blue-950/25">
-      <h2 className="mb-2 text-sm font-bold text-blue-950 dark:text-blue-100">
+    <article className="rounded-2xl border border-info-line bg-info-soft p-4">
+      <h2 className="mb-2 text-sm font-bold text-info-ink">
         {t("analysis.explainerTitle")}
       </h2>
-      <div className="grid gap-3 text-xs leading-relaxed text-blue-900 sm:grid-cols-3 dark:text-blue-100">
+      <div className="grid gap-3 text-xs leading-relaxed text-info-ink sm:grid-cols-3">
         <div>
           <h3 className="font-bold">{t("analysis.explainerWhatTitle")}</h3>
           <p>{t("analysis.explainerWhat")}</p>
@@ -1264,16 +1368,16 @@ function Heatmap({
   if (metrics.length < 2) return null;
 
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+    <article className="rounded-2xl border border-line bg-surface p-4">
       <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+        <h2 className="text-sm font-bold text-ink">
           {t("analysis.matrixTitle")}
         </h2>
         <HeatmapLegend />
       </div>
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">{t("analysis.matrixHint")}</p>
+      <p className="mb-3 text-xs text-ink-muted">{t("analysis.matrixHint")}</p>
 
-      <div className="hidden max-h-[32rem] overflow-auto rounded-xl border border-slate-200 md:block dark:border-slate-700">
+      <div className="hidden max-h-[32rem] overflow-auto rounded-xl border border-line md:block">
         <table
           className="min-w-max border-separate border-spacing-0 text-xs"
           aria-label={t("analysis.matrixAria")}
@@ -1283,7 +1387,7 @@ function Heatmap({
             <tr>
               <th
                 scope="col"
-                className="sticky left-0 top-0 z-20 min-w-44 border-b border-r border-slate-200 bg-white px-3 py-3 text-left font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                className="sticky left-0 top-0 z-20 min-w-44 border-b border-r border-line bg-surface px-3 py-3 text-left font-semibold text-ink-muted"
               >
                 {t("analysis.metricLabel")}
               </th>
@@ -1291,7 +1395,7 @@ function Heatmap({
                 <th
                   key={metric}
                   scope="col"
-                  className="sticky top-0 z-10 min-w-28 border-b border-slate-200 bg-white px-2 py-3 text-center font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  className="sticky top-0 z-10 min-w-28 border-b border-line bg-surface px-2 py-3 text-center font-semibold text-ink-secondary"
                 >
                   {metricLabel(metric, locale, true)}
                 </th>
@@ -1303,7 +1407,7 @@ function Heatmap({
               <tr key={rowMetric}>
                 <th
                   scope="row"
-                  className="sticky left-0 z-10 min-w-44 border-b border-r border-slate-200 bg-white px-3 py-2 text-left font-semibold text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  className="sticky left-0 z-10 min-w-44 border-b border-r border-line bg-surface px-3 py-2 text-left font-semibold text-ink-secondary"
                 >
                   {metricLabel(rowMetric, locale, true)}
                 </th>
@@ -1314,7 +1418,7 @@ function Heatmap({
                   return (
                     <td
                       key={colMetric}
-                      className="border-b border-slate-100 p-1 text-center dark:border-slate-800"
+                      className="border-b border-line p-1 text-center"
                     >
                       {c ? (
                         <button
@@ -1369,7 +1473,7 @@ function Heatmap({
                           </span>
                         </button>
                       ) : (
-                        <span className="flex min-h-14 min-w-24 items-center justify-center rounded-lg bg-slate-50 text-slate-300 dark:bg-slate-800/70 dark:text-slate-600">
+                        <span className="flex min-h-14 min-w-24 items-center justify-center rounded-lg bg-page text-ink-faint">
                           {rowIndex === colIndex ? "—" : colIndex < rowIndex ? "" : "·"}
                         </span>
                       )}
@@ -1383,7 +1487,7 @@ function Heatmap({
       </div>
 
       <div className="space-y-2 md:hidden">
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-ink-muted">
           {t("analysis.matrixMobileHint")}
         </p>
         {correlations.map((correlation) => (
@@ -1410,14 +1514,14 @@ function MatrixMobileCard({
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left outline-none transition hover:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-slate-700 dark:bg-slate-800"
+      className="w-full rounded-xl border border-line bg-page p-3 text-left outline-none transition hover:border-brand focus-visible:ring-2 focus-visible:ring-brand"
       aria-label={t("analysis.matrixMobileAria", {
         first: metricLabel(c.metric_a, locale, true),
         second: metricLabel(c.metric_b, locale, true),
       })}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold text-slate-800 dark:text-slate-100">
+        <span className="text-xs font-semibold text-ink-secondary">
           {metricLabel(c.metric_a, locale, true)} ↔ {metricLabel(c.metric_b, locale, true)}
         </span>
         <span
@@ -1432,7 +1536,7 @@ function MatrixMobileCard({
           })}
         </span>
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
         <span>{t("analysis.sharedDays", { count: formatNumber(c.sample_size) })}</span>
         <span>
           {t(c.q_value === undefined ? "analysis.pValueLabel" : "analysis.qValueLabel")}{" "}
@@ -1447,22 +1551,22 @@ function TopFindings({ correlations }: { correlations: Correlation[] }) {
   const { t, locale, formatNumber } = useI18n();
   return (
     <div>
-      <h2 className="mb-2 text-sm font-bold text-slate-900 dark:text-slate-100">
+      <h2 className="mb-2 text-sm font-bold text-ink">
         {t("analysis.strongestTitle")}
       </h2>
       <div className="space-y-2">
         {correlations.map((c) => (
           <div
             key={`${c.metric_a}|${c.metric_b}`}
-            className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900"
+            className="rounded-2xl border border-line bg-surface p-4"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+              <span className="text-sm font-semibold text-ink-secondary">
                 {metricLabel(c.metric_a, locale, true)} ↔ {metricLabel(c.metric_b, locale, true)}
               </span>
               <span className="flex items-center gap-2 text-xs">
                 <StrengthBar value={c.coefficient} />
-                <span className="font-bold text-slate-700">
+                <span className="font-bold text-ink-secondary">
                   {c.direction === "positive"
                     ? t("analysis.sameDirection")
                     : t("analysis.oppositeDirection")}{" "}
@@ -1475,7 +1579,7 @@ function TopFindings({ correlations }: { correlations: Correlation[] }) {
                 </span>
               </span>
             </div>
-            <p className="mt-1.5 text-xs leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-muted">
               {interpretationText(
                 t,
                 c.interpretation_code,
@@ -1494,31 +1598,28 @@ function TopFindings({ correlations }: { correlations: Correlation[] }) {
 
 function CorrelationCard({
   correlation: c,
-  expanded,
-  onToggle,
   provenance,
   quality,
 }: {
   correlation: Correlation;
-  expanded: boolean;
-  onToggle: () => void;
   provenance: Insights["provenance"];
   quality: Record<string, Quality>;
 }) {
   const { t, locale, formatDate, formatDateTime, formatNumber } = useI18n();
   return (
-    <article className="rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-      <button
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex w-full flex-wrap items-center justify-between gap-2 p-4 text-left"
-      >
-        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-          {metricLabel(c.metric_a, locale, true)} ↔ {metricLabel(c.metric_b, locale, true)}
-        </span>
-        <span className="flex items-center gap-2 text-xs">
+    // Was a hand-rolled `useState` plus `aria-expanded` on a button plus a
+    // manually rotated chevron — one of three spellings of "collapsible" in this
+    // app. The shared component is a native `<details>`, so the expanded state is
+    // announced by the element rather than by an attribute somebody remembered.
+    <Disclosure
+      id={correlationDomId(`${c.metric_a}|${c.metric_b}`)}
+      className=""
+      titleAs="h3"
+      title={`${metricLabel(c.metric_a, locale, true)} ↔ ${metricLabel(c.metric_b, locale, true)}`}
+      meta={
+        <span className="flex items-center gap-2">
           <StrengthBar value={c.coefficient} />
-          <span className="font-bold text-slate-700">
+          <span className="font-bold text-ink-secondary">
             {c.direction === "positive"
               ? t("analysis.sameDirection")
               : t("analysis.oppositeDirection")}{" "}
@@ -1530,23 +1631,19 @@ function CorrelationCard({
             })}
           </span>
           {!c.significant && (
-            <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold text-slate-500">
+            <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-ink-muted">
               {t("analysis.notSignificant")}
             </span>
           )}
-          <ChevronDown
-            className={`h-4 w-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`}
-          />
         </span>
-      </button>
-
-      {expanded && (
-        <div className="space-y-3 border-t border-slate-100 p-4 text-xs dark:border-slate-800">
+      }
+    >
+      <div className="space-y-3 text-xs">
           <div>
-            <h4 className="font-bold text-slate-700 dark:text-slate-200">
+            <h4 className="font-bold text-ink-secondary">
               {t("analysis.interpretationTitle")}
             </h4>
-            <p className="mt-0.5 leading-relaxed text-slate-600 dark:text-slate-300">
+            <p className="mt-0.5 leading-relaxed text-ink-muted">
               {interpretationText(
                 t,
                 c.interpretation_code,
@@ -1559,10 +1656,10 @@ function CorrelationCard({
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700 dark:text-slate-200">
+            <h4 className="font-bold text-ink-secondary">
               {t("analysis.provenanceTitle")}
             </h4>
-            <ul className="mt-0.5 space-y-0.5 text-slate-600 dark:text-slate-300">
+            <ul className="mt-0.5 space-y-0.5 text-ink-muted">
               <li>{t("analysis.sharedDays", { count: formatNumber(c.sample_size) })}</li>
               <li>
                 {t("analysis.periodLabel")} {formatDate(provenance.window_start)} –{" "}
@@ -1584,10 +1681,10 @@ function CorrelationCard({
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700 dark:text-slate-200">
+            <h4 className="font-bold text-ink-secondary">
               {t("analysis.calculationTitle")}
             </h4>
-            <ul className="mt-0.5 space-y-0.5 text-slate-600 dark:text-slate-300">
+            <ul className="mt-0.5 space-y-0.5 text-ink-muted">
               <li>
                 {t("analysis.pearsonLabel")} {formatNumber(c.pearson, { maximumFractionDigits: 3 })}
               </li>
@@ -1618,10 +1715,10 @@ function CorrelationCard({
           </div>
 
           <div>
-            <h4 className="font-bold text-slate-700 dark:text-slate-200">
+            <h4 className="font-bold text-ink-secondary">
               {t("analysis.limitsTitle")}
             </h4>
-            <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-slate-600 dark:text-slate-300">
+            <ul className="mt-0.5 list-disc space-y-0.5 pl-4 text-ink-muted">
               <li>{t("analysis.limitsBody")}</li>
               {c.caveat_codes
                 ? c.caveat_codes.map((caveat, index) => {
@@ -1632,9 +1729,8 @@ function CorrelationCard({
                 : c.caveats.map((caveat) => <li key={caveat}>{caveat}</li>)}
             </ul>
           </div>
-        </div>
-      )}
-    </article>
+      </div>
+    </Disclosure>
   );
 }
 
@@ -1717,10 +1813,10 @@ function WeekdayChart({
     <div className="space-y-1">
       {data.map((d) => (
         <div key={d.weekday} className="flex items-center gap-2 text-[11px]">
-          <span className="w-20 shrink-0 text-slate-500 dark:text-slate-400">
+          <span className="w-20 shrink-0 text-ink-muted">
             {WEEKDAY_KEYS[d.weekday] ? t(WEEKDAY_KEYS[d.weekday]) : d.weekday}
           </span>
-          <span className="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100 dark:bg-slate-800">
+          <span className="h-3 flex-1 overflow-hidden rounded-sm bg-surface-muted">
             {d.mean !== null && (
               <span
                 className="bg-brand block h-full rounded-sm"
@@ -1728,7 +1824,7 @@ function WeekdayChart({
               />
             )}
           </span>
-          <span className="w-24 text-right text-slate-600 dark:text-slate-300">
+          <span className="w-24 text-right text-ink-muted">
             {d.mean !== null ? metricValue(metric, d.mean, locale, formatNumber) : "—"}
           </span>
         </div>
@@ -1740,7 +1836,7 @@ function WeekdayChart({
 function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
   const { t, formatDate, formatDateTime } = useI18n();
   return (
-    <p className="text-[11px] text-slate-400">
+    <p className="text-[11px] text-ink-muted">
       {t("analysis.provenanceSummary", {
         start: formatDate(provenance.window_start),
         end: formatDate(provenance.window_end),

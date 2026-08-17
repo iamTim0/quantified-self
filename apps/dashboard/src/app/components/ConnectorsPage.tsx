@@ -267,15 +267,15 @@ export default function ConnectorsPage({
 
   if (detailId && loading) {
     return (
-      <div className="py-16 text-center text-xs text-slate-500">{t("importerDetail.loading")}</div>
+      <div className="py-16 text-center text-xs text-ink-muted">{t("importerDetail.loading")}</div>
     );
   }
 
   if (detailId && !detailConnector) {
     return (
-      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <h1 className="text-lg font-bold text-slate-900">{t("importerDetail.notFound")}</h1>
-        <p className="text-xs text-slate-500">{t("importerDetail.notFoundHint")}</p>
+      <div className="space-y-4 rounded-3xl border border-line bg-surface p-8 text-center shadow-sm">
+        <h1 className="text-lg font-bold text-ink">{t("importerDetail.notFound")}</h1>
+        <p className="text-xs text-ink-muted">{t("importerDetail.notFoundHint")}</p>
         <Link
           href="/connectors"
           className="inline-flex rounded-2xl bg-brand px-4 py-2.5 text-xs font-bold text-brand-ink hover:bg-brand-hover"
@@ -304,30 +304,30 @@ export default function ConnectorsPage({
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-extrabold text-ink tracking-tight">
             {t("connectors.title")}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">{t("connectors.subtitle")}</p>
+          <p className="text-xs text-ink-muted mt-1">{t("connectors.subtitle")}</p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={fetchConnectors}
-            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
+            className="flex items-center gap-2 text-xs font-semibold text-ink-secondary bg-surface border border-line hover:bg-page px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
-            <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 text-ink-muted ${loading ? "animate-spin" : ""}`} />
             <span>{t("header.refresh")}</span>
           </button>
           <button
             onClick={() => setRunsOpen(true)}
-            className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
+            className="flex items-center gap-2 text-xs font-semibold text-ink-secondary bg-surface border border-line hover:bg-page px-3.5 py-2 rounded-2xl shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
-            <Clock3 className="w-3.5 h-3.5 text-slate-500" />
+            <Clock3 className="w-3.5 h-3.5 text-ink-muted" />
             <span>{t("connectors.showRuns")}</span>
             {busyCount > 0 && (
               <span
                 title={t("connectors.runsActiveHint", { count: busyCount })}
-                className="rounded-full border border-amber-300 bg-amber-50 px-1.5 text-[10px] font-bold text-amber-800"
+                className="rounded-full border border-warn-line bg-warn-soft px-1.5 text-[10px] font-bold text-warn-ink"
               >
                 {busyCount}
               </span>
@@ -346,7 +346,7 @@ export default function ConnectorsPage({
       <div
         role="tablist"
         aria-label={t("connectors.tabs")}
-        className="flex w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
+        className="flex w-full max-w-xl rounded-2xl border border-line bg-surface p-1 shadow-sm"
       >
         <button
           type="button"
@@ -356,7 +356,7 @@ export default function ConnectorsPage({
           className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "current"
               ? "bg-brand text-brand-ink shadow-sm"
-              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              : "text-ink-muted hover:bg-page hover:text-ink"
           }`}
         >
           {t("connectors.tabCurrent")}
@@ -369,7 +369,7 @@ export default function ConnectorsPage({
           className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "available"
               ? "bg-brand text-brand-ink shadow-sm"
-              : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              : "text-ink-muted hover:bg-page hover:text-ink"
           }`}
         >
           {t("connectors.tabAvailable")}
@@ -379,16 +379,16 @@ export default function ConnectorsPage({
       {activeTab === "current" ? (
         <>
           {/* Main Connected Sources & Queue Status Table */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
+          <div className="glass-card p-6 bg-surface border border-line rounded-3xl space-y-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-bold text-slate-900">{t("connectors.tableTitle")}</h3>
-                <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                  <Radio className="w-2.5 h-2.5 text-emerald-600 animate-pulse" />{" "}
+                <h3 className="text-sm font-bold text-ink">{t("connectors.tableTitle")}</h3>
+                <span className="text-[10px] font-semibold text-ok-ink bg-ok-soft px-2.5 py-0.5 rounded-full border border-ok-line flex items-center gap-1">
+                  <Radio className="w-2.5 h-2.5 text-ok animate-pulse" />{" "}
                   {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
                 </span>
               </div>
-              <span className="text-xs font-semibold text-slate-400">
+              <span className="text-xs font-semibold text-ink-muted">
                 {t(
                   plural(
                     connectors.length,
@@ -401,14 +401,14 @@ export default function ConnectorsPage({
             </div>
 
             {loading ? (
-              <div className="p-8 text-center text-xs text-slate-400">
+              <div className="p-8 text-center text-xs text-ink-muted">
                 {t("connectors.loadingDetails")}
               </div>
             ) : connectors.length > 0 ? (
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 uppercase tracking-wider font-bold text-[11px]">
+                    <tr className="border-b border-line text-ink-muted uppercase tracking-wider font-bold text-[11px]">
                       <th className="pb-3 px-3">{t("connectors.colSource")}</th>
                       <th className="pb-3 px-3">{t("connectors.colQueue")}</th>
                       <th className="pb-3 px-3">{t("connectors.colLastSync")}</th>
@@ -416,7 +416,7 @@ export default function ConnectorsPage({
                       <th className="pb-3 px-3 text-right">{t("connectors.colActions")}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-line">
                     {connectors.map((c) => {
                       const rowFileOnly = c.import_mode === "file";
                       const rowIsBusy = ["queued", "running", "loading"].includes(
@@ -435,14 +435,14 @@ export default function ConnectorsPage({
                         rowIsPassive && (rowFileOnly || Boolean(c.supports_file_import));
                       const rowHasImportAction = !rowIsPassive || rowUploadOnly;
                       return (
-                        <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                        <tr key={c.id} className="hover:bg-page transition-colors">
                           <td className="py-3.5 px-3">
                             <div className="flex items-center gap-2.5">
                               <Key className="w-4 h-4 text-brand" />
                               <div>
                                 <div className="flex items-center gap-2">
                                   {/* Name first, type beneath: two calendars differ only by name. */}
-                                  <div className="font-bold text-slate-900">
+                                  <div className="font-bold text-ink">
                                     {c.display_name || c.source_type}
                                   </div>
                                   <a
@@ -452,7 +452,7 @@ export default function ConnectorsPage({
                                     }
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 font-semibold transition-colors"
+                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-ok-soft hover:bg-ok-soft border border-ok-line text-ok-ink font-semibold transition-colors"
                                     title={t("connectors.openDocs")}
                                   >
                                     <BookOpen className="w-3 h-3" />
@@ -460,14 +460,14 @@ export default function ConnectorsPage({
                                   </a>
                                   <Link
                                     href={`/connectors/${encodeURIComponent(c.id)}`}
-                                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
+                                    className="inline-flex items-center gap-1 rounded-md border border-line bg-surface px-1.5 py-0.5 text-ink-muted transition-colors hover:bg-page hover:text-ink"
                                     title={t("connectors.openDetails")}
                                   >
                                     <Activity className="h-3 w-3" />
                                     <span className="text-[10px]">{t("connectors.details")}</span>
                                   </Link>
                                 </div>
-                                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
                                   {c.source_type}
                                 </div>
                                 <div
@@ -481,7 +481,7 @@ export default function ConnectorsPage({
                                     ? t("connectors.passiveHint")
                                     : t("connectors.activeHint")}
                                 </div>
-                                <div className="text-[10px] text-slate-400 font-mono">
+                                <div className="text-[10px] text-ink-muted font-mono">
                                   Fernet AES-256 Encrypted
                                 </div>
                               </div>
@@ -492,19 +492,19 @@ export default function ConnectorsPage({
                               <span
                                 className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border inline-flex items-center gap-1.5 ${
                                   rowIsBusy
-                                    ? "bg-amber-50 text-amber-800 border-amber-300 animate-pulse"
+                                    ? "bg-warn-soft text-warn-ink border-warn-line animate-pulse"
                                     : c.sync_status === "error"
-                                      ? "bg-rose-50 text-rose-800 border-rose-300"
-                                      : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                      ? "bg-danger-soft text-rose-800 border-rose-300"
+                                      : "bg-ok-soft text-ok-ink border-ok-line"
                                 }`}
                               >
                                 <Radio
                                   className={`w-3 h-3 ${
                                     rowIsBusy
-                                      ? "text-amber-600 animate-spin"
+                                      ? "text-warn animate-spin"
                                       : c.sync_status === "error"
-                                        ? "text-rose-600"
-                                        : "text-emerald-600"
+                                        ? "text-danger-ink-on-soft"
+                                        : "text-ok"
                                   }`}
                                 />
                                 <span>
@@ -521,8 +521,8 @@ export default function ConnectorsPage({
                                 <div
                                   className={`text-[10px] font-mono leading-tight ${
                                     c.sync_status === "error"
-                                      ? "text-rose-600 font-semibold"
-                                      : "text-slate-500"
+                                      ? "text-danger-ink-on-soft font-semibold"
+                                      : "text-ink-muted"
                                   }`}
                                 >
                                   {c.last_sync_message}
@@ -530,10 +530,10 @@ export default function ConnectorsPage({
                               )}
                             </div>
                           </td>
-                          <td className="py-3.5 px-3 text-slate-600 font-mono text-[11px]">
+                          <td className="py-3.5 px-3 text-ink-muted font-mono text-[11px]">
                             {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
                           </td>
-                          <td className="py-3.5 px-3 text-slate-600">
+                          <td className="py-3.5 px-3 text-ink-muted">
                             {rowFileOnly
                               ? t("connectors.fileDriven")
                               : rowIsPassive
@@ -564,7 +564,7 @@ export default function ConnectorsPage({
                                     })
                                   }
                                   disabled={rowIsBusy}
-                                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
+                                  className="px-3 py-1.5 rounded-xl bg-surface-muted hover:bg-surface-muted border border-line text-ink-secondary font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1.5 whitespace-nowrap"
                                 >
                                   <RefreshCw
                                     className={`w-3 h-3 ${rowIsBusy ? "animate-spin" : ""}`}
@@ -604,7 +604,7 @@ export default function ConnectorsPage({
                               <button
                                 onClick={() => handleDeleteConnector(c)}
                                 disabled={deletingSource === c.id}
-                                className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
+                                className="px-3 py-1.5 rounded-xl bg-danger-soft hover:bg-rose-100 border border-danger-line text-danger-ink-on-soft font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
                                 title={t("connectors.disconnect")}
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -619,8 +619,8 @@ export default function ConnectorsPage({
                 </table>
               </div>
             ) : (
-              <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl">
-                <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
+              <div className="p-8 text-center bg-page border border-line rounded-2xl">
+                <p className="text-xs text-ink-muted mb-3">{t("connectors.emptyList")}</p>
                 <button
                   onClick={() => setActiveTab("available")}
                   className="px-4 py-2 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-brand/20"
@@ -634,8 +634,8 @@ export default function ConnectorsPage({
       ) : (
         <section className="space-y-4">
           <div>
-            <h2 className="text-sm font-bold text-slate-900">{t("connectors.tabAvailable")}</h2>
-            <p className="mt-1 text-xs text-slate-500">{t("connectors.availableHint")}</p>
+            <h2 className="text-sm font-bold text-ink">{t("connectors.tabAvailable")}</h2>
+            <p className="mt-1 text-xs text-ink-muted">{t("connectors.availableHint")}</p>
           </div>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
             {CONNECTOR_CATALOG.map((cat) => {
@@ -644,15 +644,15 @@ export default function ConnectorsPage({
               return (
                 <div
                   key={`add-${cat.id}`}
-                  className="glass-card flex flex-col justify-between rounded-3xl border border-dashed border-slate-300 bg-white p-6 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,transform] hover:-translate-y-1"
+                  className="glass-card flex flex-col justify-between rounded-3xl border border-dashed border-line bg-surface p-6 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,transform] hover:-translate-y-1"
                 >
                   <div>
                     <div className="mb-4 flex items-start justify-between">
-                      <div className="rounded-2xl bg-slate-100 p-3 text-slate-500">
+                      <div className="rounded-2xl bg-surface-muted p-3 text-ink-muted">
                         <Icon className="h-6 w-6" />
                       </div>
                       {count > 0 && (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                        <span className="rounded-full border border-ok-line bg-ok-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-ok-ink">
                           {t(
                             plural(
                               count,
@@ -664,10 +664,10 @@ export default function ConnectorsPage({
                         </span>
                       )}
                     </div>
-                    <h3 className="mb-1 text-lg font-extrabold text-slate-900">
+                    <h3 className="mb-1 text-lg font-extrabold text-ink">
                       {catalogName(t, cat)}
                     </h3>
-                    <p className="mb-4 text-xs leading-relaxed text-slate-500">
+                    <p className="mb-4 text-xs leading-relaxed text-ink-muted">
                       {t(cat.descriptionKey)}
                     </p>
                   </div>
@@ -700,15 +700,15 @@ export default function ConnectorsPage({
             aria-modal="true"
             aria-label={t("importOverview.title")}
             tabIndex={-1}
-            className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-xl"
+            className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-surface shadow-xl"
           >
             {/* Only the close button: the run overview carries its own heading,
                 and a second copy of it in a title bar said the same thing twice. */}
-            <div className="flex justify-end border-b border-slate-100 px-4 py-2">
+            <div className="flex justify-end border-b border-line px-4 py-2">
               <button
                 onClick={() => setRunsOpen(false)}
                 aria-label={t("common.close")}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                className="rounded-full p-1.5 text-ink-muted hover:bg-surface-muted hover:text-ink-secondary"
               >
                 <X className="h-5 w-5" />
               </button>

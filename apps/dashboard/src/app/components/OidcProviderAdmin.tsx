@@ -172,9 +172,9 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     props: React.InputHTMLAttributes<HTMLInputElement> = {},
   ) => (
     <label className="block">
-      <span className="mb-1 block text-xs font-semibold text-slate-600">{label}</span>
+      <span className="mb-1 block text-xs font-semibold text-ink-muted">{label}</span>
       <input
-        className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-emerald-500"
+        className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-ink outline-none focus-visible:border-emerald-500"
         value={String(draft?.[key] ?? "")}
         onChange={(e) => setDraft((d) => (d ? { ...d, [key]: e.target.value } : d))}
         {...props}
@@ -187,7 +187,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     key: "enabled" | "allow_signup" | "require_verified_email",
     hint: string,
   ) => (
-    <label className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+    <label className="flex items-start gap-3 rounded-2xl border border-line bg-surface p-3">
       <input
         type="checkbox"
         className="mt-1"
@@ -195,8 +195,8 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
         onChange={(e) => setDraft((d) => (d ? { ...d, [key]: e.target.checked } : d))}
       />
       <span>
-        <span className="block text-sm font-semibold text-slate-800">{label}</span>
-        <span className="block text-xs text-slate-500">{hint}</span>
+        <span className="block text-sm font-semibold text-ink-secondary">{label}</span>
+        <span className="block text-xs text-ink-muted">{hint}</span>
       </span>
     </label>
   );
@@ -205,8 +205,8 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     <section className="space-y-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">{t("oidc.title")}</h2>
-          <p className="text-xs text-slate-500">{t("oidc.subtitle")}</p>
+          <h2 className="text-lg font-bold text-ink">{t("oidc.title")}</h2>
+          <p className="text-xs text-ink-muted">{t("oidc.subtitle")}</p>
         </div>
         {!draft && (
           <button
@@ -222,16 +222,16 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       </header>
 
       {error && (
-        <p className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+        <p className="flex items-start gap-2 rounded-2xl border border-warn-line bg-warn-soft p-3 text-sm text-warn-ink">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           {error}
         </p>
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-400">{t("oidc.loading")}</p>
+        <p className="text-sm text-ink-muted">{t("oidc.loading")}</p>
       ) : providers.length === 0 && !draft ? (
-        <p className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+        <p className="rounded-2xl border border-line bg-page p-4 text-sm text-ink-muted">
           {t("oidc.emptyState")}
         </p>
       ) : (
@@ -239,26 +239,26 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
           {providers.map((p) => (
             <li
               key={p.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-4"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-4"
             >
               <div className="min-w-0">
-                <p className="flex items-center gap-2 text-sm font-bold text-slate-900">
+                <p className="flex items-center gap-2 text-sm font-bold text-ink">
                   {p.display_name}
-                  <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-xs font-normal text-slate-500">
+                  <span className="rounded-full bg-surface-muted px-2 py-0.5 font-mono text-xs font-normal text-ink-muted">
                     {p.slug}
                   </span>
                   {p.enabled ? (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-ok-soft px-2 py-0.5 text-xs font-semibold text-ok-ink">
                       <ShieldCheck className="h-3 w-3" /> {t("oidc.enabled")}
                     </span>
                   ) : (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                    <span className="rounded-full bg-surface-muted px-2 py-0.5 text-xs text-ink-muted">
                       deaktiviert
                     </span>
                   )}
                 </p>
-                <p className="truncate text-xs text-slate-500">{p.issuer}</p>
-                <p className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                <p className="truncate text-xs text-ink-muted">{p.issuer}</p>
+                <p className="mt-1 flex items-center gap-1 text-xs text-ink-muted">
                   <KeyRound className="h-3 w-3" />
                   {p.has_client_secret ? t("oidc.hasSecret") : t("oidc.noSecret")}
                   {p.allow_signup && " · Registrierung erlaubt"}
@@ -268,14 +268,14 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
                 <button
                   onClick={() => beginEdit(p)}
                   disabled={busy}
-                  className="rounded-2xl border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700"
+                  className="rounded-2xl border border-line px-3 py-1.5 text-xs font-semibold text-ink-secondary"
                 >
                   Bearbeiten
                 </button>
                 <button
                   onClick={() => remove(p.slug)}
                   disabled={busy}
-                  className="inline-flex items-center gap-1 rounded-2xl border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-700"
+                  className="inline-flex items-center gap-1 rounded-2xl border border-danger-line px-3 py-1.5 text-xs font-semibold text-danger-ink-on-soft"
                 >
                   <Trash2 className="h-3 w-3" /> {t("common.delete")}
                 </button>
@@ -286,8 +286,8 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
       )}
 
       {draft && (
-        <div className="space-y-3 rounded-3xl border border-slate-200 bg-slate-50 p-5">
-          <h3 className="text-sm font-bold text-slate-900">
+        <div className="space-y-3 rounded-3xl border border-line bg-page p-5">
+          <h3 className="text-sm font-bold text-ink">
             {editingSlug ? t("oidc.editing", { slug: editingSlug }) : t("oidc.newProvider")}
           </h3>
 
@@ -317,7 +317,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
             )}
           </div>
 
-          <p className="text-xs text-slate-500">{t("oidc.issuerHint")}</p>
+          <p className="text-xs text-ink-muted">{t("oidc.issuerHint")}</p>
 
           <div className="flex gap-2">
             <button
@@ -334,7 +334,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
                 setError("");
               }}
               disabled={busy}
-              className="rounded-2xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700"
+              className="rounded-2xl border border-line px-4 py-2 text-sm font-semibold text-ink-secondary"
             >
               Abbrechen
             </button>

@@ -128,10 +128,15 @@ that.
 A day with no lanes at all is not complete either. `complete` requires at least one lane, so
 *we hold nothing for this day* is never dressed up as *this day is fully accounted for*.
 
-In the interface an incomplete lane carries a small warning glyph whose tooltip says when
-that connector last imported, or that it has never completed one. That is the whole point of
-the field: **no workout** and **the workout connector last ran at 06:00** are now two
-different things on the screen.
+In the interface an incomplete lane states in plain text, next to its heading, when that
+connector last imported or that it has never completed one. That is the whole point of the
+field: **no workout** and **the workout connector last ran at 06:00** are two different
+things on the screen.
+
+The line is text rather than a tooltip on a glyph, and that is not cosmetic. `title`
+attributes never fire on a touch device, so for the whole of this feature's first life the
+distinction it exists to draw was invisible on exactly the device most readers open the page
+on. The note stays legible while the lane is collapsed, for the same reason.
 
 ## One connector answers per metric
 
@@ -351,21 +356,49 @@ leads because it is the first question the reader asks; its **Still arriving** b
 lane's last-import timestamp make its partial coverage explicit rather than presenting a gap
 as a fact.
 
+**Three numbers, then everything else on request.** The page opens with up to three headline
+figures for the day — sleep duration, steps, energy intake, falling through a fixed priority
+list of canonical registry keys to whatever the day actually holds. A day with fewer shows
+fewer; no slot is ever filled with an invented figure, because a headline is precisely where
+one would be believed. Each carries the previous day's difference beside it, which costs
+nothing: the report already contains both days.
+
+The difference is deliberately not coloured by direction. Whether more steps is good and
+more body weight is bad is a judgement about a reader's goals that this platform does not
+hold, and a green arrow would state one anyway.
+
+Everything below the headline is a collapsed section — one per lane, one for the timeline,
+one for the day's log, one for the map — each labelled with what it contains ("4 values",
+"12 events", "1,830 kcal") so a closed section is still navigable. A single **Expand all**
+switch per day covers the wide-screen case, where a column of closed rows would be a click
+per fact. The default is the same on a phone and in a browser: a default that varies by
+width makes "why is this one open" unanswerable.
+
 - Today's heading carries a **Still arriving** badge, from `is_today`.
-- Each lane is a card. An incomplete lane shows the warning glyph and its tooltip.
-- A metric more than one connector reports is annotated with the connector that answered,
-  and the tooltip says the two are never added together.
+- An incomplete lane states its last import as a visible line, which survives collapsing.
+- A metric more than one connector reports names the connector that answered, and the lane
+  says once that the two are never added together.
 - The timeline lists each event's clock time, its title and its first three measures, with a
   truncation note when `event_limit_reached` is set.
+- The map is mounted only when its section is opened — required, not merely thrifty: Leaflet
+  sizes itself from its container, and a container inside a closed `<details>` has no box.
+
+All of these use the shared `Disclosure` component, which is a native `<details>`/`<summary>`
+pair. Keyboard operation and the expanded state announced to assistive technology come from
+the element rather than from hand-written ARIA, and each section title stays a real heading
+so collapsing the page does not delete its outline.
 
 Every string comes from the message catalogue under `day.*`, in both languages (rule 16);
 dates, timestamps and lane values are formatted through `useI18n()` rather than against a
 hardcoded locale. Category names are mapped from the server's stable identifiers to
 catalogue keys in the component, so the server never sends prose (rule 17).
 
-Nothing here is precomputed. A day story is a derivation, but it is bounded to a single day
-and to one tenant's rows in that day, so it is computed on the request rather than stored —
-unlike the three whole-history derivations in [Precomputed reports](precomputed-reports.md).
+The page reads a **stored report**, not a fresh computation. Aggregating a day of points on
+every visit was the same mistake as the whole-history summary it replaced, in a smaller
+frame: for a workspace with per-minute sampling and a location trace that is six figures of
+rows, twice, for an answer that cannot change until an import does. It is a report like the
+gap and conflict scans — see [Precomputed reports](precomputed-reports.md) — so the reader
+sees the last good answer with a note when newer data has arrived.
 
 ## Interpretation and limitations
 

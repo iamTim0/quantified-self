@@ -221,7 +221,7 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
           badge > 0 ? t("jobs.bellWithCount", { count: String(badge) }) : t("jobs.bell")
         }
         title={t("jobs.bell")}
-        className="border-line bg-surface text-ink-muted hover:text-ink relative flex h-11 w-11 items-center justify-center rounded-2xl border shadow-sm [transition-property:color,background-color,border-color,box-shadow] hover:bg-slate-50"
+        className="border-line bg-surface text-ink-muted hover:text-ink relative flex h-11 w-11 items-center justify-center rounded-2xl border shadow-sm [transition-property:color,background-color,border-color,box-shadow] hover:bg-page"
       >
         <Bell className="h-4 w-4" aria-hidden="true" />
         {badge > 0 && (
@@ -255,7 +255,7 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
               onClick={() => void load()}
               aria-label={t("jobs.refresh")}
               title={t("jobs.refresh")}
-              className="text-ink-muted hover:text-ink flex h-8 w-8 items-center justify-center rounded-lg"
+              className="text-ink-muted hover:text-ink flex min-h-11 min-w-11 items-center justify-center rounded-lg"
             >
               <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
