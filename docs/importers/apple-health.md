@@ -240,6 +240,48 @@ The Core service deduplicates on the deterministically derived `idempotency_key`
 whether the same measurement really was delivered more than once with different timestamps or
 different `metric_type` values.
 
+### A push from the phone gets no answer
+
+A push is now **streamed** through the Gateway rather than read into memory first, and it has
+its own timeout (`connect 10 s`, `read 120 s`, `write 300 s`) instead of the flat 30 s that
+fits an ordinary API call. Health Auto Export sends whatever accumulated while the phone was
+offline, over a home connection and usually a tunnel, and that is not an ordinary API call.
+
+If the phone gives up mid-upload the Gateway answers **499** with the code
+`ingest_client_disconnected`. That is deliberately neither a 4xx blaming the phone nor a 5xx:
+a 5xx would tell Health Auto Export the server is broken and make it retry against a service
+that is fine. Nothing was stored, so simply pushing again is the right response.
+
+!!! info "What this replaced"
+    The route buffered the body with `await request.body()` inside a `try` that caught
+    `httpx.RequestError` only. A dropped connection raises `ClientDisconnect`, which is
+    not that — so it escaped as an unhandled ASGI exception. In production that meant a
+    60-second wait, a full Starlette traceback in the log, and **no response to the
+    phone at all**.
+
+### Units and conversions
+
+`metadata.provider_value` and `metadata.units` carry the number and unit exactly as the phone
+stated them, before conversion (rule 19), so a conversion problem is always diagnosable after
+the fact and never destructive.
+
+Three conversions were missing and were found in a deployment's logs rather than by reading
+the code — the importer said "storing the value unconverted" and carried on:
+
+| Provider unit | Registry unit | What was wrong |
+| --- | --- | --- |
+| `cm` | `mm` (`running_vertical_oscillation`) | **Values were a tenth of the truth.** Stored unconverted under a metric whose unit said millimetres |
+| `count/min` | `br/min`, `spm` | `count/min` was pinned to `bpm`, and bpm→br/min has no factor by design. 3,781 readings in 48 hours stored unconverted |
+| `count` | `index` (`body_mass_index`) | A dimensionless index arriving as HealthKit's `count` |
+
+`count/min` now maps to a neutral `COUNT_PER_MINUTE`, which converts to pulse, breathing rate
+and cadence alike — they are the same number, and only the metric says which quantity it is.
+
+Health Auto Export also labels **workout speed with a bare distance** (`km` on a metric phone,
+`mi` on an imperial one). That is read as the matching per-hour unit, but only where the
+metric's own unit is a speed: a global `km → km/h` factor would let any distance silently
+become a speed, which is a worse bug than the one it fixes.
+
 ## What is not imported
 
 Health Auto Export can also send `stateOfMind`, `symptoms`, `cycleTracking`, `ecg`,

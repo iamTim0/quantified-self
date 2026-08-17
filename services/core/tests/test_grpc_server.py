@@ -830,3 +830,87 @@ async def test_strength_sets_require_a_service_credential(grpc_channel):
             )
         )
     assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+@pytest.mark.asyncio
+async def test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash(grpc_channel):
+    """The production failure behind every "report did not complete" message.
+
+    `raw_filters` was built inside `if not covered:` while the `LAST`-metric
+    refinement below read it unconditionally. So a *day* series over a workspace
+    proven to hold no point outside its day rollups raised `UnboundLocalError` --
+    and that combination is the normal one for an established workspace.
+
+    The consequence was invisible from the dashboard: the gRPC call returned
+    INTERNAL, the Analysis worker read that as "Core unavailable" and re-raised, the
+    run stayed in flight, and thirty minutes later the sweep failed it as a timeout.
+    The reader was told the analysis was too slow. It never ran at all.
+    """
+    from core.rollup_coverage import forget_day_rollup_coverage, remember_day_rollup_coverage
+
+    tenant_id = await create_test_tenant()
+    start = datetime.now(timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ) - timedelta(days=2)
+
+    try:
+        source_id = str(uuid.uuid4())
+        async with async_session_maker() as session:
+            session.add(
+                DataSource(
+                    id=source_id,
+                    tenant_id=tenant_id,
+                    source_type="apple_health",
+                    display_name="Phone",
+                )
+            )
+            session.add(
+                MetricRollup(
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    # `body_weight` is a LAST metric, which is what reaches the block.
+                    metric_type="body_weight",
+                    resolution="day",
+                    bucket_start=start,
+                    sample_count=1,
+                    sum_value=81.0,
+                    min_value=81.0,
+                    max_value=81.0,
+                    first_value=81.0,
+                    last_value=81.0,
+                    first_timestamp=start,
+                    last_timestamp=start,
+                    metadata_={},
+                    is_provider_total=False,
+                )
+            )
+            await session.commit()
+
+        # The state the bug needs: this workspace is known to hold no point outside
+        # a day rollup, so the raw scan is skipped.
+        remember_day_rollup_coverage(tenant_id)
+
+        start_stamp = Timestamp()
+        start_stamp.FromDatetime(start)
+        end_stamp = Timestamp()
+        end_stamp.FromDatetime(start + timedelta(days=3))
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.QueryMetricSeries(
+            pb.QueryMetricSeriesRequest(
+                tenant_id=tenant_id,
+                metric_types=["body_weight"],
+                start_time=start_stamp,
+                end_time=end_stamp,
+                resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+            ),
+            metadata=_auth(),
+        )
+
+        weights = [b for b in response.buckets if b.metric_type == "body_weight"]
+        assert weights, "the rollup's own value must still be returned"
+        # The value the rollup already carried, not one the skipped raw scan found.
+        assert any(bucket.value == 81.0 for bucket in weights)
+    finally:
+        forget_day_rollup_coverage(tenant_id)
+        await cleanup_test_tenant(tenant_id)

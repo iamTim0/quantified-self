@@ -248,6 +248,34 @@ change until a run finishes.
     Both codes now have entries in both catalogues. Before, neither did: the dashboard fell
     through to the server's own English sentence and printed it verbatim to a German
     reader, which is the client half of rule 17 failing quietly.
+
+!!! danger "The first real `report_timeout` was not a timeout at all"
+    Found in a deployment's logs, not by reading the code. Every `insights` run was
+    failing in Core's gRPC handler:
+
+    ```
+    File "core/grpc/server.py", line 590, in QueryMetricSeries
+        *raw_filters,
+    UnboundLocalError: cannot access local variable 'raw_filters'
+    ```
+
+    `raw_filters` was built inside `if not covered:`, while the `LAST`-metric
+    refinement below read it unconditionally. A **day** series over a workspace proven
+    to hold no point outside its day rollups therefore crashed — and that combination
+    is the *normal* one for an established workspace.
+
+    Nothing about the failure was visible where anybody would look. The call returned
+    `INTERNAL`; the Analysis worker read that as "Core unavailable" and re-raised, by
+    design, so the run was left in flight for Core's own sweep; thirty minutes later
+    the sweep failed it as `report_timeout`. The reader was told their analysis was too
+    slow. It had never run at all — and every retry took the same path, so the report
+    could never succeed.
+
+    Two lessons are worth keeping. A handler that reports one failure as another is
+    worse than one that crashes loudly, and `report_never_claimed` above exists for the
+    same reason. And a `LAST` metric on a fully rolled-up workspace is a case worth a
+    test of its own, which
+    `test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash` now is.
 - A late result arriving after Core has timed the run out is **refused**
   (`RUN_ALREADY_FINISHED`), because the timeout may already have queued a replacement and a
   stale result must not overwrite a newer one.

@@ -46,9 +46,9 @@ from apple_health_importer.export_archive import (
     ArchiveUnreadable,
     read_export,
 )
-from apple_health_importer.transformer import transform_health_auto_export_json
 from apple_health_importer.transformer import (
     AppleHealthPayloadError,
+    transform_health_auto_export_json,
     validate_health_auto_export_payload,
 )
 

@@ -476,7 +476,12 @@ PROVIDER_UNITS: dict[str, MetricUnit] = {
     "lbs": MetricUnit.POUND,
     "%": MetricUnit.PERCENT,
     "bpm": MetricUnit.BPM,
-    "count/min": MetricUnit.BPM,
+    # Not `BPM`. HealthKit uses `count/min` for breathing rate and cadence as well as
+    # for pulse, and pinning it to beats-per-minute meant respiratory rate had to
+    # convert BPM -> br/min, for which there is deliberately no factor. So 3,781
+    # readings in two days were stored unconverted with a warning apiece. The neutral
+    # unit converts to all three, because they are all the same number.
+    "count/min": MetricUnit.COUNT_PER_MINUTE,
     # Apple's own archive states blood pressure in mmHg; the push path never sent a
     # unit for it at all, so this is the spelling the export brought with it.
     "mmhg": MetricUnit.MMHG,
@@ -543,6 +548,42 @@ def canonical_name(raw_name: str) -> str:
     return f"{NAMESPACE}{cleaned}"
 
 
+#: The per-hour unit each bare distance means, when the metric is a speed.
+_DISTANCE_AS_SPEED: dict[MetricUnit, MetricUnit] = {
+    MetricUnit.KILOMETER: MetricUnit.KILOMETER_PER_HOUR,
+    MetricUnit.MILE: MetricUnit.MILE_PER_HOUR,
+}
+
+_SPEED_UNITS = frozenset(
+    {
+        MetricUnit.KILOMETER_PER_HOUR,
+        MetricUnit.MILE_PER_HOUR,
+        MetricUnit.METER_PER_SECOND,
+    }
+)
+
+
+def _speed_declared_as_a_distance(
+    provider_unit: MetricUnit | None, target: MetricUnit
+) -> MetricUnit | None:
+    """Read `km` as `km/h` when, and only when, the metric is a speed.
+
+    Health Auto Export labels `workout_speed_average` and `workout_speed_max` with a
+    bare distance — `km` on a metric phone, `mi` on an imperial one. The registry
+    declares km/h, there is no distance-to-speed factor (there cannot be one), and so
+    the value was stored unconverted: right by luck on a metric phone, wrong by 1.6
+    on an imperial one, and unmarked either way.
+
+    Deliberately not a row in the shared conversion table. A global
+    `km -> km/h` factor would let any distance become a speed, which is a far worse
+    bug than the one it fixes. The correction only applies where the *target* is a
+    speed, so a distance metric declared in km is untouched.
+    """
+    if provider_unit is None or target not in _SPEED_UNITS:
+        return provider_unit
+    return _DISTANCE_AS_SPEED.get(provider_unit, provider_unit)
+
+
 def normalise_value(
     value: float,
     declared_units: str,
@@ -569,6 +610,7 @@ def normalise_value(
         value *= 100 if 0 <= value <= 1 else 1
 
     provider_unit = PROVIDER_UNITS.get(declared_units.strip().lower(), default_unit)
+    provider_unit = _speed_declared_as_a_distance(provider_unit, definition.unit)
     if provider_unit is None or provider_unit is definition.unit:
         return value
 

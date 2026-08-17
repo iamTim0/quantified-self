@@ -10,6 +10,7 @@ import hashlib
 import pytest
 from apple_health_importer.transformer import (
     generate_idempotency_key,
+    normalise_value,
     transform_health_auto_export_json,
 )
 
@@ -965,3 +966,65 @@ def test_each_sample_gets_its_own_idempotency_key():
     )
     series = [p for p in points if p["metric_type"] == "workout_heart_rate"]
     assert len({p["idempotency_key"] for p in series}) == 2
+
+
+# ── Units that were being stored unconverted in production ───────────────────
+#
+# Each of these was found in a deployment's logs, not by reading the code. The
+# warning said "storing the value unconverted" and nothing downstream could tell
+# afterwards that a number had skipped its conversion.
+
+
+def test_vertical_oscillation_in_centimetres_becomes_millimetres():
+    """The one that was factually wrong, not merely noisy.
+
+    Apple reports centimetres, the registry declares millimetres, and with no factor
+    the value was stored unconverted -- every reading a tenth of what it should be,
+    under a metric whose unit said otherwise.
+    """
+    assert normalise_value(8.4, "cm", "running_vertical_oscillation") == pytest.approx(84.0)
+
+
+@pytest.mark.parametrize(
+    ("metric_type", "expected"),
+    [
+        ("respiratory_rate", 14.0),
+        ("workout_cadence", 172.0),
+        ("heart_rate", 61.0),
+    ],
+)
+def test_count_per_minute_reaches_the_unit_that_names_the_quantity(metric_type, expected):
+    """HealthKit uses `count/min` for breathing, cadence and pulse alike.
+
+    Pinned to BPM, respiratory rate had to convert bpm -> br/min, for which there is
+    deliberately no factor -- so 3,781 readings in two days were stored unconverted,
+    each with a warning. They are all the same number; only the metric says which
+    quantity it is.
+    """
+    assert normalise_value(expected, "count/min", metric_type) == pytest.approx(expected)
+
+
+def test_body_mass_index_declared_as_a_count_is_an_index():
+    assert normalise_value(23.4, "count", "body_mass_index") == pytest.approx(23.4)
+
+
+def test_a_speed_labelled_with_a_bare_distance_is_read_as_per_hour():
+    """Health Auto Export labels workout speed `km` on a metric phone, `mi` on an
+    imperial one. Unconverted that is right by luck in one case and wrong by 1.6 in
+    the other."""
+    assert normalise_value(12.5, "km", "workout_speed_average") == pytest.approx(12.5)
+    assert normalise_value(10.0, "mi", "workout_speed_max") == pytest.approx(16.09344, abs=1e-4)
+
+
+def test_a_distance_in_kilometres_is_still_a_distance():
+    """The guard on the rule above: it must apply only where the target is a speed.
+
+    A global km -> km/h factor would let any distance silently become a speed, which
+    is a worse bug than the one being fixed.
+    """
+    # Declared in metres, so `km` must still convert as a distance -- not be read
+    # as km/h and passed through.
+    assert normalise_value(5.0, "km", "workout_elevation_gain") == pytest.approx(5000.0)
+    # And one declared in kilometres passes through unchanged rather than becoming a
+    # speed, which is the case the guard actually exists for.
+    assert normalise_value(5.0, "km", "workout_distance") == pytest.approx(5.0)

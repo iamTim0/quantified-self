@@ -112,6 +112,11 @@ class MetricUnit(StrEnum):
     #: Metabolic equivalent of task — how hard an activity is, as a multiple of rest.
     MET = "MET"
     INDEX = "index"
+    #: HealthKit's name for "however many of this per minute". It is not a quantity
+    #: of its own: Apple reports breathing rate *and* cadence in it, and which one it
+    #: means is decided by the metric, not by the unit. It exists so an importer can
+    #: name what it is converting from rather than storing a value unconverted.
+    COUNT_PER_MINUTE = "count/min"
     #: The unit is only known at runtime and travels in the event metadata. Legal
     #: exclusively for metrics resolved through a :class:`MetricNamespace`.
     RUNTIME = ""
@@ -381,6 +386,29 @@ _CONVERSIONS: dict[tuple[MetricUnit, MetricUnit], float] = {
     (MetricUnit.KILOMETER_PER_HOUR, MetricUnit.METER_PER_SECOND): 1.0 / 3.6,
     (MetricUnit.FOOT, MetricUnit.METER): 0.3048,
     (MetricUnit.METER, MetricUnit.FOOT): 1.0 / 0.3048,
+    # Millimetres, for running form. Its absence was not cosmetic: Apple reports
+    # `running_vertical_oscillation` in centimetres, the registry declares
+    # millimetres, and with no rule here the importer stored the number
+    # **unconverted** — every reading a tenth of what it should be, under a metric
+    # whose unit says otherwise. 218 of them in two days on one deployment.
+    (MetricUnit.CENTIMETER, MetricUnit.MILLIMETER): 10.0,
+    (MetricUnit.MILLIMETER, MetricUnit.CENTIMETER): 0.1,
+    (MetricUnit.MILLIMETER, MetricUnit.METER): 1e-3,
+    (MetricUnit.METER, MetricUnit.MILLIMETER): 1e3,
+    # HealthKit's `count/min` against the units that actually name the quantity.
+    # Identities, because they *are* the same number — the conversion exists so the
+    # value arrives declared rather than "stored unconverted, and we said so once in
+    # a log line nobody reads". These three accounted for 4,179 warnings in 48 hours
+    # on one deployment, which is a log nobody can scan for real problems.
+    (MetricUnit.COUNT_PER_MINUTE, MetricUnit.BREATHS_PER_MINUTE): 1.0,
+    (MetricUnit.BREATHS_PER_MINUTE, MetricUnit.COUNT_PER_MINUTE): 1.0,
+    (MetricUnit.COUNT_PER_MINUTE, MetricUnit.STEPS_PER_MINUTE): 1.0,
+    (MetricUnit.STEPS_PER_MINUTE, MetricUnit.COUNT_PER_MINUTE): 1.0,
+    (MetricUnit.COUNT_PER_MINUTE, MetricUnit.BPM): 1.0,
+    (MetricUnit.BPM, MetricUnit.COUNT_PER_MINUTE): 1.0,
+    # A body-mass index is dimensionless, and HealthKit calls dimensionless `count`.
+    (MetricUnit.COUNT, MetricUnit.INDEX): 1.0,
+    (MetricUnit.INDEX, MetricUnit.COUNT): 1.0,
 }
 
 

@@ -21,6 +21,7 @@ from fastapi import FastAPI, HTTPException, Request, Response, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.background import BackgroundTask
+from starlette.requests import ClientDisconnect
 
 from gateway.auth import decode_jwt
 from gateway.config import settings
@@ -370,7 +371,21 @@ async def proxy_auth_service(
 
 @app.api_route("/api/v1/ingest/apple-health", methods=["POST"])
 async def proxy_apple_health_ingest(request: Request):
-    """Proxy Apple Health Push / Webhook ingest requests to Apple Health Importer microservice."""
+    """Proxy Apple Health Push / Webhook ingest requests to the Apple Health importer.
+
+    **Streamed, not buffered.** This route used to call `await request.body()`, which
+    holds a whole push in the Gateway's memory before the importer sees a byte of it —
+    the same trade the upload route already refused to make. A Health Auto Export push
+    from a phone that has been offline for a while is not small.
+
+    **A client that goes away is not a server error.** The buffered read sat inside a
+    `try` that caught `httpx.RequestError` only, so a `ClientDisconnect` — the phone's
+    connection dropping mid-upload, which over a tunnel is routine — escaped as an
+    unhandled ASGI exception. In production this produced a 60-second wait, a full
+    Starlette traceback in the log, and no answer to the phone at all. It is now
+    answered with a stable code, because a push that never finished arriving is a
+    fact about the connection, not a fault in this service.
+    """
     target_url = f"{settings.APPLE_HEALTH_IMPORTER_URL}/ingest"
     forwarded_headers = {
         k: v for k, v in request.headers.items()
@@ -378,14 +393,14 @@ async def proxy_apple_health_ingest(request: Request):
     }
     forwarded_headers["X-Request-ID"] = get_current_request_id()
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=_INGEST_TIMEOUT) as client:
         try:
             response = await client.request(
                 method=request.method,
                 url=target_url,
                 headers=forwarded_headers,
                 params=request.query_params,
-                content=await request.body(),
+                content=request.stream(),
             )
             safe_response_headers = {
                 k: v for k, v in response.headers.items()
@@ -396,6 +411,18 @@ async def proxy_apple_health_ingest(request: Request):
                 content=response.content,
                 status_code=response.status_code,
                 headers=safe_response_headers,
+            )
+        except ClientDisconnect:
+            # 499, the nginx convention for "the client left". Not 4xx-as-blame and
+            # not 5xx: nothing here failed, and a 5xx would tell Health Auto Export
+            # the server is broken and make it retry against a service that is fine.
+            logger.info(
+                "[req_id=%s] Apple Health push ended before the body finished arriving",
+                get_current_request_id(),
+            )
+            return JSONResponse(
+                status_code=499,
+                content={"detail": {"code": "ingest_client_disconnected"}},
             )
         except httpx.RequestError as e:
             raise HTTPException(
@@ -452,6 +479,12 @@ _UPLOAD_TARGETS: dict[str, str] = {
 # enough to push a gigabyte of somebody's health history over a home connection, and
 # a timeout here means the whole upload starts again from nothing.
 _UPLOAD_TIMEOUT = httpx.Timeout(connect=10.0, read=900.0, write=900.0, pool=10.0)
+
+# A push is not an archive, but it is not a JSON API call either: Health Auto Export
+# sends whatever accumulated while the phone was offline, over a home connection and
+# a tunnel. The flat 30 s that fits every other proxied call was being hit at 60 s in
+# production -- the write side is what runs long here, not the read.
+_INGEST_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=300.0, pool=10.0)
 
 # The steps of a chunked upload, allowlisted for the same reason the targets above
 # are: the path segment reaches an importer, so what it may spell is decided here and

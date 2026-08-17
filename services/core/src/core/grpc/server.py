@@ -514,18 +514,29 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                 covered = resolution == "day" and not may_hold_points_outside_day_rollups(
                     tenant_id
                 )
-                if not covered:
-                    raw_filters = [
-                        DataPoint.tenant_id == tenant_id,
-                        DataPoint.timestamp >= start,
-                        DataPoint.timestamp < end,
-                        ~_rollup_covers_point(resolution),
-                    ]
-                    if requested_source_id is not None:
-                        raw_filters.append(DataPoint.source_id == requested_source_id)
-                    if metric_types:
-                        raw_filters.append(DataPoint.metric_type.in_(metric_types))
 
+                # Built unconditionally, even though only the two blocks below read
+                # it. It used to be built inside `if not covered:` while the
+                # `LAST`-metric refinement further down read it regardless, so a day
+                # series over a workspace whose points are all covered by day rollups
+                # raised `UnboundLocalError` — and that combination is the *normal*
+                # one for an established workspace. In production it failed every
+                # insights run: the gRPC call returned INTERNAL, the Analysis worker
+                # treated it as "Core unavailable" and re-raised, the run stayed in
+                # flight, and thirty minutes later the sweep failed it as a timeout.
+                # The reader was told the report was too slow. It never ran at all.
+                raw_filters = [
+                    DataPoint.tenant_id == tenant_id,
+                    DataPoint.timestamp >= start,
+                    DataPoint.timestamp < end,
+                    ~_rollup_covers_point(resolution),
+                ]
+                if requested_source_id is not None:
+                    raw_filters.append(DataPoint.source_id == requested_source_id)
+                if metric_types:
+                    raw_filters.append(DataPoint.metric_type.in_(metric_types))
+
+                if not covered:
                     bucket_expr = func.date_trunc(resolution, DataPoint.timestamp).label(
                         "bucket_start"
                     )
@@ -563,7 +574,11 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                     for metric_type, aggregation in aggregations.items()
                     if aggregation is Aggregation.LAST
                 }
-                if last_metrics:
+                # `not covered` as well, because this block refines a `LAST` value
+                # from the raw points a rollup does *not* cover. Where the workspace
+                # is proven to have none, its filters exclude everything and the query
+                # is a round trip that can only return nothing.
+                if last_metrics and not covered:
                     latest_bucket = func.date_trunc(resolution, DataPoint.timestamp)
                     row_number = (
                         func.row_number()
