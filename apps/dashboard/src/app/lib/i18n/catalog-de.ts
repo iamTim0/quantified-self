@@ -245,6 +245,8 @@ export const de: Record<MessageKey, string> = {
   "quality.conflictsDetail": "Abweichungen über 5 %",
   "quality.conflictsNone": "Keine auffälligen konkurrierenden Quellen.",
   "quality.conflictsHelp": "Einheiten und bevorzugte Primärquelle prüfen.",
+  "quality.perConnectorMoved":
+    "Metriken in Quarantäne, nicht gespeicherte Anbieterfelder und neu unterstützte Felder stehen auf der Seite des jeweiligen Connectors, weil jede dieser Entscheidungen genau diesen Connector betrifft. Unter Connectoren einen davon öffnen, um sie zu bearbeiten.",
   "quality.conflictsListTitle": "Welche Messwerte sich widersprechen",
   "quality.conflictsListHint":
     "Dieselbe Metrik am selben Tag, von zwei Connectoren unterschiedlich gemeldet. Beide Werte bleiben erhalten; welcher verwendet wird, entscheidet die primäre Quelle pro Metrik.",

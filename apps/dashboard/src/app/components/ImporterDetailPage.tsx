@@ -17,6 +17,7 @@ import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
 import { getConnectorDirection } from "./ConnectorModal";
 import ImportDialog from "./ImportDialog";
+import ConnectorDataQuality from "./ConnectorDataQuality";
 import OperatorRunDiagnostics from "./OperatorRunDiagnostics";
 import type { ConnectorItem } from "./ConnectorsPage";
 import {
@@ -234,6 +235,14 @@ export default function ImporterDetailPage({
           />
         </section>
       )}
+
+      {/* This connector's own data-quality decisions.
+          They used to sit on `/quality` as if they were a property of the
+          workspace. They are not: every row carries this connector's
+          `source_id`, and the run history right below has been counting
+          `unsupported_fields` per run with nowhere to click through to what
+          they were. */}
+      <ConnectorDataQuality apiBase={apiBase} sourceId={connector.id} />
 
       <section className="rounded-3xl border border-line bg-surface p-5 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-3">

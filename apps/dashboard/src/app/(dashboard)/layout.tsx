@@ -10,6 +10,7 @@ import ConnectorModal from "../components/ConnectorModal";
 import { ConnectorItem } from "../components/ConnectorsPage";
 import AuthScreen, { UserAuthData } from "../components/AuthScreen";
 import LegalFooter from "../components/LegalFooter";
+import QuarantineAlerts from "../components/QuarantineAlerts";
 import SystemWarnings from "../components/SystemWarnings";
 import UploadBanner from "../components/UploadBanner";
 import { UploadProvider } from "../lib/uploads/provider";
@@ -409,6 +410,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               {/* Configuration and credential problems, on every tab. Previously
                 these lived only in a startup log and docs/operations.md. */}
               <SystemWarnings apiBase={API_BASE} userRole={userRole} />
+
+              {/* A connector that has stopped accepting values is losing data
+                  right now. That notice used to live on `/quality`, which on a
+                  phone is behind "More" — so the one message in the product that
+                  means "this is being thrown away" was the hardest to reach. */}
+              <QuarantineAlerts apiBase={API_BASE} />
 
               {children}
 

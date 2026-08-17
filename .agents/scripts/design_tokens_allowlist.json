@@ -21,8 +21,7 @@
     "raw-palette"
   ],
   "apps/dashboard/src/app/components/DataQualityTab.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
+    "arbitrary-font-size"
   ],
   "apps/dashboard/src/app/components/ExplorerChart.tsx": [
     "raw-palette"

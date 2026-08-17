@@ -243,6 +243,8 @@ export const en = {
   "quality.conflictsDetail": "Deviations above 5 %",
   "quality.conflictsNone": "No competing sources worth a second look.",
   "quality.conflictsHelp": "Check the units and which source should be the primary one.",
+  "quality.perConnectorMoved":
+    "Quarantined metrics, unstored provider fields and newly supported fields are shown on each connector's own page, because every one of them is a decision about that connector. Open a connector under Connectors to review them.",
   "quality.conflictsListTitle": "Which measurements disagree",
   "quality.conflictsListHint":
     "The same metric on the same day, reported differently by two connectors. Both readings are kept; choosing a primary source per metric decides which one is used.",
