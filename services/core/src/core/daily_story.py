@@ -40,7 +40,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from shared_schemas.metrics import Aggregation, MetricCategory, describe
-from sqlalchemy import func, or_, select
+from sqlalchemy import Float, case, cast, func, or_, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -231,6 +231,46 @@ def _stream_metric_predicate():
     return DataPoint.metric_type.in_(sorted(STREAM_METRICS))
 
 
+def bucket_weight():
+    """How many readings one stored point stands on, for a weighted mean.
+
+    A minute bucket carrying the mean of sixty samples is not one reading. The
+    ingest-side aggregator records that count as `bucket_samples` and `core.rollups`
+    has always weighted by it — but every read path took a bare `avg()`, so a
+    workout's average heart rate on the detail page and the same figure in
+    `metric_rollups` were two different numbers derived from one dataset. A minute
+    holding a single stray sample counted for as much as a minute holding sixty.
+
+    `bucket_samples`, never `sample_count`. Only the first means "readings this mean
+    averages"; the second is rule 19 provenance that importers also set on figures
+    which are not means at all — WHOOP's zone shares carry the number of zone fields
+    the payload held — and weighting by that produces an average nobody can account
+    for.
+
+    The `jsonb_typeof` guard sits in the `WHEN` and the cast in the `THEN`, so a
+    metadata key holding something other than a number degrades to an unweighted
+    reading rather than failing the cast for every row in the window. `greatest(…, 1)`
+    mirrors `rollups`' own `> 0 else 1`, and guarantees a non-zero divisor.
+    """
+    stated = func.coalesce(
+        case(
+            (
+                func.jsonb_typeof(DataPoint.metadata_.op("->")("bucket_samples")) == "number",
+                cast(DataPoint.metadata_.op("->>")("bucket_samples"), Float),
+            ),
+            else_=None,
+        ),
+        1.0,
+    )
+    return func.greatest(stated, 1.0)
+
+
+def weighted_average():
+    """The mean of a window, weighted by what each point stands on."""
+    weight = bucket_weight()
+    return func.sum(DataPoint.value * weight) / func.sum(weight)
+
+
 def _category_of(metric_type: str) -> str:
     try:
         return describe(metric_type).category.value
@@ -294,7 +334,9 @@ async def metric_totals(
                 DataPoint.metric_type,
                 DataPoint.source_id,
                 func.sum(DataPoint.value).label("sum_value"),
-                func.avg(DataPoint.value).label("avg_value"),
+                # Weighted, so this page and `metric_rollups` cannot report two
+                # different averages for one metric over one window.
+                weighted_average().label("avg_value"),
                 func.max(DataPoint.value).label("max_value"),
                 # The newest value, which `max` is not: a standing measurement
                 # like body weight or a coordinate is meaningful only as its last

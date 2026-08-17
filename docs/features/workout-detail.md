@@ -102,6 +102,30 @@ interval session is a flat line. See
 [Data resolution and rollups](data-resolution.md#the-second-tier) for why that costs
 almost nothing.
 
+### Two ways a pulse figure was wrong
+
+Both were fixed together, because both produce a number that looks measured.
+
+**An average weighted by nothing.** A stored `workout_heart_rate` point is a bucket
+mean, and `bucket_samples` records how many readings it averages — a second can hold
+one reading or sixty. `core.rollups` has always weighted by it; every read path took
+a bare `avg()`. So one stray sample at 60 bpm counted for as much as a full minute at
+160, the detail page and `metric_rollups` reported different averages for one
+dataset, and the drawn line could sit outside the min/max band under it. The read
+paths now use `daily_story.weighted_average()`, which weights by `bucket_samples` and
+by nothing else — `sample_count` is rule 19 provenance that importers also set on
+figures which are not means (WHOOP's zone shares carry the number of zone fields),
+and weighting by that produces an average nobody can account for.
+
+**A neighbour's pulse.** The window is the join, and for ambient readings it has to
+be — weather and another device's continuous metrics carry no session id and never
+will. But `workout_heart_rate` *does* carry one. With a 15-minute pad at each end,
+two sessions half an hour apart overlap, and the second one's pulse was drawn as the
+first one's. `_not_another_sessions_stream` drops a **stream** row that states an id
+other than this session's, and only that: a stream row carrying no id keeps the
+window as its only evidence, which is all a pre-`session_id` row has ever had, and
+ambient series are untouched.
+
 ## Reading it through the API
 
 ### The list

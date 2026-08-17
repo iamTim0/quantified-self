@@ -32,7 +32,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from shared_schemas.metrics import Cadence, MetricCategory, describe
-from sqlalchemy import Float, and_, case, cast, func, or_, select, text
+from sqlalchemy import Float, and_, case, cast, func, or_, select, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.daily_story import (
@@ -42,8 +42,9 @@ from core.daily_story import (
     _unit_of,
     day_window,
     entry_metric_predicate,
-    session_metric_predicate,
     metric_totals,
+    session_metric_predicate,
+    weighted_average,
     # The adapter, not the shared resolver underneath it: `metric_source_coverage`
     # is keyed by `(metric_type, source_id)` and the resolver wants a per-source
     # map, which is exactly what this converts. Calling the inner one directly
@@ -579,6 +580,32 @@ async def _strength_breakdown(
     }
 
 
+def _not_another_sessions_stream(ref: SessionRef):
+    """Keep this session's own series, and drop the ones that say they are not.
+
+    The window is the join for everything on this page, and for ambient readings it
+    has to be: weather and a second device's continuous metrics carry no session id
+    and never will. But `workout_heart_rate` *does* carry one — every importer that
+    emits a workout writes it — and the window alone attributed the pulse of an
+    overlapping or back-to-back session to this one. Two sessions an hour apart with
+    a 15-minute pad between them is enough, and the resulting chart is a real
+    measurement of the wrong workout, which is the kind of wrong nothing on the page
+    can betray.
+
+    So only *stream* rows are narrowed, and only when they state an id that is not
+    this session's. A stream row carrying no id keeps the window as its only
+    evidence, which is all a pre-`session_id` row has ever had.
+    """
+    if ref.kind != "session_id" or not ref.session_id:
+        return true()
+    stated = DataPoint.metadata_.op("->>")("session_id")
+    return or_(
+        ~_stream_metric_predicate(),
+        stated.is_(None),
+        stated == ref.session_id,
+    )
+
+
 async def _streams(
     session: AsyncSession,
     tenant_id: str,
@@ -586,6 +613,7 @@ async def _streams(
     end: datetime,
     *,
     stream_points: int,
+    ref: SessionRef,
 ) -> list[dict[str, Any]]:
     """The continuous series inside the window, decimated in SQL.
 
@@ -615,6 +643,11 @@ async def _streams(
                     _stream_metric_predicate(),
                     DataPoint.metric_type.in_(_continuous_metrics()),
                 ),
+                # Applied to the density test as well as to the read below. A series
+                # belonging to a neighbouring session must not pass the floor here and
+                # then contribute nothing, which would exclude the metric from
+                # `surroundings` for being a drawn stream while drawing nothing.
+                _not_another_sessions_stream(ref),
             )
             # Grouped the way the streams themselves are. Counting per metric
             # while emitting per (metric, connector) meant three readings split
@@ -646,7 +679,12 @@ async def _streams(
                 DataPoint.metric_type,
                 DataPoint.source_id,
                 bucket.label("bucket"),
-                func.avg(DataPoint.value).label("avg_value"),
+                # Weighted by what each stored point stands on. These are already
+                # bucket means — a second of `workout_heart_rate` can average sixty
+                # readings or one — so a bare `avg()` let a sparse bucket pull the
+                # line as hard as a dense one, and the drawn average disagreed with
+                # both `metric_rollups` and the min/max band beneath it.
+                weighted_average().label("avg_value"),
                 # `jsonb_typeof` before the cast. Only the bucket aggregator writes
                 # these keys and it always writes numbers, so this is unreachable
                 # today — but an unguarded cast turns one odd value anywhere in the
@@ -666,6 +704,7 @@ async def _streams(
                 DataPoint.timestamp < end,
                 DataPoint.value.is_not(None),
                 DataPoint.metric_type.in_(metrics),
+                _not_another_sessions_stream(ref),
             )
             .group_by(DataPoint.metric_type, DataPoint.source_id, text("bucket"))
             .order_by(text("bucket"))
@@ -947,7 +986,7 @@ async def build_workout_detail(
     measures, context = await _summary_measures(session, tenant_id, ref)
     strength = await _strength_breakdown(session, tenant_id, window_start, window_end)
     streams = await _streams(
-        session, tenant_id, window_start, window_end, stream_points=stream_points
+        session, tenant_id, window_start, window_end, stream_points=stream_points, ref=ref
     )
     route = await track_for_window(
         session, tenant_id, window_start, window_end, route_points=route_points

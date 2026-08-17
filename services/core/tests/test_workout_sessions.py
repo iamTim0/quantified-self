@@ -869,3 +869,112 @@ async def test_a_day_without_movement_is_an_empty_track_not_an_error():
         assert body["truncated"] is False
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_sparse_bucket_does_not_weigh_as_much_as_a_dense_one():
+    """An average heart rate must not depend on which page asks for it.
+
+    `workout_heart_rate` is stored as bucket means carrying `bucket_samples`, and
+    `core.rollups` has always weighted by it. Every read path took a bare `avg()`,
+    so one stray sample at 60 counted for as much as a full minute at 160 — the
+    detail page and `metric_rollups` reported two different averages for one
+    dataset, and the drawn line sat outside the min/max band beneath it.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        meta = _session_meta(session_end=(START + timedelta(minutes=45)).isoformat())
+        rows = [
+            {"tenant_id": tenant_id, "source_id": source_id,
+             "metric_type": "workout_duration", "timestamp": START, "value": 45.0,
+             "metadata": meta},
+        ]
+        # Sixty readings averaging 160, then a single reading of 60. The weighted
+        # mean is ~158; the unweighted mean of the two buckets is 110.
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=1),
+            "value": 160.0,
+            "metadata": {**_session_meta(), "bucket_samples": 60,
+                         "bucket_min": 150.0, "bucket_max": 170.0},
+        })
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=2),
+            "value": 60.0,
+            "metadata": {**_session_meta(), "bucket_samples": 1},
+        })
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=3),
+            "value": 160.0,
+            "metadata": {**_session_meta(), "bucket_samples": 60},
+        })
+        await _points(rows)
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        key = listing["sessions"][0]["session_key"]
+        status, detail = await _detail(tenant_id, key, stream_points=1)
+        assert status == 200, detail
+
+        stream = next(s for s in detail["streams"] if s["metric_type"] == "workout_heart_rate")
+        # One bucket holding all three readings, weighted: (160*60 + 60 + 160*60)/121.
+        drawn = stream["points"][0]["avg"]
+        assert drawn == pytest.approx((160 * 60 + 60 + 160 * 60) / 121, abs=0.5)
+        # Emphatically not the unweighted mean of the three stored values.
+        assert drawn != pytest.approx((160 + 60 + 160) / 3, abs=0.5)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_neighbouring_sessions_pulse_is_not_this_sessions():
+    """The window is the join — except for a series that states whose it is.
+
+    Two sessions minutes apart, each padded, overlap. `workout_heart_rate` carries a
+    `session_id`, so attributing the neighbour's pulse to this workout is a real
+    measurement of the wrong workout: nothing on the page could betray it.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        mine = "apple_health:aaaa1111"
+        theirs = "apple_health:bbbb2222"
+        end = START + timedelta(minutes=20)
+
+        rows = [
+            {"tenant_id": tenant_id, "source_id": source_id,
+             "metric_type": "workout_duration", "timestamp": START, "value": 20.0,
+             "metadata": _session_meta(mine, session_end=end.isoformat())},
+        ]
+        # My pulse, inside my span.
+        for index in range(5):
+            rows.append({
+                "tenant_id": tenant_id, "source_id": source_id,
+                "metric_type": "workout_heart_rate",
+                "timestamp": START + timedelta(minutes=index), "value": 150.0,
+                "metadata": {"session_id": mine},
+            })
+        # The next session's pulse, one minute after mine ends — inside the pad.
+        for index in range(5):
+            rows.append({
+                "tenant_id": tenant_id, "source_id": source_id,
+                "metric_type": "workout_heart_rate",
+                "timestamp": end + timedelta(seconds=30 + index), "value": 90.0,
+                "metadata": {"session_id": theirs},
+            })
+        await _points(rows)
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        key = next(s["session_key"] for s in listing["sessions"] if s["session_id"] == mine)
+        status, detail = await _detail(tenant_id, key, pad_seconds=900)
+        assert status == 200, detail
+
+        stream = next(s for s in detail["streams"] if s["metric_type"] == "workout_heart_rate")
+        values = [point["avg"] for point in stream["points"]]
+        assert values, "my own series must still be drawn"
+        # 90 belongs to the next workout and must appear nowhere in mine.
+        assert all(value == pytest.approx(150.0, abs=0.01) for value in values), values
+    finally:
+        await cleanup_test_tenant(tenant_id)
