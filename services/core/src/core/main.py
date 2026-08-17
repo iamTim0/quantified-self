@@ -101,6 +101,11 @@ from core.events.consumer import (
     ingestion_retention_warning,
     run_consumer_forever,
 )
+from core.field_backfill import (
+    PendingBackfill,
+    run_field_backfill_scheduler,
+)
+from core.field_backfill import window_reason as backfill_window_reason
 from core.grpc.server import serve_grpc
 from core.ingest_planning import (
     BucketCount,
@@ -393,12 +398,19 @@ async def lifespan(app: FastAPI):
 
     scheduler_task = None
     report_task = None
+    backfill_task = None
     if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
         # Same role as the sync scheduler and for the same reason: it is the one
         # process that acts across tenants on a timer. Separate task, because a
         # report that fails must not delay the next import.
         report_task = asyncio.create_task(run_report_scheduler())
+        # And a third, on a much slower tick: recovering the history of a field that
+        # has only just become supported is not urgent, and it must not sit in front
+        # of the scheduled imports on the same timer.
+        backfill_task = asyncio.create_task(
+            run_field_backfill_scheduler(_enqueue_field_backfill)
+        )
 
     # The NATS subscription is established in the background, never awaited here.
     #
@@ -467,6 +479,10 @@ async def lifespan(app: FastAPI):
             report_task.cancel()
             with suppress(asyncio.CancelledError):
                 await report_task
+        if backfill_task is not None:
+            backfill_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await backfill_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
 
@@ -536,6 +552,48 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
                 mode="smart",
                 trigger="scheduled",
             )
+    finally:
+        _current_tenant_id.reset(token)
+
+
+async def _enqueue_field_backfill(pending: PendingBackfill) -> bool:
+    """Re-import the span a connector's newly supported fields arrived unstored in.
+
+    `mode="force"`, because the whole point is to fetch a period the coverage
+    planner considers complete — it is complete, for every metric except the ones
+    that were not being stored yet, and coverage cannot tell the difference.
+
+    Returns whether the run was actually queued. A connector with an import in
+    flight comes back `skipped`, and reporting that honestly is what leaves the
+    fields pending for the next sweep instead of marking history recovered that
+    nothing fetched.
+    """
+    reason = backfill_window_reason(pending)
+    token = _current_tenant_id.set(pending.tenant_id)
+    try:
+        async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == pending.source_id,
+                        DataSource.tenant_id == pending.tenant_id,
+                        DataSource.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+            if source is None:
+                return False
+            result = await plan_and_enqueue_sync(
+                session,
+                pending.tenant_id,
+                source,
+                start=pending.window_start,
+                end=pending.window_end,
+                mode="force",
+                trigger="field_backfill",
+                window_reason=reason,
+            )
+            return result.get("status") == "sync_queued"
     finally:
         _current_tenant_id.reset(token)
 
@@ -4823,6 +4881,7 @@ async def plan_and_enqueue_sync(
     end: datetime | None = None,
     mode: Literal["smart", "force"] = "smart",
     trigger: str = "manual",
+    window_reason: str | None = None,
 ) -> dict[str, Any]:
     """Plan a sync window, record the run, and publish the task.
 
@@ -4916,7 +4975,11 @@ async def plan_and_enqueue_sync(
 
         if start and end:
             window = _validated_window(start, end)
-            window_reason = "Period chosen by the user."
+            # A caller that derived the period itself says why. Without this every
+            # explicit window claimed to be "chosen by the user", including the ones
+            # no user chose — and the import history is where somebody looks to find
+            # out why a connector re-fetched three months.
+            window_reason = window_reason or "Period chosen by the user."
         else:
             window, window_reason = compute_sync_window(
                 now=now,
@@ -5987,14 +6050,21 @@ async def list_newly_supported_fields(
 
     `history_recoverable` is what makes it actionable: a field supported today has a
     history that was never stored, and a force import over that period is what
-    recovers it. Pull connectors can do that; a push connector's history is only in
-    the device that sent it, and saying so is better than offering a button that
-    silently does nothing.
+    recovers it. A connector that is fed by a device or an archive cannot do that —
+    its history is in the device or the archive — and saying so is better than
+    offering a button that silently does nothing. `is_scheduled` rather than a
+    push-type test, because a file-import connector cannot be re-fetched either and
+    was previously told it could.
+
+    `history_backfilled_at` is the follow-up: for a recoverable field the sweep in
+    `core.field_backfill` queues that force import by itself, and this says whether
+    it has happened yet. A recoverable field with no timestamp is waiting for the
+    next sweep, not stuck.
     """
     tenant_id = get_current_tenant_id()
     cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
     res = await session.execute(
-        select(IngestFieldReport, DataSource.display_name)
+        select(IngestFieldReport, DataSource.display_name, DataSource.config)
         .join(DataSource, DataSource.id == IngestFieldReport.source_id)
         .where(
             IngestFieldReport.tenant_id == tenant_id,
@@ -6020,9 +6090,12 @@ async def list_newly_supported_fields(
             # time it was seen to the moment it started being kept.
             "unstored_from": row.first_seen_at.isoformat() if row.first_seen_at else None,
             "unstored_until": row.supported_since.isoformat(),
-            "history_recoverable": row.source_type not in PUSH_SOURCE_TYPES,
+            "history_recoverable": is_scheduled(row.source_type, config),
+            "history_backfilled_at": (
+                row.history_backfilled_at.isoformat() if row.history_backfilled_at else None
+            ),
         }
-        for row, display_name in res.all()
+        for row, display_name, config in res.all()
     ]
     return {"tenant_id": tenant_id, "fields": fields, "within_days": within_days}
 

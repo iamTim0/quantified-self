@@ -86,8 +86,17 @@ type NewlySupportedField = {
   supported_since: string;
   unstored_from: string | null;
   unstored_until: string;
-  /** False for a push connector, whose history lives only on the device. */
+  /**
+   * False for a connector nothing can re-fetch — one fed by a device, or by an
+   * export archive that only the user has.
+   */
   history_recoverable: boolean;
+  /**
+   * When the platform re-imported the span this field missed. Null on a
+   * recoverable field means the sweep has not reached it yet, not that it is
+   * stuck: it runs on its own timer and stamps this only once a run is queued.
+   */
+  history_backfilled_at: string | null;
 };
 
 type QuarantinedMetric = {
@@ -608,12 +617,20 @@ export default function DataQualityTab({ apiBase }: Props) {
                     <td className="py-1.5 pr-4 font-mono">{field.metric_type ?? "—"}</td>
                     <td className="py-1.5 pr-4">{formatDate(field.supported_since)}</td>
                     <td className="py-1.5">
-                      {/* Said plainly rather than offered as a button that would do
-                          nothing: a push connector's history is on the device that
-                          sent it, and nothing here can ask for it again. */}
-                      {field.history_recoverable
-                        ? t("quality.historyRecoverable")
-                        : t("quality.historyOnDevice")}
+                      {/* Three states, not two. "Recoverable" was a statement about
+                          what was possible, which read as an instruction to go and
+                          do it — and the platform now does it by itself, so the
+                          column has to say whether that has happened yet. Said
+                          plainly rather than offered as a button, because for a
+                          connector fed by a device or an archive nothing here can
+                          ask for the data again. */}
+                      {!field.history_recoverable
+                        ? t("quality.historyOnDevice")
+                        : field.history_backfilled_at
+                          ? t("quality.historyRecovered", {
+                              date: formatDate(field.history_backfilled_at),
+                            })
+                          : t("quality.historyQueued")}
                     </td>
                   </tr>
                 ))}

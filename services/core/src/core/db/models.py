@@ -527,6 +527,17 @@ class IngestFieldReport(Base):
     supported_since: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    #: When the span this field missed was actually re-imported.
+    #:
+    #: `supported_since` says the gap exists; this says it has been dealt with, and
+    #: the two must be separate columns because they answer different questions. It
+    #: is stamped only after a force run has been queued, so a connector that was
+    #: busy stays pending rather than being recorded as recovered. NULL on a row
+    #: whose connector cannot be re-imported at all — a push or file connector's
+    #: history is in the device or the archive, not at a provider.
+    history_backfilled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint(

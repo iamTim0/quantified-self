@@ -247,13 +247,14 @@ export const en = {
   "quality.unsupportedTitle": "Not yet supported",
   "quality.newlySupportedTitle": "Now supported ({count})",
   "quality.newlySupportedHint":
-    "These fields used to arrive without being stored, and are being stored now. Support is re-checked on every import, so this list fills itself in.",
+    "These fields used to arrive without being stored, and are being stored now. Support is re-checked on every import, so this list fills itself in — and where the earlier data can still be fetched from the provider, it is fetched automatically.",
   "quality.colConnector": "Connector",
   "quality.colField": "Field",
   "quality.colMetric": "Metric",
   "quality.colSince": "Since",
   "quality.colHistory": "Earlier data",
-  "quality.historyRecoverable": "Recoverable with a force import",
+  "quality.historyQueued": "Being fetched automatically",
+  "quality.historyRecovered": "Fetched again on {date}",
   "quality.historyOnDevice": "Only on the device that sent it",
   "quality.unsupportedHint":
     "Your device sends these fields and this platform does not store them yet. Only the field names and their types are recorded here — never a value.",

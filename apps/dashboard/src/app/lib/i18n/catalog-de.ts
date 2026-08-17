@@ -249,13 +249,14 @@ export const de: Record<MessageKey, string> = {
   "quality.unsupportedTitle": "Noch nicht unterstützt",
   "quality.newlySupportedTitle": "Jetzt unterstützt ({count})",
   "quality.newlySupportedHint":
-    "Diese Felder kamen früher an, ohne gespeichert zu werden, und werden jetzt gespeichert. Die Unterstützung wird bei jedem Import neu geprüft, diese Liste füllt sich also von selbst.",
+    "Diese Felder kamen früher an, ohne gespeichert zu werden, und werden jetzt gespeichert. Die Unterstützung wird bei jedem Import neu geprüft, diese Liste füllt sich also von selbst — und wo die früheren Daten beim Anbieter noch abrufbar sind, werden sie automatisch nachgeholt.",
   "quality.colConnector": "Connector",
   "quality.colField": "Feld",
   "quality.colMetric": "Metrik",
   "quality.colSince": "Seit",
   "quality.colHistory": "Frühere Daten",
-  "quality.historyRecoverable": "Mit einem erzwungenen Import nachholbar",
+  "quality.historyQueued": "Wird automatisch nachgeholt",
+  "quality.historyRecovered": "Am {date} nachgeholt",
   "quality.historyOnDevice": "Nur auf dem Gerät, das sie gesendet hat",
   "quality.unsupportedHint":
     "Dein Gerät sendet diese Felder, und diese Plattform speichert sie noch nicht. Erfasst sind ausschließlich Feldnamen und Typen — nie ein Wert.",
