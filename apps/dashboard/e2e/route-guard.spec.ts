@@ -24,7 +24,12 @@ import {
 test.describe("route guard", () => {
   test("the local health endpoint stays reachable without a session", async ({ request }) => {
     /** Verifies Fizzbee Invariant: UnhealthyDependencyIsVisible. */
-    const response = await request.get("/healthz", { maxRedirects: 0 });
+    // Playwright's normal base URL is the Gateway, which owns the public
+    // `/healthz` route. This assertion is specifically about Next's route guard,
+    // so address the dashboard process itself instead of accidentally testing
+    // the Gateway's identically named liveness endpoint.
+    const dashboardUrl = process.env.E2E_DASHBOARD_URL ?? "http://127.0.0.1:3000";
+    const response = await request.get(`${dashboardUrl}/healthz`, { maxRedirects: 0 });
 
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).toContain("application/json");
