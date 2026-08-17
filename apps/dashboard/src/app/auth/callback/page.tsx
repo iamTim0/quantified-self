@@ -86,7 +86,7 @@ function CallbackInner() {
   }, [complete]);
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+    <main className="flex min-h-screen items-center justify-center bg-slate-100 p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))]">
       <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-8 text-center">
         {error ? (
           <>

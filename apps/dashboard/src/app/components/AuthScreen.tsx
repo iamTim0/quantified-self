@@ -167,7 +167,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     lowered.includes("already registered") || lowered.includes("already exists");
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-slate-100 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
       {/* Background Orbs */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-emerald-500/10 rounded-full blur-[120px] pointer-events-none" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />

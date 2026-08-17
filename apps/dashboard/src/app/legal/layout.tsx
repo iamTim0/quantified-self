@@ -36,7 +36,7 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
   }, [locale, router]);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="min-h-screen bg-white pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-slate-900">
       <div className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-16">
         <nav
           aria-label={t("legal.nav")}

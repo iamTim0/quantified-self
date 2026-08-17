@@ -73,9 +73,10 @@ export default function MobileTabBar({
           aria-modal="true"
           aria-label={t("nav.more")}
           tabIndex={-1}
-          // `pb-[env(safe-area-inset-bottom)]`: on a phone with a home
-          // indicator the last row would otherwise sit under it.
-          className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-slate-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-2xl md:hidden"
+          // The bottom inset keeps the last row clear of the home indicator; the
+          // side insets keep it clear of the cutout in landscape, where `inset-x-0`
+          // otherwise runs the sheet under the camera housing on one edge.
+          className="fixed inset-x-0 bottom-0 z-50 rounded-t-3xl border-t border-slate-200 bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] shadow-2xl md:hidden"
         >
           <div className="mb-3 flex items-center justify-between">
             <span className="text-sm font-bold text-slate-900">{t("nav.more")}</span>
@@ -117,7 +118,7 @@ export default function MobileTabBar({
                   setSheetOpen(false);
                   onLogout();
                 }}
-                className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium text-red-600 hover:bg-red-50"
+                className="text-danger hover:bg-danger/10 flex min-h-11 w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium"
               >
                 <LogOut className="h-4 w-4" aria-hidden="true" />
                 {t("sidebar.logout")}
@@ -129,7 +130,7 @@ export default function MobileTabBar({
 
       <nav
         aria-label={t("nav.primary")}
-        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+        className="fixed inset-x-0 bottom-0 z-30 flex border-t border-slate-200 bg-white/95 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] backdrop-blur md:hidden"
       >
         {PRIMARY_TABS.map((tab) => {
           const entry = NAV[tab];

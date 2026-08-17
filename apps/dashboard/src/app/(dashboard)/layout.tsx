@@ -359,13 +359,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               />
             </div>
 
-            {/* Main Content Area. The bottom padding on small screens is the tab
-                bar's height plus the home-indicator inset: without it the last
-                element of every page is unreachable behind the bar. */}
+            {/* Main Content Area.
+                The bottom padding on small screens is the tab bar's height plus
+                the home-indicator inset: without it the last element of every page
+                is unreachable behind the bar.
+
+                Top and side insets matter for the same reason and were absent. The
+                shell is full-bleed below `sm` (`p-0`), so in portrait the first
+                heading of every page sat under the status bar or the notch, and in
+                landscape the content ran into the rounded corners and the camera
+                housing. `max(…)` rather than `calc(… + …)`: on a phone with no
+                cutout the inset is zero and the padding must not collapse, but on
+                one with a 44px inset the 1rem must not be *added* to it. */}
             <main
               id="main-content"
               tabIndex={-1}
-              className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
+              className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
             >
               <TopHeader
                 userName={userName}

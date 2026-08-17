@@ -104,6 +104,10 @@
   --input: #e2e8f0;
   --ring: #0d5c3a;
   --radius: 1.25rem;
+  /* A code block is dark in the light theme by convention, so it needs its own
+     pair rather than one of the surface tokens. */
+  --code: #0f172a;
+  --code-foreground: #e2e8f0;
 }
 
 [data-theme="dark"] {
@@ -129,6 +133,40 @@
   --border: #2b3d56;
   --input: #2b3d56;
   --ring: #34d399;
+  /* Below `--card`, not above it: a code block sitting on a card has to read as
+     recessed. `#0f172a` — the light theme's value — is within a few percent of
+     `--card` here, which is why code blocks lost all definition in dark. */
+  --code: #060e1b;
+  --code-foreground: #d7e3f1;
+}
+
+/*
+ * The tokens above, as Tailwind utilities.
+ *
+ * `@theme inline` rather than `@theme`: the values are `var(…)` references that
+ * change under `[data-theme="dark"]`, and `inline` is what makes a utility resolve
+ * them where it is used rather than freezing the light value at build time.
+ *
+ * This is the way out of the `!important` shim below. A screen written against
+ * `bg-surface` / `text-ink` / `bg-brand` follows the theme by construction, so it
+ * needs no entry there — and the shim can only ever cover the exact utility strings
+ * somebody thought to list, which is how `bg-slate-50/60` and `bg-slate-900` stayed
+ * near-white and near-invisible in dark mode while `bg-slate-50` was handled.
+ */
+@theme inline {
+  --color-surface: var(--card);
+  --color-surface-muted: var(--muted);
+  --color-ink: var(--foreground);
+  --color-ink-muted: var(--muted-foreground);
+  --color-line: var(--border);
+  --color-brand: var(--primary);
+  --color-brand-hover: var(--primary-hover);
+  --color-brand-ink: var(--primary-foreground);
+  --color-brand-soft: var(--accent-light);
+  --color-brand-strong: var(--accent-foreground);
+  --color-danger: var(--destructive);
+  --color-code: var(--code);
+  --color-code-ink: var(--code-foreground);
 }
 
 body {
@@ -311,7 +349,10 @@ pre,
    radius in every current browser, and setting it would overwrite whatever
    rounding the element was given. */
 .focus-ring:focus-visible {
-  outline: 2px solid #0d5c3a;
+  /* `var(--ring)`, not the brand hex it used to hardcode: in dark mode that green
+     sat at roughly 1.3:1 against `--background`, so the one indicator a keyboard
+     user has was very nearly invisible on the theme where it matters most. */
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 
