@@ -46,7 +46,7 @@ export default function TopHeader({
           className="hidden h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50 hover:text-slate-900 sm:flex"
           title={t("sidebar.docsTitle")}
         >
-          <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
+          <BookOpen className="w-3.5 h-3.5 text-brand" />
           <span>{t("header.docs")}</span>
         </a>
         <NotificationBell apiBase={apiBase} />
@@ -63,7 +63,7 @@ export default function TopHeader({
         <button
           onClick={onOpenConfigureModal}
           aria-label={t("header.addConnector")}
-          className="flex h-11 items-center gap-2 rounded-2xl bg-[#0d5c3a] px-4 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-[#08432a]"
+          className="flex h-11 items-center gap-2 rounded-2xl bg-brand px-4 text-xs font-bold text-brand-ink shadow-md shadow-brand/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-brand-hover"
         >
           <Plus className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">{t("header.addConnector")}</span>
@@ -84,7 +84,7 @@ export default function TopHeader({
             {getInitials(userName)}
           </div>
           <div className="text-left hidden lg:block">
-            <div className="text-xs font-bold text-slate-900 group-hover:text-[#0d5c3a] transition-colors leading-tight">
+            <div className="text-xs font-bold text-slate-900 group-hover:text-brand transition-colors leading-tight">
               {userName}
             </div>
             <div className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">

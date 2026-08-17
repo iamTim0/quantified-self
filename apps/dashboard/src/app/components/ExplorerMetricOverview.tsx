@@ -68,7 +68,7 @@ export default function ExplorerMetricOverview({
   return (
     <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6">
       <div className="flex items-start gap-2">
-        <Database className="mt-0.5 h-4 w-4 shrink-0 text-[#0d5c3a]" />
+        <Database className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
         <p className="text-xs leading-relaxed text-slate-500">{t("explorer.overviewHint")}</p>
       </div>
 
@@ -151,7 +151,7 @@ export default function ExplorerMetricOverview({
                       <button
                         type="button"
                         onClick={() => onShowRaw(key)}
-                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-[#0d5c3a] hover:text-[#0d5c3a]"
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-bold text-slate-700 transition-colors hover:border-brand hover:text-brand"
                       >
                         {t("explorer.showRaw")}
                         <ArrowRight className="h-3 w-3" />

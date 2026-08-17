@@ -165,6 +165,7 @@
   --color-brand-soft: var(--accent-light);
   --color-brand-strong: var(--accent-foreground);
   --color-danger: var(--destructive);
+  --color-danger-ink: var(--destructive-foreground);
   --color-code: var(--code);
   --color-code-ink: var(--code-foreground);
 }
@@ -265,6 +266,41 @@ body {
 [data-theme="dark"] [class~="hover:text-slate-900"]:hover {
   color: var(--foreground) !important;
 }
+/*
+ * The legal documents, in dark.
+ *
+ * They are the one place in the app where colour is set by plain element
+ * selectors rather than utilities, so nothing above reaches them: `.legal-prose p`
+ * hardcodes slate-700, and the wrapper's `bg-white` does follow the theme, which
+ * left the body text of the imprint and the privacy policy at 1.4:1 on a dark
+ * card. The two pages whose entire purpose is being read were the two that could
+ * not be.
+ *
+ * Unlike the utility shim, this list is closed: every colour `.legal-prose`
+ * declares appears below, so nothing can be missed by omission.
+ */
+[data-theme="dark"] .legal-prose p,
+[data-theme="dark"] .legal-prose li {
+  color: #d7e3f1;
+}
+[data-theme="dark"] .legal-prose th,
+[data-theme="dark"] .legal-prose td {
+  border-color: var(--border);
+}
+[data-theme="dark"] .legal-prose th {
+  background: var(--background);
+}
+/* Still has to read as "fill this in", so it keeps the amber rather than fading
+   into the page — the dark amber the shim already uses for `bg-amber-100`. */
+[data-theme="dark"] .legal-prose .placeholder {
+  background: #3c2d16;
+  color: #f6d58b;
+}
+[data-theme="dark"] .legal-prose .legal-notice {
+  border-left-color: var(--border);
+  color: #aabbd0;
+}
+
 [data-theme="dark"] .glass-card {
   background: var(--card);
   border-color: var(--border);

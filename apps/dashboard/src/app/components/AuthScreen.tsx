@@ -178,7 +178,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
         </div>
 
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-[#0d5c3a] text-white mb-4 shadow-xl shadow-[#0d5c3a]/20">
+          <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-brand text-brand-ink mb-4 shadow-xl shadow-brand/20">
             <Activity className="w-8 h-8" />
           </div>
           <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Quantified Self</h1>
@@ -206,7 +206,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     setIsLogin(true);
                     setError("");
                   }}
-                  className="mt-1 text-xs font-bold text-[#0d5c3a] hover:underline block"
+                  className="mt-1 text-xs font-bold text-brand hover:underline block"
                 >
                   {t("auth.useExistingAccount")}
                 </button>
@@ -233,7 +233,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                    className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     placeholder="Jane Doe"
                   />
                 </div>
@@ -259,7 +259,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   placeholder="you@example.com"
                 />
               </div>
@@ -284,7 +284,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                  className="w-full bg-white border border-slate-200 rounded-2xl py-2.5 pl-10 pr-4 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   placeholder="••••••••"
                 />
               </div>
@@ -293,7 +293,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[#0d5c3a] hover:bg-[#08432a] text-white font-bold rounded-2xl py-3 px-4 mt-2 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+              className="w-full bg-brand hover:bg-brand-hover text-brand-ink font-bold rounded-2xl py-3 px-4 mt-2 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-brand/20"
             >
               {loading ? t("common.pleaseWait") : isLogin ? t("auth.signIn") : t("auth.signUp")}
               {!loading && (
@@ -313,7 +313,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     setIsLogin(!isLogin);
                     setError("");
                   }}
-                  className="ml-2 text-[#0d5c3a] hover:underline font-bold transition-colors"
+                  className="ml-2 text-brand hover:underline font-bold transition-colors"
                 >
                   {isLogin ? t("auth.toSignUp") : t("auth.toSignIn")}
                 </button>

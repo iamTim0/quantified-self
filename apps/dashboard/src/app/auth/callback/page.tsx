@@ -94,7 +94,7 @@ function CallbackInner() {
             <p className="mb-5 text-sm leading-relaxed text-slate-600">{error}</p>
             <Link
               href="/"
-              className="inline-block rounded-2xl bg-[#0d5c3a] px-5 py-2.5 text-sm font-bold text-white"
+              className="inline-block rounded-2xl bg-brand px-5 py-2.5 text-sm font-bold text-brand-ink"
             >
               {t("auth.callbackRetry")}
             </Link>

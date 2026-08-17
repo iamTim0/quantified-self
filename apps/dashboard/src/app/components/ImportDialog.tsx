@@ -336,7 +336,7 @@ export default function ImportDialog({
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
           <div className="flex items-center gap-2.5">
-            <CalendarRange className="h-5 w-5 text-[#0d5c3a]" />
+            <CalendarRange className="h-5 w-5 text-brand" />
             <div>
               <h2 className="text-base font-bold text-slate-900">
                 {t("import.title", { name: sourceName })}
@@ -509,7 +509,7 @@ export default function ImportDialog({
                       setStart(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-brand"
                   />
                 </label>
                 <label className="block">
@@ -523,7 +523,7 @@ export default function ImportDialog({
                       setEnd(e.target.value);
                       setRangeTouched(true);
                     }}
-                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
+                    className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 outline-none focus-visible:border-brand"
                   />
                 </label>
               </div>
@@ -543,7 +543,7 @@ export default function ImportDialog({
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
                     mode === "smart"
-                      ? "border-[#0d5c3a] bg-emerald-50/60"
+                      ? "border-brand bg-emerald-50/60"
                       : "border-slate-200 bg-white"
                   }`}
                 >
@@ -556,7 +556,7 @@ export default function ImportDialog({
                   />
                   <span>
                     <span className="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                      <ShieldCheck className="h-4 w-4 text-[#0d5c3a]" /> {t("import.smartLabel")}
+                      <ShieldCheck className="h-4 w-4 text-brand" /> {t("import.smartLabel")}
                     </span>
                     <span className="mt-0.5 block text-[11px] leading-relaxed text-slate-600">
                       {t("import.smartHint")}
@@ -622,7 +622,7 @@ export default function ImportDialog({
                 <>
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-emerald-100">
                     <div
-                      className="h-full rounded-full bg-[#0d5c3a] transition-colors"
+                      className="h-full rounded-full bg-brand transition-colors"
                       style={{
                         width: `${Math.min(
                           100,
@@ -695,7 +695,7 @@ export default function ImportDialog({
 
                   {effective ? (
                     <div>
-                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-[#0d5c3a]">
+                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand">
                         <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
                       </p>
                       <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900">
@@ -714,7 +714,7 @@ export default function ImportDialog({
                       href={plan.docs_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-block text-[11px] text-[#0d5c3a] underline"
+                      className="inline-block text-[11px] text-brand underline"
                     >
                       {t("import.howItWorks")}
                     </a>
@@ -786,7 +786,7 @@ export default function ImportDialog({
             <button
               onClick={handleImport}
               disabled={submitting || planning || (nothingToDo && mode === "smart")}
-              className="flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center gap-2 rounded-2xl bg-brand px-5 py-2.5 text-sm font-bold text-brand-ink disabled:cursor-not-allowed disabled:opacity-50"
             >
               {submitting ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

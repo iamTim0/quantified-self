@@ -43,7 +43,7 @@ export default function ThemeSwitcher() {
             className={[
               "inline-flex h-full items-center justify-center gap-1 px-2.5 text-[11px] font-bold transition-colors",
               active
-                ? "bg-[#0d5c3a] text-white"
+                ? "bg-brand text-brand-ink"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
             ].join(" ")}
           >

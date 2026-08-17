@@ -31,7 +31,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
             title={t("lang.switchTo", { language: LOCALE_LABELS[candidate] })}
             className={`h-full px-2.5 text-[11px] font-bold tracking-wider transition-colors ${
               active
-                ? "bg-[#0d5c3a] text-white"
+                ? "bg-brand text-brand-ink"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-900"
             }`}
           >

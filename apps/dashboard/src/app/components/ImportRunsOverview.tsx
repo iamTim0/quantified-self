@@ -77,7 +77,7 @@ export default function ImportRunsOverview({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <Clock3 className="h-4 w-4 text-[#0d5c3a]" />
+            <Clock3 className="h-4 w-4 text-brand" />
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {t("importOverview.title")}
             </h2>
@@ -189,7 +189,7 @@ export default function ImportRunsOverview({
                 {progress !== null && isActive && (
                   <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
                     <div
-                      className="h-full rounded-full bg-[#0d5c3a] transition-colors"
+                      className="h-full rounded-full bg-brand transition-colors"
                       style={{ width: `${progress}%` }}
                     />
                   </div>

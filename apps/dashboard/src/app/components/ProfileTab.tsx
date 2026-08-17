@@ -230,7 +230,7 @@ export default function ProfileTab({
           {/* User Profile Info Card */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-6">
             <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#0d5c3a] text-white flex items-center justify-center font-extrabold text-xl shadow-lg shadow-[#0d5c3a]/20">
+              <div className="w-14 h-14 rounded-2xl bg-brand text-brand-ink flex items-center justify-center font-extrabold text-xl shadow-lg shadow-brand/20">
                 {userName ? userName[0].toUpperCase() : t("profile.defaultInitial")}
               </div>
               <div>
@@ -267,7 +267,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileName(e.target.value)}
                       maxLength={128}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -288,7 +288,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileEmail(e.target.value)}
                       maxLength={320}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -311,7 +311,7 @@ export default function ProfileTab({
                     maxLength={128}
                     required
                     disabled={userRole === "member"}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-500"
                   />
                 </div>
                 {userRole === "member" && (
@@ -341,7 +341,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={profileLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-brand/20"
                 >
                   {profileLoading ? t("profile.saving") : t("profile.save")}
                 </button>
@@ -400,7 +400,7 @@ export default function ProfileTab({
           {/* Change Password Card */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Lock className="w-5 h-5 text-[#0d5c3a]" />
+              <Lock className="w-5 h-5 text-brand" />
               <h3 className="text-base font-bold text-slate-900">{t("profile.changePassword")}</h3>
             </div>
 
@@ -415,7 +415,7 @@ export default function ProfileTab({
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   required
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                 />
               </div>
 
@@ -431,7 +431,7 @@ export default function ProfileTab({
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   />
                 </div>
 
@@ -446,7 +446,7 @@ export default function ProfileTab({
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -471,7 +471,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-brand/20"
                 >
                   {passwordLoading ? t("profile.changing") : t("profile.changePassword")}
                 </button>
@@ -485,7 +485,7 @@ export default function ProfileTab({
           {/* Workspace Security Info Card */}
           <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
             <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Building className="w-5 h-5 text-[#0d5c3a]" />
+              <Building className="w-5 h-5 text-brand" />
               <h3 className="text-sm font-bold text-slate-900">{t("profile.workspaceDetails")}</h3>
             </div>
 
@@ -497,7 +497,7 @@ export default function ProfileTab({
                   </span>
                   <button
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
-                    className="flex items-center gap-1 text-[11px] text-[#0d5c3a] hover:underline font-mono transition-colors"
+                    className="flex items-center gap-1 text-[11px] text-brand hover:underline font-mono transition-colors"
                   >
                     {copiedTenantId ? (
                       <Check className="w-3.5 h-3.5 text-emerald-600" />
@@ -514,7 +514,7 @@ export default function ProfileTab({
 
               <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-                  <Lock className="w-4 h-4 text-[#0d5c3a]" />
+                  <Lock className="w-4 h-4 text-brand" />
                   <span>{t("profile.encryptedSecrets")}</span>
                 </div>
                 <p className="text-[11px] text-slate-500 leading-snug">
@@ -620,17 +620,17 @@ export default function ProfileTab({
         </h3>
         <p className="mb-2 text-xs text-slate-500">{t("profile.privacyLead")}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
-          <a href="/legal/datenschutz" className="text-[#0d5c3a] underline hover:text-[#08432a]">
+          <a href="/legal/datenschutz" className="text-brand underline hover:text-brand-hover">
             {t("footer.privacy")}
           </a>
-          <a href="/legal/impressum" className="text-[#0d5c3a] underline hover:text-[#08432a]">
+          <a href="/legal/impressum" className="text-brand underline hover:text-brand-hover">
             {t("footer.imprint")}
           </a>
           <a
             href="/docs/"
             target="_blank"
             rel="noreferrer"
-            className="text-[#0d5c3a] underline hover:text-[#08432a]"
+            className="text-brand underline hover:text-brand-hover"
           >
             {t("profile.documentation")}
           </a>

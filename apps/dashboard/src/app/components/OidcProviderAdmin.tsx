@@ -214,7 +214,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
               setEditingSlug(null);
               setDraft(emptyDraft());
             }}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-4 py-2 text-sm font-bold text-white"
+            className="inline-flex items-center gap-2 rounded-2xl bg-brand px-4 py-2 text-sm font-bold text-brand-ink"
           >
             <Plus className="h-4 w-4" /> {t("oidc.add")}
           </button>
@@ -323,7 +323,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
             <button
               onClick={save}
               disabled={busy}
-              className="rounded-2xl bg-[#0d5c3a] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+              className="rounded-2xl bg-brand px-4 py-2 text-sm font-bold text-brand-ink disabled:opacity-50"
             >
               {busy ? t("common.saving") : t("common.save")}
             </button>

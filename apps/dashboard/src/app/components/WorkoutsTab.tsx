@@ -171,7 +171,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
     <div className="space-y-6">
       <header className="space-y-1">
         <h2 className="flex items-center gap-2 text-xl font-extrabold text-slate-900">
-          <Dumbbell className="h-5 w-5 text-[#0d5c3a]" />
+          <Dumbbell className="h-5 w-5 text-brand" />
           {t("workouts.title")}
         </h2>
         <p className="text-sm text-slate-500">{t("workouts.subtitle")}</p>
@@ -185,7 +185,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
               onClick={() => setCategory(option.value)}
               className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 category === option.value
-                  ? "bg-[#0d5c3a] text-white shadow-sm"
+                  ? "bg-brand text-brand-ink shadow-sm"
                   : "text-emerald-800 hover:text-emerald-950"
               }`}
             >

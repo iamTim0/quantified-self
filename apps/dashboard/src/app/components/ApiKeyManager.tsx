@@ -187,12 +187,12 @@ export default function ApiKeyManager({
     <div className="space-y-3">
       <div className="space-y-2.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4">
         <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-          <Plug className="h-4 w-4 text-[#0d5c3a]" />
+          <Plug className="h-4 w-4 text-brand" />
           <span>{t("apikeys.webhookTitle", { provider: providerLabel })}</span>
         </div>
         <div className="space-y-1.5">
           <div className="text-[11px] font-bold text-slate-600">1. URL:</div>
-          <div className="select-all break-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-bold text-[#0d5c3a] shadow-sm">
+          <div className="select-all break-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-bold text-brand shadow-sm">
             {apiBase}
             {ingestPath}
           </div>
@@ -208,7 +208,7 @@ export default function ApiKeyManager({
           href="/docs/features/api-keys/"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#0d5c3a] underline"
+          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand underline"
         >
           <BookOpen className="h-3.5 w-3.5" /> {t("apikeys.docs")}
         </a>
@@ -246,7 +246,7 @@ export default function ApiKeyManager({
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4">
         <div className="mb-2.5 flex items-center gap-1.5">
-          <KeyRound className="h-4 w-4 text-[#0d5c3a]" />
+          <KeyRound className="h-4 w-4 text-brand" />
           <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
             {t("apikeys.title", { count: activeKeys.length })}
           </h3>
@@ -331,7 +331,7 @@ export default function ApiKeyManager({
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder={t("apikeys.namePlaceholder")}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-visible:border-[#0d5c3a]"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-visible:border-brand"
             />
           </label>
           <label>
@@ -355,7 +355,7 @@ export default function ApiKeyManager({
             type="button"
             onClick={handleCreate}
             disabled={busy === "create"}
-            className="flex items-center gap-1.5 rounded-xl bg-[#0d5c3a] px-4 py-2 text-xs font-bold text-white hover:bg-[#08432a] disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-brand-ink hover:bg-brand-hover disabled:opacity-50"
           >
             {busy === "create" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

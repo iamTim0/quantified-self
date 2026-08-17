@@ -278,7 +278,7 @@ export default function ConnectorsPage({
         <p className="text-xs text-slate-500">{t("importerDetail.notFoundHint")}</p>
         <Link
           href="/connectors"
-          className="inline-flex rounded-2xl bg-[#0d5c3a] px-4 py-2.5 text-xs font-bold text-white hover:bg-[#08432a]"
+          className="inline-flex rounded-2xl bg-brand px-4 py-2.5 text-xs font-bold text-brand-ink hover:bg-brand-hover"
         >
           {t("importerDetail.backToConnectors")}
         </Link>
@@ -335,7 +335,7 @@ export default function ConnectorsPage({
           </button>
           <button
             onClick={() => setActiveTab("available")}
-            className="flex items-center gap-2 text-xs font-bold bg-[#0d5c3a] hover:bg-[#08432a] text-white px-4 py-2 rounded-2xl shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
+            className="flex items-center gap-2 text-xs font-bold bg-brand hover:bg-brand-hover text-brand-ink px-4 py-2 rounded-2xl shadow-md shadow-brand/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow]"
           >
             <Plus className="w-4 h-4" />
             <span>{t("connectors.newConnector")}</span>
@@ -355,7 +355,7 @@ export default function ConnectorsPage({
           onClick={() => setActiveTab("current")}
           className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "current"
-              ? "bg-[#0d5c3a] text-white shadow-sm"
+              ? "bg-brand text-brand-ink shadow-sm"
               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
           }`}
         >
@@ -368,7 +368,7 @@ export default function ConnectorsPage({
           onClick={() => setActiveTab("available")}
           className={`flex-1 rounded-xl px-4 py-2.5 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
             activeTab === "available"
-              ? "bg-[#0d5c3a] text-white shadow-sm"
+              ? "bg-brand text-brand-ink shadow-sm"
               : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
           }`}
         >
@@ -438,7 +438,7 @@ export default function ConnectorsPage({
                         <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                           <td className="py-3.5 px-3">
                             <div className="flex items-center gap-2.5">
-                              <Key className="w-4 h-4 text-[#0d5c3a]" />
+                              <Key className="w-4 h-4 text-brand" />
                               <div>
                                 <div className="flex items-center gap-2">
                                   {/* Name first, type beneath: two calendars differ only by name. */}
@@ -585,7 +585,7 @@ export default function ConnectorsPage({
                                 className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
                                   c.sync_status === "error"
                                     ? "bg-rose-600 hover:bg-rose-700 text-white"
-                                    : "bg-[#0d5c3a] hover:bg-[#08432a] text-white"
+                                    : "bg-brand hover:bg-brand-hover text-brand-ink"
                                 }`}
                               >
                                 <Settings className="w-3 h-3" />
@@ -623,7 +623,7 @@ export default function ConnectorsPage({
                 <p className="text-xs text-slate-500 mb-3">{t("connectors.emptyList")}</p>
                 <button
                   onClick={() => setActiveTab("available")}
-                  className="px-4 py-2 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-[#0d5c3a]/20"
+                  className="px-4 py-2 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] shadow-md shadow-brand/20"
                 >
                   {t("connectors.addFirst")}
                 </button>
@@ -674,7 +674,7 @@ export default function ConnectorsPage({
                   <button
                     onClick={() => onOpenConfigureModal(undefined, cat.id)}
                     disabled={!cat.available}
-                    className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-[#0d5c3a] py-2.5 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-[#08432a] disabled:opacity-40"
+                    className="flex w-full items-center justify-center gap-1.5 rounded-2xl bg-brand py-2.5 text-xs font-bold text-brand-ink shadow-md shadow-brand/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-brand-hover disabled:opacity-40"
                   >
                     <span>
                       {!cat.available

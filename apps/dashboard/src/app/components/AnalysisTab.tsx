@@ -409,7 +409,7 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                 </span>
                 <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                   <div
-                    className="h-full rounded-full bg-[#1d4ed8]"
+                    className="h-full rounded-full bg-[#1d4ed8] dark:bg-[#60a5fa]"
                     style={{ width: `${group.set_share_pct}%` }}
                   />
                 </div>
@@ -488,9 +488,9 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                     <span
                       className={
                         exercise.trend.direction === "rising"
-                          ? "font-semibold text-[#1d4ed8]"
+                          ? "font-semibold text-[#1d4ed8] dark:text-[#93c5fd]"
                           : exercise.trend.direction === "falling"
-                            ? "font-semibold text-[#b91c1c]"
+                            ? "font-semibold text-[#b91c1c] dark:text-[#fda4af]"
                             : "text-slate-500"
                       }
                       title={t(`analysis.strengthBasis.${exercise.trend.basis}` as MessageKey)}
@@ -764,7 +764,7 @@ export default function AnalysisTab({
             href={data.docs_url}
             target="_blank"
             rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-[#0d5c3a] underline"
+            className="ml-auto inline-flex items-center gap-1.5 text-xs font-semibold text-brand underline"
           >
             <BookOpen className="h-3.5 w-3.5" /> {t("analysis.howToRead")}
           </a>
@@ -779,7 +779,7 @@ export default function AnalysisTab({
             onClick={() => setSection(id)}
             className={`flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
               section === id
-                ? "bg-[#0d5c3a] text-white"
+                ? "bg-brand text-brand-ink"
                 : "text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
             }`}
           >
@@ -1319,7 +1319,7 @@ function Heatmap({
                         <button
                           type="button"
                           onClick={() => onSelect(key)}
-                          className="flex min-h-14 w-full min-w-24 flex-col items-center justify-center rounded-lg px-1 py-1 text-xs font-semibold outline-none transition hover:ring-2 hover:ring-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]"
+                          className="flex min-h-14 w-full min-w-24 flex-col items-center justify-center rounded-lg px-1 py-1 text-xs font-semibold outline-none transition hover:ring-2 hover:ring-brand focus-visible:ring-2 focus-visible:ring-brand"
                           style={{
                             background: correlationColor(c.coefficient),
                             color: cellInk(c.coefficient),
@@ -1409,7 +1409,7 @@ function MatrixMobileCard({
     <button
       type="button"
       onClick={onSelect}
-      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left outline-none transition hover:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a] dark:border-slate-700 dark:bg-slate-800"
+      className="w-full rounded-xl border border-slate-200 bg-slate-50 p-3 text-left outline-none transition hover:border-brand focus-visible:ring-2 focus-visible:ring-brand dark:border-slate-700 dark:bg-slate-800"
       aria-label={t("analysis.matrixMobileAria", {
         first: metricLabel(c.metric_a, locale, true),
         second: metricLabel(c.metric_b, locale, true),
@@ -1667,7 +1667,10 @@ function Sparkline({ values }: { values: (number | null)[] }) {
       role="img"
       aria-label={t("analysis.sparklineLabel")}
     >
-      <path d={path} fill="none" stroke="#0d5c3a" strokeWidth="2" />
+      {/* A class, not a `stroke=` attribute: `var()` is not resolved in a
+          presentation attribute, and the literal it replaces was the light
+          theme's green drawn at 2.1:1 on the dark card. */}
+      <path d={path} fill="none" className="stroke-brand" strokeWidth="2" />
     </svg>
   );
 }
@@ -1719,8 +1722,8 @@ function WeekdayChart({
           <span className="h-3 flex-1 overflow-hidden rounded-sm bg-slate-100 dark:bg-slate-800">
             {d.mean !== null && (
               <span
-                className="block h-full rounded-sm"
-                style={{ width: `${(d.mean / max) * 100}%`, background: "#0d5c3a" }}
+                className="bg-brand block h-full rounded-sm"
+                style={{ width: `${(d.mean / max) * 100}%` }}
               />
             )}
           </span>

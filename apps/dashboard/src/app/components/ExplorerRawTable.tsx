@@ -101,7 +101,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                         </span>
                       </td>
                       <td className="px-3 py-2.5" title={point.metric_type}>
-                        <span className="font-sans font-bold text-[#0d5c3a]">{label}</span>
+                        <span className="font-sans font-bold text-brand">{label}</span>
                       </td>
                       {/*
                         Rounded to the precision the registry declares for this
@@ -140,7 +140,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                           onClick={() => onInspect(point)}
                           title={t("explorer.inspect")}
                           aria-label={t("explorer.inspect")}
-                          className="p-1 text-slate-400 transition-colors hover:text-[#0d5c3a]"
+                          className="p-1 text-slate-400 transition-colors hover:text-brand"
                         >
                           <ChevronRight className="h-4 w-4" />
                         </button>

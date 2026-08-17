@@ -228,7 +228,7 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
           <span
             className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
               data && data.failed_unseen_count > 0
-                ? "bg-danger text-white"
+                ? "bg-danger text-danger-ink"
                 : "bg-brand text-brand-ink"
             }`}
           >

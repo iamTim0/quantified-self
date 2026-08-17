@@ -152,7 +152,7 @@ export default function ImporterDetailPage({
           <button
             type="button"
             onClick={() => onOpenConfigureModal(connector)}
-            className="inline-flex items-center gap-2 rounded-2xl bg-[#0d5c3a] px-3.5 py-2 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 hover:bg-[#08432a]"
+            className="inline-flex items-center gap-2 rounded-2xl bg-brand px-3.5 py-2 text-xs font-bold text-brand-ink shadow-md shadow-brand/20 hover:bg-brand-hover"
           >
             <Settings className="h-3.5 w-3.5" />
             {t("connectors.edit")}
@@ -202,7 +202,7 @@ export default function ImporterDetailPage({
       {latest && (
         <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <div className="mb-3 flex items-center gap-2">
-            <Clock3 className="h-4 w-4 text-[#0d5c3a]" />
+            <Clock3 className="h-4 w-4 text-brand" />
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {t("importerDetail.latestRun")}
             </h2>
@@ -238,7 +238,7 @@ export default function ImporterDetailPage({
       <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-[#0d5c3a]" />
+            <History className="h-4 w-4 text-brand" />
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
               {t("importerDetail.historyTitle")}
             </h2>

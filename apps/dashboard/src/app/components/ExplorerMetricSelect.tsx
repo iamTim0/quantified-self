@@ -86,7 +86,7 @@ export default function ExplorerMetricSelect({
   return (
     <div className="flex items-center gap-2">
       <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-        <Cpu className="h-3.5 w-3.5 text-[#0d5c3a]" /> {t("explorer.metrics")}
+        <Cpu className="h-3.5 w-3.5 text-brand" /> {t("explorer.metrics")}
       </span>
 
       <div className="relative" ref={container}>
@@ -95,7 +95,7 @@ export default function ExplorerMetricSelect({
           onClick={() => setOpen((previous) => !previous)}
           aria-expanded={open}
           aria-haspopup="listbox"
-          className="flex sm:min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none transition-colors hover:border-slate-300 focus-visible:border-[#0d5c3a]"
+          className="flex sm:min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none transition-colors hover:border-slate-300 focus-visible:border-brand"
         >
           <span className="truncate">{summary()}</span>
           <ChevronDown
@@ -116,14 +116,14 @@ export default function ExplorerMetricSelect({
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder={t("explorer.metricFilterPlaceholder")}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
+                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 outline-none focus-visible:border-brand"
                 />
               </div>
               <div className="mt-2 flex items-center justify-between px-0.5 text-[11px] font-bold">
                 <button
                   type="button"
                   onClick={() => onChange(visible.map(({ key }) => key))}
-                  className="text-[#0d5c3a] hover:underline"
+                  className="text-brand hover:underline"
                 >
                   {t("explorer.selectAll")}
                 </button>
@@ -159,7 +159,7 @@ export default function ExplorerMetricSelect({
                     >
                       <span
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                          isSelected ? "border-[#0d5c3a] bg-[#0d5c3a]" : "border-slate-300 bg-white"
+                          isSelected ? "border-brand bg-brand" : "border-slate-300 bg-white"
                         }`}
                       >
                         {isSelected && <Check className="h-3 w-3 text-white" />}

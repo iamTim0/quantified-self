@@ -35,7 +35,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
       <div>
         {/* Logo Header */}
         <div className="flex items-center gap-3 mb-10 pl-2">
-          <div className="w-10 h-10 rounded-2xl bg-[#0d5c3a] flex items-center justify-center text-white shadow-md shadow-[#0d5c3a]/20">
+          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-brand-ink shadow-md shadow-brand/20">
             <Activity className="w-5 h-5" />
           </div>
           <div>
@@ -63,7 +63,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
                   onClick={() => onTabChange(item.id)}
                   className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     isActive
-                      ? "bg-[#0d5c3a] text-white shadow-lg shadow-[#0d5c3a]/20"
+                      ? "bg-brand text-brand-ink shadow-lg shadow-brand/20"
                       : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
                   }`}
                 >
@@ -105,7 +105,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
               onClick={() => onTabChange("profile")}
               className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 activeTab === "profile"
-                  ? "bg-[#0d5c3a] text-white shadow-lg shadow-[#0d5c3a]/20"
+                  ? "bg-brand text-brand-ink shadow-lg shadow-brand/20"
                   : "text-slate-500 hover:text-slate-900 hover:bg-slate-100/80"
               }`}
             >

@@ -369,7 +369,7 @@ export default function LocationMap({
         {showHeader && (
           <div>
             <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-              <MapPin className="h-5 w-5 text-[#0d5c3a]" />
+              <MapPin className="h-5 w-5 text-brand" />
               <span>{t("map.headline")}</span>
             </h3>
             <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
@@ -385,7 +385,7 @@ export default function LocationMap({
                   onClick={() => setDateFilter(f)}
                   className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     dateFilter === f
-                      ? "bg-[#0d5c3a] text-white shadow-sm"
+                      ? "bg-brand text-brand-ink shadow-sm"
                       : "text-emerald-800 hover:text-emerald-950"
                   }`}
                 >
@@ -405,7 +405,7 @@ export default function LocationMap({
             }}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
               showTiles
-                ? "border-[#0d5c3a] bg-[#0d5c3a] text-white"
+                ? "border-brand bg-brand text-brand-ink"
                 : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
             }`}
             title={showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")}
@@ -432,7 +432,7 @@ export default function LocationMap({
 
       {!showTiles && (
         <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d5c3a]" />
+          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
           <span>{t("map.privacyDetail")}</span>
         </p>
       )}
@@ -459,14 +459,24 @@ export default function LocationMap({
             >
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+                  <path d="M 40 0 L 0 0 0 40" fill="none" className="stroke-line" strokeWidth="1" />
                 </pattern>
               </defs>
               <rect width="800" height="400" fill="url(#grid)" />
+              {/*
+                Classes rather than `stroke=` / `fill=` attributes: a presentation
+                attribute does not resolve `var()`, so the literals these replace
+                stayed the light theme's colours. This panel is the tile-less
+                fallback and sits on our own surface, not on map tiles — in dark
+                the route was drawn at 2.3:1, making the one thing the view exists
+                to show the hardest thing on it to see. The Leaflet track above
+                keeps its literal on purpose: it is drawn over third-party tiles,
+                which are light in either theme.
+              */}
               <path
                 d={svg.path}
                 fill="none"
-                stroke="#0d5c3a"
+                className="stroke-brand"
                 strokeWidth="3"
                 strokeLinejoin="round"
               />
@@ -476,7 +486,7 @@ export default function LocationMap({
                   cx={p.x}
                   cy={p.y}
                   r={i === svg.projected.length - 1 ? 6 : 3}
-                  fill={i === svg.projected.length - 1 ? "#0d5c3a" : "#10b981"}
+                  className={i === svg.projected.length - 1 ? "fill-brand" : "fill-[#10b981]"}
                   stroke="#ffffff"
                   strokeWidth="1.5"
                 >
@@ -497,7 +507,7 @@ export default function LocationMap({
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5">
-          <Navigation className="h-3.5 w-3.5 text-[#0d5c3a]" />
+          <Navigation className="h-3.5 w-3.5 text-brand" />
           {t("map.pointCount", { count: formatNumber(totalPoints) })}
           {simplified && (
             <span className="flex items-center gap-1 text-slate-400">
