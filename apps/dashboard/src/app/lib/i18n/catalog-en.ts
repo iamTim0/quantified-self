@@ -182,6 +182,16 @@ export const en = {
   "day.nothingRecorded": "Nothing was recorded for this day.",
   "day.timeline": "During the day",
   "day.timelineTruncated": "Only the first entries of this day are shown.",
+  "day.logged": "Logged that day",
+  "day.loggedNote":
+    "Grouped by meal rather than placed on the timeline: these are recorded for a day, not at an hour. A time is shown where the app that recorded it stated one.",
+  "day.loggedSummed": "Added up from the individual entries, not stated by the provider.",
+  "day.loggedTruncated": "Only the first entries of this day are shown.",
+  "day.mealBreakfast": "Breakfast",
+  "day.mealLunch": "Lunch",
+  "day.mealDinner": "Dinner",
+  "day.mealSnack": "Snack",
+  "day.mealOther": "Other",
   "day.lastImport": "This connector last imported {timestamp}",
   "day.neverImported": "This connector has never completed an import",
   "day.answeredBy":

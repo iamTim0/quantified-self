@@ -80,7 +80,17 @@ const DEFAULT_PROVIDER: TileProvider =
     ? (process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER as TileProvider)
     : "osm";
 
-const MAX_RENDERED_POINTS = 400;
+/**
+ * Points drawn into the polyline.
+ *
+ * Raised from 400 once the fetch stopped clipping the day: 400 was chosen against
+ * a track that was already capped at 1,000 fixes, where it cost little. Against a
+ * whole day it is the step that throws the shape away — and `simplifyTrack` keeps
+ * corners over straight stretches, so the extra points buy detail in exactly the
+ * places a route is recognisable by. A few thousand vertices in one Leaflet
+ * polyline is well inside what it draws smoothly.
+ */
+const MAX_RENDERED_POINTS = 2000;
 
 /**
  * Reduce a track to at most `limit` points, keeping the ones that carry the shape.
@@ -127,6 +137,13 @@ export default function LocationMap({
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
   const [fetchedPoints, setFetchedPoints] = useState<GpsPoint[]>([]);
+  /**
+   * How many fixes the span actually holds, as opposed to how many are drawn.
+   *
+   * `null` while nothing has been fetched, and for a caller-supplied track, where
+   * the points are all there is and the two numbers are the same.
+   */
+  const [fixCount, setFixCount] = useState<number | null>(null);
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
   // A caller-supplied track is ready on the first render, so there is nothing to
   // wait for and the spinner would be a frame of noise.
@@ -143,54 +160,54 @@ export default function LocationMap({
     setLoading(true);
     try {
       const now = new Date();
-      let start: Date;
-      let end: Date;
-      if (day) {
-        // The report's day is a calendar day in the reader's zone. Convert both
-        // local-midnight boundaries to UTC using the same offset that produced
-        // the report; this avoids the old browser-local "today" approximation.
-        const dayStartUtc = Date.parse(`${day}T00:00:00.000Z`);
-        const offset = offsetMinutes ?? -now.getTimezoneOffset();
-        start = new Date(dayStartUtc - offset * 60_000);
-        // The metrics endpoint accepts inclusive boundaries. Stop one millisecond
-        // before the following midnight so its first sample cannot leak into this day.
-        end = new Date(dayStartUtc + 86_400_000 - offset * 60_000 - 1);
-      } else {
-        end = now;
-        start = new Date(now);
-        if (dateFilter === "today") start.setHours(0, 0, 0, 0);
-        else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
-      }
+      const offset = offsetMinutes ?? -now.getTimezoneOffset();
+      // The day the span ends on, and how many days back it reaches. The server
+      // owns both boundaries through the same `day_window` the day report uses, so
+      // the map and the story cannot disagree about where a day starts.
+      const lastDay = day ?? new Date(now.getTime() + offset * 60_000).toISOString().slice(0, 10);
+      const spanDays = day ? 1 : dateFilter === "today" ? 1 : dateFilter === "7d" ? 7 : 30;
 
       const query = new URLSearchParams({
-        metric_type: "location_point",
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-        limit: "1000",
+        day: lastDay,
+        days: String(spanDays),
+        offset_minutes: String(offset),
       });
-      const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
+      // The whole span, decimated in the database to fit. Not `/metrics` with
+      // `limit=1000`: that endpoint sorts ascending and reports no truncation, so a
+      // day with more fixes than the limit returned the *earliest* thousand — a
+      // track that stopped mid-morning, with the count of what was returned shown
+      // as if it were the day's own. A partial track looks exactly like a short day.
+      const res = await apiFetch(`${apiBase}/api/v1/data/day/track?${query}`, {
         cache: "no-store",
       });
       if (!res.ok) return;
 
       const data = await res.json();
-      const parsed: GpsPoint[] = (data.data_points || [])
-        .map((dp: { metadata?: Record<string, unknown>; value?: number; timestamp?: string }) => {
-          const meta = dp.metadata || {};
-          const lat = (meta.latitude as number) ?? dp.value;
-          const lon = meta.longitude as number;
-          if (lat == null || lon == null || isNaN(Number(lat)) || isNaN(Number(lon))) return null;
+      const parsed: GpsPoint[] = (data.samples || [])
+        .map((sample: { lat?: number; lon?: number; t?: string; speed?: number; altitude?: number }) => {
+          if (
+            sample.lat == null ||
+            sample.lon == null ||
+            isNaN(Number(sample.lat)) ||
+            isNaN(Number(sample.lon))
+          ) {
+            return null;
+          }
           return {
-            latitude: Number(lat),
-            longitude: Number(lon),
-            timestamp: dp.timestamp,
-            speed: meta.speed as number | undefined,
-            altitude: meta.altitude as number | undefined,
+            latitude: Number(sample.lat),
+            longitude: Number(sample.lon),
+            timestamp: sample.t,
+            speed: sample.speed ?? undefined,
+            altitude: sample.altitude ?? undefined,
           };
         })
         .filter(Boolean) as GpsPoint[];
 
       setFetchedPoints(parsed);
+      // The real number of fixes behind the drawn line, which is not the number of
+      // points drawn. Reporting the latter as the former is how a decimated track
+      // passes for a complete one.
+      setFixCount(typeof data.fix_count === "number" ? data.fix_count : parsed.length);
     } catch (err) {
       console.error("Error fetching GPS points:", err);
     } finally {
@@ -338,7 +355,13 @@ export default function LocationMap({
     );
   }
 
-  const simplified = filteredPoints.length > renderPoints.length;
+  // The count the reader is shown is the count of fixes the span holds, which is
+  // the server's when it fetched one. Both decimations — the server's, to bound the
+  // response, and `simplifyTrack`'s, to bound what Leaflet draws — are reductions of
+  // that same number, so "simplified to" is measured against it and not against
+  // whatever survived the first step.
+  const totalPoints = fixCount ?? filteredPoints.length;
+  const simplified = totalPoints > renderPoints.length;
 
   return (
     <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
@@ -475,7 +498,7 @@ export default function LocationMap({
       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
         <span className="flex items-center gap-1.5">
           <Navigation className="h-3.5 w-3.5 text-[#0d5c3a]" />
-          {t("map.pointCount", { count: formatNumber(filteredPoints.length) })}
+          {t("map.pointCount", { count: formatNumber(totalPoints) })}
           {simplified && (
             <span className="flex items-center gap-1 text-slate-400">
               <Layers className="h-3 w-3" />

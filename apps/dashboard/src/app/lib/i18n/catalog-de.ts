@@ -184,6 +184,16 @@ export const de: Record<MessageKey, string> = {
   "day.nothingRecorded": "Für diesen Tag wurde nichts aufgezeichnet.",
   "day.timeline": "Im Tagesverlauf",
   "day.timelineTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.logged": "An dem Tag erfasst",
+  "day.loggedNote":
+    "Nach Mahlzeit gruppiert statt auf der Zeitachse: diese Einträge gehören zu einem Tag, nicht zu einer Uhrzeit. Eine Uhrzeit steht dort, wo die erfassende App selbst eine genannt hat.",
+  "day.loggedSummed": "Aus den einzelnen Einträgen summiert, nicht vom Anbieter angegeben.",
+  "day.loggedTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.mealBreakfast": "Frühstück",
+  "day.mealLunch": "Mittagessen",
+  "day.mealDinner": "Abendessen",
+  "day.mealSnack": "Snack",
+  "day.mealOther": "Sonstiges",
   "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
   "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
   "day.answeredBy":

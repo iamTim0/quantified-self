@@ -55,14 +55,45 @@ from core.sessions import END_FIELDS, STREAM_METRICS, session_group_key, session
 
 logger = logging.getLogger(__name__)
 
-#: Metrics that describe a moment rather than a day, and can therefore be shown
-#: on a timeline. Everything else is a daily figure.
-EVENT_PREFIXES = ("workout_", "strength_set_", "strength_session_")
-EVENT_METRICS = frozenset({
+#: Metrics that describe a session — something trained, with a start and a span.
+#: A session's per-second series is excluded separately (`STREAM_METRICS`).
+#:
+#: This is also the workout list's definition of its own subject, and it is a
+#: narrower set than "anything that happened at a time" on purpose: while the two
+#: were one set, `nutrition_item_energy` and `calendar_meeting_duration` were
+#: grouped into sessions and returned by `/api/v1/data/workouts`, so every logged
+#: food item and every meeting arrived as a workout — named, because
+#: `sessions.TITLE_FIELDS` reads `food_name` and `summary` to title a card.
+SESSION_PREFIXES = ("workout_", "strength_set_", "strength_session_")
+
+#: Metrics that describe one scheduled moment of a day. On the timeline, because a
+#: meeting did happen at a time; never in the workout list, because a meeting is
+#: not something anyone trained.
+MOMENT_METRICS = frozenset({"calendar_meeting_duration"})
+
+#: Metrics recorded *for* a day rather than *at* a time.
+#:
+#: Yazio stamps every item of a day at that day's midnight UTC and keeps the real
+#: clock time only in `metadata.logged_time`, which nothing reads. Rendered in the
+#: reader's own zone that stamp becomes 02:00 in CEST — a day's entire food intake
+#: piled into the small hours, which is not what happened and is not something a
+#: reader can mentally correct for. So these are told as the day's log, in meal
+#: order, and the timeline keeps only the hours it can actually vouch for.
+#:
+#: Re-stamping them in the importer would be the other fix and is the wrong one:
+#: the timestamp is part of the idempotency key (rule 4), so changing it does not
+#: correct the existing points, it duplicates every one of them.
+LOGGED_METRICS = frozenset({
     "nutrition_item_energy",
     "nutrition_meal_energy",
-    "calendar_meeting_duration",
 })
+
+#: Everything that describes a single entry rather than a whole day.
+#:
+#: This is the set a lane total must exclude: a day's `nutrition_item_energy` rows
+#: summed into the nutrition lane double counts the `nutrition_energy` total the
+#: provider already sends for that day (rule 19).
+ENTRY_METRICS = MOMENT_METRICS | LOGGED_METRICS
 
 #: How many discrete events one day may contribute. A day with a GPS trace and
 #: per-minute samples can hold tens of thousands of rows; a timeline that tried
@@ -73,6 +104,18 @@ MAX_EVENTS = 200
 #: because one session contributes a dozen rows, and a flag that only knew
 #: about the event cap could not report a scan cut short by the row cap.
 MAX_EVENT_ROWS = MAX_EVENTS * 20
+
+#: Meal groups in the order a day eats them, so the day's log reads as a day
+#: rather than alphabetically. Yazio's own `daytime` values, which is what
+#: `metadata.meal_category` carries. Anything else keeps its own name and sorts
+#: after these, rather than being dropped for being unrecognised.
+MEAL_ORDER: tuple[str, ...] = ("breakfast", "lunch", "dinner", "snack")
+
+#: Entries the day's log may hold, and the rows the scan behind it may read.
+#: A day of individually logged food is dozens of rows, not thousands; these exist
+#: so one mis-tagged import cannot make the page unbounded.
+MAX_LOGGED_ENTRIES = 200
+MAX_LOGGED_ROWS = MAX_LOGGED_ENTRIES * 10
 
 #: The lanes a day is told in, in the order a day happens.
 LANE_ORDER: tuple[MetricCategory, ...] = (
@@ -126,29 +169,53 @@ def day_window(day: date, offset_minutes: int) -> DayWindow:
     )
 
 
-def _is_event_metric(metric_type: str) -> bool:
-    if metric_type in STREAM_METRICS:
-        return False
-    return metric_type in EVENT_METRICS or metric_type.startswith(EVENT_PREFIXES)
+def _metric_predicate(names: frozenset[str], prefixes: tuple[str, ...] = ()):
+    """`metric_type` matches any of these names or prefixes, expressed for SQL.
 
+    One helper for all four sets below, so the four cannot drift into four
+    different readings of what a name match is.
 
-def _event_metric_predicate():
-    """The same rule as `_is_event_metric`, expressed for the database.
-
-    Kept next to it so the two cannot drift: a metric the Python helper counts as
-    an event and the SQL one does not would simply never reach the timeline.
+    `startswith(..., autoescape=True)`, not `like(f"{prefix}%")`: `_` is a
+    single-character wildcard in SQL, so a plain LIKE on `strength_set_` also
+    matches names the Python rule rejects. No registry key collides today, which is
+    exactly how a filter drifts from the rule it mirrors.
     """
-    return or_(
-        DataPoint.metric_type.in_(sorted(EVENT_METRICS)),
-        # `startswith(..., autoescape=True)`, not `like(f"{prefix}%")`: `_` is a
-        # single-character wildcard in SQL, so a plain LIKE on `strength_set_`
-        # also matches names the Python rule rejects. No registry key collides
-        # today, which is exactly how a filter drifts from the rule it mirrors.
-        *(
-            DataPoint.metric_type.startswith(prefix, autoescape=True)
-            for prefix in EVENT_PREFIXES
-        ),
-    )
+    clauses = [
+        DataPoint.metric_type.startswith(prefix, autoescape=True) for prefix in prefixes
+    ]
+    if names:
+        clauses.append(DataPoint.metric_type.in_(sorted(names)))
+    return or_(*clauses)
+
+
+def entry_metric_predicate():
+    """Anything describing one entry rather than a whole day.
+
+    What a lane total excludes, and nothing else: the three narrower predicates
+    below are what the timeline, the workout list and the day's log each ask for.
+    """
+    return _metric_predicate(ENTRY_METRICS, SESSION_PREFIXES)
+
+
+def session_metric_predicate():
+    """Only what can be a session — the workout list's definition of its subject."""
+    return _metric_predicate(frozenset(), SESSION_PREFIXES)
+
+
+def timeline_metric_predicate():
+    """What may be placed at an hour: sessions and scheduled moments.
+
+    Deliberately not `LOGGED_METRICS`. A stamp that only ever means "some time that
+    day" renders as a precise hour once it reaches a timeline, and a precise wrong
+    hour is worse than no hour, because nothing in the interface distinguishes it
+    from one the provider actually stated.
+    """
+    return _metric_predicate(MOMENT_METRICS, SESSION_PREFIXES)
+
+
+def logged_metric_predicate():
+    """What was logged for a day, told as the day's log rather than at an hour."""
+    return _metric_predicate(LOGGED_METRICS)
 
 
 def _stream_metric_predicate():
@@ -169,6 +236,13 @@ def _category_of(metric_type: str) -> str:
         return describe(metric_type).category.value
     except ValueError:
         return MetricCategory.CUSTOM.value
+
+
+def _unit_of(metric_type: str) -> str:
+    try:
+        return describe(metric_type).unit.value
+    except ValueError:
+        return ""
 
 
 def _collapse(metric_type: str, values: list[float]) -> float:
@@ -288,7 +362,7 @@ async def _events(
                 # or empty, and `event_limit_reached` stayed false because fewer
                 # than MAX_EVENTS had been *grouped*. A quietly truncated timeline
                 # is indistinguishable from a quiet day.
-                _event_metric_predicate(),
+                timeline_metric_predicate(),
                 ~_stream_metric_predicate(),
             )
             .order_by(DataPoint.timestamp)
@@ -352,6 +426,123 @@ async def _events(
     return events[:MAX_EVENTS], truncated
 
 
+def _meal_rank(group: str) -> tuple[int, str]:
+    """Where a meal group sorts. Unknown groups keep their name and come last."""
+    try:
+        return (MEAL_ORDER.index(group), "")
+    except ValueError:
+        return (len(MEAL_ORDER), group)
+
+
+async def _logged_entries(
+    session: AsyncSession, tenant_id: str, window: DayWindow
+) -> tuple[list[dict[str, Any]], bool]:
+    """What the day logged, grouped by meal, with no clock time invented for it.
+
+    Yazio stamps every item of a day at that day's midnight UTC. Rendered in the
+    reader's own zone that became 02:00 in CEST, so a day's entire food intake
+    appeared on the timeline in the small hours — every item at the same wrong
+    hour, which reads as a fact about the day rather than as an artefact of how the
+    provider stamps a diary.
+
+    So the day's log is its own section: ordered by meal, and carrying the real
+    clock time only where the provider actually stated one (`metadata.logged_time`,
+    which until now nothing read). A group whose points carry no such time is shown
+    without one rather than with a plausible invention.
+    """
+    rows = (
+        await session.execute(
+            select(
+                DataPoint.metric_type,
+                DataPoint.timestamp,
+                DataPoint.value,
+                DataPoint.metadata_,
+                DataPoint.source_id,
+            )
+            .where(
+                DataPoint.tenant_id == tenant_id,
+                DataPoint.timestamp >= window.start,
+                DataPoint.timestamp < window.end,
+                logged_metric_predicate(),
+            )
+            .order_by(DataPoint.timestamp)
+            .limit(MAX_LOGGED_ROWS + 1)
+        )
+    ).all()
+
+    groups: dict[str, dict[str, Any]] = {}
+    for row in rows[:MAX_LOGGED_ROWS]:
+        metadata = row.metadata_ or {}
+        name = str(metadata.get("meal_category") or "").strip().lower()
+        group = groups.setdefault(
+            name or "other",
+            {
+                # A stable identifier, not prose (rule 17): the dashboard renders it
+                # through `nutrition.meal.<group>` and falls back to the raw name for
+                # a group it does not know.
+                "group": name or "other",
+                "category": _category_of(row.metric_type),
+                "source_id": str(row.source_id),
+                "entries": [],
+                # The meal total exactly as the provider stated it, kept apart from
+                # the sum of the items below it. They are two different claims about
+                # one meal and adding them together is rule 19's double count.
+                "stated_energy": None,
+                "item_energy": 0.0,
+                "logged_at": None,
+            },
+        )
+        value = float(row.value) if row.value is not None else None
+
+        stated_time = metadata.get("logged_time")
+        if isinstance(stated_time, str) and stated_time:
+            # The earliest real time anything in this meal carried. String compare,
+            # because these are ISO-8601 from one provider and parsing them here
+            # would only add a failure mode to an ordering hint.
+            if group["logged_at"] is None or stated_time < group["logged_at"]:
+                group["logged_at"] = stated_time
+
+        if row.metric_type == "nutrition_meal_energy":
+            if value is not None:
+                group["stated_energy"] = value
+            continue
+
+        if value is not None:
+            group["item_energy"] += value
+        group["entries"].append(
+            {
+                "title": session_title(metadata),
+                "metric_type": row.metric_type,
+                "value": value,
+                "unit": _unit_of(row.metric_type),
+                "source_id": str(row.source_id),
+                "logged_at": stated_time if isinstance(stated_time, str) else None,
+                "amount": metadata.get("amount"),
+                "serving_unit": metadata.get("serving_unit"),
+                "protein_g": metadata.get("protein_g"),
+                "carbs_g": metadata.get("carbs_g"),
+                "fat_g": metadata.get("fat_g"),
+            }
+        )
+
+    ordered = sorted(groups.values(), key=lambda entry: _meal_rank(entry["group"]))
+    kept = 0
+    for group in ordered:
+        group["entries"].sort(key=lambda entry: (entry["logged_at"] or "", entry["title"]))
+        group["entry_count"] = len(group["entries"])
+        stated = group.pop("stated_energy")
+        summed = group.pop("item_energy")
+        # What the provider said, where it said anything; our sum only otherwise —
+        # and `energy_derived` is what lets a reader tell the two apart (rule 19).
+        group["energy"] = stated if stated is not None else round(summed, 1)
+        group["energy_derived"] = stated is None
+        group["unit"] = _unit_of("nutrition_item_energy")
+        kept += group["entry_count"]
+
+    truncated = len(rows) > MAX_LOGGED_ROWS or kept > MAX_LOGGED_ENTRIES
+    return ordered, truncated
+
+
 async def _lane_completeness(
     session: AsyncSession, tenant_id: str
 ) -> dict[str, datetime | None]:
@@ -391,11 +582,13 @@ async def build_day_story(
         window.start,
         window.end,
         exclude=(
-            # Events belong on the timeline, not in a lane total: summing a day's
-            # `workout_duration` across three sessions and printing it as a lane
-            # figure says something the reader did not ask.
-            ~_event_metric_predicate(),
-            # Stated separately rather than folded into `_event_metric_predicate`.
+            # An entry belongs to the timeline or to the day's log, not to a lane
+            # total: summing a day's `workout_duration` across three sessions and
+            # printing it as a lane figure says something the reader did not ask,
+            # and summing its `nutrition_item_energy` rows double counts the
+            # `nutrition_energy` the provider already states for that day.
+            ~entry_metric_predicate(),
+            # Stated separately rather than folded into `entry_metric_predicate`.
             # Folding it in would invert to `not (event or stream)` there and to
             # `not event or not stream` here — true for every stream metric, so the
             # exclusion would silently do nothing and a workout's per-second pulse
@@ -404,6 +597,7 @@ async def build_day_story(
         ),
     )
     events, events_truncated = await _events(session, tenant_id, window)
+    logged, logged_truncated = await _logged_entries(session, tenant_id, window)
     last_import_by_source = await _lane_completeness(session, tenant_id)
 
     # Only when something is actually ambiguous. Both scan the workspace's whole
@@ -511,6 +705,10 @@ async def build_day_story(
         "lanes": ordered_lanes,
         "events": events,
         "event_limit_reached": events_truncated,
+        # Told apart from `events` on purpose: these carry a day, not an hour, and
+        # the separation is the whole reason a day's food no longer lands at 02:00.
+        "logged": logged,
+        "logged_limit_reached": logged_truncated,
     }
 
 

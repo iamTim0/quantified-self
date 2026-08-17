@@ -66,7 +66,7 @@ from core.connectors import (
     is_scheduled,
     supports_file_import,
 )
-from core.daily_story import build_day_story
+from core.daily_story import build_day_story, day_window
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -210,9 +210,11 @@ from core.tracing import (
     setup_tracing_logger,
 )
 from core.workouts import (
+    DEFAULT_DAY_TRACK_POINTS,
     DEFAULT_PAD_SECONDS,
     DEFAULT_ROUTE_POINTS,
     DEFAULT_STREAM_POINTS,
+    MAX_DAY_TRACK_POINTS,
     MAX_LIST_DAYS,
     MAX_LIST_SESSIONS,
     MAX_PAD_SECONDS,
@@ -221,6 +223,7 @@ from core.workouts import (
     SessionNotFound,
     build_workout_detail,
     build_workout_list,
+    track_for_window,
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -3068,6 +3071,80 @@ async def get_day_story(
     return await build_day_story(
         session, tenant_id, day=target, offset_minutes=offset_minutes
     )
+
+
+@app.get("/api/v1/data/day/track")
+async def get_day_track(
+    day: date | None = Query(None, description="Calendar day in the reader's zone; default today"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the day is bounded in it",
+    ),
+    days: int = Query(
+        1,
+        ge=1,
+        le=31,
+        description="How many calendar days back from `day` the track covers, inclusive",
+    ),
+    track_points: int = Query(
+        DEFAULT_DAY_TRACK_POINTS,
+        ge=1,
+        le=MAX_DAY_TRACK_POINTS,
+        description="Most points to return; the span is decimated evenly to fit",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """A whole day's movement (or several days'), decimated in the database.
+
+    The overview map used to ask `/api/v1/data/metrics` for `location_point` with
+    `limit=1000`. That endpoint sorts ascending and reports no truncation, so a day
+    with more fixes than the limit returned the *earliest* thousand and the map drew
+    a track that stopped mid-morning — while labelling the count as the day's own.
+    A partial track is indistinguishable from a short day, which is the failure mode
+    this endpoint exists to remove.
+
+    Every fix is considered and the stride is computed from the true total, so what
+    comes back is the shape of the whole day rather than the beginning of it.
+    `fix_count` is always the real number and `truncated` says whether the returned
+    samples are a subset, so the reader is never told a decimated track is complete.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date()
+    target = day or reader_today
+    if target > reader_today:
+        raise HTTPException(status_code=400, detail="That day has not happened yet")
+    if (reader_today - target).days > 366:
+        raise HTTPException(status_code=400, detail="Only the last 367 days can be told")
+
+    first = target - timedelta(days=days - 1)
+    start = day_window(first, offset_minutes).start
+    end = day_window(target, offset_minutes).end
+    envelope = {
+        "day": target.isoformat(),
+        "start_day": first.isoformat(),
+        "days": days,
+        "offset_minutes": offset_minutes,
+    }
+
+    track = await track_for_window(
+        session, tenant_id, start, end, route_points=track_points
+    )
+    if track is None:
+        # An explicit empty track, not a 404: "no movement recorded" is an answer
+        # about the day, and a client that had to read it from a status code would
+        # have to tell it apart from a day that failed to load.
+        return {
+            **envelope,
+            "source": "none",
+            "measured_distance_m": None,
+            "fix_count": 0,
+            "samples": [],
+            "sample_count": 0,
+            "truncated": False,
+        }
+    return {**envelope, **track}
 
 
 # ─── Workouts ───────────────────────────────────────────────

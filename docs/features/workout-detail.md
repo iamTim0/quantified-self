@@ -121,6 +121,26 @@ GET /api/v1/data/workouts?start_date=2026-07-17&end_date=2026-08-16&offset_minut
 uses. A reader whose day starts at a different moment on two pages of one product
 is being told two different things about one dataset.
 
+`all` means every *session* — that is, `workout_*` and `strength_*` — and nothing
+else. It is not "every entry that happened at a time".
+
+!!! warning "A meal and a meeting are not workouts"
+    This list once shared one "event metric" set with the day timeline, which also
+    holds `nutrition_item_energy`, `nutrition_meal_energy` and
+    `calendar_meeting_duration`. `category=all` applied no narrowing on top of it, so
+    every logged food item and every calendar entry was grouped into a session and
+    returned here — titled, because `sessions.TITLE_FIELDS` reads `food_name` and
+    `summary` to name a card. A list of workouts that contains a banana and a
+    stand-up cannot answer anything about training.
+
+    The two definitions are now separate predicates in `core.daily_story`:
+    `session_metric_predicate()` for this list, `timeline_metric_predicate()` for the
+    timeline, `logged_metric_predicate()` for the day's log, and
+    `entry_metric_predicate()` — the union — for what a lane total must exclude.
+    A workout's *surroundings* excludes the union too: `nutrition_item_energy` is a
+    `SUM`, so a session straddling lunch would otherwise report the meal's calories
+    as a figure measured during it.
+
 Each session carries `session_key` (the opaque handle for the detail), `identity`,
 `start`, `end`, `title`, `category`, `measures`, `units`, `point_count`,
 `exercise_count` and `muscle_groups`. `scan_limit_reached` says when the range held

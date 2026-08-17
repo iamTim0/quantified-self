@@ -110,6 +110,38 @@ type DayEvent = {
   measures: Record<string, number>;
 };
 
+type LoggedEntry = {
+  title: string;
+  metric_type: string;
+  value: number | null;
+  unit: string;
+  /** The clock time the provider itself stated, where it stated one. */
+  logged_at: string | null;
+  amount: number | null;
+  serving_unit: string | null;
+};
+
+/**
+ * One meal of the day's log.
+ *
+ * Separate from `DayEvent` because these carry a day, not an hour. Yazio stamps a
+ * whole day of food at that day's midnight UTC, which rendered in the reader's own
+ * zone put every item at 02:00 — the same wrong hour for all of them, which reads
+ * as a fact about the day rather than as an artefact of how a diary is stamped.
+ */
+type LoggedGroup = {
+  /** `breakfast` | `lunch` | `dinner` | `snack` | … — an identifier, not prose. */
+  group: string;
+  category: string;
+  entries: LoggedEntry[];
+  entry_count: number;
+  energy: number | null;
+  /** True when the total is our sum of the items rather than the provider's own. */
+  energy_derived: boolean;
+  unit: string;
+  logged_at: string | null;
+};
+
 export type DayStory = {
   day: string;
   /**
@@ -122,6 +154,8 @@ export type DayStory = {
   lanes: Lane[];
   events: DayEvent[];
   event_limit_reached: boolean;
+  logged: LoggedGroup[];
+  logged_limit_reached: boolean;
 };
 
 /**
@@ -131,6 +165,21 @@ export type DayStory = {
  * is that a key which exists in neither language is a compile error rather
  * than an empty element at runtime.
  */
+/**
+ * Meal identifiers the server sends, mapped to catalogue keys.
+ *
+ * A group the server names but this map does not know keeps its own name rather
+ * than disappearing — `meal_category` comes from the provider, so the set is not
+ * ours to close.
+ */
+export const MEAL_LABEL: Record<string, MessageKey> = {
+  breakfast: "day.mealBreakfast",
+  lunch: "day.mealLunch",
+  dinner: "day.mealDinner",
+  snack: "day.mealSnack",
+  other: "day.mealOther",
+};
+
 export const LANE_LABEL: Record<string, MessageKey> = {
   sleep: "day.laneSleep",
   activity: "day.laneActivity",
@@ -318,6 +367,69 @@ function DaySection({
           </ol>
           {story.event_limit_reached && (
             <p className="mt-3 text-xs text-slate-400">{t("day.timelineTruncated")}</p>
+          )}
+        </div>
+      )}
+
+      {story.logged.length > 0 && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <h3 className="mb-1 text-xs font-bold uppercase tracking-wider text-emerald-700">
+            {t("day.logged")}
+          </h3>
+          {/* Says plainly why these carry no hour, so their absence from the
+              timeline reads as a decision rather than as a gap. */}
+          <p className="mb-3 text-xs text-slate-400">{t("day.loggedNote")}</p>
+          <div className="space-y-3">
+            {story.logged.map((group) => (
+              <div key={group.group}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <h4 className="text-sm font-semibold text-slate-800">
+                    {MEAL_LABEL[group.group] ? t(MEAL_LABEL[group.group]) : group.group}
+                  </h4>
+                  {group.energy !== null && (
+                    <span
+                      className="shrink-0 text-sm font-semibold tabular-nums text-slate-900"
+                      title={group.energy_derived ? t("day.loggedSummed") : undefined}
+                    >
+                      {formatNumber(group.energy)}{" "}
+                      <span className="font-normal text-slate-400">
+                        {group.unit}
+                        {group.energy_derived && " *"}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                <ul className="mt-1 divide-y divide-slate-100">
+                  {group.entries.map((entry, index) => (
+                    <li
+                      key={`${group.group}-${entry.title}-${index}`}
+                      className="flex items-baseline justify-between gap-3 py-1 text-sm"
+                    >
+                      <span className="min-w-0 truncate text-slate-600">
+                        {entry.logged_at && (
+                          <span className="mr-2 tabular-nums text-slate-400">
+                            {formatTime(entry.logged_at)}
+                          </span>
+                        )}
+                        {entry.title}
+                        {entry.amount !== null && (
+                          <span className="ml-1.5 text-xs text-slate-400">
+                            {formatNumber(entry.amount)} {entry.serving_unit ?? ""}
+                          </span>
+                        )}
+                      </span>
+                      <span className="shrink-0 tabular-nums text-slate-900">
+                        {entry.value === null ? "—" : formatNumber(entry.value)}{" "}
+                        <span className="font-normal text-slate-400">{entry.unit}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          {story.logged_limit_reached && (
+            <p className="mt-3 text-xs text-slate-400">{t("day.loggedTruncated")}</p>
           )}
         </div>
       )}

@@ -38,9 +38,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.daily_story import (
     _category_of,
     _collapse,
-    _event_metric_predicate,
     _stream_metric_predicate,
+    _unit_of,
     day_window,
+    entry_metric_predicate,
+    session_metric_predicate,
     metric_totals,
     # The adapter, not the shared resolver underneath it: `metric_source_coverage`
     # is keyed by `(metric_type, source_id)` and the resolver wants a per-source
@@ -85,6 +87,17 @@ MAX_STREAM_POINTS = 2000
 #: than a line chart's does.
 DEFAULT_ROUTE_POINTS = 1000
 MAX_ROUTE_POINTS = 5000
+
+#: The same for a whole day's movement, which is a longer track than one session's
+#: and is the reason these are separate numbers.
+#:
+#: The overview map used to ask `/metrics` for `limit=1000` against an endpoint that
+#: sorts ascending and reports no truncation, so a day with more fixes than that
+#: silently returned *the morning* — a track that stops at 11:00 and a point count
+#: presented as the day's total. Nothing on the page distinguished it from a day
+#: that ended at 11:00.
+DEFAULT_DAY_TRACK_POINTS = 4000
+MAX_DAY_TRACK_POINTS = 20000
 
 #: Set rows one session may return. Twenty exercises of ten sets is two hundred.
 MAX_SET_ROWS = 4000
@@ -168,8 +181,17 @@ def _session_predicate(ref: SessionRef):
 
 
 def _sessionable_predicate():
-    """Metrics that can describe a session, excluding the series inside one."""
-    return and_(_event_metric_predicate(), ~_stream_metric_predicate())
+    """Metrics that can describe a session, excluding the series inside one.
+
+    `session_metric_predicate`, not the wider entry predicate the day's lanes
+    exclude. While this was the wider one, `category="all"` — the list's default —
+    grouped `nutrition_item_energy` and `calendar_meeting_duration` into sessions
+    and returned them as workouts, titled from `food_name` and `summary` because
+    `sessions.TITLE_FIELDS` reads those to name a card. A logged banana and a
+    stand-up are not training, and a list of workouts that contains them cannot be
+    used to answer anything about training.
+    """
+    return and_(session_metric_predicate(), ~_stream_metric_predicate())
 
 
 def _stated_bound(key: str):
@@ -338,13 +360,6 @@ def _parse_iso(raw: str) -> datetime | None:
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def _unit_of(metric_type: str) -> str:
-    try:
-        return describe(metric_type).unit.value
-    except ValueError:
-        return ""
 
 
 async def _resolve_window(
@@ -704,7 +719,7 @@ def _continuous_metrics() -> list[str]:
     )
 
 
-async def _route(
+async def track_for_window(
     session: AsyncSession,
     tenant_id: str,
     start: datetime,
@@ -845,7 +860,12 @@ async def _context(
         start,
         end,
         exclude=(
-            ~_sessionable_predicate(),
+            # Every entry metric, not only the session's own. Narrowing
+            # `_sessionable_predicate` to what a session actually is would otherwise
+            # let the other entry metrics in here instead, and `nutrition_item_energy`
+            # is a `SUM`: a workout window that happens to straddle lunch would report
+            # the meal's calories as a figure measured "during" the session.
+            ~entry_metric_predicate(),
             # Exactly the metrics that *were* drawn — not everything that could
             # have been. A series shown as a chart must not also appear as a single
             # figure, and a metric with one reading in this window is not a series,
@@ -929,7 +949,7 @@ async def build_workout_detail(
     streams = await _streams(
         session, tenant_id, window_start, window_end, stream_points=stream_points
     )
-    route = await _route(
+    route = await track_for_window(
         session, tenant_id, window_start, window_end, route_points=route_points
     )
     surroundings = await _context(

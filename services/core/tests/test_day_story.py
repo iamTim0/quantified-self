@@ -620,3 +620,119 @@ async def test_a_stream_metric_is_neither_a_lane_nor_an_event():
         assert any(e["measures"].get("workout_duration") == 45.0 for e in body["events"])
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_days_food_is_a_log_not_a_2am_timeline_entry():
+    """Yazio stamps a whole day of food at that day's midnight UTC.
+
+    Rendered in the reader's own zone that becomes 02:00 in CEST, so every item of
+    the day appeared on the timeline in the small hours — at the same wrong hour,
+    which reads as a fact about the day rather than as an artefact of how a diary
+    is stamped. The day's log is its own section instead, grouped by meal, and it
+    carries the real clock time only where the provider stated one.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "yazio")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        midnight = day_window(yesterday, 0).start
+
+        await _point(tenant_id, source_id, "nutrition_item_energy", midnight, 105.0,
+                     {"food_name": "Banana", "meal_category": "snack",
+                      "logged_time": f"{yesterday.isoformat()}T15:20:00"})
+        await _point(tenant_id, source_id, "nutrition_item_energy", midnight, 320.0,
+                     {"food_name": "Porridge", "meal_category": "breakfast",
+                      "logged_time": f"{yesterday.isoformat()}T07:05:00"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=120",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        # Nothing food-shaped on the timeline, at 02:00 or at any other hour.
+        for event in body["events"]:
+            assert not any(m.startswith("nutrition_") for m in event["measures"])
+
+        groups = {group["group"]: group for group in body["logged"]}
+        assert set(groups) == {"breakfast", "snack"}
+        # Meal order, not alphabetical: breakfast precedes snack.
+        assert [g["group"] for g in body["logged"]] == ["breakfast", "snack"]
+        assert groups["breakfast"]["energy"] == 320.0
+        # Summed here, so it says so rather than passing for a stated figure.
+        assert groups["breakfast"]["energy_derived"] is True
+        assert groups["snack"]["entries"][0]["title"] == "Banana"
+        assert groups["snack"]["entries"][0]["logged_at"].endswith("15:20:00")
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_stated_meal_total_beats_the_sum_of_its_items():
+    """What the provider stated outright always beats what we derived (rule 19)."""
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "yazio")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        midnight = day_window(yesterday, 0).start
+
+        await _point(tenant_id, source_id, "nutrition_item_energy", midnight, 200.0,
+                     {"food_name": "Bread", "meal_category": "lunch"})
+        await _point(tenant_id, source_id, "nutrition_item_energy", midnight, 150.0,
+                     {"food_name": "Cheese", "meal_category": "lunch"})
+        await _point(tenant_id, source_id, "nutrition_meal_energy", midnight, 400.0,
+                     {"meal_category": "lunch"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        lunch = next(g for g in body["logged"] if g["group"] == "lunch")
+        # 400 as stated, not 350 as summed, and never 750 as both.
+        assert lunch["energy"] == 400.0
+        assert lunch["energy_derived"] is False
+        assert lunch["entry_count"] == 2
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_logged_items_are_not_summed_into_a_lane_total():
+    """A day's items and the day's own total are two claims about one thing.
+
+    Adding them is rule 19's double count, and a doubled calorie figure is
+    indistinguishable from a right one.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "yazio")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        midnight = day_window(yesterday, 0).start
+
+        await _point(tenant_id, source_id, "nutrition_energy", midnight, 2100.0)
+        for value in (700.0, 700.0, 700.0):
+            await _point(tenant_id, source_id, "nutrition_item_energy", midnight, value,
+                         {"food_name": "Meal", "meal_category": "dinner"})
+
+        async with await _client() as client:
+            body = (
+                await client.get(
+                    f"/api/v1/data/day?day={yesterday.isoformat()}&offset_minutes=0",
+                    headers=auth_headers(tenant_id),
+                )
+            ).json()
+
+        nutrition = next(lane for lane in body["lanes"] if lane["category"] == "nutrition")
+        names = {metric["metric_type"] for metric in nutrition["metrics"]}
+        assert "nutrition_item_energy" not in names
+        total = next(m for m in nutrition["metrics"] if m["metric_type"] == "nutrition_energy")
+        assert total["value"] == 2100.0
+    finally:
+        await cleanup_test_tenant(tenant_id)
