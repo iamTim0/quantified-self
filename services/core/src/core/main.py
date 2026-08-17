@@ -50,7 +50,7 @@ from shared_schemas.metrics import (
     describe,
     metrics_for_source,
 )
-from sqlalchemy import and_, delete, distinct, exists, func, or_, select, text
+from sqlalchemy import and_, case, delete, distinct, exists, func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -5880,7 +5880,31 @@ async def record_field_report_internal(
             "value_kind": statement.excluded.value_kind,
             # A path that has *become* mapped must stop being reported as a gap —
             # that transition is precisely the evidence a fix worked.
-            "metric_type": statement.excluded.metric_type,
+            #
+            # `coalesce`, not a bare overwrite. One import can legitimately see a path
+            # in a payload shape where it maps to nothing — a provider that omits the
+            # field it usually nests under, an entry of a kind the transformer has no
+            # rule for — and a bare overwrite let that single run flip an established
+            # mapping back to NULL. The field would then reappear in "not yet
+            # supported" while being stored perfectly well, which is the one thing
+            # that page must never say.
+            "metric_type": func.coalesce(
+                statement.excluded.metric_type, IngestFieldReport.metric_type
+            ),
+            # The moment support arrived, recorded once and never revised. It is what
+            # separates "became supported" from "was always supported", and therefore
+            # the only thing that can tell a user their missing field now works — and
+            # that its history is worth re-importing.
+            "supported_since": case(
+                (
+                    and_(
+                        IngestFieldReport.metric_type.is_(None),
+                        statement.excluded.metric_type.is_not(None),
+                    ),
+                    statement.excluded.last_seen_at,
+                ),
+                else_=IngestFieldReport.supported_since,
+            ),
             "occurrences": IngestFieldReport.occurrences + statement.excluded.occurrences,
             "last_seen_at": statement.excluded.last_seen_at,
             "last_sync_run_id": statement.excluded.last_sync_run_id,
@@ -5928,6 +5952,79 @@ async def list_unsupported_fields(
         for row, display_name in res.all()
     ]
     return {"tenant_id": tenant_id, "fields": fields}
+
+
+#: How long a field stays on the "newly supported" list after it becomes supported.
+#:
+#: It is a notice, not a permanent record. A field supported six months ago is simply
+#: a supported field, and leaving it here forever would turn a list meant to prompt
+#: an action into a changelog nobody reads.
+NEWLY_SUPPORTED_WINDOW = timedelta(days=90)
+
+
+@app.get("/api/v1/data/quality/newly-supported-fields")
+async def list_newly_supported_fields(
+    within_days: int = Query(
+        NEWLY_SUPPORTED_WINDOW.days,
+        ge=1,
+        le=365,
+        description="How far back a support transition still counts as recent",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Fields that used to arrive unstored and are now being stored.
+
+    The other half of `unsupported-fields`, and the half that answers the question
+    a user actually comes back with: *the thing I reported as missing — does it work
+    now?* Before this, a field that became supported simply vanished from the
+    unsupported list, which is indistinguishable from a field that stopped arriving.
+
+    **Re-checking is a property of importing, not of a sweep.** Whether a provider
+    field maps to a metric is decided by that provider's transformer, which lives in
+    the importer; Core holds no such table and could not evaluate it. So the check
+    happens on every scheduled import, for free, and this endpoint reports the
+    transitions it produced.
+
+    `history_recoverable` is what makes it actionable: a field supported today has a
+    history that was never stored, and a force import over that period is what
+    recovers it. Pull connectors can do that; a push connector's history is only in
+    the device that sent it, and saying so is better than offering a button that
+    silently does nothing.
+    """
+    tenant_id = get_current_tenant_id()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
+    res = await session.execute(
+        select(IngestFieldReport, DataSource.display_name)
+        .join(DataSource, DataSource.id == IngestFieldReport.source_id)
+        .where(
+            IngestFieldReport.tenant_id == tenant_id,
+            IngestFieldReport.supported_since.is_not(None),
+            IngestFieldReport.supported_since >= cutoff,
+        )
+        .order_by(IngestFieldReport.supported_since.desc(), IngestFieldReport.field_path)
+        .limit(500)
+    )
+
+    fields = [
+        {
+            "source_id": row.source_id,
+            "source_type": row.source_type,
+            "connector_name": display_name,
+            "field_path": row.field_path,
+            "metric_type": row.metric_type,
+            "value_kind": row.value_kind,
+            "occurrences": row.occurrences,
+            "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "supported_since": row.supported_since.isoformat(),
+            # The span whose data was never stored for this field: from the first
+            # time it was seen to the moment it started being kept.
+            "unstored_from": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "unstored_until": row.supported_since.isoformat(),
+            "history_recoverable": row.source_type not in PUSH_SOURCE_TYPES,
+        }
+        for row, display_name in res.all()
+    ]
+    return {"tenant_id": tenant_id, "fields": fields, "within_days": within_days}
 
 
 class MetricMappingRequest(BaseModel):

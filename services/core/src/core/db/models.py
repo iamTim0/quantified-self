@@ -516,6 +516,17 @@ class IngestFieldReport(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
     last_sync_run_id: Mapped[str | None] = mapped_column(UUID(as_uuid=False), nullable=True)
+    #: When this path stopped being unsupported.
+    #:
+    #: Set once, by the upsert, at the moment `metric_type` goes from NULL to a
+    #: name, and never cleared. Without it a field that *became* supported is
+    #: indistinguishable afterwards from one that always was, so the question a
+    #: user actually has — "the thing I reported as missing, does it work now?" —
+    #: had no answer, and the history for that field stayed missing with nothing
+    #: recording that it could now be recovered.
+    supported_since: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     __table_args__ = (
         UniqueConstraint(

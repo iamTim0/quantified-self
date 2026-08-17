@@ -70,6 +70,26 @@ type UnsupportedField = {
   last_seen_at: string | null;
 };
 
+/**
+ * A field that used to arrive unstored and is now being stored.
+ *
+ * The other half of `UnsupportedField`. Vanishing from that list is not an answer:
+ * it is indistinguishable from a field that simply stopped arriving.
+ */
+type NewlySupportedField = {
+  source_id: string;
+  source_type: string;
+  connector_name: string;
+  field_path: string;
+  metric_type: string | null;
+  occurrences: number;
+  supported_since: string;
+  unstored_from: string | null;
+  unstored_until: string;
+  /** False for a push connector, whose history lives only on the device. */
+  history_recoverable: boolean;
+};
+
 type QuarantinedMetric = {
   source_id: string;
   source_type: string;
@@ -160,6 +180,7 @@ export default function DataQualityTab({ apiBase }: Props) {
   // Fields a connector is being given and this platform does not store. Shapes
   // only — the response carries a path and a value *kind*, never a value.
   const [unsupported, setUnsupported] = useState<UnsupportedField[]>([]);
+  const [newlySupported, setNewlySupported] = useState<NewlySupportedField[]>([]);
   const [quarantine, setQuarantine] = useState<QuarantinedMetric[]>([]);
   const [quarantineCapacity, setQuarantineCapacity] = useState<QuarantineCapacity[]>([]);
   const [mappingDrafts, setMappingDrafts] = useState<Record<string, MappingDraft>>({});
@@ -183,13 +204,15 @@ export default function DataQualityTab({ apiBase }: Props) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [connectorRes, unsupportedRes, quarantineRes] = await Promise.all([
+      const [connectorRes, unsupportedRes, newlyRes, quarantineRes] = await Promise.all([
         apiFetch(`${apiBase}/api/v1/data/sources`),
         apiFetch(`${apiBase}/api/v1/data/quality/unsupported-fields`),
+        apiFetch(`${apiBase}/api/v1/data/quality/newly-supported-fields`),
         apiFetch(`${apiBase}/api/v1/data/quality/quarantine`),
       ]);
       if (connectorRes.ok) setConnectors((await connectorRes.json()).connectors ?? []);
       if (unsupportedRes.ok) setUnsupported((await unsupportedRes.json()).fields ?? []);
+      if (newlyRes.ok) setNewlySupported((await newlyRes.json()).fields ?? []);
       if (quarantineRes.ok) {
         const data = await quarantineRes.json();
         setQuarantine(data.metrics ?? []);
@@ -553,6 +576,51 @@ export default function DataQualityTab({ apiBase }: Props) {
             ))}
           </ul>
         </article>
+      )}
+
+      {newlySupported.length > 0 && (
+        <section className="rounded-3xl border border-emerald-200 bg-emerald-50/60 p-6 dark:border-emerald-800/70 dark:bg-emerald-950/30">
+          <h2 className="mb-1 font-bold text-emerald-950 dark:text-emerald-100">
+            {t("quality.newlySupportedTitle", { count: String(newlySupported.length) })}
+          </h2>
+          <p className="mb-4 text-xs leading-relaxed text-emerald-900 dark:text-emerald-200">
+            {t("quality.newlySupportedHint")}
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="text-emerald-900 dark:text-emerald-200">
+                <tr>
+                  <th className="py-1 pr-4 font-semibold">{t("quality.colConnector")}</th>
+                  <th className="py-1 pr-4 font-semibold">{t("quality.colField")}</th>
+                  <th className="py-1 pr-4 font-semibold">{t("quality.colMetric")}</th>
+                  <th className="py-1 pr-4 font-semibold">{t("quality.colSince")}</th>
+                  <th className="py-1 font-semibold">{t("quality.colHistory")}</th>
+                </tr>
+              </thead>
+              <tbody className="text-emerald-950 dark:text-emerald-100">
+                {newlySupported.map((field) => (
+                  <tr
+                    key={`${field.source_id}:${field.field_path}`}
+                    className="border-t border-emerald-200/70 dark:border-emerald-800/70"
+                  >
+                    <td className="py-1.5 pr-4">{field.connector_name}</td>
+                    <td className="py-1.5 pr-4 font-mono">{field.field_path}</td>
+                    <td className="py-1.5 pr-4 font-mono">{field.metric_type ?? "—"}</td>
+                    <td className="py-1.5 pr-4">{formatDate(field.supported_since)}</td>
+                    <td className="py-1.5">
+                      {/* Said plainly rather than offered as a button that would do
+                          nothing: a push connector's history is on the device that
+                          sent it, and nothing here can ask for it again. */}
+                      {field.history_recoverable
+                        ? t("quality.historyRecoverable")
+                        : t("quality.historyOnDevice")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
       )}
 
       {unsupported.length > 0 && (

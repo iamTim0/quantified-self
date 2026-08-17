@@ -142,12 +142,18 @@ CREATE TABLE ingest_field_reports (
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_sync_run_id UUID,
+    -- When this path stopped being unsupported. Set once, at the moment metric_type
+    -- goes from NULL to a name, and never cleared: it is what answers "the thing I
+    -- reported as missing, does it work now?".
+    supported_since TIMESTAMPTZ,
     CONSTRAINT uq_field_reports_tenant_source_path UNIQUE (tenant_id, source_id, field_path)
 );
 
 CREATE INDEX idx_field_reports_tenant_source ON ingest_field_reports (tenant_id, source_id);
 CREATE INDEX idx_field_reports_unmapped
     ON ingest_field_reports (tenant_id, source_id) WHERE metric_type IS NULL;
+CREATE INDEX idx_field_reports_newly_supported
+    ON ingest_field_reports (tenant_id, supported_since) WHERE supported_since IS NOT NULL;
 
 -- Unknown metric values stay outside data_points until the tenant resolves their
 -- meaning. These are point rows, not raw provider payload archives.

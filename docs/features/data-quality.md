@@ -10,6 +10,7 @@ for analysis.
 | Data gaps | Days without a value, for metrics that are expected daily (see below) | Check the connector, renew the token, or start the sync again. |
 | Source conflicts | Values for the same metric differ noticeably between sources | [Pick a primary source](metric-source-selection.md), or check the units. |
 | Not yet supported | Fields a connector receives and this platform does not store | Copy the shape-only report, or resolve a held metric below. |
+| Now supported | Fields that used to arrive unstored and are stored now | Re-import that period if the connector can be asked for it again. |
 | Held for decision | Point values whose metric name is not yet recognised | Map, adopt, discard or keep the connector-specific name. |
 
 The gap scan and the conflict scan walk the workspace's history, so they are not computed
@@ -74,6 +75,40 @@ takes the observations with it.
 
 **Copy report** produces a Markdown block of field names, types and counts — no values, no
 identifiers — ready to paste into an issue.
+
+### Is it supported *now*?
+
+A field leaving the unsupported list is not, by itself, an answer. It is
+indistinguishable from a field that simply stopped arriving — and the question a user
+comes back with is the other one: *the thing I reported as missing, does it work now?*
+
+`supported_since` records the transition. It is set once, by the same upsert, at the
+moment a row's `metric_type` goes from `NULL` to a name, and never cleared. The
+**Now supported** panel lists those transitions from the last 90 days.
+
+!!! info "Re-checking is a property of importing, not of a sweep"
+    Whether a provider field maps to a metric is decided by that provider's
+    transformer, which lives in the importer. Core holds no such table and could not
+    evaluate it, so there is no server-side job that could re-check support on a
+    timer.
+
+    It does not need one. Every scheduled import re-reports the field it saw, and the
+    upsert records the transition for free. The list fills itself in as connectors
+    run, which is as often as the data itself is re-checked.
+
+**Earlier data** says whether the gap is recoverable, and it is a real distinction
+rather than a hedge. A pull connector can be asked for the same period again, so a
+force import over `unstored_from … unstored_until` recovers what was never kept. A
+**push** connector's history exists only on the device that sent it — Apple Health
+pushes what the phone decides to push — and nothing here can ask for it again. Saying
+so is better than offering a button that silently does nothing.
+
+!!! warning "A field could previously be un-supported by one odd payload"
+    The upsert overwrote `metric_type` unconditionally. One import that saw a path in
+    a shape its transformer had no rule for — a provider omitting the field it usually
+    nests under, an entry of an unfamiliar kind — flipped an established mapping back
+    to `NULL`, and the field reappeared under **Not yet supported** while being stored
+    perfectly well. It now uses `coalesce`, so support is only ever gained.
 
 The report is collapsed by default so it does not compete with the active quality indicators.
 It is a live schema report, not a deletion queue: a field leaves the list after an importer
