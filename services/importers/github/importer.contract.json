@@ -1,0 +1,53 @@
+{
+  "$schema": "../../tools/importer-contract.schema.json",
+  "contract_version": 1,
+  "source_type": "github",
+  "ingest_subject": "qs.ingest.github",
+  "task_subject": "qs.task.sync.github",
+  "entrypoint": "github_importer.main",
+  "required_modules": ["client.py", "config.py", "main.py", "transformer.py"],
+  "communication": {
+    "ingest": "nats_jetstream",
+    "credentials": "core_internal_http",
+    "database_access": false,
+    "request_correlation": "X-Request-ID"
+  },
+  "ingest_event_fields": [
+    "tenant_id",
+    "source_id",
+    "source_type",
+    "metric_type",
+    "timestamp",
+    "value",
+    "idempotency_key"
+  ],
+  "input_contracts": [
+    {
+      "name": "GitHub GraphQL API",
+      "format": "graphql",
+      "source_of_truth": {
+        "kind": "external_documentation",
+        "reference": "https://docs.github.com/en/graphql/reference/objects#contributionscollection"
+      }
+    }
+  ],
+  "metrics": [
+    "code_commits",
+    "code_contribution_streak",
+    "code_followers",
+    "code_issues_opened",
+    "code_lines_added",
+    "code_lines_removed",
+    "code_pull_requests_merged",
+    "code_pull_requests_opened",
+    "code_repositories_touched",
+    "code_reviews_submitted",
+    "code_stars_received"
+  ],
+  "dynamic_namespaces": ["github_"],
+  "capabilities": {
+    "scheduled_sync": true,
+    "webhook": false,
+    "file_upload": false
+  }
+}

@@ -8,23 +8,24 @@ import ImportRunsOverview from "./ImportRunsOverview";
 import ImporterDetailPage from "./ImporterDetailPage";
 import { plural, useI18n, type MessageKey, type Translate } from "../lib/i18n/provider";
 import {
-  Key,
-  RefreshCw,
-  Settings,
-  ArrowUpRight,
   Activity,
+  ArrowUpRight,
+  BookOpen,
+  CalendarDays,
+  Clock3,
+  CloudSun,
+  Dumbbell,
+  Flame,
+  GitBranch,
+  HousePlug,
+  Key,
+  MapPin,
   Plus,
   Radio,
-  Flame,
-  MapPin,
+  RefreshCw,
+  Settings,
   Smartphone,
   Trash2,
-  Dumbbell,
-  CloudSun,
-  HousePlug,
-  CalendarDays,
-  BookOpen,
-  Clock3,
   X,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
@@ -150,6 +151,14 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     icon: CalendarDays,
     available: true,
     docsPath: "/docs/importers/calendar/",
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    descriptionKey: "connectors.desc.github",
+    icon: GitBranch,
+    available: true,
+    docsPath: "/docs/importers/github/",
   },
 ];
 

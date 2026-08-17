@@ -20,6 +20,7 @@ transformer tests together whenever a provider changes its payload.
 | Home Assistant | active | REST API + long-lived token | `qs.ingest.home_assistant` | Sensor values, temperature, humidity |
 | Weather | active | Open-Meteo-compatible HTTP API | `qs.ingest.weather` | Temperature, pressure, precipitation, UV |
 | Calendar | active | ICS/iCalendar feed URL | `qs.ingest.calendar` | Events, busy hours, meeting duration |
+| [GitHub](github.md) | active | Fine-grained personal access token | `qs.ingest.github` | Commits, lines changed, pull requests, reviews |
 
 ## Healthcheck contract
 

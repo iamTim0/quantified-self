@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     HOME_ASSISTANT_IMPORTER_URL: str = "http://127.0.0.1:8011"
     WEATHER_IMPORTER_URL: str = "http://127.0.0.1:8012"
     CALENDAR_IMPORTER_URL: str = "http://127.0.0.1:8013"
+    GITHUB_IMPORTER_URL: str = "http://127.0.0.1:8014"
     JWT_SECRET: str = _default_jwt_secret()
     JWT_ALGORITHM: str = "HS256"
     ALLOWED_ORIGINS: str = "http://localhost:3000"  # Comma-separated CORS origins

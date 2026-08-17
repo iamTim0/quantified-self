@@ -260,7 +260,7 @@ def _quarantine_capacity_warning(
 # SECURITY H3: Constrain source_type to known connectors
 ValidSourceType = Literal[
     "oura", "whoop", "apple_health", "fitbit", "garmin", "strava", "yazio",
-    "dawarich", "streak", "home_assistant", "weather", "calendar",
+    "dawarich", "streak", "home_assistant", "weather", "calendar", "github",
 ]
 ValidStatus = Literal["active", "inactive"]
 

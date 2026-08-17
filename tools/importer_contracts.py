@@ -22,7 +22,14 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 IMPORTERS_ROOT = REPO_ROOT / "services" / "importers"
 CONTRACT_FILENAME = "importer.contract.json"
 REQUIRED_MODULES = frozenset({"config.py", "client.py", "transformer.py", "main.py"})
-SCHEMA_KINDS = frozenset({"json", "xml", "zip_csv", "zip_xml_gpx", "ics", "rest_json"})
+# `graphql` is distinct from `rest_json` on purpose, even though the response body
+# of both is JSON. What differs is where the shape of the answer is decided: a REST
+# importer takes the endpoint's schema as given, a GraphQL one states it in a query
+# document it ships. That query is the contract, so a reviewer asking "what does
+# this importer read" needs to be pointed at a different artefact.
+SCHEMA_KINDS = frozenset(
+    {"json", "xml", "zip_csv", "zip_xml_gpx", "ics", "rest_json", "graphql"}
+)
 SOURCE_KINDS = frozenset(
     {"external_documentation", "rfc", "repository_adapter", "generated_schema"}
 )

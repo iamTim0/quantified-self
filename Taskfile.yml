@@ -351,6 +351,11 @@ tasks:
     cmds:
       - uv run --directory services/importers/calendar python -m calendar_importer.main
 
+  run:importer:github:
+    desc: "Run the GitHub importer microservice"
+    cmds:
+      - uv run --directory services/importers/github python -m github_importer.main
+
   run:importer:dawarich:
     desc: "Run the Dawarich location importer microservice"
     cmds:

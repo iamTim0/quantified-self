@@ -159,13 +159,6 @@ export type DayStory = {
 };
 
 /**
- * Category identifiers the server sends, mapped to catalogue keys.
- *
- * Typed as `MessageKey`, not `string`: the whole point of the flat catalogue
- * is that a key which exists in neither language is a compile error rather
- * than an empty element at runtime.
- */
-/**
  * Meal identifiers the server sends, mapped to catalogue keys.
  *
  * A group the server names but this map does not know keeps its own name rather
@@ -180,6 +173,13 @@ export const MEAL_LABEL: Record<string, MessageKey> = {
   other: "day.mealOther",
 };
 
+/**
+ * Category identifiers the server sends, mapped to catalogue keys.
+ *
+ * Typed as `MessageKey`, not `string`: the whole point of the flat catalogue
+ * is that a key which exists in neither language is a compile error rather
+ * than an empty element at runtime.
+ */
 export const LANE_LABEL: Record<string, MessageKey> = {
   sleep: "day.laneSleep",
   activity: "day.laneActivity",
@@ -192,6 +192,7 @@ export const LANE_LABEL: Record<string, MessageKey> = {
   calendar: "day.laneCalendar",
   environment: "day.laneEnvironment",
   home: "day.laneHome",
+  developer: "day.laneDeveloper",
   custom: "day.laneCustom",
 };
 

@@ -130,6 +130,7 @@ LANE_ORDER: tuple[MetricCategory, ...] = (
     MetricCategory.CALENDAR,
     MetricCategory.ENVIRONMENT,
     MetricCategory.HOME,
+    MetricCategory.DEVELOPER,
     # Last, but present: a metric adopted under the `custom_` namespace is a
     # metric the workspace deliberately created, and leaving it out of the
     # order silently dropped it from the day after aggregating it.

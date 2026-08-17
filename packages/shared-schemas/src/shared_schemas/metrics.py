@@ -174,6 +174,14 @@ class MetricCategory(StrEnum):
     CALENDAR = "calendar"
     ENVIRONMENT = "environment"
     HOME = "home"
+    #: Work recorded by a code-hosting platform: commits, changed lines, reviews.
+    #:
+    #: Its own category rather than a corner of `ACTIVITY`, because "commits" beside
+    #: "steps" in one lane is not a grouping anybody reads as meaningful. The names
+    #: underneath it say what was measured and not who measured it (rule 15) —
+    #: `code_commits`, not `github_commits` — so a second forge reporting the same
+    #: quantity later writes the same series rather than a parallel one.
+    DEVELOPER = "developer"
     CUSTOM = "custom"
 
 
@@ -2164,6 +2172,172 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         plausible_max=1_440,
         precision=0,
     ),
+    # ── Developer activity ────────────────────────────────────────────────────
+    #
+    # `code_`, not `github_`. A commit is a commit whether GitHub, GitLab or a
+    # self-hosted forge reported it, and rule 15 is explicit that a name states what
+    # was measured and never who measured it. The forge travels in `metadata`, and
+    # `resolve_primary_source` is what settles it if two of them ever report the same
+    # day — the same machinery that already settles two watches reporting `steps`.
+    #
+    # Per-repository series are deliberately *not* here: which repositories exist is
+    # a property of one person's account, not of the platform, so they go under the
+    # `github_` namespace below exactly as Home Assistant's entities do.
+    MetricDefinition(
+        key="code_commits",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Commits",
+        label_en="Commits",
+        sources=("github",),
+        plausible_min=0,
+        plausible_max=2_000,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_lines_added",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Hinzugefügte Zeilen",
+        label_en="Lines added",
+        sources=("github",),
+        # No upper bound worth defending. A single commit that vendors a dependency
+        # or checks in a generated lockfile is legitimately hundreds of thousands of
+        # lines, and a plausibility ceiling here would flag real days as suspect.
+        plausible_min=0,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_lines_removed",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Entfernte Zeilen",
+        label_en="Lines removed",
+        sources=("github",),
+        plausible_min=0,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_repositories_touched",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.MAX,
+        category=MetricCategory.DEVELOPER,
+        label_de="Bearbeitete Repositories",
+        label_en="Repositories touched",
+        sources=("github",),
+        # `MAX`, not `SUM`. This is a count of *distinct* repositories in a day, and
+        # adding two days' distinct counts together answers a question nobody asked:
+        # a week of touching the same repository daily would report seven.
+        plausible_min=0,
+        plausible_max=200,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_pull_requests_opened",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Geöffnete Pull Requests",
+        label_en="Pull requests opened",
+        sources=("github",),
+        plausible_min=0,
+        plausible_max=200,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_pull_requests_merged",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Gemergte Pull Requests",
+        label_en="Pull requests merged",
+        sources=("github",),
+        plausible_min=0,
+        plausible_max=200,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_reviews_submitted",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Abgegebene Reviews",
+        label_en="Reviews submitted",
+        sources=("github",),
+        plausible_min=0,
+        plausible_max=500,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_issues_opened",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.SUM,
+        category=MetricCategory.DEVELOPER,
+        label_de="Geöffnete Issues",
+        label_en="Issues opened",
+        sources=("github",),
+        plausible_min=0,
+        plausible_max=500,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    # No `code_issues_closed`. GitHub's contribution collection reports issues
+    # *opened* per day and nothing equivalent for closing one — the closest is a
+    # search query, which answers a whole range rather than a day and cannot
+    # distinguish "closed by me" from "assigned to me". A registered `DAILY` metric
+    # that nothing ever writes is worse than an absent one: the gap scan would
+    # report a permanent, unfixable gap for every day of the workspace's history.
+    MetricDefinition(
+        key="code_contribution_streak",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.LAST,
+        category=MetricCategory.DEVELOPER,
+        label_de="Aktuelle Serie",
+        label_en="Current streak",
+        sources=("github",),
+        # `LAST`, because a streak is a standing figure like body weight: the number
+        # today, not a total of the numbers so far.
+        plausible_min=0,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_followers",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.LAST,
+        category=MetricCategory.DEVELOPER,
+        label_de="Follower",
+        label_en="Followers",
+        sources=("github",),
+        plausible_min=0,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
+    MetricDefinition(
+        key="code_stars_received",
+        unit=MetricUnit.COUNT,
+        aggregation=Aggregation.LAST,
+        category=MetricCategory.DEVELOPER,
+        label_de="Sterne insgesamt",
+        label_en="Stars received",
+        sources=("github",),
+        # The standing total across the account's own repositories, so `LAST` for the
+        # same reason as `code_followers`. A day's *change* is a question the analysis
+        # can ask of a `LAST` series; a `SUM` here would make it unanswerable.
+        plausible_min=0,
+        precision=0,
+        cadence=Cadence.DAILY,
+    ),
     # ── Environment ───────────────────────────────────────────────────────────
     MetricDefinition(
         key="weather_temperature",
@@ -2303,6 +2477,20 @@ DYNAMIC_NAMESPACES: tuple[MetricNamespace, ...] = (
         label_de="Apple Health (nicht katalogisiert)",
         label_en="Apple Health (uncatalogued)",
         sources=("apple_health",),
+    ),
+    MetricNamespace(
+        prefix="github_",
+        category=MetricCategory.DEVELOPER,
+        # Per-repository series. Which repositories exist is a property of one
+        # person's account, not of the platform, so cataloguing them is not possible
+        # and inventing bare names for them would break rule 15 twice over — the name
+        # would carry the forge *and* be unregistered.
+        #
+        # The account-wide totals are catalogued as `code_*` instead; this namespace
+        # is only ever the breakdown beneath them.
+        label_de="GitHub (pro Repository)",
+        label_en="GitHub (per repository)",
+        sources=("github",),
     ),
     MetricNamespace(
         prefix="custom_",

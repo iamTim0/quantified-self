@@ -59,6 +59,19 @@ The complete machine-readable contract is next to the importer service.
 
 The complete machine-readable contract is next to the importer service.
 
+## `github`
+
+- Ingest subject: `qs.ingest.github`
+- Task subject: `qs.task.sync.github`
+- Entrypoint: `github_importer.main`
+- Capabilities: scheduled sync `true`, webhook `false`, file upload `false`
+- Input contracts:
+  - `GitHub GraphQL API` (`graphql`; [source](https://docs.github.com/en/graphql/reference/objects#contributionscollection))
+- Registered metrics: `code_commits`, `code_contribution_streak`, `code_followers`, `code_issues_opened`, `code_lines_added`, `code_lines_removed`, `code_pull_requests_merged`, `code_pull_requests_opened`, `code_repositories_touched`, `code_reviews_submitted`, `code_stars_received`
+- Dynamic namespaces: `github_`
+
+The complete machine-readable contract is next to the importer service.
+
 ## `home_assistant`
 
 - Ingest subject: `qs.ingest.home_assistant`

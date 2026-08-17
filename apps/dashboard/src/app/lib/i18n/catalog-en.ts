@@ -207,6 +207,7 @@ export const en = {
   "day.laneCalendar": "Calendar",
   "day.laneEnvironment": "Weather",
   "day.laneHome": "Home",
+  "day.laneDeveloper": "Code",
   "day.laneCustom": "Your own metrics",
   "day.laneOther": "Other",
 
@@ -367,6 +368,7 @@ export const en = {
   "connectors.desc.home_assistant": "Temperature, humidity, light and sound sensors.",
   "connectors.desc.weather": "Temperature, air pressure, precipitation and the UV index.",
   "connectors.desc.calendar": "ICS feeds: appointments, meeting duration and busy hours per day.",
+  "connectors.desc.github": "Commits, changed lines, pull requests and reviews per day, and per repository.",
   "connectors.nameWeather": "Weather",
   "connectors.nameCalendar": "Calendar",
   "connectors.confirmDelete":
@@ -827,6 +829,7 @@ export const en = {
   "modal.desc.weather":
     "Active: imports local weather time series through an Open-Meteo compatible API.",
   "modal.desc.calendar": "Active: imports the appointments you expose and the busy time per day.",
+  "modal.desc.github": "Active: reads your own contribution activity with a fine-grained access token.",
   "modal.needEmailPassword": "Please enter both an email address and a password.",
   "modal.needYazioToken": "Please enter a Yazio bearer access token.",
   "modal.needDawarichKey": "Please enter the Dawarich API key.",

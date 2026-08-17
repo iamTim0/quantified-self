@@ -1,0 +1,41 @@
+# Built from the repository root, not from services/importers/github.
+#
+# The importer resolves every metric name and unit through packages/shared-schemas,
+# and a path dependency cannot be resolved from outside the build context. The COPY
+# layout preserves the repository's relative structure so
+# `../../../packages/shared-schemas` in pyproject.toml resolves the same way inside
+# the image as it does on a developer's machine -- the same reason Core builds from
+# the root for packages/proto.
+#
+# Build:  docker build -f services/importers/github/Dockerfile .
+FROM python:3.12-slim
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+WORKDIR /app
+
+# Dependency manifests first so a source-only change does not re-resolve.
+COPY packages/shared-schemas/pyproject.toml ./packages/shared-schemas/
+COPY packages/shared-schemas/src ./packages/shared-schemas/src
+COPY services/importers/github/pyproject.toml services/importers/github/uv.lock ./services/importers/github/
+
+WORKDIR /app/services/importers/github
+# --frozen: build what the lockfile says, and fail rather than silently
+# re-resolving to something that was never tested.
+RUN uv sync --frozen --no-install-project
+
+COPY services/importers/github/src/ ./src/
+RUN uv sync --frozen
+
+ARG SOURCE_VERSION=dev
+ARG SOURCE_COMMIT=unknown
+ENV QS_SERVICE_VERSION=$SOURCE_VERSION
+ENV QS_SOURCE_COMMIT=$SOURCE_COMMIT
+ENV PATH="/app/services/importers/github/.venv/bin:${PATH}"
+
+EXPOSE 8014
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8014/health', timeout=3)"
+
+CMD ["python", "-m", "github_importer.main"]

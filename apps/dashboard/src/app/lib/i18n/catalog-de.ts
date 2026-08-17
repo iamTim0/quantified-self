@@ -209,6 +209,7 @@ export const de: Record<MessageKey, string> = {
   "day.laneCalendar": "Kalender",
   "day.laneEnvironment": "Wetter",
   "day.laneHome": "Zuhause",
+  "day.laneDeveloper": "Code",
   "day.laneCustom": "Eigene Metriken",
   "day.laneOther": "Sonstiges",
 
@@ -371,6 +372,7 @@ export const de: Record<MessageKey, string> = {
   "connectors.desc.home_assistant": "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.",
   "connectors.desc.weather": "Temperatur, Luftdruck, Niederschlag und UV-Index.",
   "connectors.desc.calendar": "ICS-Feeds, Termine, Meetingdauer und Busy Hours pro Tag.",
+  "connectors.desc.github": "Commits, geänderte Zeilen, Pull Requests und Reviews pro Tag und pro Repository.",
   "connectors.nameWeather": "Wetter",
   "connectors.nameCalendar": "Kalender",
   "connectors.confirmDelete":
@@ -836,6 +838,7 @@ export const de: Record<MessageKey, string> = {
   "modal.desc.weather":
     "Aktiv: Importiert lokale Wetterzeitreihen über eine Open-Meteo-kompatible API.",
   "modal.desc.calendar": "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
+  "modal.desc.github": "Aktiv: Liest deine eigene Beitragsaktivität mit einem fein granularen Access Token.",
   "modal.needEmailPassword": "Bitte gib sowohl E-Mail als auch Passwort ein.",
   "modal.needYazioToken": "Bitte gib einen Yazio Bearer Access Token ein.",
   "modal.needDawarichKey": "Bitte gib den Dawarich API Key ein.",

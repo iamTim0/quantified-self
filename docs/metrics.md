@@ -282,12 +282,29 @@ dashboard picks whichever matches the reader's language.
 | `calendar_busy_duration` | Busy time | `min` | `sum` | calendar | `calendar_busy_minutes` |
 | `calendar_meeting_duration` | Meeting duration | `min` | `sum` | calendar | `calendar_meeting_duration_minutes` |
 
+### developer
+
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
+| --- | --- | --- | --- | --- | --- |
+| `code_commits` | Commits | `count` | `sum` | github | — |
+| `code_lines_added` | Lines added | `count` | `sum` | github | — |
+| `code_lines_removed` | Lines removed | `count` | `sum` | github | — |
+| `code_repositories_touched` | Repositories touched | `count` | `max` | github | — |
+| `code_pull_requests_opened` | Pull requests opened | `count` | `sum` | github | — |
+| `code_pull_requests_merged` | Pull requests merged | `count` | `sum` | github | — |
+| `code_reviews_submitted` | Reviews submitted | `count` | `sum` | github | — |
+| `code_issues_opened` | Issues opened | `count` | `sum` | github | — |
+| `code_contribution_streak` | Current streak | `count` | `last` | github | — |
+| `code_followers` | Followers | `count` | `last` | github | — |
+| `code_stars_received` | Stars received | `count` | `last` | github | — |
+
 ### Dynamic namespaces
 
 | Prefix | Meaning | Sources |
 | --- | --- | --- |
 | `home_assistant_` | Home Assistant | home_assistant |
 | `apple_health_` | Apple Health (uncatalogued) | apple_health |
+| `github_` | GitHub (per repository) | github |
 | `custom_` | Custom metric | manual import |
 
 <!-- END GENERATED METRIC TABLE -->

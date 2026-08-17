@@ -373,6 +373,7 @@ services:
       - HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011
       - WEATHER_IMPORTER_URL=http://weather-importer:8012
       - CALENDAR_IMPORTER_URL=http://calendar-importer:8013
+      - GITHUB_IMPORTER_URL=http://github-importer:8014
       # Traefik routes / to the dashboard directly, so this only matters for a
       # request that reaches the Gateway on its own port. In this network the UI
       # is the container; the code default is loopback, for a local checkout.
@@ -698,6 +699,31 @@ services:
       start_period: 20s
     expose:
       - "8013"
+    networks:
+      - qs-network
+
+  github-importer:
+    image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/importer-github:${QS_VERSION:-latest}
+    restart: always
+    depends_on:
+      core:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
+      - CORE_SERVICE_URL=http://core:8001
+      - ANALYSIS_SERVICE_URL=http://analysis:8010
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}
+      - HEALTH_PORT=8014
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8014/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    expose:
+      - "8014"
     networks:
       - qs-network
 

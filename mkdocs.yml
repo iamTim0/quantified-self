@@ -33,6 +33,7 @@ nav:
       - Home Assistant: importers/home-assistant.md
       - Weather: importers/weather.md
       - Calendar: importers/calendar.md
+      - GitHub: importers/github.md
   - Features:
       - Dashboard appearance: features/dashboard-appearance.md
       - The daily story: features/daily-story.md
