@@ -209,7 +209,15 @@ def transform_window(
                 "github_login": window.login,
             }
             if metric_type in (METRIC_LINES_ADDED, METRIC_LINES_REMOVED):
-                metadata["derived_from"] = ["repository.commit.additions"]
+                # The field this actually summed, not the pair it belongs to. A
+                # removed-lines figure that says it came from `additions` is a
+                # number nobody can audit against the provider, which is the one
+                # thing `derived_from` exists to prevent (rule 19).
+                metadata["derived_from"] = [
+                    "repository.commit.additions"
+                    if metric_type == METRIC_LINES_ADDED
+                    else "repository.commit.deletions"
+                ]
                 metadata["derived_by"] = "sum"
                 metadata["sample_count"] = len(window.repositories)
                 if truncated_repositories:

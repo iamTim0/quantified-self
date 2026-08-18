@@ -320,13 +320,6 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
 }
 
 /**
- * Message codes this build knows how to say in the reader's language.
- *
- * A set rather than a map, because the key is derived from the code — the check is
- * only "do we have words for this", and anything else falls back to the server's own
- * English sentence rather than rendering a raw identifier.
- */
-/**
  * The codes this build can say in the reader's language.
  *
  * A whitelist rather than a bare `t(key)` because `translate()` falls back to

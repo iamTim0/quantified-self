@@ -16,6 +16,7 @@ from github_importer.client import ContributionWindow, RepositoryActivity
 from github_importer.transformer import (
     METRIC_COMMITS,
     METRIC_LINES_ADDED,
+    METRIC_LINES_REMOVED,
     METRIC_PRS_MERGED,
     METRIC_REPOSITORIES,
     METRIC_STARS,
@@ -150,12 +151,20 @@ def test_per_repository_series_omit_the_quiet_days():
 
 
 def test_line_counts_are_marked_as_derived():
+    """And each names the field it actually summed.
+
+    Asserting only that `derived_from` is non-empty is what let both metrics claim
+    `additions` for a release: a removed-lines figure that cites the additions field
+    cannot be audited against the provider, which is the whole purpose of recording
+    provenance (rule 19).
+    """
     window = _window(
         repositories=[
             RepositoryActivity(
                 name_with_owner="octocat/a",
                 commits_by_day={"2026-08-11": 1},
                 additions_by_day={"2026-08-11": 200},
+                deletions_by_day={"2026-08-11": 75},
             )
         ]
     )
@@ -163,7 +172,13 @@ def test_line_counts_are_marked_as_derived():
     day = next(p for p in added if p["metadata"]["day"] == "2026-08-11")
     assert day["value"] == 200.0
     assert day["metadata"]["derived_by"] == "sum"
-    assert day["metadata"]["derived_from"]
+    assert day["metadata"]["derived_from"] == ["repository.commit.additions"]
+
+    removed = [p for p in _points(window) if p["metric_type"] == METRIC_LINES_REMOVED]
+    removed_day = next(p for p in removed if p["metadata"]["day"] == "2026-08-11")
+    assert removed_day["value"] == 75.0
+    assert removed_day["metadata"]["derived_by"] == "sum"
+    assert removed_day["metadata"]["derived_from"] == ["repository.commit.deletions"]
 
 
 def test_a_truncated_commit_scan_says_the_line_count_is_partial():
