@@ -6,6 +6,10 @@ import {
   type Page,
 } from "@playwright/test";
 
+import AxeBuilder from "@axe-core/playwright";
+
+import { KNOWN_VIOLATIONS, violationKey } from "./appearance-allowlist";
+import { horizontalOverflow, settle, targetSizes } from "./appearance-checks";
 import { REPORT_ROUTES, useBrokenReportFixtures, useMinimalReportFixtures } from "./fixtures";
 import { API_BASE, newAccount, signInAnyWidth, signUp } from "./helpers";
 
@@ -30,6 +34,15 @@ import { API_BASE, newAccount, signInAnyWidth, signUp } from "./helpers";
  */
 
 const VIEWPORT = { width: 1280, height: 900 };
+
+/** As in the appearance suites: `hasTouch` is what makes `pointer: coarse` true. */
+const VIEWPORTS = {
+  phone: { viewport: { width: 390, height: 844 }, hasTouch: true },
+  laptop: { viewport: { width: 1440, height: 900 }, hasTouch: false },
+} as const;
+
+const SHOTS = process.env.QS_SHOTS === "1";
+const SHOT_DIR = process.env.QS_SHOT_DIR ?? "/tmp/qs-filled";
 
 test.describe("a stored report from another release", () => {
   let context: BrowserContext;
@@ -94,48 +107,97 @@ test.describe("a stored report from another release", () => {
  * which this app does not do. So the second half of the answer is that a throw stops
  * at a boundary instead of taking the document with it.
  *
- * The assertion that matters is the last one: **the navigation is still there.** Next's
- * built-in fallback has none, so a reader whose analysis tab broke could not reach the
- * overview without editing the URL. That is the difference between one broken screen
- * and a dashboard that is down, and it is the whole reason the boundary sits inside the
- * `(dashboard)` group rather than at the app root.
+ * The crash screen is measured with the same checks as every other screen, in both
+ * themes and at both widths, because it is a state nobody had ever looked at and the
+ * one a reader meets at the worst possible moment. A dark-mode contrast fault or a
+ * button under the tap-target floor is not more forgivable here than anywhere else —
+ * it is less, because this is the screen someone is trying to get out of.
  */
-test.describe("a payload that throws anyway", () => {
-  let context: BrowserContext;
-  let page: Page;
+for (const theme of ["light", "dark"] as const) {
+  for (const [viewportName, { viewport, hasTouch }] of Object.entries(VIEWPORTS)) {
+    test.describe(`a payload that throws anyway, ${theme}, ${viewportName}`, () => {
+      let context: BrowserContext;
+      let page: Page;
 
-  test.beforeAll(async ({ browser }) => {
-    const api = await apiRequest.newContext({ baseURL: API_BASE });
-    const account = newAccount();
-    await signUp(api, account);
-    await api.dispose();
+      test.beforeAll(async ({ browser }) => {
+        const api = await apiRequest.newContext({ baseURL: API_BASE });
+        const account = newAccount();
+        await signUp(api, account);
+        await api.dispose();
 
-    context = await browser.newContext({
-      baseURL: API_BASE,
-      locale: "en-GB",
-      viewport: VIEWPORT,
+        context = await browser.newContext({
+          baseURL: API_BASE,
+          locale: "en-GB",
+          viewport,
+          hasTouch,
+        });
+        page = await context.newPage();
+        await page.addInitScript(
+          ([key, value]) => window.localStorage.setItem(key, value),
+          ["qs-theme", theme],
+        );
+        await useBrokenReportFixtures(page);
+        await signInAnyWidth(page, account);
+      });
+
+      test.afterAll(async () => {
+        await context?.close();
+      });
+
+      test("the reader gets a page they can act on, and keeps the navigation", async () => {
+        await page.goto("/quality");
+        await settle(page);
+
+        await expect(
+          page.getByRole("alert").getByText("This screen stopped working"),
+        ).toBeVisible();
+        // Something to do, rather than a dead end. Which of the three helps depends
+        // on the cause, so all three are offered.
+        await expect(page.getByRole("button", { name: /try this screen again/i })).toBeVisible();
+        await expect(page.getByRole("button", { name: /reload the page/i })).toBeVisible();
+        await expect(page.getByRole("link", { name: /back to the overview/i })).toBeVisible();
+        // The detail a bug report needs is present but not shouted.
+        await expect(page.getByText("Technical detail")).toBeVisible();
+
+        // The layout above the boundary survived, which is the point of where it sits:
+        // Next's own fallback has no navigation, so a reader whose screen broke could
+        // not reach a working one without editing the URL.
+        await expect(page.getByRole("navigation").first()).toBeVisible();
+
+        if (SHOTS) {
+          await page.screenshot({
+            path: `${SHOT_DIR}/${viewportName}-${theme}-crash.png`,
+            fullPage: true,
+          });
+        }
+
+        // ── The same three measurements as every other screen ──────────────
+        const scan = await new AxeBuilder({ page })
+          .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+          .analyze();
+        const fresh = scan.violations.filter(
+          (violation) => !KNOWN_VIOLATIONS.has(violationKey("/crash", theme, violation.id)),
+        );
+        expect(
+          fresh,
+          `accessibility violations on the crash screen (${theme}, ${viewportName}):\n` +
+            fresh.map((v) => `  ${v.id} (${v.impact}): ${v.help}`).join("\n"),
+        ).toEqual([]);
+
+        const overflow = await horizontalOverflow(page);
+        expect(
+          overflow.offenders,
+          `the crash screen overflows horizontally at ${viewport.width}px; ` +
+            `offenders: ${overflow.offenders.join(", ")}`,
+        ).toEqual([]);
+
+        const targets = await targetSizes(page);
+        expect(
+          targets.tooSmall,
+          `the crash screen has controls below the WCAG 2.5.8 floor of 24x24 at ` +
+            `${viewport.width}px: ${targets.tooSmall.join(", ")}`,
+        ).toEqual([]);
+      });
     });
-    page = await context.newPage();
-    await useBrokenReportFixtures(page);
-    await signInAnyWidth(page, account);
-  });
-
-  test.afterAll(async () => {
-    await context?.close();
-  });
-
-  test("the reader gets a page they can act on, and keeps the navigation", async () => {
-    await page.goto("/quality");
-    await page.waitForLoadState("networkidle");
-
-    await expect(page.getByRole("alert").getByText("This screen stopped working")).toBeVisible();
-    // Something to do, rather than a dead end.
-    await expect(page.getByRole("button", { name: /try this screen again/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /reload the page/i })).toBeVisible();
-    // The detail a bug report needs is present but not shouted.
-    await expect(page.getByText("Technical detail")).toBeVisible();
-
-    // The layout above the boundary survived, which is the point of where it sits.
-    await expect(page.getByRole("navigation").first()).toBeVisible();
-  });
-});
+  }
+}
