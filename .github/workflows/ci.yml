@@ -28,8 +28,8 @@ jobs:
     name: Ruff
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Ruff
@@ -53,8 +53,8 @@ jobs:
           --health-cmd "pg_isready -U qs_dev -d quantified_self"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -108,8 +108,8 @@ jobs:
     name: Analysis
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       # No database service on purpose. This suite includes a boundary test that
@@ -137,8 +137,8 @@ jobs:
           --health-cmd "pg_isready -U qs_dev -d quantified_self"
           --health-interval 5s --health-timeout 5s --health-retries 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       # Bun, not Node. The dashboard had two lockfiles that disagreed -- CI
@@ -181,7 +181,7 @@ jobs:
 
       - name: Cache Chromium
         id: pw-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
@@ -275,7 +275,7 @@ jobs:
         run: bunx playwright test
         working-directory: apps/dashboard
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -288,7 +288,7 @@ jobs:
     name: Spec lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Structural check only -- it explores no state space and proves nothing
       # about the invariants. It runs here because it takes seconds and needs no
       # download, and it catches the mistakes that made the specs unrunnable in
@@ -314,7 +314,7 @@ jobs:
       - name: Image manifest complete
         run: python tools/build_images.py --check
 
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -343,7 +343,7 @@ jobs:
     outputs:
       importers: ${{ steps.list.outputs.importers }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Discovered, not written out. This list was eight names by hand, and
       # `task test:importers` globs the directory -- so a ninth importer was
       # tested locally and silently never in CI. One source now answers both.
@@ -362,8 +362,8 @@ jobs:
       matrix:
         importer: ${{ fromJSON(needs.importer-list.outputs.importers) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Test ${{ matrix.importer }}
@@ -378,7 +378,7 @@ jobs:
       run:
         working-directory: apps/dashboard
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.x"
@@ -417,8 +417,8 @@ jobs:
     name: Documentation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
       - name: Build site (strict)
@@ -460,7 +460,7 @@ jobs:
             'docs/**/*.md' 'README.md'
           fail: true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: docs-site
           path: site/
