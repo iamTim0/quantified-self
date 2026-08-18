@@ -219,12 +219,12 @@ interface Correlation {
   spearman: number;
   coefficient: number;
   strength_pct: number;
-  direction: string;
+  direction: "positive" | "negative";
   strength_label: string;
   sample_size: number;
   p_value: number;
   q_value?: number;
-  multiple_testing_method?: string;
+  multiple_testing_method?: "benjamini_hochberg";
   significant: boolean;
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
@@ -242,14 +242,14 @@ interface LaggedCorrelation {
   sample_size: number;
   p_value: number;
   significant: boolean;
-  significance_method?: string;
+  significance_method?: "unadjusted_exploratory";
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
   interpretation: string;
 }
 
 interface Trend {
-  direction: string;
+  direction: "rising" | "falling" | "flat";
   slope_per_day: number;
   change_pct_over_window: number;
   r_squared: number;
@@ -266,14 +266,30 @@ interface Anomaly {
   normal_range_low: number;
   normal_range_high: number;
   sample_size: number;
-  anomalies: { date: string; value: number; deviation_score: number; direction: string }[];
+  anomalies: {
+    date: string;
+    value: number;
+    deviation_score: number;
+    direction: "unusually high" | "unusually low";
+  }[];
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
   interpretation: string;
 }
 
 interface Routine {
-  per_weekday: { weekday: string; mean: number | null; sample_size: number }[];
+  per_weekday: {
+    weekday:
+      | "monday"
+      | "tuesday"
+      | "wednesday"
+      | "thursday"
+      | "friday"
+      | "saturday"
+      | "sunday";
+    mean: number | null;
+    sample_size: number;
+  }[];
   weekend_effect: {
     weekday_mean: number;
     weekend_mean: number;
@@ -303,8 +319,8 @@ interface Quality {
  * is zero at every session and calling that flat would be a wrong answer.
  */
 interface StrengthTrend {
-  direction: string;
-  basis: string;
+  direction: "rising" | "falling" | "flat";
+  basis: "estimated_1rm" | "volume" | "reps" | "none";
   change_pct_over_window: number;
   r_squared: number;
   sample_size: number;
@@ -559,7 +575,10 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
         </article>
       )}
 
-      <div className="overflow-x-auto rounded-2xl border border-line">
+      <div
+        className="overflow-x-auto rounded-2xl border border-line outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        tabIndex={0}
+      >
         <table className="w-full min-w-[560px] text-xs">
           <thead className="bg-page text-left">
             <tr>

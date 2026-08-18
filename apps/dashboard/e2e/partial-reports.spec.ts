@@ -130,6 +130,20 @@ for (const theme of ["light", "dark"] as const) {
           locale: "en-GB",
           viewport,
           hasTouch,
+          // Contrast is measured on resolved colours, so nothing may be mid-transition
+          // when axe runs. Clicking a section tab and measuring immediately caught the
+          // button while `transition-colors` was interpolating, and axe reported
+          // `#dee1e4` on `#36785c` — two blends that appear in no token file, failing at
+          // 4.0:1 while the real pair (white on `#0d5c3a`) passes comfortably. A test
+          // that invents a contrast defect is worse than one that misses a real one,
+          // because somebody goes and "fixes" a correct colour.
+          //
+          // `reducedMotion` rather than a timeout: `globals.css` already collapses every
+          // transition to 0.01ms under `prefers-reduced-motion`, so this is a mode the
+          // app genuinely supports and every measurement becomes deterministic instead
+          // of racing an animation. `expandCollapsedSections` keeps its wait — a
+          // disclosure still needs a layout frame to reach its height.
+          reducedMotion: "reduce",
         });
         page = await context.newPage();
         await page.addInitScript(
