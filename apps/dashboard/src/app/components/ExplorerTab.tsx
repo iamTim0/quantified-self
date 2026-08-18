@@ -1010,6 +1010,42 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       </p>
     ) : null;
 
+  /**
+   * The selected metrics do not share a unit, and the chart has one axis.
+   *
+   * The comment beside `<ExplorerChart>` already makes this argument for
+   * *aggregation* — "one dialect for the whole chart was a lie the moment two
+   * selected metrics disagreed" — and the same sentence is true of units, where
+   * nobody had made it. Steps, resting heart rate and sleep duration on one linear
+   * axis is not a subtle distortion: the steps series peaks around two thousand and
+   * flattens the other two into a single line along the bottom, so a reader who
+   * selected three metrics is shown one and cannot tell.
+   *
+   * Named rather than fixed, deliberately. Per-unit axes are a design change to the
+   * main chart and only work for two units; normalising to each series' own maximum
+   * changes what the axis *means*, which is a worse thing to do quietly than to
+   * leave the scale alone and say what it is doing. So this states the fact, names
+   * the units involved, and points at the two ways out. A distortion a reader has
+   * been told about is a scale; one they have not been told about is a wrong answer.
+   */
+  const unitMismatchNote = useMemo(() => {
+    if (view !== "chart" || selectedMetrics.length < 2) return null;
+    const units = Array.from(
+      new Set(
+        selectedMetrics
+          .map((metric) => describeMetric(metric, locale).unit)
+          // Dimensionless metrics carry no unit and cannot disagree with one.
+          .filter((unit) => unit !== ""),
+      ),
+    );
+    if (units.length < 2) return null;
+    return (
+      <p className="rounded-2xl border border-warn-line bg-warn-soft px-3.5 py-2.5 text-meta leading-relaxed text-warn-ink">
+        {t("explorer.mixedUnits", { units: units.join(", ") })}
+      </p>
+    );
+  }, [view, selectedMetrics, locale, t]);
+
   const scopeBanner =
     metricScope !== null ? (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ok-line bg-ok-soft px-3.5 py-2.5">
@@ -1188,6 +1224,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {periodFilter}
             {scopeBanner}
             {seriesQueryNote}
+            {unitMismatchNote}
             {truncationNote}
           </div>
 

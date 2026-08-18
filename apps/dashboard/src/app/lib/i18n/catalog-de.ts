@@ -825,6 +825,8 @@ export const de: Record<MessageKey, string> = {
   "explorer.rawCount_other": "{count} Treffer",
   "explorer.rawTruncated": "Angezeigt werden die neuesten {shown} von {total} Treffern.",
   "explorer.liveQuery": "Live-TimescaleDB-Abfrage",
+  "explorer.mixedUnits":
+    "Diese Metriken werden in unterschiedlichen Einheiten gemessen ({units}) und teilen eine Achse — eine Reihe mit kleineren Werten wird dadurch von einer größeren plattgedrückt. Vergleiche jeweils eine Einheit, oder nutze die Metrik-Übersicht.",
   "explorer.seriesQueryNote":
     "Jede ausgewählte Metrik wird separat als aktuelle serverseitige Reihe geladen. Die API wendet die metrikgerechte Aggregation an; fehlende Zeitabschnitte bleiben leer.",
   "explorer.rawSeriesQueryNote":

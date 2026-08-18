@@ -823,6 +823,8 @@ export const en = {
   "explorer.rawCount_other": "{count} matches",
   "explorer.rawTruncated": "Showing the newest {shown} of {total} matches.",
   "explorer.liveQuery": "Live TimescaleDB query",
+  "explorer.mixedUnits":
+    "These metrics are measured in different units ({units}) and share one axis, so a series with smaller values is flattened against a larger one. Compare them one unit at a time, or use the metric overview.",
   "explorer.seriesQueryNote":
     "Each selected metric is loaded separately as a recent server-side series. Metric-aware aggregation is applied by the API; missing buckets remain empty.",
   "explorer.rawSeriesQueryNote":

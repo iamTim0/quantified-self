@@ -147,6 +147,20 @@ This is how the chart's axis was found reading `2026-08-17T03:00:00Z` at a reade
 bucket keys that index a series were being used as display labels, which no automated
 check can object to and nobody can miss in a picture.
 
+It is also how the explorer chart was found showing one series where three were
+selected. Steps, resting heart rate and sleep duration share a single linear axis, so
+the steps series — peaking in the thousands — flattened the other two into one line
+along the bottom. Every automated check passed: the markup is correct, the contrast is
+fine, nothing overflows, and each series is in the legend with its own colour and unit.
+A picture is the only thing that objects.
+
+The chart still shares its axis. What changed is that it **says so**: selecting metrics
+that disagree on unit renders a note naming the units and pointing at the two ways out
+(one unit at a time, or the metric overview). Per-unit axes only work for two units, and
+normalising each series to its own maximum changes what the axis *means* — a worse thing
+to do quietly than to leave the scale alone and describe it. A distortion a reader has
+been told about is a scale; one they have not been told about is a wrong answer.
+
 ## Phone safe areas
 
 The shell is full-bleed below the `sm` breakpoint, so content reaches the physical
