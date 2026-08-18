@@ -59,6 +59,31 @@ export async function expectSignedIn(page: Page) {
   await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 }
 
+/**
+ * Signed in, asserted at any viewport width.
+ *
+ * `expectSignedIn` looks for the sidebar's "Sign out" button, and the sidebar is
+ * `hidden` below the `lg` breakpoint — on a phone the bottom tab bar renders
+ * instead, and sign-out lives behind "More". So that helper silently means "signed
+ * in *and* on a wide screen", which is fine for the auth suite and wrong for any
+ * suite that visits phone widths: the failure reads as a broken login when the
+ * login worked perfectly.
+ *
+ * `<main>` is the marker instead. The authenticated `(dashboard)` layout renders
+ * it and `AuthScreen` does not, so its presence means the app shell is up — at
+ * every width, without depending on which navigation happens to be visible.
+ */
+export async function expectAppShell(page: Page) {
+  await expect(page.getByRole("main")).toBeVisible();
+}
+
+/** `signIn`, but usable at phone widths. See `expectAppShell`. */
+export async function signInAnyWidth(page: Page, account: Account) {
+  await page.goto("/");
+  await submitSignIn(page, account);
+  await expectAppShell(page);
+}
+
 export async function expectSignedOut(page: Page) {
   await expect(page.getByLabel("Password")).toBeVisible();
 }

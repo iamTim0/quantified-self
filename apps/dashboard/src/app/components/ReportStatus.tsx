@@ -105,7 +105,7 @@ export default function ReportStatus({
         type="button"
         onClick={onRefresh}
         disabled={running}
-        className="inline-flex items-center gap-1.5 rounded-md border border-line px-2 py-1 font-medium text-ink-secondary transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line px-3 py-1 font-medium text-ink-secondary transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" />
         {t("report.recompute")}

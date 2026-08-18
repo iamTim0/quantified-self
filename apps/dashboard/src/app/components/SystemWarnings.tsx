@@ -285,7 +285,7 @@ export default function SystemWarnings({
               {style.icon}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-meta font-bold uppercase tracking-widest opacity-70">
+                  <span className="text-meta font-bold uppercase tracking-widest">
                     {t(style.label)}
                   </span>
                   <h3 className="text-sm font-bold">{field(t, w, "title", w.title)}</h3>
@@ -305,7 +305,7 @@ export default function SystemWarnings({
                     href={w.docs}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-2 inline-block text-xs font-semibold underline underline-offset-2 opacity-80 hover:opacity-100"
+                    className="mt-2 inline-block text-xs font-semibold underline underline-offset-2"
                   >
                     {t("warnings.openDocs")}
                   </a>
@@ -315,7 +315,10 @@ export default function SystemWarnings({
                 <button
                   type="button"
                   onClick={() => dismissCode(w.code)}
-                  className="shrink-0 rounded-lg p-1 opacity-50 transition-opacity hover:opacity-100"
+                  // 44x44 like every other dismiss in the app. `p-1` around a
+                  // 16px icon made this 24x24 — the same defect the connector and
+                  // import dialogs were fixed for, missed on this one surface.
+                  className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg opacity-50 transition-opacity hover:opacity-100"
                   aria-label={t("warnings.dismiss")}
                   title={t("warnings.dismissTitle")}
                 >
@@ -333,7 +336,7 @@ export default function SystemWarnings({
                   </p>
                   <button
                     type="button"
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-code px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-code px-3.5 py-2 text-sm font-semibold text-code-ink disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => void resetIngestion()}
                     disabled={resetState === "busy" || resetState === "success"}
                   >

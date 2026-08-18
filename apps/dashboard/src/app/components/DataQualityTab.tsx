@@ -281,7 +281,7 @@ export default function DataQualityTab({ apiBase }: Props) {
           <Lightbulb className="h-5 w-5 shrink-0 text-warn-ink" />
           <div>
             <h2 className="font-bold text-ink">{t("quality.explainTitle")}</h2>
-            <p className="mt-1 text-sm text-ink-muted">{t("quality.explainBody")}</p>
+            <p className="mt-1 text-sm text-ink-secondary">{t("quality.explainBody")}</p>
             <a
               href="/docs/features/data-quality/"
               target="_blank"

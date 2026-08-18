@@ -892,6 +892,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       <select
         value={selectedSource}
         onChange={(e) => setSelectedSource(e.target.value)}
+        aria-label={t("explorer.source")}
         className="rounded-2xl border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink outline-none focus-visible:border-brand"
       >
         <option value="all">{t("explorer.allSources")}</option>
@@ -947,7 +948,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             className={`rounded-xl px-3 py-1 font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
               dateRangePreset === preset.id
                 ? "bg-brand text-brand-ink shadow-xs"
-                : "text-ink-muted hover:text-ink"
+                : "text-ink-secondary hover:text-ink"
             }`}
           >
             {preset.label}
@@ -1061,7 +1062,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 isActive
                   ? "bg-surface text-brand shadow-xs"
-                  : "text-ink-muted hover:text-ink"
+                  : "text-ink-secondary hover:text-ink"
               }`}
             >
               <Icon className="h-3.5 w-3.5" />
@@ -1173,7 +1174,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
                         className={`rounded-xl p-1.5 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                           chartType === option.id
                             ? "bg-brand text-brand-ink shadow-xs"
-                            : "text-ink-muted hover:text-ink"
+                            : "text-ink-secondary hover:text-ink"
                         }`}
                       >
                         <Icon className="h-4 w-4" />

@@ -105,7 +105,7 @@ export default function TopHeader({
           aria-label={t("sidebar.settings")}
           className="group flex h-11 min-w-11 items-center gap-3 rounded-2xl border border-line bg-surface px-2 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-line"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-meta font-bold text-white shadow-inner">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-meta font-bold text-brand-ink shadow-inner">
             {getInitials(userName)}
           </span>
           <span className="hidden max-w-40 truncate pr-1 text-meta font-bold text-ink group-hover:text-brand lg:block">

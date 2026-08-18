@@ -66,6 +66,37 @@ map's marker colours, the chart palettes, the manifest's splash colour and the
 chart hook's light-theme fallback. `globals.css` is exempt outright — it declares
 the tokens, and its comments quote the very class names the rules search for.
 
+### What the browser checks, in both themes
+
+The token checker reads source. It cannot know what a token *resolves to* once the
+cascade has run, which is where the interesting failures were: `bg-brand text-white`
+satisfies every rule in that script, and in dark mode it painted white on
+`#34d399` at a contrast of 1.92 — on every page, because it is the avatar in the
+header. Nothing had ever rendered the dark theme in a browser.
+
+`apps/dashboard/e2e/appearance.spec.ts` does. Every destination in `TAB_PATHS`, in
+light and dark, at 390px and 1440px — 32 combinations, about a minute — asserting
+three things a machine can settle:
+
+- **No accessibility violation axe can name**, WCAG 2.0/2.1 A and AA, which is what
+  covers contrast. The allowlist beside it is empty on purpose: the five contrast
+  defects the first run found were fixed, not recorded.
+- **Nothing overflows horizontally.** Content that scrolls inside its own container
+  is fine — a wide table legitimately does — so an element only counts as an
+  offender when it exceeds the viewport and no ancestor made itself scrollable.
+- **Target sizes**, as described under [Target sizes](#target-sizes-and-which-floor-is-actually-enforced).
+
+The routes come from the `TAB_PATHS` registry rather than a list in the test, so a
+new destination is covered the day it is added. Sign-in goes through
+`expectAppShell`, which waits for `<main>`: the older `expectSignedIn` looks for the
+sidebar's sign-out button, and the sidebar does not exist below `lg` — so it quietly
+meant "signed in *and* on a wide screen", and every phone-width test failed looking
+like a broken login.
+
+What this does **not** do is judge whether anything looks good. It catches what is
+measurably broken and, with the screenshot baselines deliberately left out, nothing
+about what merely changed.
+
 ## Phone safe areas
 
 The shell is full-bleed below the `sm` breakpoint, so content reaches the physical
@@ -196,10 +227,30 @@ The dialog's old behaviour was worse than merely stateful: on Android, hardware
 back dismissed the *page underneath* the open dialog, and in an installed app
 that is the only back affordance there is.
 
-Interactive targets are at least 44×44 CSS pixels. The navigation surfaces already
-were; the dialogs were not — the close buttons on the connector and import dialogs,
-the notification panel's refresh and the upload banner's dismiss were between 22 and
-32 pixels, the smallest of them on the most transient surface.
+### Target sizes, and which floor is actually enforced
+
+44×44 CSS pixels is the **goal** for interactive targets, and it is worth stating
+plainly that the app does not meet it everywhere. The navigation surfaces do. The
+dialogs were brought up to it — the close buttons on the connector and import
+dialogs, the notification panel's refresh and the upload banner's dismiss were
+between 22 and 32 pixels, the smallest of them on the most transient surface.
+
+Roughly forty controls across the Explorer, Workouts, Data Quality, Connectors and
+Profile screens still sit between 28 and 42 pixels. That is a visual redesign rather
+than a bug fix, so it is recorded rather than quietly done: the browser suite prints
+them as `under-44px` annotations on every run, and the count is visible instead of
+being implied away by a passing test.
+
+What **is** enforced, as a failing test, is the WCAG 2.5.8 AA floor of 24×24. The
+app clears it everywhere, which makes it a real gate: anything that appears below it
+is new. Two controls were below it and were fixed when the check was written — the
+severity badge's dismiss in the system-warning banner (24×24, a 16px icon with 4px
+of padding) and the *Copy* affordance beside the workspace ID on the profile screen
+(47×16, a bare text button with no hit area at all).
+
+Text links are exempt from both floors, as WCAG 2.5.8 exempts targets inside a block
+of text: the only way to give an underlined link 44 pixels of height is to pad it
+until it reads as a button.
 
 The daily story places the current day first and yesterday below it. When a day
 has a location lane, the map is loaded on demand and asks Core for that tenant's

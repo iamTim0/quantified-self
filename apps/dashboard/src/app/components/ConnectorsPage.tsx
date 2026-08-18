@@ -584,7 +584,7 @@ export default function ConnectorsPage({
                                 onClick={() => onOpenConfigureModal(c)}
                                 className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
                                   c.sync_status === "error"
-                                    ? "bg-danger hover:bg-danger/90 text-white"
+                                    ? "bg-danger hover:bg-danger/90 text-danger-ink"
                                     : "bg-brand hover:bg-brand-hover text-brand-ink"
                                 }`}
                               >

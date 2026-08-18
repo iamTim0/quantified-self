@@ -392,7 +392,7 @@ export default function ProfileTab({
 
               <button
                 onClick={() => setShowAccountModal(true)}
-                className="py-3 px-4 rounded-2xl bg-danger hover:bg-danger/90 text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-danger/20"
+                className="py-3 px-4 rounded-2xl bg-danger hover:bg-danger/90 text-danger-ink text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-danger/20"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{t("profile.deleteAccountButton")}</span>
@@ -527,7 +527,7 @@ export default function ProfileTab({
                   </span>
                   <button
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
-                    className="flex items-center gap-1 text-meta text-brand hover:underline font-mono transition-colors"
+                    className="-mx-1 flex min-h-6 items-center gap-1 rounded px-1 text-meta font-mono text-brand transition-colors hover:underline"
                   >
                     {copiedTenantId ? (
                       <Check className="w-3.5 h-3.5 text-ok" />
@@ -629,7 +629,7 @@ export default function ProfileTab({
               <button
                 onClick={handleAccountWipe}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-danger text-white hover:bg-danger/90 transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-danger text-danger-ink hover:bg-danger/90 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.deleteAccountRunning") : t("profile.deleteAccountAction")}
               </button>
