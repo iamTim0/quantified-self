@@ -218,11 +218,44 @@ and serves the site under exactly that prefix — visible in its own log as
 `Serving on http://0.0.0.0:8003/docs/`. Traefik stripped the prefix on top of that, MkDocs received
 `GET /` and answered `302 → /docs/`, which was stripped again.
 
-So there is no `stripprefix` middleware in the development stack. In production there is, and that is
-right: there the documentation is an image built by `mkdocs build` that sits at the root.
+So there is no `stripprefix` middleware in the development stack — and, since the fix below, none in
+production either.
 
 When measuring this, `curl` **without** `-L` is worth it: with redirects followed it reports the 200 of
 the sign-in page you end up on, and the loop looks like a success.
+
+### A link inside `/docs` jumps to `<host>:8003` and does not load
+
+Fixed; the reasoning is here, because the shape of it recurs. MkDocs writes **directory URLs**:
+`docs/metrics.md` is published as `/docs/metrics/`, and a request for `/docs/metrics` without the
+trailing slash is answered with a redirect to the slashed form. That redirect is composed by the static
+file server, which knows two things: the port it listens on (8003) and the path it was handed. Traefik
+stripped `/docs` before handing it over, so what came back was
+
+```text
+Location: http://<host>:8003/metrics/
+```
+
+— a port that is not published, plain `http` behind a TLS front, and no `/docs` at all. The browser
+followed it and reached nothing. Only the slashed links worked, which is why the site looked mostly
+fine: every failure needed a link, a bookmark or a typed address without the final slash.
+
+Nothing downstream could repair it. Traefik's `StripPrefix` rewrites the request, not the `Location`
+header of the response, so the prefix it removed is gone by the time the redirect is written. Serving
+the page at the unslashed URL instead is not a fix either: every relative link on it would then resolve
+one level too high, because MkDocs wrote them against the slashed URL.
+
+So the prefix is no longer taken away. The image serves the site under `/docs` itself and sets
+`absolute_redirect off`, which makes the redirect a bare path — `Location: /docs/metrics/` — that the
+browser resolves against the origin it is already on. Scheme, host and port come from the address bar,
+where they are correct by definition, and development and production now route identically.
+
+To check it on a deployment, ask for the unslashed path and read the header rather than the page:
+
+```bash
+curl -sI https://<host>/docs/metrics | grep -i location
+# Location: /docs/metrics/
+```
 
 ### A diagram in `/docs` renders as an empty block
 

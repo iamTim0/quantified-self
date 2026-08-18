@@ -483,15 +483,18 @@ services:
     image: ${QS_IMAGE_PREFIX:-ghcr.io/iamtim0/quantified-self}/docs:${QS_VERSION:-latest}
     restart: always
     labels:
-      # `docs`, priority 20. A separate service, so a separate route; the
-      # middleware strips /docs because the site is built to be served at a root.
+      # `docs`, priority 20. A separate service, so a separate route -- and no
+      # stripprefix, exactly as in the development stack. The image serves the
+      # site under /docs itself, because MkDocs' directory URLs mean nginx issues
+      # redirects (/docs/metrics -> /docs/metrics/) and a proxy cannot put a
+      # stripped prefix back into a Location header. Stripping here cost the
+      # prefix, the scheme and the port on every one of those redirects:
+      # `http://<host>:8003/metrics/`. See infra/docs.Dockerfile.
       - "traefik.enable=true"
       - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"
       - "traefik.http.services.docs.loadbalancer.server.port=8003"
-      - "traefik.http.middlewares.docs-stripprefix.stripprefix.prefixes=/docs"
-      - "traefik.http.routers.docs.middlewares=docs-stripprefix"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8003/healthz"]
       interval: 30s

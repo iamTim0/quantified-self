@@ -178,6 +178,30 @@ def test_production_traefik_has_a_private_container_healthcheck():
     assert "127.0.0.1:${QS_TRAEFIK_DASHBOARD_PORT:-8081}:8080" in traefik
 
 
+def test_documentation_keeps_its_prefix_through_every_redirect():
+    """`/docs/metrics` must land on `/docs/metrics/`, not on `<host>:8003`.
+
+    MkDocs writes directory URLs, so a request without the trailing slash is
+    answered by a redirect nginx composes itself — and nginx knows only the port it
+    listens on and the path it was handed. Stripping `/docs` in Traefik therefore
+    produced `Location: http://<host>:8003/metrics/`: a port that is not published,
+    a scheme that is not the one in the address bar, and no prefix. A proxy cannot
+    put a stripped prefix back, so the prefix is never taken away.
+    """
+    docs = " ".join(service_blocks(REPO_ROOT / "docker-compose.prod.yml")["docs"])
+    dockerfile = (REPO_ROOT / "infra/docs.Dockerfile").read_text(encoding="utf-8")
+
+    assert "stripprefix" not in docs.lower(), (
+        "the docs route must forward /docs unchanged; the image serves it"
+    )
+    assert "/usr/share/nginx/html/docs" in dockerfile, (
+        "the built site must sit under /docs so redirects carry the prefix"
+    )
+    assert "'  absolute_redirect off;'" in dockerfile, (
+        "redirects must be bare paths, so scheme and port come from the browser"
+    )
+
+
 def test_every_published_runtime_image_declares_a_docker_healthcheck():
     """Keeps the image contract enforceable for existing and future importers."""
     for image in IMAGES:

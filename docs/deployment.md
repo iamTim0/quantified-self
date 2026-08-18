@@ -313,7 +313,7 @@ cloudflared
 stack Traefik
    ├── /                  → dashboard:3000
    ├── /api, /health and /healthz → api-gateway:8000
-   ├── /docs              → docs:8003  (strip /docs)
+   ├── /docs              → docs:8003  (prefix forwarded, not stripped)
    └── /ingest            → streak-importer:8006
 
 api-gateway ──→ core:8001 ──→ postgres:5432
