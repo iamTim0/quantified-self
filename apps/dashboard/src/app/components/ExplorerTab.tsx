@@ -199,11 +199,22 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   // `locale` because a metric carries both its labels in the registry, and
   // `describeMetric` defaults to German — which showed an English reader every
   // metric name in the other language.
-  const { t, locale } = useI18n();
+  const { t, locale, formatNumber } = useI18n();
 
   const [view, setView] = useState<ExplorerView>("chart");
   const [chartPoints, setChartPoints] = useState<DataPointItem[]>([]);
   const [rawPoints, setRawPoints] = useState<DataPointItem[]>([]);
+  /**
+   * Which metrics came back exactly at the limit.
+   *
+   * The request caps at 10,000 points and sorts newest first, so a metric that
+   * holds more is silently showing its most recent slice — and a whole-history
+   * drill-down looked, from the chart, exactly like a complete one. Equality
+   * with the cap is an approximation (a metric holding precisely 10,000 is
+   * reported as truncated) and it is the honest direction to be wrong in: the
+   * response says how many it returned, not how many exist.
+   */
+  const [truncatedMetrics, setTruncatedMetrics] = useState<string[]>([]);
   const [summary, setSummary] = useState<Record<string, MetricSummaryEntry>>({});
   const [knownMetricTypes, setKnownMetricTypes] = useState<string[]>([]);
   const [metricDefinitions, setMetricDefinitions] = useState<
@@ -335,7 +346,12 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         const pointSets = await Promise.all(
           metrics.map((metric) => requestMetricPoints(metric, "day", selectedSource)),
         );
-        if (requestId === chartRequestId.current) setChartPoints(mergePoints(pointSets));
+        if (requestId === chartRequestId.current) {
+          setChartPoints(mergePoints(pointSets));
+          setTruncatedMetrics(
+            metrics.filter((_, index) => pointSets[index].length >= SERIES_POINT_LIMIT),
+          );
+        }
       } catch (err) {
         if (requestId === chartRequestId.current) {
           console.error("Failed to fetch metric series for the explorer:", err);
@@ -361,7 +377,12 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
         const pointSets = await Promise.all(
           metrics.map((metric) => requestMetricPoints(metric, "raw", selectedSource)),
         );
-        if (requestId === rawRequestId.current) setRawPoints(mergePoints(pointSets));
+        if (requestId === rawRequestId.current) {
+          setRawPoints(mergePoints(pointSets));
+          setTruncatedMetrics(
+            metrics.filter((_, index) => pointSets[index].length >= RAW_POINT_LIMIT),
+          );
+        }
       } catch (err) {
         if (requestId === rawRequestId.current) {
           console.error("Failed to fetch raw metric points for the explorer:", err);
@@ -969,6 +990,18 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
     </div>
   );
 
+  const truncationNote =
+    truncatedMetrics.length > 0 ? (
+      <p className="rounded-2xl border border-warn-line bg-warn-soft px-3.5 py-2.5 text-meta text-warn-ink">
+        {t("explorer.pointLimitReached", {
+          count: formatNumber(SERIES_POINT_LIMIT),
+          metrics: truncatedMetrics
+            .map((metric) => describeMetric(metric, locale).label)
+            .join(", "),
+        })}
+      </p>
+    ) : null;
+
   const seriesQueryNote =
     selectedMetrics.length > 0 ? (
       <p className="text-meta leading-relaxed text-ink-muted">
@@ -1154,6 +1187,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {periodFilter}
             {scopeBanner}
             {seriesQueryNote}
+            {truncationNote}
           </div>
 
           {/* No `aggregation` prop: each series label already states its own
@@ -1182,6 +1216,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             {fullTextSearch}
             {scopeBanner}
             {seriesQueryNote}
+            {truncationNote}
           </div>
 
           <ExplorerRawTable points={tableData} onInspect={setInspectPoint} />

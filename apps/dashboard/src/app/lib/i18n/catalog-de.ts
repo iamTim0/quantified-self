@@ -761,6 +761,8 @@ export const de: Record<MessageKey, string> = {
     "Noch keine gespeicherten Ansichten. Filter einstellen und auf „Aktuelle Ansicht speichern“ klicken.",
   "explorer.source": "Quelle:",
   "explorer.allSources": "Alle Quellen",
+  "explorer.pointLimitReached":
+    "Zeigt die neuesten {count} Punkte für {metrics}. Für den vollständigen Bestand den Zeitraum verkleinern.",
   "explorer.colStorage": "Speicherung",
   "explorer.storageHint":
     "Die Speicherung legt fest, wie fein eine Metrik beim Eintreffen abgelegt wird. Sie wirkt nur auf künftige Importe — bereits gespeicherte Punkte bleiben unberührt.",
@@ -1266,6 +1268,8 @@ export const de: Record<MessageKey, string> = {
     "Diese Einheit wurde importiert, bevor Trainings eine Kennung trugen. Ihre Punkte sind über Zeitstempel und Titel gruppiert: zwei gleich gestempelte Einheiten können als eine erscheinen, eine Einheit als zwei.",
   "workouts.scanTruncated":
     "Dieser Zeitraum enthält mehr Zeilen, als ein Durchlauf liest. Wähle einen kürzeren Zeitraum, um alles zu sehen.",
+  "workouts.weekOf": "Woche ab {date}",
+  "workouts.moreMeasures": "+{count} weitere",
   "workouts.listTruncated":
     "Zeigt die neuesten {count} Sitzungen in diesem Zeitraum. Wähle einen kürzeren Zeitraum, um ältere zu erreichen.",
   "workouts.back": "Alle Trainings",

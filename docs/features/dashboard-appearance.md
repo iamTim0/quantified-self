@@ -137,6 +137,23 @@ The active tab is no longer distinguished by colour alone (WCAG 1.4.1): it carri
 2px indicator and a heavier label, not just a different hue at identical icon, size
 and weight.
 
+### Nothing is truncated in silence
+
+Three lists were showing a slice and looking complete. The workouts list capped
+at 100 sessions per request and discarded the `has_more` the server sent; the
+Explorer caps each metric at 10,000 points sorted newest-first, so a
+whole-history drill-down showed the most recent slice with nothing to say so;
+and a session card showed three of however many measures it had.
+
+All three now state it. The card also picks *which* three by what the session is
+— volume and sets for lifting, distance and duration for cardio — rather than by
+the order the JSON arrived in, which meant two cards side by side could compare
+different quantities without either of them saying so.
+
+The workouts list also groups by week above 30 days and by month above 90. A
+year of training is roughly two hundred day headings, and a heading per row is
+not a grouping.
+
 ## Responsive layout
 
 The workout tab has its own `/workouts` route, while the Data Explorer changes its

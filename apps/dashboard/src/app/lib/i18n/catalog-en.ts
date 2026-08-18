@@ -753,6 +753,8 @@ export const en = {
     "No saved views yet. Configure the filters and press “Save the current view”.",
   "explorer.source": "Source:",
   "explorer.allSources": "All sources",
+  "explorer.pointLimitReached":
+    "Showing the newest {count} points for {metrics}. Narrow the period to see everything that is stored.",
   "explorer.colStorage": "Storage",
   "explorer.storageHint":
     "Storage sets how finely a metric is kept when it arrives. It applies to future imports only — points already stored are untouched.",
@@ -1251,6 +1253,8 @@ export const en = {
     "This session was imported before workouts carried an identifier, so its points are grouped by timestamp and title. Two sessions stamped alike can appear as one, and one session can appear as two.",
   "workouts.scanTruncated":
     "This period holds more rows than one scan reads. Narrow the range to see everything.",
+  "workouts.weekOf": "Week of {date}",
+  "workouts.moreMeasures": "+{count} more",
   "workouts.listTruncated":
     "Showing the newest {count} sessions in this period. Narrow the range to reach older ones.",
   "workouts.back": "All workouts",

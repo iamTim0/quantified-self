@@ -57,6 +57,65 @@ const CATEGORIES = [
 const CARD_MEASURES = 3;
 
 /**
+ * Which three, decided here rather than by the serializer.
+ *
+ * This was `Object.entries(entry.measures).slice(0, 3)`, so which numbers a card
+ * showed was whatever order the JSON happened to arrive in — and nothing marked
+ * that more existed. Two cards side by side could therefore be comparing
+ * different quantities without saying so, which is the sort of quiet wrongness
+ * this codebase treats as worse than a gap.
+ *
+ * The order is by what the session *is*: a run is a distance and a duration, a
+ * lifting session is volume and sets. Anything not listed still appears, after
+ * the listed ones, so a provider sending something unusual does not lose it.
+ */
+const CARD_MEASURE_ORDER: Record<string, readonly string[]> = {
+  strength: [
+    "strength_session_volume",
+    "strength_session_sets",
+    "workout_duration",
+    "strength_session_reps",
+  ],
+  workout: ["workout_duration", "workout_distance", "workout_energy", "workout_heart_rate_avg"],
+};
+
+/** The session's measures, most telling first for its category. */
+function orderedMeasures(
+  measures: Record<string, number>,
+  category: string,
+): [string, number][] {
+  const preferred = CARD_MEASURE_ORDER[category] ?? CARD_MEASURE_ORDER.workout;
+  const rank = (key: string) => {
+    const index = preferred.indexOf(key);
+    return index === -1 ? preferred.length : index;
+  };
+  return Object.entries(measures).sort(([a], [b]) => rank(a) - rank(b));
+}
+
+/**
+ * How the list groups, which follows the range rather than always being days.
+ *
+ * A year of training is roughly two hundred day headings, and a heading per row
+ * is not a grouping. Weeks and months keep the list scannable at the ranges
+ * where a day stops being a useful unit.
+ */
+function groupingFor(days: number): "day" | "week" | "month" {
+  if (days <= 30) return "day";
+  if (days <= 90) return "week";
+  return "month";
+}
+
+/** The Monday of the week a `YYYY-MM-DD` falls in, as another such string. */
+function startOfWeek(day: string): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  // `getUTCDay()` is 0 on Sunday; the ISO week starts on Monday, so Sunday has
+  // to reach six days back rather than none.
+  const offset = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
  * How many sessions one request asks for.
  *
  * Named rather than inlined because the response's `has_more` is only
@@ -170,16 +229,23 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
     void load();
   }, [load]);
 
+  const grouping = groupingFor(days);
+
   const byDay = useMemo(() => {
     const groups = new Map<string, WorkoutSummary[]>();
     for (const entry of sessions) {
+      // The bucket is still keyed by a *day* — the reader's own, via
+      // `localDayOf` — and widened afterwards. Rounding to a week or a month
+      // first would reintroduce the UTC boundary this function exists to avoid.
       const day = localDayOf(entry.start);
-      const bucket = groups.get(day);
+      const key =
+        grouping === "day" ? day : grouping === "month" ? day.slice(0, 7) : startOfWeek(day);
+      const bucket = groups.get(key);
       if (bucket) bucket.push(entry);
-      else groups.set(day, [entry]);
+      else groups.set(key, [entry]);
     }
     return [...groups.entries()];
-  }, [sessions]);
+  }, [sessions, grouping]);
 
   return (
     <div className="space-y-6">
@@ -254,11 +320,17 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
               <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
                 {/* `formatDay`, not `formatDate`: a date-only string parses as UTC
                     midnight and shows the previous day to any reader west of UTC. */}
-                {formatDay(day)}
+                {grouping === "day"
+                  ? formatDay(day)
+                  : grouping === "week"
+                    ? t("workouts.weekOf", { date: formatDay(day) })
+                    : formatDay(`${day}-01`)}
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {entries.map((entry) => {
-                  const measures = Object.entries(entry.measures).slice(0, CARD_MEASURES);
+                  const ordered = orderedMeasures(entry.measures, entry.category);
+                  const measures = ordered.slice(0, CARD_MEASURES);
+                  const hiddenMeasures = ordered.length - measures.length;
                   return (
                     <button
                       key={entry.session_key}
@@ -296,6 +368,13 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
                             </span>
                           );
                         })}
+                        {/* Says that the card is a summary. Three of five with
+                            nothing to mark it is a card that looks complete. */}
+                        {hiddenMeasures > 0 && (
+                          <span className="text-ink-muted">
+                            {t("workouts.moreMeasures", { count: hiddenMeasures })}
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
