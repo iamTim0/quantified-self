@@ -371,6 +371,14 @@ jobs:
         run: bun run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+      # Blocking, unlike the lint step above, and it can be: the allowlist beside
+      # the script was seeded with every violation that existed when it was
+      # written, so this fails only on a *new* raw palette utility, pixel font
+      # size or hex literal. That is the whole point of a ratchet -- a gate that
+      # fails on the tree as it stands gets switched off instead of satisfied.
+      - name: Design tokens
+        run: python .agents/scripts/check_design_tokens.py
+        working-directory: ${{ github.workspace }}
 
   docs:
     name: Documentation
