@@ -7,42 +7,64 @@ in the document head applies the saved palette before the application hydrates,
 so a dark preference does not flash a light shell on reload. The preference is
 presentation-only and never crosses the Gateway or Core service boundary.
 
-## Colour tokens, and why a shim is not enough
+## Colour tokens
 
 The palette is a set of CSS variables on `:root`, redefined under
-`[data-theme="dark"]`. Most existing surfaces reach them indirectly, through a
-compatibility layer in `globals.css` that rewrites Tailwind's neutral utility names
-(`.bg-white`, `.text-slate-600`, …) under the dark selector.
+`[data-theme="dark"]`, and exposed as Tailwind utilities through `@theme inline`.
+Components name **roles**, never palette steps.
 
-That layer can only ever cover the exact utility strings somebody thought to list,
-and the gaps are invisible until somebody looks at the screen. `.bg-slate-50` was
-listed and `.bg-slate-50/60` was not — a different class string — so the AI chat's
-whole transcript panel stayed near-white on a dark shell. `.text-emerald-800` was
-listed and `.text-emerald-700` was not. `.border-slate-200` was listed and
-`.ring-slate-200` was not. Nothing about any of those looks wrong in the source.
+| Utility | Means |
+| --- | --- |
+| `bg-page`, `bg-surface`, `bg-surface-muted` | The page behind the cards, a card, a recessed area |
+| `bg-inverse`, `text-inverse-ink` | A surface that is dark *in the light theme* on purpose — a tooltip, a solid action button |
+| `bg-scrim` | The backdrop behind a dialog |
+| `text-ink`, `text-ink-secondary`, `text-ink-muted` | Body text, a heading's supporting text, secondary text |
+| `text-ink-faint` | **Decoration only** — dividers, a chevron. It is 2.56:1 and must never carry a word or a number |
+| `border-line`, `divide-line` | Any hairline |
+| `bg-brand`, `hover:bg-brand-hover`, `text-brand-ink` | The brand action colour and what sits on it |
+| `bg-{ok,warn,danger,info}-soft`, `text-…-ink`, `border-…-line`, `bg-…` | Status, as four-part sets: a tint, the text on it, its border, and the saturated colour |
+| `bg-code`, `text-code-ink` | A code block, dark in *both* themes |
+| `text-provider-*` | One hue per connector in the gallery. Decorative, and named so a later sweep does not read Apple Health's red as "danger" |
 
-New and reworked screens therefore use **semantic utilities** generated from the
-tokens themselves via `@theme inline`:
+The type scale is named the same way — `text-nav`, `text-meta`, `text-body`,
+`text-emph`, `text-title`, `text-page`, `text-stat` — and its floor is 12px.
+`text-nav` is 10px and exists for the two places that size is a platform
+convention rather than a choice: bottom-tab labels and a count inside a badge.
 
-| Utility | Token | Means |
-| --- | --- | --- |
-| `bg-surface`, `bg-surface-muted` | `--card`, `--muted` | A raised surface, and a recessed one |
-| `text-ink`, `text-ink-muted` | `--foreground`, `--muted-foreground` | Body text, and secondary text |
-| `border-line` | `--border` | Any hairline |
-| `bg-brand`, `hover:bg-brand-hover`, `text-brand-ink` | `--primary`, … | The brand action colour and what sits on it |
-| `text-brand-strong`, `bg-brand-soft` | `--accent-foreground`, `--accent-light` | Brand text, and its tint |
-| `text-danger` | `--destructive` | An error |
-| `bg-code`, `text-code-ink` | `--code`, `--code-foreground` | A code block, which is dark in *both* themes and so needs its own pair |
+`@theme inline` rather than `@theme`: the values are `var(…)` references that
+change under the theme selector, and `inline` is what makes a utility resolve
+them where it is used rather than freezing the light value at build time.
 
-`@theme inline` rather than `@theme`: the values are `var(…)` references that change
-under the theme selector, and `inline` is what makes a utility resolve them where it
-is used rather than freezing the light value at build time. A screen written this way
-follows the theme by construction and needs no entry in the compatibility layer.
+!!! warning "The `!important` shim this replaced could not have worked"
+    Dark mode used to be carried by a block of
+    `[data-theme="dark"] .bg-white { … !important }` rules translating Tailwind's
+    neutral utilities one class string at a time. Such a layer can only ever
+    cover the exact strings somebody thought to list, and the gaps are invisible
+    in the source. `.bg-slate-50` was listed and `.bg-slate-50/60` was not — a
+    different string — so the chat's whole transcript panel stayed near-white on
+    a dark shell. `.text-emerald-800` was listed and `.text-emerald-700` was not.
+    `.border-slate-200` was listed and `.ring-slate-200` was not.
 
-The chat was converted first because it was the worst affected: it had zero `dark:`
-classes and four hardcoded `#0d5c3a` brand greens, which contradicted `--primary`
-outright — that token flips to a light mint in dark mode, so the chat's primary
-colour disagreed with every other screen's.
+    It also could not reach a colour that is not a class at all: a hex inside a
+    Chart.js options object or an SVG `stroke` attribute. Every chart in the app
+    drew light-theme scaffolding in dark mode for exactly that reason.
+
+    The block is gone. Inline SVG references `var(--color-…)` directly; canvas
+    charts read the tokens through `useChartTheme()`, which recomputes when the
+    resolved theme changes.
+
+### Keeping it that way
+
+`.agents/scripts/check_design_tokens.py` runs in `task lint:all`. It fails on a
+raw palette utility, a pixel font size, or a hex literal in a component — but
+only outside its allowlist, which was seeded with every violation that existed
+when it was written and shrinks as files are migrated. A rule nobody can satisfy
+gets deleted, so it starts from where the code actually is.
+
+Seven entries remain, all of them hex literals that belong where they are: the
+map's marker colours, the chart palettes, the manifest's splash colour and the
+chart hook's light-theme fallback. `globals.css` is exempt outright — it declares
+the tokens, and its comments quote the very class names the rules search for.
 
 ## Phone safe areas
 
