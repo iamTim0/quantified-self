@@ -296,7 +296,7 @@ export default function SystemWarnings({
                 <p className="mt-2 text-sm font-semibold">
                   {/* The action is a command or a setting, not advice, so it is
                       rendered as something you can copy. */}
-                  <code className="rounded bg-surface/70 px-1.5 py-0.5 font-mono text-meta break-all">
+                  <code className="break-words rounded bg-surface/70 px-1.5 py-0.5 font-mono text-meta">
                     {field(t, w, "action", w.action)}
                   </code>
                 </p>

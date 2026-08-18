@@ -380,10 +380,10 @@ export default function ConnectorsPage({
         <>
           {/* Main Connected Sources & Queue Status Table */}
           <div className="glass-card p-6 bg-surface border border-line rounded-3xl space-y-4">
-            <div className="flex justify-between items-center">
-              <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <h3 className="text-sm font-bold text-ink">{t("connectors.tableTitle")}</h3>
-                <span className="text-meta font-semibold text-ok-ink bg-ok-soft px-2.5 py-0.5 rounded-full border border-ok-line flex items-center gap-1">
+                <span className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-ok-line bg-ok-soft px-2.5 py-0.5 text-meta font-semibold text-ok-ink">
                   <Radio className="w-2.5 h-2.5 text-ok animate-pulse" />{" "}
                   {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
                 </span>
