@@ -74,7 +74,13 @@ logger = logging.getLogger(__name__)
 # memory. Analysis pages through; it does not ask for everything at once.
 DEFAULT_PAGE_SIZE = 500
 MAX_PAGE_SIZE = 5000
+#: How many metric names one *request* may list. A caller wrote that list, so
+#: rejecting an over-long one costs nothing and happens before any query. This is
+#: not a limit on how many metrics a tenant may have: see `QueryMetricSeries`,
+#: where a caller that names none is asking for whatever exists.
 MAX_SERIES_METRICS = 100
+#: The real ceiling on a series response, in the unit the response is measured in.
+#: Series times buckets, checked before any of them are serialised.
 MAX_SERIES_BUCKETS = 100_000
 MAX_SERIES_RANGE = timedelta(days=366)
 
@@ -632,11 +638,25 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                         requested_source_id
                     )
 
+            # No metric-count ceiling here, deliberately.
+            #
+            # There used to be one, mirroring the request-side cap below the
+            # imports, and it did two things wrong at once. It fired *after* the
+            # query it claimed to bound had already run and been accumulated, so
+            # it protected nothing — it discarded finished work. And it failed a
+            # tenant for the crime of holding data: a caller that names no metric
+            # types is asking for whatever exists, and a workspace with 112
+            # metric types got INVALID_ARGUMENT on every insights run, forever.
+            # A hard cap could never have been the answer anyway, because
+            # `home_assistant_*` and `apple_health_*` are open namespaces (rule
+            # 15) whose size is the reader's own installation.
+            #
+            # The real budget is the one below, and it is the honest one: it
+            # bounds the *response*, in the units the response is actually
+            # measured in. The request-side cap stays, because rejecting an
+            # over-long list of names before any work is cheap and the caller
+            # wrote that list.
             metric_order = metric_types or sorted(metric_sources)
-            if len(metric_order) > MAX_SERIES_METRICS:
-                raise ValueError(
-                    f"At most {MAX_SERIES_METRICS} metric types may be returned"
-                )
             series_count = sum(
                 len(metric_sources.get(metric_type, ())) for metric_type in metric_order
             )

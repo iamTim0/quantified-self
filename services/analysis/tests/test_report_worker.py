@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 from analysis import report_worker
-from analysis.core_client import CoreUnavailable, DueAnalysisReport
+from analysis.core_client import CoreRejected, CoreUnavailable, DueAnalysisReport
 
 
 class _FakeCore:
@@ -116,3 +116,67 @@ async def test_an_unreachable_core_leaves_the_run_for_its_timeout(monkeypatch):
         await report_worker._compute_one(_run("run-offline"))
 
     assert fake.written == []
+
+
+@pytest.mark.asyncio
+async def test_a_refused_run_is_recorded_instead_of_retried_forever(monkeypatch):
+    """The opposite decision to the test above, for the opposite condition.
+
+    Both were `CoreUnavailable` until now, because every gRPC status became that one
+    exception. So an INVALID_ARGUMENT — a deterministic refusal of a call that would
+    be identical on the next attempt — took the "leave it in flight" branch. The run
+    expired, the next tick claimed it again, and one over-strict metric-count limit
+    produced eighty-five identical failures across seven days with no error code ever
+    stored and a dashboard that said "temporarily unavailable" throughout.
+
+    The assertion is that something is *written*: a refusal Core can record is a
+    refusal a reader can see, and it stops the run being claimed again.
+    """
+    fake = _FakeCore([])
+    monkeypatch.setattr(report_worker, "core_client", fake)
+
+    async def refused(*_args, **_kwargs):
+        raise CoreRejected("Core gRPC metric series query failed: INVALID_ARGUMENT")
+
+    monkeypatch.setattr("analysis.main.build_insights_bundle", refused)
+
+    # Does not raise: unlike an unreachable Core, this one can be told.
+    await report_worker._compute_one(_run("run-refused"))
+
+    assert len(fake.written) == 1
+    assert fake.written[0]["payload"] is None
+    # A code of its own, because "try again later" and "this cannot succeed as
+    # configured" call for different actions from whoever reads it.
+    assert fake.written[0]["error_code"] == "insights_rejected"
+
+
+def test_a_permanent_status_is_not_reported_as_unavailability():
+    """The classifier, directly: the name of the exception has to be true.
+
+    `CoreRejected` is deliberately not a subclass of `CoreUnavailable`, so this also
+    asserts that the retry branches cannot catch it by accident — which is exactly how
+    the original conflation survived.
+    """
+    import grpc
+    from analysis.core_client import _PERMANENT_STATUSES, _rpc_failure
+
+    class _Err(grpc.aio.AioRpcError):
+        def __init__(self, code: grpc.StatusCode) -> None:
+            self._code = code
+
+        def code(self):
+            return self._code
+
+        def details(self):
+            return "at most 100 metric types"
+
+    assert isinstance(_rpc_failure(_Err(grpc.StatusCode.INVALID_ARGUMENT), "x"), CoreRejected)
+    assert isinstance(_rpc_failure(_Err(grpc.StatusCode.UNAVAILABLE), "x"), CoreUnavailable)
+    # A just-expired service credential produces UNAUTHENTICATED and the next call
+    # carries a fresh one, so it is precisely a retry that helps.
+    assert isinstance(_rpc_failure(_Err(grpc.StatusCode.UNAUTHENTICATED), "x"), CoreUnavailable)
+    assert isinstance(
+        _rpc_failure(_Err(grpc.StatusCode.RESOURCE_EXHAUSTED), "x"), CoreUnavailable
+    )
+    assert not issubclass(CoreRejected, CoreUnavailable)
+    assert grpc.StatusCode.UNAUTHENTICATED not in _PERMANENT_STATUSES

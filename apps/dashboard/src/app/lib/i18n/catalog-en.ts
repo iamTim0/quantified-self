@@ -1046,6 +1046,8 @@ export const en = {
     "The last computation failed; the previous result remains available.",
   "report.error.insights_failed":
     "The analysis could not be computed. The previous result remains available.",
+  "report.error.insights_rejected":
+    "The analysis service asked for something this workspace's data does not allow, and repeating it will not help. The previous result remains available; the reason is in the analysis service log.",
   "report.error.report_load_failed":
     "The saved report could not be loaded. Check the connection and try again.",
   "report.error.report_timeout":

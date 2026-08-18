@@ -1053,6 +1053,8 @@ export const de: Record<MessageKey, string> = {
     "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",
   "report.error.insights_failed":
     "Die Analyse konnte nicht berechnet werden. Das vorherige Ergebnis ist weiterhin verfügbar.",
+  "report.error.insights_rejected":
+    "Der Analysedienst hat etwas angefragt, das mit den Daten dieses Arbeitsbereichs nicht möglich ist — ein erneuter Versuch hilft nicht. Das vorherige Ergebnis bleibt verfügbar; der Grund steht im Log des Analysedienstes.",
   "report.error.report_load_failed":
     "Der gespeicherte Bericht konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
   "report.error.report_timeout":

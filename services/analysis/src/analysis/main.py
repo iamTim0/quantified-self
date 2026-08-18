@@ -34,6 +34,7 @@ from analysis.chat_api import router as chat_router
 from analysis.config import settings
 from analysis.core_client import (
     CoreClient,
+    CoreRejected,
     CoreUnavailable,
     MetricSeriesBucket,
     MetricSeriesResponse,
@@ -151,6 +152,15 @@ async def get_insights(
         # read the data" must not look the same to the dashboard.
         raise HTTPException(
             status_code=503, detail="Analysis data is temporarily unavailable"
+        ) from exc
+    except CoreRejected as exc:
+        # Not a 503. Core is up and answered; it refused what this service asked
+        # for, so "temporarily" would be a lie and a reader who waits waits forever.
+        # 500 because the wrong request is ours to fix, and logged at error level
+        # because nothing else about this condition is loud.
+        logger.error("[req_id=%s] Core refused the insights request: %s", _request_id(request), exc)
+        raise HTTPException(
+            status_code=500, detail="Analysis could not be computed for this workspace"
         ) from exc
 
 
@@ -347,6 +357,13 @@ async def build_insights_bundle(
         )
     except CoreUnavailable:
         raise
+    except CoreRejected:
+        # Swallowed on purpose, and loudly. A refused *strength* query is one
+        # analysis failing, not the bundle: the correlations and trends are already
+        # computed and a workspace with no resistance training is the common case.
+        # Distinguished from the generic case below so the decision is written down
+        # rather than inherited from whichever `except` happened to catch it.
+        logger.exception("Core refused the strength query; bundle continues without it")
     except Exception:  # one analysis must not take the whole bundle down
         logger.warning("Strength progression could not be computed", exc_info=True)
 

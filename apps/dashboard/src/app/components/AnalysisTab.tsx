@@ -158,6 +158,10 @@ function reportErrorText(
   const keys: Record<string, MessageKey> = {
     report_failed: "report.error.report_failed",
     insights_failed: "report.error.insights_failed",
+    // A permanent refusal, not a failure that might not recur. Kept distinct
+    // because the two ask different things of the reader: one is "try again
+    // later", the other is "this cannot succeed as configured".
+    insights_rejected: "report.error.insights_rejected",
     report_load_failed: "report.error.report_load_failed",
     report_refresh_failed: "report.error.report_refresh_failed",
   report_timeout: "report.error.report_timeout",

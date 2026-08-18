@@ -382,6 +382,7 @@ The flag is `deferred` on the report envelope.
   | --- | --- | --- |
   | `queued` | `report_never_claimed` | Nothing ever picked it up. The Analysis Service is stopped, unreachable over gRPC, or has `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped. |
   | `running` | `report_timeout` | It *was* claimed and did not finish. Either the window is genuinely too large, or the worker died mid-computation. |
+  | — | `insights_rejected` | Core answered and **refused** the call the worker made. Written by the worker itself rather than by the expiry sweep, because a refusal is something Core is reachable enough to record. Retrying sends the identical call, so the reason is in the analysis service log rather than in the passage of time. |
 
     Both used to be `report_timeout`. `insights` is the only kind Core does not compute
     itself, so it is the only kind that can be queued and abandoned — which is why that one
@@ -419,6 +420,44 @@ The flag is `deferred` on the report envelope.
     same reason. And a `LAST` metric on a fully rolled-up workspace is a case worth a
     test of its own, which
     `test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash` now is.
+!!! danger "The same lesson, a second time: eighty-five runs, one wrong limit"
+    Found the same way — in a deployment's logs — and it is the danger above with the
+    crash removed and the misdiagnosis left in place. That is the part worth noticing:
+    the first fix repaired the handler that crashed, and the mechanism that *reported*
+    a permanent failure as a temporary one was left exactly as it was, so it produced a
+    second outage of its own.
+
+    `build_insights_bundle` names no metric types. It is asking for whatever the
+    workspace holds, so Core fell back to every metric with data in the window — and a
+    ceiling of a hundred rejected the answer with `INVALID_ARGUMENT` because the
+    workspace had a hundred and twelve.
+
+    The ceiling was wrong in two independent ways. It ran **after** the query it claimed
+    to bound had already executed and been accumulated, so it discarded finished work
+    rather than preventing any. And no fixed number could have been right, because
+    `home_assistant_*` and `apple_health_*` are open namespaces
+    ([AGENTS.md](../../AGENTS.md) rule 15) sized by the reader's own installation. The
+    response is bounded by `MAX_SERIES_BUCKETS` — series times buckets, checked before
+    anything is serialised, in the unit a response is actually measured in. The
+    request-side cap stays, because a caller wrote that list and rejecting it costs
+    nothing.
+
+    What made it last seven days was the classification. Every `AioRpcError` in
+    `core_client.py` became `CoreUnavailable`, so a deterministic refusal took the
+    branch built for an absent Core: the worker deliberately writes no failure there,
+    because Core is the thing that would have to store it. The run was left in flight,
+    Core's sweep failed it as `report_timeout` half an hour later, the next tick claimed
+    it again — **eighty-five identical failures, no error code stored anywhere, and a
+    dashboard that said "temporarily unavailable" throughout.**
+
+    `CoreRejected` now exists beside `CoreUnavailable`, deliberately *not* a subclass so
+    the retry branches cannot catch it by accident — the accident is the whole story. It
+    is stored as `insights_rejected`, which has an entry in both catalogues that says
+    repeating will not help, because "try again later" and "this cannot succeed as
+    configured" ask different things of whoever reads it. `UNAUTHENTICATED` and
+    `RESOURCE_EXHAUSTED` are deliberately *not* permanent: an expired service credential
+    is refreshed on the next call, which is precisely a retry that helps.
+
 - A late result arriving after Core has timed the run out is **refused**
   (`RUN_ALREADY_FINISHED`), because the timeout may already have queued a replacement and a
   stale result must not overwrite a newer one.
