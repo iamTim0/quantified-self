@@ -96,6 +96,15 @@ Generated from the registry; changes made here are overwritten by the next `task
 Each metric carries a label in both interface languages. The table below shows the English one; the
 dashboard picks whichever matches the reader's language.
 
+The `unit` column is the dimension the value is **stored** in, which is not always the same as what a
+reader sees. `count` is the registry's name for a bare number, and it belongs there — a value with no
+declared unit is how a unit bug starts. Printed beside the figure it says nothing the label had not
+already said, so the dashboard suppresses it: the day's step tile reads `16,400`, not `16,400 count`.
+That suppression lives in `describeMetric()`, which is the dashboard's display helper;
+`METRIC_CATALOG[key].unit` still reports `count`, and so does this table, because reference material
+should state the dimension. `index` is deliberately kept — a bare index is a number a reader cannot
+place.
+
 <!-- BEGIN GENERATED METRIC TABLE -->
 
 ### Activity
