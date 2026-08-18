@@ -28,6 +28,21 @@ export const en = {
   "common.years_one": "{count} year",
   "common.years_other": "{count} years",
 
+  // ── When a screen throws ────────────────────────────────────────────────────
+  "crash.title": "This screen stopped working",
+  "crash.detail":
+    "Something in this view failed while rendering. Your data is unaffected — nothing was written, and the rest of the app still works.",
+  "crash.retry": "Try this screen again",
+  "crash.reload": "Reload the page",
+  "crash.home": "Back to the overview",
+  "crash.technical": "Technical detail",
+  "crash.technicalHint":
+    "Include this when reporting the problem. It names the code that failed, not your data.",
+  "crash.digest": "Reference",
+  "crash.fatalTitle": "The app could not start",
+  "crash.fatalDetail":
+    "The page failed before it could load anything, so this message is not translated.",
+
   // ── Language switcher ──────────────────────────────────────────────────────
   "lang.label": "Language",
   "lang.switchTo": "Switch to {language}",

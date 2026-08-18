@@ -167,7 +167,31 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+      # Cached, because it is the one step here that downloads ~150 MB from a
+      # third-party CDN on every single run. Twice it stalled long enough to eat
+      # the job's whole 20-minute budget -- reported as "cancelled", with every
+      # other job green, which reads like an infrastructure mystery rather than a
+      # slow download. The key carries the resolved Playwright version, so a
+      # dependency bump invalidates it instead of restoring a browser the new
+      # client refuses to drive.
+      - name: Playwright version
+        id: pw
+        working-directory: apps/dashboard
+        run: echo "version=$(bunx playwright --version | tr -d '\n')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      # `--with-deps` installs apt libraries into the runner, so it runs whether or
+      # not the browser itself was restored; the browser download is what the cache
+      # skips. A timeout well below the job's own, so a stalled CDN fails this step
+      # loudly instead of silently consuming the budget for the tests.
       - name: Install Chromium
+        timeout-minutes: 6
         run: bunx playwright install --with-deps chromium
         working-directory: apps/dashboard
 

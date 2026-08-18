@@ -26,6 +26,21 @@ export const de: Record<MessageKey, string> = {
   "common.years_one": "{count} Jahr",
   "common.years_other": "{count} Jahre",
 
+  // ── When a screen throws ────────────────────────────────────────────────────
+  "crash.title": "Diese Ansicht funktioniert nicht mehr",
+  "crash.detail":
+    "In dieser Ansicht ist beim Darstellen etwas fehlgeschlagen. Deine Daten sind davon nicht betroffen — es wurde nichts geschrieben, und der Rest der Anwendung funktioniert weiter.",
+  "crash.retry": "Ansicht erneut versuchen",
+  "crash.reload": "Seite neu laden",
+  "crash.home": "Zurück zur Übersicht",
+  "crash.technical": "Technische Details",
+  "crash.technicalHint":
+    "Bitte mitschicken, wenn du das Problem meldest. Es benennt den fehlgeschlagenen Code, nicht deine Daten.",
+  "crash.digest": "Kennung",
+  "crash.fatalTitle": "Die Anwendung konnte nicht starten",
+  "crash.fatalDetail":
+    "Die Seite ist fehlgeschlagen, bevor sie etwas laden konnte — deshalb ist diese Meldung nicht übersetzt.",
+
   // ── Language switcher ──────────────────────────────────────────────────────
   "lang.label": "Sprache",
   "lang.switchTo": "Auf {language} umstellen",

@@ -530,3 +530,99 @@ export async function useFixtures(page: Page): Promise<void> {
 
 /** The screens the fixtures above actually fill, for a suite to iterate. */
 export const FILLED_ROUTES = ["/", "/explorer", "/workouts", "/quality"] as const;
+
+/**
+ * Every report kind, answered with the thinnest payload a stored run can have.
+ *
+ * `useStaleReportFixtures` above reproduces one outage precisely: two named fields
+ * missing from the day report. This is the same idea taken to the general case,
+ * because the specific fix that followed that outage was applied to the two fields
+ * rather than to the shape — `AnalysisTab` went on dereferencing seven required
+ * fields of a payload no schema validates, and `Object.keys(undefined)` throws just
+ * as loudly as `undefined.reduce`.
+ *
+ * `result: {}` is not a contrived shape. It is the lower bound of what a stored run
+ * can hand a client, and every field a release ever adds is missing from it by
+ * definition. A component that survives this survives every future rename, which is
+ * the property worth having: the next field to be added is not knowable today, so a
+ * test naming today's fields would only ever catch yesterday's bug.
+ *
+ * `status: "ready"` deliberately, with a `computed_at`: this must not be mistaken
+ * for the never-computed state, which every tab already handles. The claim under
+ * test is "a finished run whose shape we do not recognise", and the only acceptable
+ * outcome is a page that renders with its sections empty.
+ */
+const MINIMAL_ENVELOPE = {
+  status: "ready" as const,
+  stale: true,
+  deferred: false,
+  running: false,
+  computed_at: at(6),
+  covers_data_through: at(6),
+  params: {},
+  result: {},
+  error: null,
+};
+
+/**
+ * Serve `result: {}` for every report kind, and real fixtures for everything else.
+ *
+ * Registered after `useFixtures` for the reason that one documents: Playwright
+ * matches the **last** registered route, so the broad `/data/**` handler would
+ * otherwise answer the day report with the current shape and the suite would test
+ * nothing while passing.
+ */
+export async function useMinimalReportFixtures(page: Page): Promise<void> {
+  await useFixtures(page);
+  await page.route("**/api/v1/data/reports/**", async (route: Route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    const kind = new URL(route.request().url()).pathname.split("/").pop() ?? "day";
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ kind, ...MINIMAL_ENVELOPE }),
+    });
+  });
+}
+
+/**
+ * The screens that read a precomputed report, and therefore the ones a stored
+ * payload from another release can reach. Derived from `useReport` call sites:
+ * the overview reads `day`, analysis reads `insights`, quality reads `gaps` and
+ * `conflicts`.
+ */
+export const REPORT_ROUTES = ["/", "/analysis", "/quality"] as const;
+
+/**
+ * A report whose field changed *type* rather than merely going missing.
+ *
+ * `useMinimalReportFixtures` covers absence, and normalisation answers absence
+ * completely. It cannot answer this: `gaps: 7` satisfies no reader's expectations and
+ * `?? []` leaves it exactly where it was, so `gaps.reduce(...)` throws. Nor should
+ * normalisation try — validating every field's type at the boundary is a schema
+ * validator, and this app does not have one on the client.
+ *
+ * So this fixture exists to test the *other* half of the answer: that a throw is
+ * caught by an error boundary, that the reader gets a page they can read and act on,
+ * and that the navigation above it survives. A crash that costs one screen is an
+ * acceptable outcome; a crash that costs the whole dashboard is what happened in
+ * production.
+ */
+export async function useBrokenReportFixtures(page: Page): Promise<void> {
+  await useFixtures(page);
+  await page.route("**/api/v1/data/reports/gaps*", async (route: Route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "gaps",
+        ...MINIMAL_ENVELOPE,
+        // A number where the client expects a list. Not contrived: a field that
+        // changes from a list to a count is an ordinary API evolution, and the stored
+        // report from before the change keeps the old shape either way.
+        result: { gaps: 7, cadence_gaps: [] },
+      }),
+    });
+  });
+}

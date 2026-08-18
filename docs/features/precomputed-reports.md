@@ -150,8 +150,13 @@ So a client reading a report follows two rules:
    optional in the type, which forces the question to be answered rather than assumed.
 2. **Normalise once, at the read.** `DailyStory` fills defaults in a single
    `normaliseStory()` and hands the strict shape downstream; `AnalysisTab` does the same
-   for `anomalies` and `correlations`. A guard per call site is a rule enforced by
+   in `normaliseInsights()`. A guard per call site is a rule enforced by
    memory, and the next field added gets dereferenced raw by whoever adds it.
+3. **Only containers get a default.** An absent list is honestly an empty list. An
+   absent *number* is not zero — defaulting `pearson` or `coverage_pct` would put a
+   fabricated measurement on screen, indistinguishable from a real one, which
+   [AGENTS.md](../../AGENTS.md) rule 19 calls worse than a gap. Missing scalars stay
+   missing and render as "—".
 
 Absent is rendered as **empty, not as an error**: an older run is genuinely missing that
 information rather than wrong about it, and the section reappears at the next
@@ -162,6 +167,39 @@ those two fields deleted — derived from the current fixture by omission, so it
 drift — and asserts that **no `pageerror` fires**. The assertion is the uncaught
 exception rather than any visible string, because the visible symptom was Next's own
 error page, which no locator in this repository describes.
+
+### The rule, rather than the two fields
+
+That test names `logged` and `logged_limit_reached`, which is right for a regression test
+and worthless as a guarantee: the next field to be added is not knowable today. The first
+fix was applied to the two fields that had broken, and the analysis tab went on
+dereferencing seven more of its own — `Object.keys(undefined)` throws exactly as loudly
+as `undefined.reduce`.
+
+`apps/dashboard/e2e/partial-reports.spec.ts` is the general form. Every report kind is
+answered with `result: {}` — the lower bound of what a stored run can hand a client, and
+a shape from which *every* field a release ever adds is missing by definition — and every
+screen that reads a report must still render. It found the analysis tab immediately.
+
+### And when normalisation cannot answer
+
+Normalisation answers absence completely. It does not answer a field whose **type**
+changed: `gaps: 7` satisfies `?? []` and then throws on `.reduce`. Validating every field
+on the client is a schema validator, which this dashboard does not have.
+
+So the second half of the answer is an **error boundary**, which the app had none of
+until this. `(dashboard)/error.tsx` sits *inside* the shell layout, so a screen that
+throws costs that screen: the sidebar and the tab bar stay mounted and the reader can
+walk to a working tab. It offers a retry, a reload and a link to the overview — which of
+the three helps depends on the cause, so the reader is not asked to guess — and puts the
+error message and its digest behind a disclosure, because on a minified production build
+that digest is the only handle anyone has on what failed.
+
+`app/error.tsx` covers sign-in, the legal pages and a throw in the dashboard layout
+itself. `app/global-error.tsx` covers a failure in the root layout, where the locale
+provider no longer exists; it resolves the language from the `qs-locale` cookie and reads
+the same catalogue, so no string escapes the catalogue and rule 16 gains no fifth
+exception.
 
 ## Reading a report
 
