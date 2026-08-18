@@ -50,9 +50,16 @@ async function expandCollapsedSections(page: Page) {
   }
 }
 
+/**
+ * A phone is a touch device, and that is part of the fixture rather than a detail.
+ *
+ * A 390px viewport driven by a mouse reports `pointer: fine`, so every rule written
+ * for thumbs is invisible to it — the suite would measure a layout no phone ever
+ * renders and pass. `hasTouch` is what makes `@media (pointer: coarse)` true here.
+ */
 const VIEWPORTS = {
-  phone: { width: 390, height: 844 },
-  laptop: { width: 1440, height: 900 },
+  phone: { viewport: { width: 390, height: 844 }, hasTouch: true },
+  laptop: { viewport: { width: 1440, height: 900 }, hasTouch: false },
 } as const;
 
 const THEMES = ["light", "dark"] as const;
@@ -61,7 +68,7 @@ const SHOTS = process.env.QS_SHOTS === "1";
 const SHOT_DIR = process.env.QS_SHOT_DIR ?? "/tmp/qs-filled";
 
 for (const theme of THEMES) {
-  for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
+  for (const [viewportName, { viewport, hasTouch }] of Object.entries(VIEWPORTS)) {
     test.describe(`filled, ${theme} theme, ${viewportName}`, () => {
       let context: BrowserContext;
       let page: Page;
@@ -72,7 +79,12 @@ for (const theme of THEMES) {
         await signUp(api, account);
         await api.dispose();
 
-        context = await browser.newContext({ baseURL: API_BASE, locale: "en-GB", viewport });
+        context = await browser.newContext({
+          baseURL: API_BASE,
+          locale: "en-GB",
+          viewport,
+          hasTouch,
+        });
         page = await context.newPage();
         await page.addInitScript(
           ([key, value]) => window.localStorage.setItem(key, value),

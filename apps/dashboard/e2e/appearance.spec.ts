@@ -53,11 +53,18 @@ import { API_BASE, newAccount, signInAnyWidth, signUp } from "./helpers";
  */
 const ROUTES = Object.values(TAB_PATHS);
 
+/**
+ * A phone is a touch device, and that is part of the fixture rather than a detail.
+ *
+ * A 390px viewport driven by a mouse reports `pointer: fine`, so every rule written
+ * for thumbs is invisible to it — the suite would measure a layout no phone ever
+ * renders and pass. `hasTouch` is what makes `@media (pointer: coarse)` true here.
+ */
 const VIEWPORTS = {
   // A 390x844 phone (iPhone 12-ish) and a laptop. The phone matters more: the
   // tab bar, the safe-area handling and the "More" sheet only exist there.
-  phone: { width: 390, height: 844 },
-  laptop: { width: 1440, height: 900 },
+  phone: { viewport: { width: 390, height: 844 }, hasTouch: true },
+  laptop: { viewport: { width: 1440, height: 900 }, hasTouch: false },
 } as const;
 
 const THEMES = ["light", "dark"] as const;
@@ -95,7 +102,7 @@ async function pinTheme(page: Page, theme: (typeof THEMES)[number]) {
  * `fullyParallel: false`, so these still execute in order on the shared page.
  */
 for (const theme of THEMES) {
-  for (const [viewportName, viewport] of Object.entries(VIEWPORTS)) {
+  for (const [viewportName, { viewport, hasTouch }] of Object.entries(VIEWPORTS)) {
     test.describe(`${theme} theme, ${viewportName}`, () => {
       let context: BrowserContext;
       let page: Page;
@@ -111,7 +118,12 @@ for (const theme of THEMES) {
 
         // Options from `use` in the config apply to the `page` fixture, not to a
         // context created by hand, so locale and viewport are passed explicitly.
-        context = await browser.newContext({ baseURL: API_BASE, locale: "en-GB", viewport });
+        context = await browser.newContext({
+          baseURL: API_BASE,
+          locale: "en-GB",
+          viewport,
+          hasTouch,
+        });
         page = await context.newPage();
         await pinTheme(page, theme);
         await signInAnyWidth(page, account);

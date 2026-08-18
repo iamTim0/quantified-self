@@ -9,6 +9,37 @@
  * rather than being carried permanently by every visitor who never installs.
  */
 @custom-variant standalone (@media (display-mode: standalone));
+
+/*
+  Thumb-sized targets, on the devices aimed at with a thumb.
+
+  `docs/features/dashboard-appearance.md` states 44x44 as the goal, and about forty
+  controls across the Explorer, Workouts, Quality, Connectors and Profile screens sat
+  between 28 and 42 — the filter chips, the view tabs, the segmented ranges. Raising
+  each one everywhere was the obvious fix and the wrong one: those rows are dense on
+  purpose, and 44px of height per chip makes a desktop filter bar into a toolbar.
+
+  The requirement is about fingers. WCAG 2.5.5 asks 44x44 at AAA; the AA floor is
+  2.5.8's 24x24, which this app clears everywhere and which the browser suite enforces
+  as a hard gate. So the enlargement is scoped to `pointer: coarse` — a touchscreen —
+  where a 30px chip genuinely is hard to hit, and pointer devices keep their density.
+
+  Deliberately only `button` and `select`. Not links: an underlined link inside a
+  sentence cannot gain height without becoming a button, which 2.5.8 exempts for that
+  reason. Not `[role="button"]`, because those are composed elements whose height is
+  usually set by a parent that would fight this.
+*/
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 2.75rem;
+    /* Width as well as height, or an icon-only button stays a 28px-wide sliver that
+       is merely tall — which is what the first version of this rule produced on the
+       Explorer's three chart-type toggles. A text button is already wider than this,
+       so the floor only ever bites where it should. */
+    min-width: 2.75rem;
+  }
+}
 /* Self-hosted so the map needs no third-party script or stylesheet. The former
    unpkg.com CDN load was blocked by our own CSP, which left the map a grey box. */
 @import "leaflet/dist/leaflet.css";

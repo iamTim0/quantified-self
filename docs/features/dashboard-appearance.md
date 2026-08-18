@@ -84,7 +84,7 @@ three things a machine can settle:
 - **Nothing overflows horizontally.** Content that scrolls inside its own container
   is fine — a wide table legitimately does — so an element only counts as an
   offender when it exceeds the viewport and no ancestor made itself scrollable.
-- **Target sizes**, as described under [Target sizes](#target-sizes-and-which-floor-is-actually-enforced).
+- **Target sizes**, as described under [Target sizes](#target-sizes-44-for-thumbs-density-for-pointers).
 
 The routes come from the `TAB_PATHS` registry rather than a list in the test, so a
 new destination is covered the day it is added. Sign-in goes through
@@ -277,30 +277,39 @@ The dialog's old behaviour was worse than merely stateful: on Android, hardware
 back dismissed the *page underneath* the open dialog, and in an installed app
 that is the only back affordance there is.
 
-### Target sizes, and which floor is actually enforced
+### Target sizes: 44 for thumbs, density for pointers
 
-44×44 CSS pixels is the **goal** for interactive targets, and it is worth stating
-plainly that the app does not meet it everywhere. The navigation surfaces do. The
-dialogs were brought up to it — the close buttons on the connector and import
-dialogs, the notification panel's refresh and the upload banner's dismiss were
-between 22 and 32 pixels, the smallest of them on the most transient surface.
+44×44 CSS pixels is the goal for interactive targets, and the honest way to state it
+is that it applies **where a target is hit with a thumb**. That is not a hedge: WCAG
+2.5.5 asks 44×44 at AAA, while the AA requirement is 2.5.8's 24×24. The difference
+matters here because the Explorer, Workouts, Data Quality and Connectors screens carry
+dense rows of filter chips and view tabs, about forty of which sat between 28 and 42
+pixels. Raising every one of them everywhere was the obvious fix and the wrong one —
+those rows are dense on purpose, and 44 pixels per chip turns a desktop filter bar into
+a toolbar.
 
-Roughly forty controls across the Explorer, Workouts, Data Quality, Connectors and
-Profile screens still sit between 28 and 42 pixels. That is a visual redesign rather
-than a bug fix, so it is recorded rather than quietly done: the browser suite prints
-them as `under-44px` annotations on every run, and the count is visible instead of
-being implied away by a passing test.
+So `globals.css` raises `button` and `select` to 44×44 under `@media (pointer: coarse)`
+only. On a touchscreen every control now clears 44×44; on a pointer device the rows
+keep their density, and the browser suite records what remains as `under-44px`
+annotations rather than failing on them.
 
-What **is** enforced, as a failing test, is the WCAG 2.5.8 AA floor of 24×24. The
-app clears it everywhere, which makes it a real gate: anything that appears below it
-is new. Two controls were below it and were fixed when the check was written — the
-severity badge's dismiss in the system-warning banner (24×24, a 16px icon with 4px
-of padding) and the *Copy* affordance beside the workspace ID on the profile screen
-(47×16, a bare text button with no hit area at all).
+Only `button` and `select`. Not links — an underlined link inside a sentence cannot gain
+height without becoming a button, which 2.5.8 exempts for exactly that reason. Not
+`[role="button"]`, whose height is usually set by a parent that would fight the rule.
 
-Text links are exempt from both floors, as WCAG 2.5.8 exempts targets inside a block
-of text: the only way to give an underlined link 44 pixels of height is to pad it
-until it reads as a button.
+Both dimensions, because the first version set `min-height` alone and left the
+Explorer's three chart-type toggles as 28-pixel-wide slivers that were merely tall.
+
+The **enforced** floor, as a failing test, is 2.5.8's 24×24 at every width. The app
+clears it everywhere, which is what makes it a gate rather than a backlog: anything
+below it is new. Two controls were below it when the check was written — the dismiss in
+the system-warning banner (24×24: a 16px icon with 4px of padding) and the *Copy*
+affordance beside the workspace ID (47×16, no hit area at all).
+
+Testing this required a correction to the suite itself: a 390px viewport driven by a
+mouse reports `pointer: fine`, so it renders a layout no phone ever sees. The phone
+contexts set `hasTouch`, which is what makes the coarse-pointer rule true — and
+therefore testable.
 
 The daily story places the current day first and yesterday below it. When a day
 has a location lane, the map is loaded on demand and asks Core for that tenant's
