@@ -113,6 +113,27 @@ Turn it off with the **Per-repository breakdown** checkbox in the connector dial
 stores `per_repository: false` in the connector configuration. It is on by default,
 because that is what the importer does when the key is absent.
 
+## Windows longer than a year
+
+`contributionsCollection` refuses any span wider than one year, and it refuses it with an
+HTTP 200 carrying a GraphQL error — so it read as a *failed import* rather than as a
+truncated one. A first import asks for the whole history it has never seen, which made
+full backfill impossible: the run ended with `GitHub GraphQL error: The total time spanned
+by 'from' and 'to' must not exceed 1 year` and stored nothing.
+
+The importer now splits a longer window into consecutive spans of at most 365 days and
+merges the answers. The spans are a microsecond apart, so no contribution falls between two
+of them and none is counted twice — a day that straddles a boundary is reported by each span
+with only its own share, and the day's total is the sum. Followers and stars are the
+exception: they are counts as of now rather than activity inside the window, so the most
+recent span's answer wins instead of being added up.
+
+Only this query is bounded. Line counts come from the git history, whose `since`/`until`
+have no such ceiling, so they are still read in one pass over the whole window.
+
+The cost is one extra GraphQL call per year of history — a decade of backfill is eleven
+calls against an hourly budget of 5,000 points.
+
 ## Bounds, and what says so
 
 | Bound | Value | What happens at it |
@@ -120,6 +141,7 @@ because that is what the importer does when the key is absent.
 | Repositories read for line counts | 40, busiest first | Beyond it, line counts are **omitted** rather than reported as zero |
 | Commits read per repository | 500 | The point is marked `partial` with `partial_reason: commit_scan_truncated` |
 | Streak length | The import window | `bounded_by_window: true` in the metadata |
+| Span of one contribution query | 365 days | A longer window is split and the pieces merged |
 
 The first is the one that matters. A repository past the cap still contributes commits — the
 calendar counted them — but no lines, and reporting `0` lines for a day that had thousands

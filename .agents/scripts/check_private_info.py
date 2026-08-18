@@ -47,7 +47,11 @@ ALLOWED_EMAIL_DOMAINS = (
 # address under it is a fixture by construction -- `a@b.test` included.
 ALLOWED_EMAIL_TLDS = (".test", ".invalid", ".example", ".localhost")
 
-# The author line of a copyright notice is a name on purpose.
+# The author line of a copyright notice is a name on purpose. That notice lives in
+# `NOTICE`, not in `LICENSE`: GitHub identifies a licence by matching the file
+# against the known text, and a copyright header in front of it made the
+# repository report "no license" instead of AGPL-3.0. `LICENSE` is now the FSF's
+# wording and nothing else, so it needs no allowance and does not get one.
 #
 # The same goes for *other people's* copyright notices, which is why the licence
 # texts the dashboard image redistributes are listed here. `nanoid` and `postcss`
@@ -56,7 +60,7 @@ ALLOWED_EMAIL_TLDS = (".test", ".invalid", ".example", ".localhost")
 # obligation the file exists to satisfy. Neither is information about who runs this
 # repository or where, which is what rule 14 is about.
 SKIP_FILES = {
-    "LICENSE",
+    "NOTICE",
     "apps/dashboard/THIRD-PARTY-NOTICES.txt",
 }
 

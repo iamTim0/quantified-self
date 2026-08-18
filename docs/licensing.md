@@ -7,12 +7,15 @@ the places where that distinction matters are marked as such below.
 ## Our own code: AGPL-3.0
 
 `LICENSE` in the repository root: the GNU Affero General Public License, version 3, in the FSF's
-wording, with a copyright line in front of it. So that this is not only stated there:
+wording and nothing else. The copyright line sits in `NOTICE` beside it, because GitHub identifies
+a licence by matching that file against the known text — with the notice in front of it the
+repository reported "no license" rather than AGPL-3.0, which is the opposite of what it says. So
+that this is not only stated in those two files:
 
 - all fourteen `pyproject.toml` files and the dashboard's `package.json` declare
   `license = "AGPL-3.0-only"`,
 - all fourteen images carry `org.opencontainers.image.licenses=AGPL-3.0-only` as an OCI label,
-- the deployment bundle of every release contains `LICENSE`.
+- the deployment bundle of every release contains `LICENSE` and `NOTICE`.
 
 The project was MIT licensed before. The change was possible because at that point **nobody** had
 received a copy: the repository was private, the GHCR packages were private, and the single release

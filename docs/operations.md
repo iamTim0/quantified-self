@@ -103,8 +103,10 @@ task docs:build        # MkDocs --strict
     `${JWT_SECRET:-dev-secret-key-quantified-self-2026}`, so a deployment without the variable set
     ran on the public value — and said nothing about it. `docker-compose.prod.yml` uses
     `${VAR:?…}`; if a variable is missing, `docker compose` aborts before a container starts. On top
-    of that, Core and the Gateway refuse to start when `ENVIRONMENT` is production-like and a value
-    matches a published default.
+    of that, Core, the Gateway and the Analysis service refuse to start when `ENVIRONMENT` is
+    production-like and a value matches a published default. Analysis needs the check for the same
+    reason the Gateway does: it re-validates the user's Bearer token itself instead of trusting the
+    Gateway hop, so it holds `JWT_SECRET` too.
 
     ```bash
     python -c "import secrets; print(secrets.token_urlsafe(48))"

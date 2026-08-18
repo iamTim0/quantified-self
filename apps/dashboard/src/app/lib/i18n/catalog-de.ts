@@ -84,8 +84,13 @@ export const de: Record<MessageKey, string> = {
   "footer.sourceCommit": "Quellcode ({commit})",
   "legal.nav": "Rechtliches",
   "legal.backToApp": "Zurück zur Anwendung",
-  "legal.disclaimer":
-    "Diese Texte sind eine Vorlage und ersetzen keine Rechtsberatung. Vor dem produktiven Einsatz durch eine qualifizierte Stelle prüfen lassen.",
+  "legal.imprintMeta": "Impressum — Quantified Self",
+  "legal.imprintMetaDescription": "Anbieterkennzeichnung nach § 5 DDG und § 18 Abs. 2 MStV.",
+  "legal.privacyMeta": "Datenschutzerklärung — Quantified Self",
+  "legal.privacyMetaDescription":
+    "Informationen zur Verarbeitung personenbezogener Daten in der Quantified-Self-Plattform.",
+  "legal.notPublished":
+    "Der Betreiber dieser Installation hat dieses Dokument noch nicht veröffentlicht.",
   "legal.translationNote":
     "Dies ist eine Übersetzung als Lesehilfe. Verbindlich ist die deutsche Fassung.",
   "legal.germanOnlyNote":
@@ -591,13 +596,13 @@ export const de: Record<MessageKey, string> = {
     "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können Login-Anbieter verwalten.",
   "legalAdmin.title": "Rechtstexte",
   "legalAdmin.lead":
-    "Impressum und Datenschutzerklärung selbst verfassen. Bis dahin wird die mitgelieferte Vorlage veröffentlicht — mitsamt Platzhaltern.",
+    "Impressum und Datenschutzerklärung selbst verfassen. Bis dahin weisen beide Seiten aus, dass das Dokument nicht veröffentlicht ist.",
   "legalAdmin.forbidden":
     "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können die Rechtstexte bearbeiten.",
   "legalAdmin.loadFailed": "Die Rechtstexte konnten nicht geladen werden.",
   "legalAdmin.saveFailed": "Das Dokument konnte nicht gespeichert werden.",
   "legalAdmin.stateCustom": "Es wird ein eigener Text veröffentlicht.",
-  "legalAdmin.stateDefault": "Es wird die mitgelieferte Vorlage veröffentlicht.",
+  "legalAdmin.stateDefault": "Es ist noch nichts veröffentlicht.",
   "legalAdmin.edit": "Bearbeiten",
   "legalAdmin.german": "Deutsch",
   "legalAdmin.english": "Englisch",
@@ -611,7 +616,7 @@ export const de: Record<MessageKey, string> = {
   "legalAdmin.englishHint":
     "Eine Übersetzung als Lesehilfe, optional. Bis es sie gibt, wird englischen Lesern der deutsche Text mit einem Hinweis gezeigt — ein aktuelles Dokument in der falschen Sprache ist besser als ein veraltetes in der richtigen.",
   "legalAdmin.emptyMeansDefault":
-    "Wird der deutsche Text geleert, gilt wieder die mitgelieferte Vorlage.",
+    "Wird der deutsche Text geleert, ist das Dokument nicht mehr veröffentlicht.",
   "legalAdmin.saved": "Gespeichert. Die öffentliche Seite zeigt den neuen Text sofort.",
   "oidc.loadFailed": "Anbieter konnten nicht geladen werden.",
   "oidc.saveFailed": "Speichern fehlgeschlagen.",

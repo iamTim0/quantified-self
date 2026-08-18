@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://github.com/iamTim0/quantified-self/tree/main/docs
+    about: Setup, operations, importers, metrics and troubleshooting.
+  - name: Report a security vulnerability
+    url: https://github.com/iamTim0/quantified-self/security/advisories/new
+    about: Private disclosure. Please do not open a public issue for anything exploitable.

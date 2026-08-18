@@ -486,9 +486,10 @@ jobs:
           mkdir -p "$bundle/infra/db" "$bundle/tools"
 
           cp docker-compose.prod.yml "$bundle/"
-          # A distributed artefact should say what it is licensed under, and MIT
-          # asks for the notice to be included in copies.
-          cp LICENSE "$bundle/"
+          # A distributed artefact should say what it is licensed under, and
+          # AGPL-3.0 section 4 asks for the copyright notice to travel with the
+          # copy -- which is why NOTICE ships too, not only the licence text.
+          cp LICENSE NOTICE "$bundle/"
           # Mounted by the postgres service at this exact relative path.
           cp infra/db/init.sql "$bundle/infra/db/"
           # The deployment guide's verification step calls this, and a bundle

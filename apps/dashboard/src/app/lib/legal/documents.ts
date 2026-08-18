@@ -3,11 +3,12 @@ import type { Locale } from "../i18n/locale";
 /**
  * Reading the imprint and the privacy policy an operator has written.
  *
- * Both documents ship with a full German and English default, and for a long time
- * that default was all a deployment could show: the text lived in two TSX
- * components carrying `[placeholder]` markers, so naming the company meant editing
- * source and rebuilding an image. Anyone who does not do that ran a public service
- * whose legal notice identified nobody.
+ * These are the only texts either page has. This repository used to ship a full
+ * German and English template in two TSX components carrying `[placeholder]`
+ * markers, and for a while that template was all a deployment could show — naming
+ * the company meant editing source and rebuilding an image. The template is gone
+ * now that the text is editable: a legal notice that names a placeholder company
+ * is a wrong notice rather than a missing one, and the reader has no way to tell.
  *
  * Fetched on the server, in the page that renders it. These are the two routes in
  * the product that need no session and — before this — no JavaScript, and both
@@ -54,15 +55,14 @@ function internalApiBase(): string {
  * fetched.
  *
  * The two are collapsed deliberately. A legal page whose API is unreachable must
- * still render: the caller answers null by showing the shipped default, which is a
- * complete document that says on its face that it is a template. The alternative —
- * an error page where a statutory notice belongs — fails in the one way that is
- * worse than showing a template, and it fails at exactly the moment the platform
- * is already having a bad day.
+ * still render: the caller answers null with a page saying the document is not
+ * published. The alternative — an error page where a statutory notice belongs —
+ * fails in the one way that is worse, and it fails at exactly the moment the
+ * platform is already having a bad day.
  *
  * A short timeout for the same reason. This request sits in front of the first
- * byte of a public page, so it is better to render the default a second early than
- * to hold the response open waiting for a service that is not coming back.
+ * byte of a public page, so it is better to answer a second early than to hold the
+ * response open waiting for a service that is not coming back.
  */
 export async function fetchLegalDocument(slug: LegalSlug): Promise<LegalDocument | null> {
   try {
@@ -86,12 +86,11 @@ export async function fetchLegalDocument(slug: LegalSlug): Promise<LegalDocument
  * Which text a reader of `locale` gets, and whether it is in their language.
  *
  * The fallback is the decision worth stating. A document written only in German is
- * shown to English readers as well, rather than falling back to the shipped English
- * template — because the two documents would then describe different processing,
- * and each reader would believe theirs was the accurate one. Rule 16 makes exactly
- * that argument for the halves of a legal text, and a current document in the wrong
- * language is the lesser failure: `translated` is false, so the page keeps the note
- * saying which version governs.
+ * shown to English readers as well, rather than telling them nothing is published —
+ * the operator has published a document, and withholding it from half the readers
+ * over its language serves nobody. A current document in the wrong language is the
+ * lesser failure: `translated` is false, so the page keeps the note saying which
+ * version governs.
  *
  * German never falls back to English. It is the binding half (rule 16), so there is
  * no case where showing the courtesy translation in its place is correct.

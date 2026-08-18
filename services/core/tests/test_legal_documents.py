@@ -1,9 +1,10 @@
 """The imprint and the privacy policy, as text an operator owns.
 
-Both documents shipped as TSX components full of ``[placeholder]`` markers, so
+Both documents once shipped as TSX components full of ``[placeholder]`` markers, so
 publishing a real legal notice meant editing source and rebuilding an image. A
 deployment whose owner does not do that served a public imprint naming nobody,
-which is the condition § 5 DDG exists to prevent.
+which is the condition § 5 DDG exists to prevent. The templates are gone: what a
+deployment publishes is what its operator wrote here, and nothing else.
 
 What these tests hold down is not the storage — that is a row — but the four
 rules around it that are easy to regress and expensive to notice:
@@ -12,8 +13,8 @@ rules around it that are easy to regress and expensive to notice:
   nothing;
 * the write needs the owner or admin role;
 * the German half governs, so English text without German text is refused;
-* clearing the German half restores the shipped default rather than publishing an
-  empty page where a statutory notice belongs.
+* clearing the German half unpublishes the document, reported as ``source ==
+  "default"``, rather than publishing an empty page where a notice belongs.
 
 Maps to Fizzbee Invariants:
 - NoUnauthorizedAccess
@@ -134,8 +135,8 @@ async def test_english_without_german_is_refused(monkeypatch: pytest.MonkeyPatch
 
 
 @pytest.mark.asyncio
-async def test_clearing_the_german_text_restores_the_shipped_default(monkeypatch: pytest.MonkeyPatch):
-    """Emptying the field is the way back to the template, not a way to publish a blank page."""
+async def test_clearing_the_german_text_unpublishes_the_document(monkeypatch: pytest.MonkeyPatch):
+    """Emptying the field withdraws the document, rather than publishing a blank page."""
     tenant_id = await create_test_tenant()
     as_platform_tenant(monkeypatch, tenant_id)
     try:

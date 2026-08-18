@@ -344,6 +344,7 @@ services:
         condition: service_healthy
     environment:
       - CORE_GRPC_URL=core:50051
+      - ENVIRONMENT=${ENVIRONMENT:-production}
       - JWT_SECRET=${JWT_SECRET:?set JWT_SECRET}
       # Must match Core's, or Analysis cannot authenticate to the gRPC API.
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:?set INTERNAL_SERVICE_SECRET}

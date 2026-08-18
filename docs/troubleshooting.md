@@ -277,14 +277,19 @@ makes a request to unpkg.
 
 ## Configuration
 
-### Core or the Gateway will not start: "refuses to start with published secrets"
+### Core, the Gateway or Analysis will not start: "refuses to start with published secrets"
 
 That is exactly the intent. `ENVIRONMENT` is set to something production-like and at least one of
 `JWT_SECRET`, `INTERNAL_SERVICE_SECRET`, `ENCRYPTION_KEY` is missing or matches a default that is
 printed in this repository. The message names every affected variable at once. See
 [Operations](operations.md#required-configuration).
 
-For local development set `ENVIRONMENT=dev` — then it only warns.
+All three services verify user tokens, so all three hold `JWT_SECRET` and all three check it. The
+compose `${VAR:?…}` guard only covers `docker compose up`; this check covers every other way a
+process gets started.
+
+For local development set `ENVIRONMENT=dev` — then it only warns. Both compose files set it
+explicitly, so a normal `docker compose up` is unaffected.
 
 ### `docker compose` aborts with "set JWT_SECRET"
 

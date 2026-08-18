@@ -1000,8 +1000,8 @@ class LegalDocument(Base):
     #: A unique constraint carries its own index in Postgres, so there is no
     #: separate `index=True` here to create a second one.
     slug: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
-    #: The binding half (rule 16). Empty means "no custom text": the shipped default
-    #: document is shown instead, rather than a blank page where a notice must be.
+    #: The binding half (rule 16). Empty means "nothing published": the public page
+    #: says so plainly, because a placeholder notice is worse than a missing one.
     body_de: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: The courtesy translation. Empty while ``body_de`` is set means English readers
     #: are shown the German text with the note saying which version governs -- a

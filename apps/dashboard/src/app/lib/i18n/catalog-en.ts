@@ -86,8 +86,14 @@ export const en = {
   "footer.sourceCommit": "Source code ({commit})",
   "legal.nav": "Legal",
   "legal.backToApp": "Back to the application",
-  "legal.disclaimer":
-    "These texts are a template and are no substitute for legal advice. Have them reviewed by a qualified party before production use.",
+  "legal.imprintMeta": "Legal notice — Quantified Self",
+  "legal.imprintMetaDescription":
+    "Provider identification pursuant to § 5 DDG and § 18 (2) MStV.",
+  "legal.privacyMeta": "Privacy policy — Quantified Self",
+  "legal.privacyMetaDescription":
+    "How the Quantified Self platform processes personal data, and on what legal basis.",
+  "legal.notPublished":
+    "The operator of this deployment has not published this document yet.",
   "legal.translationNote":
     "This is a courtesy translation. The German version is the legally binding one.",
   "legal.germanOnlyNote":
@@ -595,13 +601,13 @@ export const en = {
     "Only owners and administrators of the deployment's platform workspace can manage login providers.",
   "legalAdmin.title": "Legal texts",
   "legalAdmin.lead":
-    "Write your own imprint and privacy policy. Until you do, the template shipped with the platform is published — placeholders and all.",
+    "Write your own imprint and privacy policy. Until you do, both pages state that the document has not been published.",
   "legalAdmin.forbidden":
     "Only owners and administrators of the deployment's platform workspace can edit the legal texts.",
   "legalAdmin.loadFailed": "The legal texts could not be loaded.",
   "legalAdmin.saveFailed": "The document could not be saved.",
   "legalAdmin.stateCustom": "Your own text is published.",
-  "legalAdmin.stateDefault": "The shipped template is published.",
+  "legalAdmin.stateDefault": "Nothing is published yet.",
   "legalAdmin.edit": "Edit",
   "legalAdmin.german": "German",
   "legalAdmin.english": "English",
@@ -614,7 +620,7 @@ export const en = {
     "The binding version. Markdown is supported; HTML is shown as plain text rather than rendered, so a public page cannot be made to run a script.",
   "legalAdmin.englishHint":
     "A courtesy translation, and optional. Readers of English are shown the German text with a note until one exists — a current document in the wrong language beats a stale one in the right one.",
-  "legalAdmin.emptyMeansDefault": "Clearing the German text restores the shipped template.",
+  "legalAdmin.emptyMeansDefault": "Clearing the German text unpublishes the document.",
   "legalAdmin.saved": "Saved. The public page shows the new text immediately.",
   "oidc.loadFailed": "The providers could not be loaded.",
   "oidc.saveFailed": "Saving failed.",
