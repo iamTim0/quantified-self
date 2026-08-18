@@ -186,13 +186,16 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
 
-      # `--with-deps` installs apt libraries into the runner, so it runs whether or
-      # not the browser itself was restored; the browser download is what the cache
-      # skips. A timeout well below the job's own, so a stalled CDN fails this step
-      # loudly instead of silently consuming the budget for the tests.
+      # The hosted Ubuntu image already carries Chromium's shared-library runtime.
+      # `--with-deps` still ran `apt update` on every job merely to add optional font
+      # packages, and the Azure Ubuntu mirror repeatedly stopped responding there --
+      # before a browser test had started and despite a warm browser cache. Install
+      # only the versioned browser artifacts here; the cache can now make this step
+      # independent of apt altogether. Keep the timeout so a stalled browser CDN is
+      # still named at the step that owns it rather than consuming the test budget.
       - name: Install Chromium
         timeout-minutes: 6
-        run: bunx playwright install --with-deps chromium
+        run: bunx playwright install chromium
         working-directory: apps/dashboard
 
       - name: Start the stack
