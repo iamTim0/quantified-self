@@ -4,7 +4,7 @@
 # settings and SQLAlchemy models; it does not need the HTTP, gRPC, NATS, or
 # authentication runtime used by the Core service.
 
-FROM python:3.12-slim AS dependencies
+FROM python:3.14-slim AS dependencies
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -12,7 +12,7 @@ WORKDIR /app/migrations
 COPY services/core/migrations/pyproject.toml services/core/migrations/uv.lock ./
 RUN uv sync --frozen --no-install-project
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 WORKDIR /app/services/core
 

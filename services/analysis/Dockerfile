@@ -2,13 +2,13 @@
 # in services/core/Dockerfile for why (the packages/proto path dependency).
 #
 # Build:  docker build -f services/analysis/Dockerfile .
-FROM node:22-slim AS codex
+FROM node:26-slim AS codex
 
 # Pinned because the stdio JSONL and dynamic-tool schemas are the runtime
 # contract used by analysis.codex_app_server.
 RUN npm install --global @openai/codex@0.146.1
 
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 # The official package selects the native binary for the image architecture.
 # Copying Node plus the installed package keeps npm and its cache out of the

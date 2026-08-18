@@ -6,7 +6,7 @@
 # instead: only docs/ and mkdocs.yml enter the build, and only the rendered HTML is
 # shipped.
 
-FROM python:3.12-slim AS build
+FROM python:3.14-slim AS build
 
 WORKDIR /build
 
@@ -21,7 +21,7 @@ COPY docs/ ./docs/
 # documentation regression cannot ship silently.
 RUN mkdocs build --strict --site-dir /site
 
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.31-alpine AS runtime
 
 # Under /docs, not at the root, because that is the path the site is *addressed*
 # at from the outside and nginx redirects with paths of its own. See the server
