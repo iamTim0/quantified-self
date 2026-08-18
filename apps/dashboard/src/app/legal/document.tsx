@@ -6,18 +6,40 @@ import {
   type LegalSlug,
 } from "../lib/legal/documents";
 import LegalMarkdown from "./LegalMarkdown";
-import { LegalFootnote, TranslationNotice } from "./parts";
 
 /**
- * One legal page: whatever the operator wrote, or the document this repository
- * ships when they have written nothing.
+ * Says which version counts.
+ *
+ * Rendered on the translated document only. A courtesy translation of a legal text
+ * that does not say it is one invites the reader to rely on it; the German wording
+ * is the one drafted against German law, and the one a dispute is decided on. On
+ * the German document the same sentence would be noise.
+ *
+ * Takes its text as a prop rather than calling `useT()`, so that this page stays a
+ * server component. It is static prose, and prose should not need JavaScript.
+ */
+function TranslationNotice({ text }: { text: string }) {
+  return (
+    <aside className="legal-notice" role="note">
+      {text}
+    </aside>
+  );
+}
+
+/**
+ * One legal page: whatever the operator wrote, or a statement that they have not
+ * written it yet.
  *
  * Shared by both routes because the choice is identical for each, and because the
- * part worth getting right is not the layout but which of three notes appears above
- * and below the text:
+ * part worth getting right is not the layout but which of three notes the reader
+ * gets:
  *
- * * **The shipped default** keeps its template disclaimer. It is full of
- *   `[placeholder]` markers and saying so is the only honest thing to do.
+ * * **Nothing written** says exactly that, and nothing more. This repository used
+ *   to ship a full German and English template here, and a template is the one
+ *   thing a statutory notice must not be: it names a company that does not operate
+ *   the service, in placeholders a reader cannot tell from real data. An empty
+ *   imprint is a missing imprint, which is visible; a template imprint is a wrong
+ *   one, which is not.
  * * **A written document read in German** carries no note at all. It is the binding
  *   version (rule 16) in the language it was drafted in, and a legal notice
  *   qualified by chatter it does not need reads worse for it.
@@ -29,20 +51,18 @@ import { LegalFootnote, TranslationNotice } from "./parts";
 export default async function LegalDocumentPage({
   slug,
   locale,
-  fallback,
 }: {
   slug: LegalSlug;
   locale: Locale;
-  fallback: React.ReactNode;
 }) {
   const written = resolveLegalBody(await fetchLegalDocument(slug), locale);
 
   if (!written) {
     return (
-      <>
-        {fallback}
-        <LegalFootnote text={translate(locale, "legal.disclaimer")} />
-      </>
+      <article>
+        <h1>{translate(locale, slug === "imprint" ? "footer.imprint" : "footer.privacy")}</h1>
+        <p>{translate(locale, "legal.notPublished")}</p>
+      </article>
     );
   }
 

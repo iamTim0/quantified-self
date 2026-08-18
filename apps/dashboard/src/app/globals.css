@@ -105,10 +105,6 @@
   background: #f8fafc;
   font-weight: 600;
 }
-.legal-prose .placeholder {
-  background: #fef9c3;
-  padding: 0 0.2rem;
-}
 /* States that the translated text is not the binding one. Set apart from the
    document with a rule and muted type, so it reads as a note about the text
    rather than as a clause within it. */
@@ -465,12 +461,6 @@ body {
 }
 [data-theme="dark"] .legal-prose th {
   background: var(--background);
-}
-/* Still has to read as "fill this in", so it keeps the amber rather than fading
-   into the page — the dark amber the shim already uses for `bg-amber-100`. */
-[data-theme="dark"] .legal-prose .placeholder {
-  background: #3c2d16;
-  color: #f6d58b;
 }
 [data-theme="dark"] .legal-prose .legal-notice {
   border-left-color: var(--border);

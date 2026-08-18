@@ -1,0 +1,65 @@
+# Grouped on purpose. Fifteen Python manifests, a Bun app and fourteen Dockerfiles
+# would otherwise open dozens of separate pull requests a week, and a review queue
+# nobody can face is the same as no updates at all.
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directories:
+      - "/packages/*"
+      - "/services/analysis"
+      - "/services/api-gateway"
+      - "/services/core"
+      - "/services/core/migrations"
+      - "/services/importers/*"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        update-types: ["minor", "patch"]
+      python-major:
+        update-types: ["major"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "bun"
+    directory: "/apps/dashboard"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      dashboard-minor-and-patch:
+        update-types: ["minor", "patch"]
+      dashboard-major:
+        update-types: ["major"]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"
+
+  # Base images. `docker` covers the `FROM` lines; the Python dependencies inside
+  # those images are handled by the `uv` entries above.
+  - package-ecosystem: "docker"
+    directories:
+      - "/apps/dashboard"
+      - "/infra"
+      - "/services/analysis"
+      - "/services/api-gateway"
+      - "/services/core"
+      - "/services/importers/*"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      base-images:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(docker)"

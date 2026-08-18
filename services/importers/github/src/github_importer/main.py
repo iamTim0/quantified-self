@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 import nats
 from shared_schemas import HealthServer, health_payload
-from shared_schemas.field_report import FieldReportCollector
+from shared_schemas.field_report import FieldReport, FieldReportCollector
 
 from github_importer.client import (
     GitHubApiError,
@@ -111,20 +111,27 @@ async def report_sync_result_to_core(
             logger.warning("Could not report sync result to Core (%s)", type(exc).__name__)
 
 
-async def publish_field_report(task: SyncTask, report: FieldReportCollector) -> None:
+async def publish_field_report(task: SyncTask, report: FieldReport) -> None:
     """Tell Core which payload paths were stored and which were only seen.
 
     Shape only, never values (rule 19). This is what the Data Quality Center reads
     to say "this arrives and we do not keep it".
+
+    Takes the built `FieldReport` rather than the collector, and serialises it with
+    `model_dump()` — `json=` wants something the JSON encoder accepts, and handing
+    it the model raised a `TypeError` that this very `except` then swallowed as a
+    warning. Every GitHub run filed an empty report and said so once, quietly.
     """
     reference = task.source_id or task.source_type
     url = f"{settings.CORE_SERVICE_URL}/api/v1/internal/data/sources/{reference}/field-report"
+    payload = report.model_dump(mode="json")
+    payload["sync_run_id"] = task.sync_run_id
     async with httpx.AsyncClient(timeout=10.0) as client:
         try:
             await client.post(
                 url,
                 headers=internal_headers(task.request_id, task.tenant_id),
-                json=report.build(),
+                json=payload,
             )
         except (httpx.HTTPError, ValueError, TypeError) as exc:
             logger.warning("Could not publish the field report (%s)", type(exc).__name__)
@@ -191,9 +198,9 @@ async def sync_github(task: SyncTask, connection: Any) -> tuple[int, int]:
         await stream.publish("qs.ingest.github", json.dumps(point).encode())
         published += 1
 
-    await publish_field_report(task, report)
     built = report.build()
-    unsupported = len(built.get("unmapped") or [])
+    await publish_field_report(task, built)
+    unsupported = len(built.unmapped)
 
     logger.info(
         "[req_id=%s] Published %d GitHub data points across %d repositories.",

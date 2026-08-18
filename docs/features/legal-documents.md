@@ -13,6 +13,12 @@ editing `apps/dashboard/src/app/legal/` and rebuilding the dashboard image. Anyo
 running this platform who does not do that was serving a public legal notice that
 identified nobody — the exact condition § 5 DDG exists to prevent.
 
+**Those templates no longer ship.** A page that names a placeholder company is not a
+weaker notice than an empty one, it is a wrong one: a reader cannot tell invented
+provider details from real ones, while a page saying the document has not been
+published is unambiguous to a reader and to the operator who sees it. Until the
+operator writes a text, that is what both routes say.
+
 ## Markdown, and why not HTML
 
 Documents are written in **Markdown**. Raw HTML inside them is escaped and appears as
@@ -30,29 +36,28 @@ question instead of answering it: `react-markdown` does not pass raw HTML throug
 What Markdown gives up is nothing a legal text uses. Headings, paragraphs, lists,
 tables, links and emphasis are the whole vocabulary of both documents, and GitHub
 Flavoured Markdown covers all of it. The rendered output lands on the same
-`.legal-prose` styles the shipped documents use, so a written document inherits the same
-typography rather than a second, drifting set of rules.
+`.legal-prose` styles the legal routes already use, so a written document inherits the
+same typography rather than a second, drifting set of rules.
 
 ## What a reader sees
 
 | State | German reader | English reader |
 | --- | --- | --- |
-| Nothing written | The shipped template, with its "this is a template" footnote | The shipped English template, same footnote |
+| Nothing written | The document title and one sentence: the operator has not published it | The same, in English |
 | German written, no English | The German text | The German text, with a note that the document is published in German only |
 | Both written | The German text | The English text, with the courtesy-translation note |
 
 The middle row is the decision worth stating. An English reader is shown **German text**
-rather than the shipped English template, because the alternative is two documents
-describing different processing side by side, each reader believing theirs is the
-accurate one. That is precisely the failure rule 16 of `AGENTS.md` argues against for the
-two halves of a legal document. A current document in the wrong language is the lesser
-failure, and the note says so.
+rather than the not-published notice, because the operator *has* published a document and
+withholding it over its language serves nobody. A current document in the wrong language
+is the lesser failure, and the note says so — rule 16 of `AGENTS.md` makes the same
+argument for the two halves of a legal text.
 
 German never falls back to English: it is the binding half, so there is no case where
 showing the courtesy translation in its place is right.
 
-**Clearing the German text restores the shipped template.** Emptying a field is how an
-operator goes back, and it is why an empty save is accepted rather than refused.
+**Clearing the German text withdraws the document.** Emptying a field is how an operator
+takes a text down, and it is why an empty save is accepted rather than refused.
 Saving English text while the German field is empty *is* refused, with a 422 that says
 why — the binding half cannot be the missing one.
 
@@ -91,9 +96,10 @@ an address for the API of its own: `INTERNAL_API_URL`, set to `http://api-gatewa
 in both Compose files. The code default is `http://127.0.0.1:8000`, which is loopback and
 the port the Gateway actually binds (rule 18).
 
-If that request fails or times out, the page renders the shipped template. A legal page
-whose API is down must still be a legal page; an error where a statutory notice belongs
-is the one outcome worse than a template.
+If that request fails or times out, the page renders the not-published notice rather than
+an error. A legal page whose API is down must still render; an error page where a
+statutory notice belongs is the worse outcome, and it arrives exactly when the platform is
+already having a bad day.
 
 ## Using it
 
@@ -107,8 +113,8 @@ is the one outcome worse than a template.
 4. Optionally add the English version.
 5. Save. The public page shows the new text on the next request; nothing is cached.
 
-The editor states which of the two is currently published, so "we still have the
-template up" is visible rather than something to remember.
+The editor states whether a text of your own is published or nothing is, so "we never
+put an imprint up" is visible rather than something to remember.
 
 ## Limitations
 
@@ -120,10 +126,13 @@ template up" is visible rather than something to remember.
   and when. A privacy policy that changed materially is something a controller may need
   to evidence, and this does not evidence it — keep your own record.
 - **Nothing validates the content.** The platform cannot know whether an imprint
-  satisfies § 5 DDG, and it does not pretend to. The shipped template's disclaimer
-  applies to whatever replaces it: have it reviewed.
-- **Rolling back migration `028_legal_documents` deletes the text**, and the pages return
-  to the template. Export both documents first.
+  satisfies § 5 DDG, and it does not pretend to. These texts are no substitute for legal
+  advice: have them reviewed by a qualified party before production use.
+- **A deployment with nothing written publishes no imprint and no privacy policy.** That
+  is a statutory gap the platform cannot close for you, and it is why the pages say so
+  plainly instead of filling the space with a template.
+- **Rolling back migration `028_legal_documents` deletes the text**, and both pages return
+  to the not-published notice. Export both documents first.
 
 ## Retrieving a document
 
@@ -132,5 +141,6 @@ GET /api/v1/legal/documents/privacy
 ```
 
 No authentication. Returns the two Markdown bodies, `source` (`custom` or `default`) and
-`updated_at`. `source` is the field that matters: a client cannot tell a deployment that
-wrote its own policy from one still showing the template by looking at the text.
+`updated_at`. `source` is the field that matters: `custom` means at least one language was
+written, `default` means nothing is published — a distinction two empty bodies do not make
+on their own.

@@ -132,6 +132,7 @@ services:
       - core
     environment:
       - CORE_GRPC_URL=core:50051
+      - ENVIRONMENT=${ENVIRONMENT:-dev}
       - JWT_SECRET=${JWT_SECRET:-dev-secret-key-quantified-self-2026}
       - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
       # A container has no OS keyring. Codex may use its file store only because
@@ -413,15 +414,16 @@ services:
       - ..:/docs-workspace:ro
     labels:
       - "traefik.enable=true"
-      # No stripprefix here, deliberately, and this is the one label that differs
-      # from docker-compose.prod.yml. `mkdocs serve` reads site_url, which ends in
-      # /docs/, and serves the site under that prefix -- its own log says
+      # No stripprefix here. `mkdocs serve` reads site_url, which ends in /docs/,
+      # and serves the site under that prefix -- its own log says
       # `Serving on http://0.0.0.0:8003/docs/`. Stripping /docs handed it `GET /`,
       # which it answered with `302 -> /docs/`, which Traefik stripped again: a
       # redirect loop, and /docs was simply unreachable in the dev stack.
       #
-      # Production strips correctly, because there the image is a `mkdocs build`
-      # site served from a root and the prefix really is Traefik's to remove.
+      # Production is now identical: it did strip, and the static site behind it
+      # redirects on its own for every directory URL without a trailing slash, so
+      # the stripped prefix came back missing -- along with the wrong port and
+      # scheme -- in the Location header. See infra/docs.Dockerfile.
       - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"

@@ -1,0 +1,72 @@
+name: Bug report
+description: Something behaves differently from what the documentation says
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please do not paste real health data, location traces or screenshots
+        containing either. Redact or use synthetic values.
+
+        If the issue is exploitable, report it privately instead — see
+        [the security policy](https://github.com/iamTim0/quantified-self/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you observed, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure the WHOOP connector
+        2. Trigger a sync
+        3. The dashboard shows no sleep data
+    validations:
+      required: true
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      multiple: true
+      options:
+        - Dashboard
+        - API Gateway
+        - Core (database, ingestion, API)
+        - Analysis (correlations, insights, chat)
+        - An importer
+        - Deployment / Compose / Traefik
+        - Documentation
+        - Not sure
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: The dashboard footer shows the exact version it was built from.
+    validations:
+      required: true
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: How are you running it
+      options:
+        - "task dev (local development stack)"
+        - docker-compose.prod.yml
+        - Coolify
+        - Individual services, no Compose
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: >-
+        Include the `[req_id=...]` prefix if you have it — it correlates a request
+        across the Gateway, Core and the importers. Redact any tokens.
+      render: text

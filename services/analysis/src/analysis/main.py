@@ -60,9 +60,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+# This service re-validates the user's Bearer token itself rather than trusting
+# the Gateway hop, so it holds the same JWT_SECRET and inherits the same problem:
+# the secret has a default that is printed in this repository, and a process
+# started without one would verify real sessions against a value anyone can read.
+#
+# Duplicated rather than imported from Core: the two services share no code by
+# design (AGENTS.md rule 6), and the check is a dozen lines. Core and the Gateway
+# carry the same one -- `core.security.secret_audit` explains why the compose
+# `${VAR:?}` guard is not enough on its own: it only covers `docker compose up`,
+# not every other way a process gets launched.
+PUBLISHED_DEFAULTS = {
+    "dev-secret-key-quantified-self-2026",
+    "dev-secret-shared-encryption-key-qs-2026",
+    "dev-encryption-key-quantified-self-2026",
+}
+PRODUCTION_ENVIRONMENTS = {"production", "prod", "staging"}
+
+
+def audit_secrets() -> None:
+    """Refuse to serve in production with a published JWT_SECRET; warn otherwise.
+
+    Raises:
+        RuntimeError: in a production-like ENVIRONMENT.
+    """
+    if settings.JWT_SECRET and settings.JWT_SECRET not in PUBLISHED_DEFAULTS:
+        return
+
+    detail = (
+        "JWT_SECRET is unset or a value published in this repository. Generate "
+        'one with: python -c "import secrets; print(secrets.token_urlsafe(48))"'
+    )
+    if settings.ENVIRONMENT.strip().lower() in PRODUCTION_ENVIRONMENTS:
+        raise RuntimeError(f"analysis refuses to start: {detail}")
+    logger.warning("[analysis] insecure default in use: %s", detail)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    """Run the mounted MCP transport manager with the Analysis application."""
+    """Run the mounted MCP transport manager with the Analysis application.
+
+    Checked at startup, not at import: the test suite imports this module without
+    starting it, and an import-time check would refuse to load it at all.
+    """
+    audit_secrets()
     async with mcp_asgi_app.lifespan():
         # The insights bundle is computed here but scheduled by Core, which owns
         # the sync history that says when a tenant's data has changed. The worker

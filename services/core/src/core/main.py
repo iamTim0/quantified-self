@@ -1675,8 +1675,8 @@ class LegalDocumentRequest(BaseModel):
     """One document, both halves.
 
     Both bodies are optional and both may be cleared: emptying the German half is
-    how an operator goes back to the shipped default, and refusing to accept an
-    empty string would make that a database chore instead of an edit.
+    how an operator unpublishes a document, and refusing to accept an empty string
+    would make that a database chore instead of an edit.
     """
 
     body_de: str | None = Field(None, max_length=MAX_LEGAL_BODY_CHARS)
@@ -1687,10 +1687,11 @@ def _legal_document_view(slug: str, document: LegalDocument | None) -> dict[str,
     """What both the public route and the editor read.
 
     `source` is the field that matters and the reason this is not just the row:
-    a client cannot tell a deployment that wrote its own imprint from one still
-    showing the template by looking at the text, and the difference is exactly
+    a client cannot tell a deployment that wrote its own imprint from one that
+    published nothing by reading two empty bodies, and the difference is exactly
     what an operator needs to see. `custom` means at least one language was
-    written; `default` means the shipped document is what a visitor gets.
+    written; `default` means a visitor is told the document is not published --
+    this repository ships no legal text of its own to fall back to.
     """
     body_de = (document.body_de or "").strip() if document else ""
     body_en = (document.body_en or "").strip() if document else ""

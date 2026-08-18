@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -43,6 +43,18 @@ MAX_COMMITS_PER_REPOSITORY = 500
 
 #: One page of the commit history.
 COMMIT_PAGE_SIZE = 100
+
+#: Longest span `contributionsCollection` will accept in one query.
+#:
+#: GitHub answers anything wider with `The total time spanned by 'from' and 'to'
+#: must not exceed 1 year` — an HTTP 200 carrying a GraphQL error, so it surfaced
+#: as a failed import rather than as a truncated one. A first import asks for the
+#: whole history it has never read, which made full backfill impossible. 365 days
+#: rather than a calendar year, because a span crossing a leap day is 366.
+#:
+#: Only this query is bounded. The commit history is limited by git's own
+#: `since`/`until`, which have no such ceiling.
+MAX_CONTRIBUTION_SPAN = timedelta(days=365)
 
 
 class GitHubApiError(RuntimeError):
@@ -214,14 +226,31 @@ class GitHubClient:
     ) -> ContributionWindow:
         """Everything the window holds, in as few requests as it can be had."""
         async with httpx.AsyncClient(timeout=self._timeout) as client:
-            data = await self._graphql(
-                client,
-                _CONTRIBUTIONS_QUERY,
-                {"from": start.isoformat(), "to": end.isoformat()},
-                request_id,
-            )
-            viewer = data.get("viewer") or {}
-            window = _parse_contributions(viewer)
+            slices = split_span(start, end)
+            if len(slices) > 1:
+                logger.info(
+                    "[req_id=%s] Window spans %d days; reading it in %d contribution "
+                    "queries of at most a year.",
+                    request_id,
+                    (end - start).days,
+                    len(slices),
+                )
+
+            window = ContributionWindow(login="")
+            for slice_start, slice_end in slices:
+                data = await self._graphql(
+                    client,
+                    _CONTRIBUTIONS_QUERY,
+                    {"from": slice_start.isoformat(), "to": slice_end.isoformat()},
+                    request_id,
+                )
+                _merge_contributions(window, data.get("viewer") or {})
+
+            # Busiest first, so `MAX_REPOSITORIES` below keeps the repositories the
+            # window is actually about. Sorted after the merge rather than inside it:
+            # a repository quiet in one slice and busy in the next only has its real
+            # rank once every slice has been counted.
+            window.repositories.sort(key=lambda r: sum(r.commits_by_day.values()), reverse=True)
 
             if not window.repositories:
                 return window
@@ -318,6 +347,72 @@ def _bucket(nodes: Any, key: str = "occurredAt") -> dict[str, int]:
     return counts
 
 
+def split_span(start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+    """`[start, end]` as consecutive spans of at most `MAX_CONTRIBUTION_SPAN`.
+
+    The spans neither overlap nor leave a gap: each begins a microsecond after the
+    previous one ended, and `occurredAt` has second resolution, so no contribution
+    falls between two of them and none is counted twice. Overlapping instead would
+    double every contribution on the shared day — a wrong number, which rule 19
+    ranks below a missing one precisely because nothing distinguishes it from a
+    right one.
+    """
+    if end <= start:
+        return [(start, end)]
+
+    spans: list[tuple[datetime, datetime]] = []
+    cursor = start
+    while cursor < end:
+        stop = min(cursor + MAX_CONTRIBUTION_SPAN, end)
+        spans.append((cursor, stop))
+        cursor = stop + timedelta(microseconds=1)
+    return spans
+
+
+def _merge_day_counts(into: dict[str, int], other: dict[str, int]) -> None:
+    """Add one span's per-day counts to the window's.
+
+    Summed rather than overwritten: a day split across two spans is reported by
+    each of them with only its own share, and the day's real total is the sum.
+    """
+    for day, count in other.items():
+        into[day] = into.get(day, 0) + count
+
+
+def _merge_contributions(window: ContributionWindow, viewer: dict[str, Any]) -> None:
+    """Fold one span's `viewer` payload into the window being assembled."""
+    part = _parse_contributions(viewer)
+
+    if part.login:
+        window.login = part.login
+    # Point-in-time totals rather than window sums: whoever answered last is
+    # current, and adding them across spans would report seven times the followers.
+    if part.followers is not None:
+        window.followers = part.followers
+    if part.stars_received is not None:
+        window.stars_received = part.stars_received
+
+    _merge_day_counts(window.contributions_by_day, part.contributions_by_day)
+    _merge_day_counts(window.commits_by_day, part.commits_by_day)
+    _merge_day_counts(window.pull_requests_opened_by_day, part.pull_requests_opened_by_day)
+    _merge_day_counts(window.pull_requests_merged_by_day, part.pull_requests_merged_by_day)
+    _merge_day_counts(window.reviews_by_day, part.reviews_by_day)
+    _merge_day_counts(window.issues_opened_by_day, part.issues_opened_by_day)
+
+    by_name = {repository.name_with_owner: repository for repository in window.repositories}
+    for repository in part.repositories:
+        existing = by_name.get(repository.name_with_owner)
+        if existing is None:
+            window.repositories.append(repository)
+            by_name[repository.name_with_owner] = repository
+            continue
+        _merge_day_counts(existing.commits_by_day, repository.commits_by_day)
+
+    for path in part.unmapped_paths:
+        if path not in window.unmapped_paths:
+            window.unmapped_paths.append(path)
+
+
 def _parse_contributions(viewer: dict[str, Any]) -> ContributionWindow:
     collection = viewer.get("contributionsCollection") or {}
     window = ContributionWindow(login=str(viewer.get("login") or ""))
@@ -351,10 +446,6 @@ def _parse_contributions(viewer: dict[str, Any]) -> ContributionWindow:
             activity.commits_by_day[day] = activity.commits_by_day.get(day, 0) + count
             window.commits_by_day[day] = window.commits_by_day.get(day, 0) + count
         window.repositories.append(activity)
-
-    # Busiest first, so `MAX_REPOSITORIES` keeps the repositories the window is
-    # actually about rather than whichever GitHub happened to list first.
-    window.repositories.sort(key=lambda r: sum(r.commits_by_day.values()), reverse=True)
 
     pull_requests = ((collection.get("pullRequestContributions") or {}).get("nodes")) or []
     window.pull_requests_opened_by_day = _bucket(pull_requests)

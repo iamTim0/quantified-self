@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     # Empty means "derive the same deterministic dev value Core derives", so a
     # local checkout works without configuration while a deployment sets both.
     INTERNAL_SERVICE_SECRET: str = ""
+    # Strict by default, like the Gateway: a process started without an
+    # ENVIRONMENT is treated as production, so an unconfigured deployment fails
+    # loudly instead of validating real sessions against a published secret.
+    # Both compose files set this explicitly, which is where it is true.
+    ENVIRONMENT: str = "production"
     JWT_SECRET: str = os.environ.get(
         "JWT_SECRET", "dev-secret-key-quantified-self-2026"
     )

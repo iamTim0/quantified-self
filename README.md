@@ -355,9 +355,11 @@ slowly doubles.
 
 ## Licence
 
-AGPL-3.0-only — see [LICENSE](LICENSE). Copyright (C) 2026 Quantified Self contributors. Every
+AGPL-3.0-only — see [LICENSE](LICENSE) for the licence text and [NOTICE](NOTICE) for the
+copyright line. They are separate files so that GitHub can identify the licence: a
+copyright header in front of the text made the repository report "no license". Every
 package manifest declares it, every image carries it as an OCI label, and each
-release bundle ships the file.
+release bundle ships both files.
 
 Self-hosting and modification are unrestricted. Running a *modified* version as a
 network service obliges you to publish those modifications, and §13 obliges any

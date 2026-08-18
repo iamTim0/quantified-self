@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose a capability or a change in behaviour
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >-
+        Describe the goal rather than the implementation. What question about your
+        own data can you not answer today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you have in mind
+    validations:
+      required: false
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - A new data source (importer)
+        - A new metric or analysis
+        - Dashboard or visualisation
+        - Deployment or operations
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: source-details
+    attributes:
+      label: If this is a new data source
+      description: >-
+        Link the provider's API documentation, say how authentication works, and
+        note whether the metrics it reports already exist in the registry
+        (`docs/metrics.md`). A source whose metric set depends on the user's own
+        installation emits under a dynamic namespace instead of bare names.
