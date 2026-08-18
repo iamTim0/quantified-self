@@ -1049,6 +1049,21 @@ export const en = {
   "jobs.trigger.nightly": "Overnight",
   "jobs.trigger.webhook": "Pushed by provider",
   "jobs.trigger.upload": "From an upload",
+  // ── Import and report run outcomes ────────────────────────────────────
+  // Core sends a stable `code` plus its own English sentence (rule 17). The
+  // sentence is the fallback for a code this build does not know; it is not
+  // meant to be the normal path, which is what it had become — the bell knew
+  // two codes and Core emits eight, so every import notification read English
+  // in a German interface.
+  "jobs.code.sync_skipped": "Nothing new — the period was already covered.",
+  "jobs.code.sync_queued": "Queued for import.",
+  "jobs.code.sync_in_flight": "An import for this connector was already running.",
+  "jobs.code.sync_not_scheduled":
+    "This connector has no scheduled import; it receives data by webhook or upload.",
+  "jobs.code.sync_plan_failed": "Could not work out which period to import.",
+  "jobs.code.sync_failed": "The import did not finish.",
+  "jobs.code.core_ingest_delivery_failed":
+    "The importer published data that could not be handed to storage, after {attempts} attempt(s).",
   "jobs.code.report_timeout": "Started but did not finish in time",
   "jobs.code.report_never_claimed": "No analysis worker picked it up",
 

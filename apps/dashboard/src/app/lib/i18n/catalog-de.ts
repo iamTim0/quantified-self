@@ -1062,6 +1062,20 @@ export const de: Record<MessageKey, string> = {
   "jobs.trigger.nightly": "Über Nacht",
   "jobs.trigger.webhook": "Vom Anbieter gesendet",
   "jobs.trigger.upload": "Aus einem Upload",
+  // ── Ergebnisse von Import- und Report-Läufen ──────────────────────────
+  // Core sendet einen stabilen `code` plus seinen eigenen englischen Satz
+  // (Regel 17). Der Satz ist der Rückfall für einen Code, den dieser Build
+  // nicht kennt — nicht der Normalfall, zu dem er geworden war: die Glocke
+  // kannte zwei Codes, Core sendet acht.
+  "jobs.code.sync_skipped": "Nichts Neues — der Zeitraum war bereits abgedeckt.",
+  "jobs.code.sync_queued": "Zum Import eingereiht.",
+  "jobs.code.sync_in_flight": "Für diesen Connector lief bereits ein Import.",
+  "jobs.code.sync_not_scheduled":
+    "Dieser Connector hat keinen geplanten Import; er empfängt Daten per Webhook oder Upload.",
+  "jobs.code.sync_plan_failed": "Der zu importierende Zeitraum konnte nicht bestimmt werden.",
+  "jobs.code.sync_failed": "Der Import wurde nicht abgeschlossen.",
+  "jobs.code.core_ingest_delivery_failed":
+    "Der Importer hat Daten veröffentlicht, die nach {attempts} Versuch(en) nicht an den Speicher übergeben werden konnten.",
   "jobs.code.report_timeout": "Gestartet, aber nicht rechtzeitig fertig",
   "jobs.code.report_never_claimed": "Kein Analyse-Worker hat ihn übernommen",
 

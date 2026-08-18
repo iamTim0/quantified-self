@@ -247,6 +247,21 @@ async def list_jobs(
     jobs = jobs[:capped]
 
     active = [job for job in jobs if job.active]
+    # A run that stored nothing counts here exactly like one that stored
+    # thousands, and that is the intended reading rather than an oversight.
+    #
+    # The alternative was considered: skip runs whose `points_accepted` is zero,
+    # so a scheduled poll finding an already-covered range does not light the
+    # badge. It was rejected because it makes the badge answer a different
+    # question than the list it opens. "Nothing arrived" is a fact about the
+    # import — the one a reader checks when a connector has gone quiet — and a
+    # notification channel that silently drops the uneventful cases teaches the
+    # reader that its silence means nothing happened, when it could equally mean
+    # nothing was reported.
+    #
+    # Noise is bounded instead by the poll interval and `MAX_JOB_AGE`: a
+    # connector polled every six hours contributes four rows a day, which is a
+    # log, not a flood.
     unseen = [
         job
         for job in jobs

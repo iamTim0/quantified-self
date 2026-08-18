@@ -326,7 +326,28 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
  * only "do we have words for this", and anything else falls back to the server's own
  * English sentence rather than rendering a raw identifier.
  */
+/**
+ * The codes this build can say in the reader's language.
+ *
+ * A whitelist rather than a bare `t(key)` because `translate()` falls back to
+ * the key itself, so an unknown code would render `jobs.code.sync_skipped` at a
+ * reader. Missing from the map means "use the server's own English sentence",
+ * which is the designed behaviour for a code a newer Core has started sending
+ * (rule 17).
+ *
+ * It had become the behaviour for *everything*, though: this listed the two
+ * report codes while Core emits six import ones besides, so every import
+ * notification read English in a German interface — the fallback doing the job
+ * of the translation.
+ */
 const MESSAGE_CODES: Record<string, true> = {
+  "jobs.code.sync_skipped": true,
+  "jobs.code.sync_queued": true,
+  "jobs.code.sync_in_flight": true,
+  "jobs.code.sync_not_scheduled": true,
+  "jobs.code.sync_plan_failed": true,
+  "jobs.code.sync_failed": true,
+  "jobs.code.core_ingest_delivery_failed": true,
   "jobs.code.report_timeout": true,
   "jobs.code.report_never_claimed": true,
 };
