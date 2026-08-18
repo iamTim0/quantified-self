@@ -352,6 +352,10 @@ export const en = {
   "chart.typeBar": "Bar chart",
   "chart.refresh": "Refresh the chart",
   "chart.emptyPeriod": "No data points in the selected period.",
+  // Chart.js draws into a `<canvas role="img">`, and a role of img with no
+  // accessible name is a chart a screen reader announces as nothing at all. The
+  // series names are the only useful description available here.
+  "chart.aria": "Chart of {metrics}",
   "chart.emptyFilter": "No data points for the current filter.",
   "map.routeAria": "Map of the recorded route",
   "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",

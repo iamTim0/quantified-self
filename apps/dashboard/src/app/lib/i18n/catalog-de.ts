@@ -354,6 +354,7 @@ export const de: Record<MessageKey, string> = {
   "chart.typeBar": "Balkendiagramm",
   "chart.refresh": "Diagramm aktualisieren",
   "chart.emptyPeriod": "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
+  "chart.aria": "Diagramm von {metrics}",
   "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
   "map.routeAria": "Karte der aufgezeichneten Route",
   "map.tilesFailed":

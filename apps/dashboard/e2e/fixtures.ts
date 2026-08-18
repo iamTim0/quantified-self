@@ -1,0 +1,477 @@
+import type { Page, Route } from "@playwright/test";
+
+import { METRIC_CATALOG } from "../src/app/lib/metrics/catalog";
+import type { ReportEnvelope } from "../src/app/lib/reports";
+import type { MetricSummaryEntry } from "../src/app/components/ExplorerMetricOverview";
+import type { DayReport, DayStory } from "../src/app/components/DailyStory";
+import type { DataPointItem } from "../src/app/components/ExplorerTab";
+import type { WorkoutSummary } from "../src/app/components/WorkoutsTab";
+
+/**
+ * Example data for the screens that are empty on a fresh account.
+ *
+ * **Why the network and not a component harness.** Storybook is the usual answer to
+ * "render a page with example data", and it was rejected on purpose: it renders
+ * components in a second environment, outside this app's real layout, theme
+ * bootstrap and middleware. Every visual defect found so far lived exactly there —
+ * a card header that collides only at 390px, a token that resolves wrongly only in
+ * dark mode — so a screenshot of a component in isolation would have shown none of
+ * them while looking authoritative. `playwright.config.ts` already argues this for
+ * the auth suite: a test with a mocked API would have passed throughout.
+ *
+ * So the page is the real page, served by the real Gateway and the real Next build,
+ * signed in with a real session. Only the data is substituted, at the network
+ * boundary, which works because every component here is a client component and
+ * `lib/api.ts` fetches from the browser.
+ *
+ * **Why the fixtures are typed.** `WorkoutSummary`, `DataPointItem` and
+ * `MetricSummaryEntry` are the app's own response types. Importing them means a
+ * fixture that stops matching the wire shape is a compile error, not a screen that
+ * renders empty while the test still passes. That is the failure mode that makes
+ * fixture suites rot: they keep passing after the API moves on.
+ *
+ * Anything not listed here falls through to the real API, so an uncovered screen
+ * behaves exactly as it does today rather than breaking.
+ */
+
+/**
+ * The registry's unit for a metric, and proof the metric exists at all.
+ *
+ * Written after the first version of this file got it wrong twice in one screen:
+ * `workout_duration` was given seconds when the registry declares minutes, so a
+ * 45-minute run rendered as "2,700 min", and `sleep_score` was invented outright —
+ * there is no such key (rule 15). Both produced a screenshot that looked exactly
+ * like an application bug, which is the most expensive kind of wrong fixture: it
+ * sends somebody to fix correct code.
+ *
+ * Deriving the unit from `METRIC_CATALOG` instead of restating it makes the first
+ * mistake impossible and the second loud. The catalog is generated from the Python
+ * registry by `task metrics:generate`, so this tracks the real thing.
+ */
+function unitOf(metric: string): string {
+  const definition = METRIC_CATALOG[metric];
+  if (!definition) {
+    throw new Error(
+      `fixtures: "${metric}" is not a canonical metric_type (rule 15). ` +
+        `Pick a key from packages/shared-schemas/.../metrics.py.`,
+    );
+  }
+  return definition.unit;
+}
+
+/** Units for a measure map, taken from the registry rather than retyped. */
+function unitsFor(measures: Record<string, number>): Record<string, string> {
+  return Object.fromEntries(Object.keys(measures).map((metric) => [metric, unitOf(metric)]));
+}
+
+/** Fixed instants, because a fixture that drifts with the clock is not a fixture. */
+const DAY = "2026-08-17";
+const SOURCE_WHOOP = "11111111-1111-4111-8111-111111111111";
+const SOURCE_APPLE = "22222222-2222-4222-8222-222222222222";
+
+function at(hour: number, minute = 0): string {
+  return `${DAY}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00Z`;
+}
+
+/** A session whose `units` are derived from its `measures`, never restated. */
+function session(
+  fields: Omit<WorkoutSummary, "units"> & { measures: Record<string, number> },
+): WorkoutSummary {
+  return { ...fields, units: unitsFor(fields.measures) };
+}
+
+const WORKOUTS: WorkoutSummary[] = [
+  session({
+    session_key: `${SOURCE_WHOOP}:run-1`,
+    session_id: "run-1",
+    identity: "run-1",
+    start: at(6, 40),
+    end: at(7, 25),
+    title: "Morning run",
+    category: "workout",
+    source_id: SOURCE_WHOOP,
+    measures: {
+      workout_duration: 45,
+      workout_distance: 8.4,
+      workout_energy: 512,
+      workout_heart_rate: 148,
+      workout_heart_rate_max: 173,
+    },
+    point_count: 812,
+    exercise_count: 0,
+    muscle_groups: [],
+  }),
+  session({
+    session_key: `${SOURCE_APPLE}:lift-1`,
+    session_id: "lift-1",
+    identity: "lift-1",
+    start: at(18, 5),
+    end: at(19, 12),
+    title: "Upper body",
+    category: "strength",
+    source_id: SOURCE_APPLE,
+    measures: {
+      workout_duration: 67,
+      strength_session_volume: 7480,
+      workout_heart_rate: 112,
+    },
+    point_count: 96,
+    exercise_count: 7,
+    muscle_groups: ["chest", "back", "shoulders"],
+  }),
+  session({
+    // A session the provider never closed. Worth a fixture of its own: the card has
+    // to render without an end time, and a missing `end` is what a live import looks
+    // like rather than an error.
+    session_key: `${SOURCE_WHOOP}:walk-1`,
+    session_id: null,
+    identity: "2026-08-17T12:30:00Z_walk",
+    start: at(12, 30),
+    end: null,
+    title: "Walk",
+    category: "workout",
+    source_id: SOURCE_WHOOP,
+    measures: { workout_distance: 2.1, workout_duration: 25 },
+    point_count: 41,
+    exercise_count: 0,
+    muscle_groups: [],
+  }),
+];
+
+/**
+ * An hourly series per metric, shaped like a day rather than like a random walk.
+ *
+ * Keyed by metric because the chart filters points by `metric_type`: one shared
+ * series meant the legend listed three metrics and exactly one line was drawn, so
+ * the screenshot showed a chart that looked broken and was only under-fed.
+ */
+const HOURLY: Record<string, number[]> = {
+  steps: [
+    0, 0, 0, 0, 0, 120, 940, 1580, 620, 410, 380, 520, 1240, 760, 430, 690, 1810, 2240, 980, 610,
+    340, 180, 60, 0,
+  ],
+  heart_rate_resting: [
+    52, 51, 50, 50, 51, 53, 58, 62, 60, 59, 61, 63, 66, 64, 62, 65, 72, 78, 70, 64, 58, 55, 53, 52,
+  ],
+  sleep_duration: [60, 60, 60, 60, 60, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 20, 60],
+};
+
+function seriesFor(metric: string): DataPointItem[] {
+  const perHour = HOURLY[metric] ?? HOURLY.steps;
+  return perHour.map((value, hour) => ({
+    id: `${metric}-${hour}`,
+    source_id: SOURCE_APPLE,
+    source_type: "apple_health",
+    metric_type: metric,
+    timestamp: at(hour),
+    value,
+    metadata: { provider_value: value, units: unitOf(metric) },
+    sample_count: 1,
+    resolution: "hour",
+  }));
+}
+
+/** Every metric the request asked for, or all of them when it named none. */
+function pointsFor(url: string): DataPointItem[] {
+  const asked = new URL(url).searchParams.getAll("metric_type");
+  const metrics = asked.length > 0 ? asked : Object.keys(HOURLY);
+  return metrics.flatMap((metric) => seriesFor(metric));
+}
+
+const SUMMARY: Record<string, MetricSummaryEntry> = {
+  steps: {
+    count: 24,
+    average: 683,
+    min: 0,
+    max: 2240,
+    sum: 16400,
+    latest_timestamp: at(23),
+    definition: { unit: unitOf("steps"), aggregation: "sum", category: "activity", precision: 0 },
+  },
+  heart_rate_resting: {
+    count: 1,
+    average: 52,
+    min: 52,
+    max: 52,
+    sum: 52,
+    latest_timestamp: at(7),
+    definition: {
+      unit: unitOf("heart_rate_resting"),
+      aggregation: "average",
+      category: "heart",
+      precision: 0,
+    },
+  },
+  sleep_duration: {
+    count: 1,
+    average: 453,
+    min: 453,
+    max: 453,
+    sum: 453,
+    latest_timestamp: at(7),
+    definition: {
+      unit: unitOf("sleep_duration"),
+      aggregation: "sum",
+      category: "sleep",
+      precision: 0,
+    },
+  },
+};
+
+const DAY_STORY: DayStory = {
+  day: DAY,
+  is_today: false,
+  complete: true,
+  lanes: [
+    {
+      category: "sleep",
+      last_import_at: at(8),
+      complete: true,
+      metrics: [
+        {
+          metric_type: "sleep_duration",
+          value: 453,
+          unit: unitOf("sleep_duration"),
+          aggregation: "sum",
+          cadence: "daily",
+          sample_count: 1,
+          source_id: SOURCE_WHOOP,
+          source_type: "whoop",
+          source_reason: "only_source",
+          other_sources: [],
+          last_at: at(7),
+        },
+        {
+          // `sleep_score` does not exist in the registry; `unitOf` now refuses it.
+          metric_type: "sleep_efficiency",
+          value: 91,
+          unit: unitOf("sleep_efficiency"),
+          aggregation: "last",
+          cadence: "daily",
+          sample_count: 1,
+          source_id: SOURCE_WHOOP,
+          source_type: "whoop",
+          source_reason: "only_source",
+          other_sources: [],
+          last_at: at(7),
+        },
+      ],
+    },
+    {
+      category: "activity",
+      last_import_at: at(23, 40),
+      complete: true,
+      metrics: [
+        {
+          metric_type: "steps",
+          value: 16400,
+          unit: unitOf("steps"),
+          aggregation: "sum",
+          cadence: "daily",
+          sample_count: 24,
+          source_id: SOURCE_APPLE,
+          source_type: "apple_health",
+          // Two connectors report steps, so the card has to say which one it chose
+          // and why — the case that made `source_reason` an identifier.
+          source_reason: "preference",
+          other_sources: [SOURCE_WHOOP],
+          last_at: at(23),
+        },
+      ],
+    },
+    {
+      category: "nutrition",
+      last_import_at: at(21),
+      complete: false,
+      metrics: [
+        {
+          metric_type: "nutrition_energy",
+          value: 2180,
+          unit: unitOf("nutrition_energy"),
+          aggregation: "sum",
+          cadence: "daily",
+          sample_count: 12,
+          source_id: SOURCE_APPLE,
+          source_type: "yazio",
+          source_reason: "only_source",
+          other_sources: [],
+          last_at: at(21),
+        },
+      ],
+    },
+  ],
+  events: [
+    {
+      at: at(6, 40),
+      until: at(7, 25),
+      title: "Morning run",
+      category: "workout",
+      source_id: SOURCE_WHOOP,
+      measures: { workout_distance: 8.4, workout_energy: 512 },
+    },
+    {
+      at: at(18, 5),
+      until: at(19, 12),
+      title: "Upper body",
+      category: "strength",
+      source_id: SOURCE_APPLE,
+      measures: { strength_session_volume: 7480 },
+    },
+  ],
+  event_limit_reached: false,
+  logged: [
+    {
+      group: "breakfast",
+      category: "nutrition",
+      entry_count: 2,
+      energy: 480,
+      energy_derived: false,
+      unit: "kcal",
+      logged_at: at(8, 15),
+      entries: [
+        {
+          title: "Oat porridge",
+          metric_type: "nutrition_energy",
+          value: 320,
+          unit: "kcal",
+          logged_at: at(8, 15),
+          amount: 80,
+          serving_unit: "g",
+        },
+        {
+          title: "Coffee",
+          metric_type: "nutrition_energy",
+          value: 160,
+          unit: "kcal",
+          logged_at: at(8, 20),
+          amount: 1,
+          serving_unit: "cup",
+        },
+      ],
+    },
+    {
+      group: "dinner",
+      category: "nutrition",
+      entry_count: 1,
+      energy: 900,
+      // Our sum rather than the provider's own total, which the card marks.
+      energy_derived: true,
+      unit: "kcal",
+      logged_at: null,
+      entries: [
+        {
+          title: "Pasta with pesto",
+          metric_type: "nutrition_energy",
+          value: 900,
+          unit: "kcal",
+          logged_at: null,
+          amount: 350,
+          serving_unit: "g",
+        },
+      ],
+    },
+  ],
+  logged_limit_reached: false,
+};
+
+/**
+ * The day report, as an envelope around a *list* of days.
+ *
+ * Typed as `ReportEnvelope<DayReport>` after the untyped first attempt put a single
+ * `DayStory` straight into `result`. The page reads `result.days`, so it rendered
+ * the "Computed …" line from a payload it had understood and nothing underneath —
+ * a screen that looks like a broken day story rather than a wrong fixture. The type
+ * makes that a compile error.
+ */
+const DAY_REPORT: ReportEnvelope<DayReport> = {
+  kind: "day",
+  status: "ready",
+  stale: false,
+  deferred: false,
+  running: false,
+  computed_at: at(23, 55),
+  covers_data_through: at(23, 59),
+  params: { offset_minutes: 0 },
+  result: { offset_minutes: 0, days: [DAY_STORY] },
+  error: null,
+};
+
+const UNSUPPORTED_FIELDS = {
+  fields: [
+    {
+      field_path: "workout.swimStrokeCount",
+      source_type: "apple_health",
+      source_id: SOURCE_APPLE,
+      occurrences: 214,
+      first_seen_at: at(3),
+      last_seen_at: at(22),
+      sample_value: "1840",
+      metric_type: null,
+      supported_since: null,
+    },
+    {
+      field_path: "recovery.spo2Percentage",
+      source_type: "whoop",
+      source_id: SOURCE_WHOOP,
+      occurrences: 31,
+      first_seen_at: at(4),
+      last_seen_at: at(20),
+      sample_value: "96.4",
+      metric_type: null,
+      supported_since: null,
+    },
+  ],
+};
+
+/**
+ * One route table. Keys are matched against the pathname *and* query, first match
+ * wins, and a request that matches nothing is left to the real API.
+ */
+const ROUTES: Array<[RegExp, unknown | ((url: string) => unknown)]> = [
+  [
+    /\/api\/v1\/data\/workouts\b/,
+    { sessions: WORKOUTS, scan_limit_reached: false, has_more: false },
+  ],
+  [/\/api\/v1\/data\/metrics\/summary\b/, { metrics: SUMMARY }],
+  [
+    /\/api\/v1\/data\/metrics\/types\b/,
+    { metric_types: Object.keys(SUMMARY).map((metric_type) => ({ metric_type, count: 24 })) },
+  ],
+  [
+    /\/api\/v1\/data\/metrics\?/,
+    (url: string) => {
+      const points = pointsFor(url);
+      return { data_points: points, total: points.length, has_more: false };
+    },
+  ],
+  [/\/api\/v1\/data\/reports\/day\b/, DAY_REPORT],
+  [/\/api\/v1\/data\/quality\/unsupported-fields\b/, UNSUPPORTED_FIELDS],
+];
+
+/**
+ * Serve the fixtures above for this page.
+ *
+ * Installed before the first navigation so a screen never renders its empty state
+ * first and then swaps — a screenshot taken mid-swap is the kind of flake that
+ * makes people stop trusting a suite.
+ */
+export async function useFixtures(page: Page): Promise<void> {
+  await page.route("**/api/v1/data/**", async (route: Route) => {
+    const url = route.request().url();
+    if (route.request().method() !== "GET") return route.fallback();
+    for (const [pattern, body] of ROUTES) {
+      if (pattern.test(url)) {
+        const payload = typeof body === "function" ? (body as (u: string) => unknown)(url) : body;
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(payload),
+        });
+      }
+    }
+    return route.fallback();
+  });
+}
+
+/** The screens the fixtures above actually fill, for a suite to iterate. */
+export const FILLED_ROUTES = ["/", "/explorer", "/workouts", "/quality"] as const;

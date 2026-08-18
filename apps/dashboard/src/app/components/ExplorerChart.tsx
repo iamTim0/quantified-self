@@ -50,7 +50,7 @@ interface ExplorerChartProps {
 }
 
 export default function ExplorerChart({ dates, series, chartType }: ExplorerChartProps) {
-  const { t, formatNumber } = useI18n();
+  const { t, formatNumber, formatDate, formatDateTime } = useI18n();
   const theme = useChartTheme();
   const chartData = {
     labels: dates,
@@ -120,6 +120,18 @@ export default function ExplorerChart({ dates, series, chartType }: ExplorerChar
           maxRotation: 0,
           autoSkip: true,
           maxTicksLimit: 12,
+          // The labels are bucket keys, not display text. For a daily series that
+          // is `2026-08-17`, which merely looks foreign; below a day it is the raw
+          // instant, and the axis read `2026-08-17T03:00:00Z` at a reader — a
+          // machine timestamp, in one language's notation, on the one part of the
+          // chart everybody looks at. Formatting happens here rather than in the
+          // caller because the key is what indexes the series and must stay as it
+          // is (`useI18n`, never a hardcoded locale).
+          callback(this: any, value: any) {
+            const key = this.getLabelForValue(value);
+            if (typeof key !== "string") return key;
+            return /^\d{4}-\d{2}-\d{2}$/.test(key) ? formatDate(key) : formatDateTime(key);
+          },
         },
         grid: { color: theme.line },
       },
@@ -134,13 +146,19 @@ export default function ExplorerChart({ dates, series, chartType }: ExplorerChar
     },
   };
 
+  // react-chartjs-2 forwards this to the canvas it renders, which is the only way
+  // to name an element the library owns.
+  const chartAria = t("chart.aria", {
+    metrics: series.map((entry) => entry.label ?? entry.metric).join(", "),
+  });
+
   return (
     <div className="w-full relative h-[320px] sm:h-[380px] overflow-hidden">
       {dates.length > 0 && series.length > 0 ? (
         chartType === "bar" ? (
-          <Bar data={chartData} options={options} />
+          <Bar data={chartData} options={options} aria-label={chartAria} />
         ) : (
-          <Line data={chartData} options={options} />
+          <Line data={chartData} options={options} aria-label={chartAria} />
         )
       ) : (
         <div className="w-full h-full flex items-center justify-center text-xs text-ink-muted">

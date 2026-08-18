@@ -184,7 +184,7 @@ function relativeDay(day: string, offsetMinutes: number): "today" | "yesterday" 
 }
 
 /** Both days as one stored answer, which is what the run holds. */
-type DayReport = {
+export type DayReport = {
   offset_minutes: number;
   days: DayStory[];
 };

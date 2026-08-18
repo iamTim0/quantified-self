@@ -97,6 +97,56 @@ What this does **not** do is judge whether anything looks good. It catches what 
 measurably broken and, with the screenshot baselines deliberately left out, nothing
 about what merely changed.
 
+### Screens that hold data
+
+A fresh account is empty, so the suite above renders empty states — and an empty
+table cannot have a contrast fault in a cell it never draws. `appearance-filled.spec.ts`
+is the other half: workout cards, a chart with three series, a day story with lanes,
+meals and events, a data-quality list with rows. Same three assertions, same theme and
+width matrix.
+
+The data comes from `e2e/fixtures.ts` over intercepted requests, and the page is
+otherwise entirely real — real Gateway, real Next build, real session, real layout.
+Storybook was considered and rejected for exactly that reason: it renders components in
+a second environment, and every visual defect found so far lived in the first one — a
+card header that collides only at 390px, a token that resolves wrongly only in dark
+mode. A screenshot of an isolated component would have shown neither while looking
+authoritative.
+
+Two properties keep the fixtures from rotting into a suite that passes while showing
+nothing:
+
+- They are **typed against the app's own response types** (`WorkoutSummary`,
+  `DataPointItem`, `ReportEnvelope<DayReport>`), so a shape that drifts is a compile
+  error. This caught a day report whose `result` held one day where the page reads
+  `result.days` — it had rendered the "Computed …" line and nothing beneath it.
+- Units are **derived from the generated metric catalog**, never restated. A first
+  version gave `workout_duration` seconds when the registry declares minutes, so a
+  45-minute run rendered as "2,700 min", and invented `sleep_score`, which is not a
+  registered key (rule 15). Both looked exactly like application bugs. `unitOf()` makes
+  the first impossible and the second throw.
+
+Collapsed sections are opened before anything is measured, via the page's own
+"Expand all". Without that the day story contributed five headers and no content, so
+its substance sat outside the test while the test reported on the screen.
+
+To look at the result rather than trust a green tick:
+
+```bash
+QS_SHOTS=1 QS_SHOT_DIR=/tmp/qs-shots bunx playwright test appearance-filled
+```
+
+One full-page PNG per route, theme and width. Off by default, because CI does not need
+the artefacts and a suite that writes files on every run invites somebody to commit
+them. **Two things look broken in a full-page capture and are not**: the sidebar
+appears to end mid-page and the phone tab bar appears to float over the content. Both
+are `fixed`/`sticky` elements in a stitched image — check them with a viewport-sized
+shot instead.
+
+This is how the chart's axis was found reading `2026-08-17T03:00:00Z` at a reader: the
+bucket keys that index a series were being used as display labels, which no automated
+check can object to and nobody can miss in a picture.
+
 ## Phone safe areas
 
 The shell is full-bleed below the `sm` breakpoint, so content reaches the physical
