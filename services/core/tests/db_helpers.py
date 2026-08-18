@@ -114,3 +114,22 @@ async def cleanup_test_tenant(tenant_id: str) -> None:
         await session.execute(delete(User).where(User.tenant_id == tenant_id))
         await session.execute(delete(Tenant).where(Tenant.id == tenant_id))
         await session.commit()
+
+
+def as_platform_tenant(monkeypatch, tenant_id: str) -> None:
+    """Treat this test's own tenant as the deployment's administrative workspace.
+
+    A handful of endpoints administer the *deployment* rather than a workspace —
+    the legal documents, the OIDC providers, the ingestion stream — and are
+    guarded by ``require_platform_admin`` rather than by a role alone. Unset, that
+    resolves to the oldest tenant in the database, which a test's throwaway tenant
+    never is.
+
+    So the tests that exercise those endpoints say so here, explicitly. That is the
+    right shape for rule 10 as well: the test states the deployment state it needs
+    instead of inheriting whichever tenant happened to be created first on the
+    machine it runs on. ``monkeypatch`` restores the value afterwards.
+    """
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "PLATFORM_TENANT_ID", tenant_id)

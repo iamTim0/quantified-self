@@ -88,6 +88,8 @@ export const de: Record<MessageKey, string> = {
     "Diese Texte sind eine Vorlage und ersetzen keine Rechtsberatung. Vor dem produktiven Einsatz durch eine qualifizierte Stelle prüfen lassen.",
   "legal.translationNote":
     "Dies ist eine Übersetzung als Lesehilfe. Verbindlich ist die deutsche Fassung.",
+  "legal.germanOnlyNote":
+    "Dieses Dokument ist nur auf Deutsch veröffentlicht. Verbindlich ist die deutsche Fassung.",
 
   // ── Sign-in ─────────────────────────────────────────────────────────────────
   "auth.tagline": "Deine persönliche Gesundheits- und Analyse-Plattform.",
@@ -585,7 +587,32 @@ export const de: Record<MessageKey, string> = {
   "apikeys.create": "Key erzeugen",
   "apikeys.rotationHint":
     "Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die",
-  "oidc.forbidden": "Nur Inhaber und Administratoren können Anbieter verwalten.",
+  "oidc.forbidden":
+    "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können Login-Anbieter verwalten.",
+  "legalAdmin.title": "Rechtstexte",
+  "legalAdmin.lead":
+    "Impressum und Datenschutzerklärung selbst verfassen. Bis dahin wird die mitgelieferte Vorlage veröffentlicht — mitsamt Platzhaltern.",
+  "legalAdmin.forbidden":
+    "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können die Rechtstexte bearbeiten.",
+  "legalAdmin.loadFailed": "Die Rechtstexte konnten nicht geladen werden.",
+  "legalAdmin.saveFailed": "Das Dokument konnte nicht gespeichert werden.",
+  "legalAdmin.stateCustom": "Es wird ein eigener Text veröffentlicht.",
+  "legalAdmin.stateDefault": "Es wird die mitgelieferte Vorlage veröffentlicht.",
+  "legalAdmin.edit": "Bearbeiten",
+  "legalAdmin.german": "Deutsch",
+  "legalAdmin.english": "Englisch",
+  "legalAdmin.preview": "Vorschau",
+  "legalAdmin.write": "Schreiben",
+  "legalAdmin.previewEmpty": "In dieser Sprache ist noch nichts geschrieben.",
+  "legalAdmin.placeholder":
+    "# Impressum\n\nAngaben gemäß § 5 DDG…\n\nMarkdown: # Überschrift, **fett**, - Liste, [Link](https://example.org)",
+  "legalAdmin.germanHint":
+    "Die verbindliche Fassung. Markdown wird unterstützt; HTML erscheint als reiner Text statt gerendert, damit auf einer öffentlichen Seite kein Skript ausgeführt werden kann.",
+  "legalAdmin.englishHint":
+    "Eine Übersetzung als Lesehilfe, optional. Bis es sie gibt, wird englischen Lesern der deutsche Text mit einem Hinweis gezeigt — ein aktuelles Dokument in der falschen Sprache ist besser als ein veraltetes in der richtigen.",
+  "legalAdmin.emptyMeansDefault":
+    "Wird der deutsche Text geleert, gilt wieder die mitgelieferte Vorlage.",
+  "legalAdmin.saved": "Gespeichert. Die öffentliche Seite zeigt den neuen Text sofort.",
   "oidc.loadFailed": "Anbieter konnten nicht geladen werden.",
   "oidc.saveFailed": "Speichern fehlgeschlagen.",
   "oidc.deleteFailed": "Löschen fehlgeschlagen.",

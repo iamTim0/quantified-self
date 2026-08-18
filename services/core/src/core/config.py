@@ -63,6 +63,22 @@ class Settings(BaseSettings):
     # first account with `python -m core.create_owner`; turn this on only
     # for a deployment that is meant to accept strangers.
     ALLOW_REGISTRATION: bool = False
+    # Which workspace administers the deployment itself.
+    #
+    # "owner" is a role inside a tenant, and every account-creation path mints
+    # one: `/auth/signup` and OIDC sign-up both create a fresh tenant with the new
+    # user as its owner. So "owner" answers "may this person manage their own
+    # workspace", and nothing answered "may this person manage the deployment" --
+    # which is what changing the public imprint, the login providers or the
+    # ingestion stream actually is. With registration enabled, anyone who signed
+    # up could do all three.
+    #
+    # Empty means **the oldest tenant**, which is the one whoever installed this
+    # created with `python -m core.create_owner`. That is right without
+    # configuration for the single-tenant case, and it is what makes this a fix
+    # rather than a setting somebody has to discover. Name a tenant id here when
+    # the deployment is administered from a workspace that is not the first one.
+    PLATFORM_TENANT_ID: str = ""
 
     # Periodic sync scheduling. On by default: `poll_interval_hours` was
     # configurable, displayed, and read by nothing that started a sync, so every

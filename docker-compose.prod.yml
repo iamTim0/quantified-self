@@ -454,6 +454,12 @@ services:
         condition: service_healthy
     environment:
       - NODE_ENV=production
+      # Where the server side of Next reaches the API. The browser calls its own
+      # origin and Traefik routes /api, but a server component has no origin — and
+      # the legal pages render the stored imprint and privacy policy on the server,
+      # so that they arrive in the first response and need no JavaScript. The code
+      # default is loopback (rule 18); the container name is true only here.
+      - INTERNAL_API_URL=http://api-gateway:8000
     healthcheck:
       test: ["CMD", "bun", "-e", "fetch('http://127.0.0.1:3000/healthz', { redirect: 'manual' }).then(async (response) => { if (response.status !== 200) process.exit(1); const body = await response.json(); if (body.status !== 'ok' || body.service !== 'qs-dashboard') process.exit(1); }).catch(() => process.exit(1))"]
       interval: 10s

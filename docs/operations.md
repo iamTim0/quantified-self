@@ -89,6 +89,7 @@ task docs:build        # MkDocs --strict
 | `ACCESS_TOKEN_TTL_MINUTES` | Access token lifetime (720 by default) | no |
 | `REFRESH_TOKEN_TTL_DAYS` | Refresh token lifetime (30 by default) | no |
 | `ALLOW_REGISTRATION` | Allow self-registration. **`false` by default** — the first account is created by `python -m core.create_owner` | no |
+| `PLATFORM_TENANT_ID` | Which workspace administers the deployment (legal texts, login providers, ingestion reset). Empty means the oldest workspace | no |
 | `PUBLIC_HOST` | The hostname Traefik serves under. Deliberately nowhere in the repository | yes |
 | `ALLOWED_ORIGINS` | The Gateway's CORS origins | yes |
 | `MAP_TILE_HOSTS` | Tile hosts allowed by the CSP | no |
@@ -173,6 +174,32 @@ shipped password hash, so that every clone contained the same credentials for th
 
 If you actually want self-registration, set `ALLOW_REGISTRATION=true` — and know that the application
 is then open to anyone who knows the address.
+
+### The platform workspace
+
+Every account-creation path makes an **owner**: `/auth/signup` and OIDC sign-up each create a fresh
+workspace with the new user as its owner. "Owner" therefore answers *may this person manage their own
+workspace*, and it is not a claim about the deployment.
+
+A few settings are not a workspace's to change, because they have no workspace: the
+[legal texts](features/legal-documents.md) served publicly under `/legal/*`, the
+[login providers](features/oidc.md), and the
+[ingestion stream reset](features/ingestion-stream-reset.md), which discards pending events for
+everyone. Those are guarded by `require_platform_admin` — owner or administrator **of the platform
+workspace**, not of any workspace.
+
+The platform workspace is the **oldest one**, which is the one `python -m core.create_owner` created.
+That needs no configuration and is correct for the single-workspace deployments this platform is
+mostly run as. Name a different one with `PLATFORM_TENANT_ID` when the deployment is administered from
+a workspace that is not the first:
+
+```bash
+PLATFORM_TENANT_ID=<tenant-uuid>
+```
+
+This matters most exactly where it is easiest to overlook. With `ALLOW_REGISTRATION=true` and no such
+check, anybody who signed up became an owner and could therefore have rewritten the imprint and the
+privacy policy that every visitor to the site reads.
 
 ## Deployment
 

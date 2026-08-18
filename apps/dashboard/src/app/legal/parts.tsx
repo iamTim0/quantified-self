@@ -57,3 +57,21 @@ export function Sections<Id extends string>({
     </>
   );
 }
+
+/**
+ * The note under a document, stating what kind of text the reader just read.
+ *
+ * It belongs to the page rather than to the legal layout, and that move is the
+ * whole point of the component. The layout printed "these texts are a template and
+ * are no substitute for legal advice" under every legal page unconditionally —
+ * true of the shipped default, and false and faintly alarming under an imprint the
+ * operator wrote themselves and had reviewed. Only the page knows which of the two
+ * it just rendered.
+ */
+export function LegalFootnote({ text }: { text: string }) {
+  return (
+    <footer className="mt-12 border-t border-line pt-4 text-sm text-ink-muted">
+      <p>{text}</p>
+    </footer>
+  );
+}

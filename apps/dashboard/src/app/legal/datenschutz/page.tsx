@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { requestLocale } from "../../lib/i18n/request";
+import LegalDocumentPage from "../document";
 import Privacy from "./Privacy";
 
 /**
@@ -30,5 +31,15 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function DatenschutzPage() {
-  return <Privacy locale={await requestLocale()} />;
+  const locale = await requestLocale();
+  // The shipped document is passed in rather than fetched inside: it is a
+  // server component of its own, and rendering it here keeps the fallback a
+  // plain argument instead of a slug this page has to be trusted to map.
+  return (
+    <LegalDocumentPage
+      slug="privacy"
+      locale={locale}
+      fallback={<Privacy locale={locale} />}
+    />
+  );
 }

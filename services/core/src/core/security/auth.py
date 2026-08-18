@@ -36,6 +36,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import ClassVar, Literal
 
+from core.config import settings
+from core.db.session import get_session
 from core.db.tenant import _current_tenant_id
 from core.security.cookies import (
     ACCESS_COOKIE,
@@ -49,7 +51,9 @@ from core.security.tokens import (
     decode_access_token,
     verify_service_credential,
 )
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -115,6 +119,82 @@ def require_role(*allowed_roles: str):
             raise HTTPException(
                 status_code=403,
                 detail="Insufficient role for this operation",
+            )
+        return principal
+
+    return _dependency
+
+
+async def platform_tenant_id(session: AsyncSession) -> str | None:
+    """Which workspace administers the deployment, or None if there is none yet.
+
+    Configured explicitly, or **the oldest tenant** — the one created by whoever
+    installed this, with ``python -m core.create_owner``. The fallback is what
+    makes the check correct with no configuration on the single-tenant deployments
+    this platform is mostly run as, rather than a setting somebody has to find out
+    about before it protects anything.
+    """
+    configured = (settings.PLATFORM_TENANT_ID or "").strip()
+    if configured:
+        return configured
+
+    from core.db.models import Tenant
+
+    result = await session.execute(
+        select(Tenant.id).order_by(Tenant.created_at.asc(), Tenant.id.asc()).limit(1)
+    )
+    return result.scalars().first()
+
+
+#: Hoisted out of the signature below rather than silencing B008 for this whole
+#: file. `main.py` carries a file-level `noqa` because every one of its hundreds of
+#: endpoints does this; a security module should not inherit that blanket.
+_SESSION_DEPENDENCY = Depends(get_session)
+
+
+def require_platform_admin(*allowed_roles: str):
+    """Allow only an administrator **of the deployment**, not of a workspace.
+
+    ``require_role("owner")`` answers a different question than it looks like it
+    answers. Every account-creation path in Core mints an owner: ``/auth/signup``
+    and OIDC sign-up each create a fresh tenant with the new user as its owner. So
+    "owner" means "owner of my own workspace", and using it to guard a
+    deployment-wide resource means that on a deployment with registration enabled,
+    anybody who signed up could rewrite the public imprint and privacy policy, add
+    a login provider, or reset the ingestion stream for everyone.
+
+    Three endpoints own resources that have no tenant and never will — the legal
+    documents, the OIDC providers, and the ingestion stream. This is what they use.
+
+    Fails closed when no tenant exists at all: that state has no users either, so
+    there is nothing to lock out and nothing to gain by guessing.
+
+    Service principals bypass, exactly as in :func:`require_role`. They are not
+    people, carry no role and are already confined to ``/api/v1/internal/*``.
+    """
+    roles = allowed_roles or ("owner", "admin")
+
+    async def _dependency(session: AsyncSession = _SESSION_DEPENDENCY) -> Principal:
+        principal = get_current_principal()
+        if principal.kind == "service":
+            return principal
+        if principal.role not in roles:
+            raise HTTPException(
+                status_code=403, detail="Insufficient role for this operation"
+            )
+
+        platform = await platform_tenant_id(session)
+        if platform is None or principal.tenant_id != platform:
+            # Deliberately says what would make it work. This is an operator
+            # configuration question, not an attack to be coy about, and the
+            # alternative is a 403 that reads as a bug in the dashboard.
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "This setting belongs to the deployment rather than to a "
+                    "workspace, and only the platform workspace may change it. "
+                    "Set PLATFORM_TENANT_ID to name a different one."
+                ),
             )
         return principal
 
@@ -197,7 +277,14 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     # Sign-in flows with a provider slug in the path. These are how a session is
     # obtained, so requiring one would be circular; each validates its own
     # single-use, server-side state instead.
-    EXEMPT_PREFIXES: ClassVar[tuple[str, ...]] = ("/api/v1/auth/oidc/",)
+    EXEMPT_PREFIXES: ClassVar[tuple[str, ...]] = (
+        "/api/v1/auth/oidc/",
+        # The imprint and the privacy policy. An imprint only a signed-in reader
+        # can see does not discharge the obligation to publish one, and the pages
+        # that render these are the two the dashboard serves without a session.
+        # Read-only: writing them lives under /api/v1/data/, which is not exempt.
+        "/api/v1/legal/",
+    )
 
     def _is_exempt(self, path: str) -> bool:
         return path in self.EXEMPT_PATHS or path.startswith(self.EXEMPT_PREFIXES)
