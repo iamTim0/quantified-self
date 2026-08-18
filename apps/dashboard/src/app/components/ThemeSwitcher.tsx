@@ -41,7 +41,7 @@ export default function ThemeSwitcher() {
             aria-label={label}
             title={label}
             className={[
-              "inline-flex h-full items-center justify-center gap-1 px-2.5 text-[11px] font-bold transition-colors",
+              "inline-flex h-full items-center justify-center gap-1 px-2.5 text-meta font-bold transition-colors",
               active
                 ? "bg-brand text-brand-ink"
                 : "text-ink-muted hover:bg-page hover:text-ink",

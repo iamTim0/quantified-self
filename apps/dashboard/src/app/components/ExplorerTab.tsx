@@ -941,7 +941,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             value={customStartDate}
             onChange={(e) => setCustomStartDate(e.target.value)}
             aria-label={t("explorer.customStart")}
-            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
+            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-meta text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
           />
           <span className="hidden text-ink-muted sm:inline">{t("chart.rangeTo")}</span>
           <input
@@ -949,7 +949,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
             value={customEndDate}
             onChange={(e) => setCustomEndDate(e.target.value)}
             aria-label={t("explorer.customEnd")}
-            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-[11px] text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
+            className="h-10 min-w-0 rounded-xl border border-line bg-surface px-2.5 py-1 text-meta text-ink-secondary outline-none focus-visible:border-brand sm:h-auto"
           />
         </div>
       )}
@@ -971,7 +971,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
 
   const seriesQueryNote =
     selectedMetrics.length > 0 ? (
-      <p className="text-[11px] leading-relaxed text-ink-muted">
+      <p className="text-meta leading-relaxed text-ink-muted">
         {t(view === "chart" ? "explorer.seriesQueryNote" : "explorer.rawSeriesQueryNote")}
       </p>
     ) : null;
@@ -979,14 +979,14 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
   const scopeBanner =
     metricScope !== null ? (
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-ok-line bg-ok-soft px-3.5 py-2.5">
-        <span className="text-[11px] font-bold text-ok-ink">
+        <span className="text-meta font-bold text-ok-ink">
           {t("explorer.scopeActive", {
             metric: describeMetric(metricScope, locale).label,
           })}
         </span>
         <button
           onClick={clearScope}
-          className="rounded-xl border border-ok-line bg-surface px-2.5 py-1 text-[11px] font-bold text-ok-ink transition-colors hover:bg-ok-soft"
+          className="rounded-xl border border-ok-line bg-surface px-2.5 py-1 text-meta font-bold text-ok-ink transition-colors hover:bg-ok-soft"
         >
           {t("explorer.scopeClear")}
         </button>
@@ -1215,7 +1215,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
       )}
 
       {inspectPoint && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 p-4 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4 backdrop-blur-md">
           <div className="w-full max-w-lg space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-2xl">
             <div className="flex items-center justify-between border-b border-line pb-3">
               <div className="flex items-center gap-2">
@@ -1259,7 +1259,7 @@ export default function ExplorerTab({ apiBase, tenantId }: ExplorerTabProps) {
               </div>
               <div className="flex justify-between gap-4 text-ink-muted">
                 <span>{t("explorer.colIdempotencyKey")}</span>
-                <span className="max-w-50 truncate text-[10px] text-ink-muted">
+                <span className="max-w-50 truncate text-meta text-ink-muted">
                   {inspectPoint.idempotency_key}
                 </span>
               </div>

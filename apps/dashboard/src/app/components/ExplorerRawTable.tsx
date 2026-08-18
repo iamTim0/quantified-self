@@ -41,7 +41,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
             })}
           </span>
         </h3>
-        <span className="font-mono text-[11px] text-ink-muted">{t("explorer.liveQuery")}</span>
+        <span className="font-mono text-meta text-ink-muted">{t("explorer.liveQuery")}</span>
       </div>
 
       {rows.length === 0 ? (
@@ -51,7 +51,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-line text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+                <tr className="border-b border-line text-meta font-bold uppercase tracking-wider text-ink-muted">
                   <th className="px-3 pb-3">{t("explorer.colTimestamp")}</th>
                   <th className="px-3 pb-3">{t("explorer.colSource")}</th>
                   <th className="px-3 pb-3">{t("explorer.colMetric")}</th>
@@ -85,12 +85,12 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                         the reader's format nor the database's value.
                       */}
                       <td
-                        className="px-3 py-2.5 text-[11px] text-ink-muted"
+                        className="px-3 py-2.5 text-meta text-ink-muted"
                         title={point.timestamp}
                       >
                         {point.timestamp ? formatDateTime(point.timestamp) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-[10px] font-bold uppercase text-ink">
+                      <td className="px-3 py-2.5 text-meta font-bold uppercase text-ink">
                         {/*
                           `|| "yazio"` before this, so every point whose metadata
                           carried no source was labelled as the one connector that
@@ -119,12 +119,12 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                             ambiguous without it -- which is how kJ and kcal used to
                             sit in one column looking comparable. */}
                         {unit && (
-                          <span className="ml-1 text-[10px] font-normal text-ink-muted">
+                          <span className="ml-1 text-meta font-normal text-ink-muted">
                             {unit}
                           </span>
                         )}
                       </td>
-                      <td className="max-w-xs truncate px-3 py-2.5 text-[11px] text-ink-muted">
+                      <td className="max-w-xs truncate px-3 py-2.5 text-meta text-ink-muted">
                         {itemName ? (
                           <span className="mr-1.5 font-sans font-bold text-ok-ink">
                             {itemName}
@@ -153,7 +153,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
           </div>
 
           {points.length > rows.length && (
-            <p className="text-[11px] text-ink-muted">
+            <p className="text-meta text-ink-muted">
               {t("explorer.rawTruncated", {
                 shown: formatNumber(rows.length),
                 total: formatNumber(points.length),

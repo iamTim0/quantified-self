@@ -29,7 +29,7 @@ export default function LanguageSwitcher({ className = "" }: { className?: strin
             onClick={() => setLocale(candidate)}
             aria-pressed={active}
             title={t("lang.switchTo", { language: LOCALE_LABELS[candidate] })}
-            className={`h-full px-2.5 text-[11px] font-bold tracking-wider transition-colors ${
+            className={`h-full px-2.5 text-meta font-bold tracking-wider transition-colors ${
               active
                 ? "bg-brand text-brand-ink"
                 : "text-ink-muted hover:bg-page hover:text-ink"

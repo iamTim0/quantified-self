@@ -107,7 +107,7 @@ export default function StreamChart({
           {described.label}
           {unit && <span className="ml-1 text-xs font-semibold text-ink-muted">{unit}</span>}
         </span>
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-meta text-ink-muted">
           {t("workouts.streamBucket", { seconds: bucketSeconds })} ·{" "}
           {t("workouts.streamRange", {
             min: formatNumber(plot.minV, { maximumFractionDigits: described.precision }),
@@ -189,7 +189,7 @@ export default function StreamChart({
         </svg>
       </div>
 
-      <div className="flex min-h-4 flex-wrap justify-between gap-2 text-[11px] text-ink-muted">
+      <div className="flex min-h-4 flex-wrap justify-between gap-2 text-meta text-ink-muted">
         <span>
           {active
             ? `${formatDateTime(active.t)} · ${formatNumber(active.avg as number, {

@@ -81,7 +81,7 @@ export default function ReportStatus({
       )}
 
       {error && !running ? (
-        <span className="rounded-full bg-danger-soft px-2 py-0.5 font-medium text-danger-ink-on-soft dark:text-red-300">
+        <span className="rounded-full bg-danger-soft px-2 py-0.5 font-medium text-danger-ink-on-soft">
           {errorText}
         </span>
       ) : null}
@@ -89,7 +89,7 @@ export default function ReportStatus({
       {stale && !running && !neverComputed ? (
         deferred ? (
           <span
-            className="rounded-full bg-surface-muted px-2 py-0.5 font-medium text-ink-muted dark:bg-slate-700/50"
+            className="rounded-full bg-surface-muted px-2 py-0.5 font-medium text-ink-muted"
             title={t("report.deferredTitle")}
           >
             {t("report.deferred")}

@@ -128,7 +128,7 @@ export default function ImportRunsOverview({
             return (
               <article
                 key={run.id}
-                className="rounded-2xl border border-line bg-page p-3.5 dark:bg-slate-800/60"
+                className="rounded-2xl border border-line bg-page p-3.5"
               >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0">
@@ -145,16 +145,16 @@ export default function ImportRunsOverview({
                       <span className="truncate text-xs font-bold text-ink">
                         {run.connector_name || run.source_type}
                       </span>
-                      <span className="text-[10px] uppercase tracking-wide text-ink-muted">
+                      <span className="text-meta uppercase tracking-wide text-ink-muted">
                         {run.source_type}
                       </span>
                       <span
-                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass(run.status)}`}
+                        className={`rounded-full border px-2 py-0.5 text-meta font-bold uppercase ${statusClass(run.status)}`}
                       >
                         {t(statusKey(run.status))}
                       </span>
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+                    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-meta text-ink-muted">
                       <span>{t(triggerKey(run.trigger))}</span>
                       <span>
                         {run.started_at
@@ -172,7 +172,7 @@ export default function ImportRunsOverview({
                       </span>
                     </div>
                     {(run.points_rejected > 0 || run.unsupported_fields > 0) && (
-                      <p className="mt-1 text-[11px] text-warn-ink">
+                      <p className="mt-1 text-meta text-warn-ink">
                         {t("importOverview.quality", {
                           rejected: formatNumber(run.points_rejected ?? 0),
                           unsupported: formatNumber(run.unsupported_fields ?? 0),
@@ -181,7 +181,7 @@ export default function ImportRunsOverview({
                     )}
                   </div>
                   {progress !== null && isActive && (
-                    <span className="shrink-0 text-[11px] font-semibold text-ink-muted">
+                    <span className="shrink-0 text-meta font-semibold text-ink-muted">
                       {progress}%
                     </span>
                   )}
@@ -195,7 +195,7 @@ export default function ImportRunsOverview({
                   </div>
                 )}
                 {messageForRun(t, run) && (
-                  <p className="mt-2 break-words text-[11px] text-ink-muted">
+                  <p className="mt-2 break-words text-meta text-ink-muted">
                     {messageForRun(t, run)}
                   </p>
                 )}
@@ -239,11 +239,11 @@ function OverviewCount({
       : tone === "error"
         ? "text-danger-ink-on-soft"
         : tone === "loading"
-          ? "text-sky-700"
+          ? "text-info-ink"
           : "text-warn-ink";
   return (
     <div className="rounded-2xl border border-line bg-surface px-3 py-2.5">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-ink-muted">{label}</p>
+      <p className="text-meta font-bold uppercase tracking-wide text-ink-muted">{label}</p>
       <p className={`mt-1 text-lg font-extrabold ${color}`}>{value}</p>
     </div>
   );

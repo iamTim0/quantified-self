@@ -191,24 +191,24 @@ export default function ApiKeyManager({
           <span>{t("apikeys.webhookTitle", { provider: providerLabel })}</span>
         </div>
         <div className="space-y-1.5">
-          <div className="text-[11px] font-bold text-ink-muted">1. URL:</div>
-          <div className="select-all break-all rounded-xl border border-line bg-surface p-2 font-mono text-[11px] font-bold text-brand shadow-sm">
+          <div className="text-meta font-bold text-ink-muted">1. URL:</div>
+          <div className="select-all break-all rounded-xl border border-line bg-surface p-2 font-mono text-meta font-bold text-brand shadow-sm">
             {apiBase}
             {ingestPath}
           </div>
         </div>
         <div className="space-y-1.5">
-          <div className="text-[11px] font-bold text-ink-muted">2. Header:</div>
-          <div className="inline-block select-all rounded-xl border border-line bg-surface p-2 font-mono text-[11px] font-extrabold text-ink shadow-sm">
+          <div className="text-meta font-bold text-ink-muted">2. Header:</div>
+          <div className="inline-block select-all rounded-xl border border-line bg-surface p-2 font-mono text-meta font-extrabold text-ink shadow-sm">
             {t("apikeys.headerExample")}
           </div>
-          <p className="text-[11px] text-ink-muted">{t("apikeys.headerHint")}</p>
+          <p className="text-meta text-ink-muted">{t("apikeys.headerHint")}</p>
         </div>
         <a
           href="/docs/features/api-keys/"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand underline"
+          className="inline-flex items-center gap-1.5 text-meta font-semibold text-brand underline"
         >
           <BookOpen className="h-3.5 w-3.5" /> {t("apikeys.docs")}
         </a>
@@ -221,7 +221,7 @@ export default function ApiKeyManager({
             {t("apikeys.shownOnce")}
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 select-all break-all rounded-xl border border-warn-line bg-surface p-2.5 font-mono text-[11px] text-ink">
+            <code className="flex-1 select-all break-all rounded-xl border border-warn-line bg-surface p-2.5 font-mono text-meta text-ink">
               {revealedKey}
             </code>
             <button
@@ -233,11 +233,11 @@ export default function ApiKeyManager({
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
-          <p className="text-[11px] text-warn-ink">{t("apikeys.storeNow")}</p>
+          <p className="text-meta text-warn-ink">{t("apikeys.storeNow")}</p>
           <button
             type="button"
             onClick={() => setRevealedKey(null)}
-            className="text-[11px] font-semibold text-warn-ink underline"
+            className="text-meta font-semibold text-warn-ink underline"
           >
             {t("apikeys.hideRevealed")}
           </button>
@@ -254,7 +254,7 @@ export default function ApiKeyManager({
         </div>
 
         {keys.length === 0 && !loading && (
-          <p className="mb-3 text-[11px] text-ink-muted">
+          <p className="mb-3 text-meta text-ink-muted">
             {t("apikeys.none", { provider: providerLabel })}
           </p>
         )}
@@ -271,9 +271,9 @@ export default function ApiKeyManager({
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[11px] font-bold text-ink-secondary">{k.name}</p>
-                  <p className="font-mono text-[11px] text-ink-muted">{k.key_prefix}…</p>
-                  <p className="mt-0.5 text-[10px] text-ink-muted">
+                  <p className="truncate text-meta font-bold text-ink-secondary">{k.name}</p>
+                  <p className="font-mono text-meta text-ink-muted">{k.key_prefix}…</p>
+                  <p className="mt-0.5 text-meta text-ink-muted">
                     {t("apikeys.created", { date: formatDate(k.created_at) })}
                     {k.expires_at &&
                       ` · ${t("apikeys.expires", { date: formatDate(k.expires_at) })}`}
@@ -285,7 +285,7 @@ export default function ApiKeyManager({
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-meta font-bold ${
                       k.status === "active"
                         ? "bg-ok-soft text-ok-ink"
                         : "bg-surface-muted text-ink-muted"
@@ -309,7 +309,7 @@ export default function ApiKeyManager({
                         onClick={() => handleRevoke(k.id, k.key_prefix)}
                         disabled={busy === k.id}
                         title={t("apikeys.revokeTitle")}
-                        className="rounded-lg border border-danger-line bg-danger-soft p-1.5 text-danger-ink-on-soft hover:bg-rose-100 disabled:opacity-50"
+                        className="rounded-lg border border-danger-line bg-danger-soft p-1.5 text-danger-ink-on-soft hover:bg-danger-soft/70 disabled:opacity-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -323,7 +323,7 @@ export default function ApiKeyManager({
 
         <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
           <label className="min-w-[140px] flex-1">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+            <span className="mb-1 block text-meta font-bold uppercase tracking-wider text-ink-muted">
               Name
             </span>
             <input
@@ -335,7 +335,7 @@ export default function ApiKeyManager({
             />
           </label>
           <label>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-ink-muted">
+            <span className="mb-1 block text-meta font-bold uppercase tracking-wider text-ink-muted">
               {t("apikeys.expiryLabel")}
             </span>
             <select
@@ -367,7 +367,7 @@ export default function ApiKeyManager({
         </div>
 
         {activeKeys.length > 1 && (
-          <p className="mt-2 text-[10px] text-ink-muted">
+          <p className="mt-2 text-meta text-ink-muted">
             {t("apikeys.rotationHint")}
             App auf den neuen umgestellt ist.
           </p>

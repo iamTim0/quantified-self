@@ -194,6 +194,15 @@
      passes the palette validator against `--card` in this theme. */
   --chart-series: #1d4ed8;
   --chart-series-band: rgba(29, 78, 216, 0.14);
+  /*
+   * A surface that is dark in the light theme on purpose — a tooltip, a solid
+   * action button, the backdrop behind a dialog. Not `--card` at a different
+   * lightness: these are meant to read as *not* the page, so they keep their own
+   * pair and move little between themes.
+   */
+  --inverse: #0f172a;
+  --inverse-ink: #f8fafc;
+  --scrim: rgb(15 23 42 / 0.6);
 }
 
 [data-theme="dark"] {
@@ -261,6 +270,11 @@
      chart is otherwise most legible. */
   --chart-series: #60a5fa;
   --chart-series-band: rgba(96, 165, 250, 0.18);
+  /* Slightly *lighter* than the light theme's: an inverse surface on a dark page
+     still has to separate from it, so it moves up rather than down. */
+  --inverse: #1e2c44;
+  --inverse-ink: #f1f5f9;
+  --scrim: rgb(2 6 15 / 0.7);
 }
 
 /*
@@ -300,6 +314,9 @@
   --color-code: var(--code);
   --color-code-ink: var(--code-foreground);
   --color-page: var(--page);
+  --color-inverse: var(--inverse);
+  --color-inverse-ink: var(--inverse-ink);
+  --color-scrim: var(--scrim);
 
   --color-ok: var(--ok);
   --color-ok-soft: var(--ok-soft);
@@ -336,6 +353,16 @@
    * is a word or a number; the platform-conventional 10px survives only where a
    * platform convention actually exists, which is the bottom tab bar's labels.
    */
+  /*
+   * 10px, and the only place it is allowed.
+   *
+   * Bottom-tab labels and a count inside a badge are both platform conventions
+   * at this size — iOS sets tab labels at 10pt — and both are read as part of a
+   * shape rather than as prose. Everything else that was `text-[10px]` was a
+   * measurement or an explanation, which is what `--text-meta` is the floor for.
+   */
+  --text-nav: 0.625rem;
+  --text-nav--line-height: 0.875rem;
   --text-meta: 0.75rem;
   --text-meta--line-height: 1rem;
   --text-body: 0.875rem;

@@ -242,10 +242,10 @@ export default function ProfileTab({
                 </h2>
                 <p className="text-xs text-ink-muted">{userEmail}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-surface-muted text-ink-secondary px-2.5 py-0.5 rounded-full border border-line">
+                  <span className="text-meta font-bold uppercase tracking-wider bg-surface-muted text-ink-secondary px-2.5 py-0.5 rounded-full border border-line">
                     {t("profile.role", { role: userRole })}
                   </span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-ok-soft text-ok-ink px-2.5 py-0.5 rounded-full border border-ok-line">
+                  <span className="text-meta font-bold uppercase tracking-wider bg-ok-soft text-ok-ink px-2.5 py-0.5 rounded-full border border-ok-line">
                     {tenantName}
                   </span>
                 </div>
@@ -318,7 +318,7 @@ export default function ProfileTab({
                   />
                 </div>
                 {userRole === "member" && (
-                  <p className="mt-1 text-[11px] text-ink-muted">
+                  <p className="mt-1 text-meta text-ink-muted">
                     {t("profile.workspaceAdminOnly")}
                   </p>
                 )}
@@ -354,14 +354,14 @@ export default function ProfileTab({
 
           {/* 1-Click Data Deletion & GDPR Art. 17 Card */}
           <div className="glass-card p-6 bg-surface border border-danger-line rounded-3xl space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-rose-100 pb-3">
+            <div className="flex items-center justify-between border-b border-danger-line pb-3">
               <div className="flex items-center gap-2">
                 <Trash2 className="w-5 h-5 text-danger-ink-on-soft" />
                 <h3 className="text-base font-extrabold text-ink">
                   {t("profile.gdprTitle")}
                 </h3>
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-danger-soft text-danger-ink-on-soft px-2.5 py-0.5 rounded-full border border-danger-line">
+              <span className="text-meta font-bold uppercase tracking-wider bg-danger-soft text-danger-ink-on-soft px-2.5 py-0.5 rounded-full border border-danger-line">
                 {t("profile.gdprBadge")}
               </span>
             </div>
@@ -392,7 +392,7 @@ export default function ProfileTab({
 
               <button
                 onClick={() => setShowAccountModal(true)}
-                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
+                className="py-3 px-4 rounded-2xl bg-danger hover:bg-danger/90 text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-danger/20"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{t("profile.deleteAccountButton")}</span>
@@ -522,12 +522,12 @@ export default function ProfileTab({
             <div className="space-y-3">
               <div className="p-3 rounded-2xl bg-page border border-line space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-ink-muted font-bold uppercase tracking-wider">
+                  <span className="text-meta text-ink-muted font-bold uppercase tracking-wider">
                     {t("profile.tenantId")}
                   </span>
                   <button
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
-                    className="flex items-center gap-1 text-[11px] text-brand hover:underline font-mono transition-colors"
+                    className="flex items-center gap-1 text-meta text-brand hover:underline font-mono transition-colors"
                   >
                     {copiedTenantId ? (
                       <Check className="w-3.5 h-3.5 text-ok" />
@@ -537,7 +537,7 @@ export default function ProfileTab({
                     <span>{copiedTenantId ? t("profile.copied") : t("profile.copy")}</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-ink font-mono bg-surface p-2 rounded-xl border border-line break-all select-all">
+                <p className="text-meta text-ink font-mono bg-surface p-2 rounded-xl border border-line break-all select-all">
                   {tenantId}
                 </p>
               </div>
@@ -547,7 +547,7 @@ export default function ProfileTab({
                   <Lock className="w-4 h-4 text-brand" />
                   <span>{t("profile.encryptedSecrets")}</span>
                 </div>
-                <p className="text-[11px] text-ink-muted leading-snug">
+                <p className="text-meta text-ink-muted leading-snug">
                   {t("profile.encryptionNote")}
                 </p>
               </div>
@@ -563,7 +563,7 @@ export default function ProfileTab({
 
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-danger-soft hover:bg-rose-100 border border-danger-line text-danger-ink-on-soft text-xs font-bold transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-danger-soft hover:bg-danger-soft/70 border border-danger-line text-danger-ink-on-soft text-xs font-bold transition-colors"
             >
               <LogOut className="w-4 h-4" />
               <span>{t("profile.signOut")}</span>
@@ -574,7 +574,7 @@ export default function ProfileTab({
 
       {/* 1-Click Data Points Wipe Confirmation Modal */}
       {showWipeModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-scrim backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-surface border border-line rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center gap-3 text-warn">
               <div className="p-2.5 rounded-2xl bg-warn-soft border border-warn-line">
@@ -595,7 +595,7 @@ export default function ProfileTab({
               <button
                 onClick={handleWipeDataPoints}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-warn text-white hover:bg-warn/90 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.wipeRunning") : t("profile.wipeConfirmAction")}
               </button>
@@ -606,7 +606,7 @@ export default function ProfileTab({
 
       {/* Full Account & Data Wipe Confirmation Modal */}
       {showAccountModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 bg-scrim backdrop-blur-sm flex items-center justify-center p-4 z-50">
           <div className="bg-surface border border-danger-line rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-center gap-3 text-danger-ink-on-soft">
               <div className="p-2.5 rounded-2xl bg-danger-soft border border-danger-line">
@@ -629,7 +629,7 @@ export default function ProfileTab({
               <button
                 onClick={handleAccountWipe}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-danger text-white hover:bg-danger/90 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.deleteAccountRunning") : t("profile.deleteAccountAction")}
               </button>

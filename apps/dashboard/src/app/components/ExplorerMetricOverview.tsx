@@ -132,7 +132,7 @@ export default function ExplorerMetricOverview({
       </div>
 
       {failed ? (
-        <p className="rounded-2xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-rose-800">
+        <p className="rounded-2xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-danger-ink-on-soft">
           {t("explorer.overviewFailed")}
         </p>
       ) : rows.length === 0 ? (
@@ -145,7 +145,7 @@ export default function ExplorerMetricOverview({
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-line text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+              <tr className="border-b border-line text-meta font-bold uppercase tracking-wider text-ink-muted">
                 <th className="px-3 pb-3">{t("explorer.colMetric")}</th>
                 <th className="px-3 pb-3">{t("explorer.colUnit")}</th>
                 <th className="px-3 pb-3 text-right">{t("explorer.colPoints")}</th>
@@ -182,9 +182,9 @@ export default function ExplorerMetricOverview({
                   <tr key={key} className="transition-colors hover:bg-page">
                     <td className="px-3 py-3">
                       <span className="block font-bold text-ink">{label}</span>
-                      <span className="block font-mono text-[10px] text-ink-muted">{key}</span>
+                      <span className="block font-mono text-meta text-ink-muted">{key}</span>
                       {!entry.definition && (
-                        <span className="mt-0.5 inline-block rounded-full border border-warn-line bg-warn-soft px-1.5 text-[9px] font-bold uppercase tracking-wider text-warn-ink">
+                        <span className="mt-0.5 inline-block rounded-full border border-warn-line bg-warn-soft px-1.5 text-nav font-bold uppercase tracking-wider text-warn-ink">
                           {t("explorer.unregistered")}
                         </span>
                       )}
@@ -197,14 +197,14 @@ export default function ExplorerMetricOverview({
                       <span className="block font-mono font-bold text-ink">
                         {format(typical)}
                       </span>
-                      <span className="block text-[10px] text-ink-muted">
+                      <span className="block text-meta text-ink-muted">
                         {t(AGGREGATION_LABEL[aggregation] ?? "explorer.aggAverage")}
                       </span>
                     </td>
-                    <td className="px-3 py-3 text-right font-mono text-[11px] text-ink-muted">
+                    <td className="px-3 py-3 text-right font-mono text-meta text-ink-muted">
                       {format(entry.min)} / {format(entry.max)}
                     </td>
-                    <td className="px-3 py-3 text-[11px] text-ink-muted">
+                    <td className="px-3 py-3 text-meta text-ink-muted">
                       {entry.latest_timestamp ? formatDateTime(entry.latest_timestamp) : "—"}
                     </td>
                     <td className="px-3 py-3">
@@ -214,14 +214,14 @@ export default function ExplorerMetricOverview({
                         // Core rejects a non-canonical name on this endpoint, so
                         // offering the control would only produce a 422.
                         if (!policy || !entry.definition) {
-                          return <span className="text-[11px] text-ink-muted">—</span>;
+                          return <span className="text-meta text-ink-muted">—</span>;
                         }
                         // A resolution this build does not know about is shown as
                         // itself rather than offered in a select, where it would
                         // preselect the first option and misreport what is stored.
                         if (!isStorable(policy.resolution)) {
                           return (
-                            <span className="font-mono text-[11px] text-ink-muted">
+                            <span className="font-mono text-meta text-ink-muted">
                               {policy.resolution}
                             </span>
                           );
@@ -241,7 +241,7 @@ export default function ExplorerMetricOverview({
                                   [key]: event.target.value as StorableResolution,
                                 }))
                               }
-                              className="min-h-9 rounded-xl border border-line bg-surface px-2 py-1 text-[11px] font-semibold text-ink outline-none focus-ring disabled:opacity-50"
+                              className="min-h-9 rounded-xl border border-line bg-surface px-2 py-1 text-meta font-semibold text-ink outline-none focus-ring disabled:opacity-50"
                             >
                               {RESOLUTIONS.map((resolution) => (
                                 <option key={resolution} value={resolution}>
@@ -265,12 +265,12 @@ export default function ExplorerMetricOverview({
                                     });
                                   }
                                 }}
-                                className="min-h-9 rounded-xl border border-warn-line bg-warn-soft px-2.5 text-[11px] font-bold text-warn-ink hover:bg-warn-soft disabled:opacity-50"
+                                className="min-h-9 rounded-xl border border-warn-line bg-warn-soft px-2.5 text-meta font-bold text-warn-ink hover:bg-warn-soft disabled:opacity-50"
                               >
                                 {t("explorer.storageApply")}
                               </button>
                             ) : (
-                              <span className="text-[11px] text-ink-muted">
+                              <span className="text-meta text-ink-muted">
                                 {policy.effective_from === null
                                   ? t("explorer.storageIsDefault")
                                   : t("explorer.storageIsOverride")}
@@ -284,7 +284,7 @@ export default function ExplorerMetricOverview({
                       <button
                         type="button"
                         onClick={() => onShowRaw(key)}
-                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-line bg-surface px-2.5 py-1.5 text-[11px] font-bold text-ink-secondary transition-colors hover:border-brand hover:text-brand"
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-line bg-surface px-2.5 py-1.5 text-meta font-bold text-ink-secondary transition-colors hover:border-brand hover:text-brand"
                       >
                         {t("explorer.showRaw")}
                         <ArrowRight className="h-3 w-3" />

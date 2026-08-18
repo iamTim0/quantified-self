@@ -130,7 +130,7 @@ export default function ImporterDetailPage({
             <ArrowLeft className="h-4 w-4" />
           </button>
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-wider text-ink-muted">
+            <p className="text-meta font-bold uppercase tracking-wider text-ink-muted">
               {t("importerDetail.eyebrow")}
             </p>
             <h1 className="text-3xl font-extrabold tracking-tight text-ink">
@@ -172,7 +172,7 @@ export default function ImporterDetailPage({
       </div>
 
       {error && (
-        <p className="rounded-2xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-rose-800 dark:border-rose-900/70 dark:bg-rose-950/40 dark:text-rose-200">
+        <p className="rounded-2xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-danger-ink-on-soft">
           {error}
         </p>
       )}
@@ -252,7 +252,7 @@ export default function ImporterDetailPage({
               {t("importerDetail.historyTitle")}
             </h2>
           </div>
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-meta text-ink-muted">
             {t("importerDetail.autoRefresh", { seconds: RUN_REFRESH_MS / 1000 })}
           </span>
         </div>
@@ -284,18 +284,18 @@ export default function ImporterDetailPage({
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
                         <span
-                          className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase ${statusClass(run.status)}`}
+                          className={`rounded-full border px-2 py-0.5 text-meta font-bold uppercase ${statusClass(run.status)}`}
                         >
                           {t(statusKey(run.status))}
                         </span>
-                        <span className="text-[11px] font-semibold text-ink-secondary">
+                        <span className="text-meta font-semibold text-ink-secondary">
                           {t(triggerKey(run.trigger))}
                         </span>
-                        <span className="text-[11px] text-ink-muted">
+                        <span className="text-meta text-ink-muted">
                           {formatDateTime(run.started_at)}
                         </span>
                       </div>
-                      <p className="mt-1 text-[11px] text-ink-muted">
+                      <p className="mt-1 text-meta text-ink-muted">
                         {t("importerDetail.points", {
                           processed: formatNumber(run.points_processed),
                           accepted: formatNumber(run.points_accepted),
@@ -309,7 +309,7 @@ export default function ImporterDetailPage({
                         })}
                       </p>
                       {run.provider_window_start && run.provider_window_end && (
-                        <p className="mt-1 text-[11px] text-ink-muted">
+                        <p className="mt-1 text-meta text-ink-muted">
                           {t("importerDetail.providerWindow", {
                             start: formatDateTime(run.provider_window_start),
                             end: formatDateTime(run.provider_window_end),
@@ -317,7 +317,7 @@ export default function ImporterDetailPage({
                         </p>
                       )}
                       {run.backlog_at_end !== null && run.backlog_at_end !== undefined && (
-                        <p className="mt-1 text-[11px] text-ink-muted">
+                        <p className="mt-1 text-meta text-ink-muted">
                           {t("importerDetail.backlog", {
                             count: formatNumber(run.backlog_at_end),
                           })}
@@ -325,7 +325,7 @@ export default function ImporterDetailPage({
                       )}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-[11px] text-ink-muted sm:grid-cols-4 lg:min-w-[430px]">
+                  <div className="grid grid-cols-2 gap-x-5 gap-y-1 text-meta text-ink-muted sm:grid-cols-4 lg:min-w-[430px]">
                     <DetailValue label={t("importerDetail.mode")} value={t(modeKey(run.mode))} />
                     <DetailValue
                       label={t("importerDetail.duration")}
@@ -406,7 +406,7 @@ function SummaryCard({
           : "text-ink";
   return (
     <div className="rounded-2xl border border-line bg-surface p-4 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">{label}</p>
+      <p className="text-meta font-bold uppercase tracking-wider text-ink-muted">{label}</p>
       <p className={`mt-2 text-lg font-extrabold ${valueClass}`}>{value}</p>
     </div>
   );
@@ -423,8 +423,8 @@ function DetailValue({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-ink-muted">{label}</p>
-      <p className={`mt-0.5 truncate text-[11px] text-ink-secondary ${mono ? "font-mono" : ""}`}>
+      <p className="text-meta font-bold uppercase tracking-wider text-ink-muted">{label}</p>
+      <p className={`mt-0.5 truncate text-meta text-ink-secondary ${mono ? "font-mono" : ""}`}>
         {value}
       </p>
     </div>

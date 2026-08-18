@@ -332,7 +332,7 @@ export default function ImportDialog({
   const effective = plan?.recommended_range;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
       <div className="w-full max-w-2xl max-h-[90dvh] overflow-y-auto rounded-3xl bg-surface shadow-xl">
         <div className="flex items-center justify-between border-b border-line px-6 py-4">
           <div className="flex items-center gap-2.5">
@@ -341,7 +341,7 @@ export default function ImportDialog({
               <h2 className="text-base font-bold text-ink">
                 {t("import.title", { name: sourceName })}
               </h2>
-              <p className="text-[11px] text-ink-muted">{t("import.subtitle")}</p>
+              <p className="text-meta text-ink-muted">{t("import.subtitle")}</p>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -378,7 +378,7 @@ export default function ImportDialog({
             remains is what such a connector does have — progress and history.
           */}
           {passive && (
-            <p className="rounded-2xl border border-info-line bg-info-soft px-3.5 py-2.5 text-[11px] leading-relaxed text-info-ink">
+            <p className="rounded-2xl border border-info-line bg-info-soft px-3.5 py-2.5 text-meta leading-relaxed text-info-ink">
               {t("import.passiveExplainer")}
             </p>
           )}
@@ -390,11 +390,11 @@ export default function ImportDialog({
             connector, so a reading that is already stored stays one reading.
           */}
           {fileImport && providerType && (
-            <div className="rounded-2xl border border-info-line bg-sky-50/70 p-4">
+            <div className="rounded-2xl border border-info-line bg-info-soft p-4">
               <h3 className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-info-ink">
                 <Upload className="h-3.5 w-3.5" /> {t("import.uploadLegend")}
               </h3>
-              <p className="mt-1 text-[11px] leading-relaxed text-info-ink">
+              <p className="mt-1 text-meta leading-relaxed text-info-ink">
                 {t(
                   providerType === "apple_health"
                     ? "import.uploadHintAppleHealth"
@@ -408,12 +408,12 @@ export default function ImportDialog({
                   aria-label={t("import.uploadChoose")}
                   disabled={uploading}
                   onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-                  className="min-w-0 flex-1 text-[11px] text-ink-muted file:mr-3 file:rounded-xl file:border-0 file:bg-surface file:px-3 file:py-2 file:text-[11px] file:font-bold file:text-sky-900 disabled:opacity-50"
+                  className="min-w-0 flex-1 text-meta text-ink-muted file:mr-3 file:rounded-xl file:border-0 file:bg-surface file:px-3 file:py-2 file:text-meta file:font-bold file:text-info-ink disabled:opacity-50"
                 />
                 <button
                   onClick={handleUpload}
                   disabled={!file || uploading}
-                  className="flex items-center gap-2 whitespace-nowrap rounded-2xl bg-sky-900 px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-sky-950 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="flex items-center gap-2 whitespace-nowrap rounded-2xl bg-inverse px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-inverse disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {uploading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -431,14 +431,14 @@ export default function ImportDialog({
                 an empty file picker.
               */}
               {upload?.phase === "done" && (
-                <p className="mt-3 rounded-xl border border-ok-line bg-ok-soft px-3 py-2 text-[11px] text-ok-ink">
+                <p className="mt-3 rounded-xl border border-ok-line bg-ok-soft px-3 py-2 text-meta text-ok-ink">
                   {t("import.uploadAccepted")}
                 </p>
               )}
 
               {upload && upload.phase !== "done" && (
                 <div className="mt-3" aria-label={t("import.uploadProgress")}>
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-info-ink">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-meta text-info-ink">
                     <span className="truncate" title={upload.fileName}>
                       {upload.fileName}
                     </span>
@@ -449,7 +449,7 @@ export default function ImportDialog({
                     )}
                   </div>
                   <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-sky-100"
+                    className="h-2 w-full overflow-hidden rounded-full bg-info-soft"
                     role="progressbar"
                     aria-valuemin={0}
                     aria-valuemax={100}
@@ -459,12 +459,12 @@ export default function ImportDialog({
                     })}
                   >
                     <div
-                      className="h-full rounded-full bg-sky-600 transition-[width] duration-200"
+                      className="h-full rounded-full bg-info transition-[width] duration-200"
                       style={{ width: `${uploadPercent(upload)}%` }}
                     />
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] text-info-ink">
+                    <span className="text-meta text-info-ink">
                       {upload.phase === "assembling" && t("upload.assembling")}
                       {upload.phase === "uploading" && t("import.uploadInParts")}
                       {upload.phase === "cancelled" && t("upload.cancelledBody")}
@@ -473,7 +473,7 @@ export default function ImportDialog({
                     {uploading && (
                       <button
                         onClick={() => cancelUpload(upload.id)}
-                        className="rounded-xl px-2.5 py-1 text-[11px] font-bold text-danger-ink-on-soft hover:bg-danger-soft"
+                        className="rounded-xl px-2.5 py-1 text-meta font-bold text-danger-ink-on-soft hover:bg-danger-soft"
                       >
                         {t("upload.cancel")}
                       </button>
@@ -481,7 +481,7 @@ export default function ImportDialog({
                     {upload.phase === "error" && upload.resumable && (
                       <button
                         onClick={() => retryUpload(upload.id)}
-                        className="flex items-center gap-1.5 rounded-xl bg-slate-900 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-slate-800"
+                        className="flex items-center gap-1.5 rounded-xl bg-inverse px-2.5 py-1 text-meta font-bold text-white hover:bg-inverse/90"
                       >
                         <RotateCcw className="h-3 w-3" /> {t("upload.resume")}
                       </button>
@@ -490,7 +490,7 @@ export default function ImportDialog({
                 </div>
               )}
 
-              <p className="mt-2 text-[11px] text-sky-800">{t("import.uploadReimportNote")}</p>
+              <p className="mt-2 text-meta text-info-ink">{t("import.uploadReimportNote")}</p>
             </div>
           )}
 
@@ -529,7 +529,7 @@ export default function ImportDialog({
               </div>
 
               {plan?.window_reason && !rangeTouched && (
-                <p className="text-[11px] leading-relaxed text-ink-muted">
+                <p className="text-meta leading-relaxed text-ink-muted">
                   <span className="font-semibold text-ink-muted">{t("import.suggestion")}</span>{" "}
                   {t("import.windowSuggested")}
                 </p>
@@ -558,7 +558,7 @@ export default function ImportDialog({
                     <span className="flex items-center gap-1.5 text-sm font-bold text-ink">
                       <ShieldCheck className="h-4 w-4 text-brand" /> {t("import.smartLabel")}
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-muted">
+                    <span className="mt-0.5 block text-meta leading-relaxed text-ink-muted">
                       {t("import.smartHint")}
                     </span>
                   </span>
@@ -567,7 +567,7 @@ export default function ImportDialog({
                 <label
                   className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 ${
                     mode === "force"
-                      ? "border-amber-500 bg-warn-soft"
+                      ? "border-warn bg-warn-soft"
                       : "border-line bg-surface"
                   }`}
                 >
@@ -582,7 +582,7 @@ export default function ImportDialog({
                     <span className="flex items-center gap-1.5 text-sm font-bold text-ink">
                       <Zap className="h-4 w-4 text-warn" /> {t("import.forceLabel")}
                     </span>
-                    <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-muted">
+                    <span className="mt-0.5 block text-meta leading-relaxed text-ink-muted">
                       {t("import.forceBody")}
                     </span>
                   </span>
@@ -592,7 +592,7 @@ export default function ImportDialog({
               {mode === "force" && (
                 <div className="flex gap-2.5 rounded-2xl border border-warn-line bg-warn-soft p-3.5">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn" />
-                  <p className="text-[11px] leading-relaxed text-warn-ink">
+                  <p className="text-meta leading-relaxed text-warn-ink">
                     {t("import.forceWarning")} {t("import.forceHint")}
                   </p>
                 </div>
@@ -615,7 +615,7 @@ export default function ImportDialog({
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />{" "}
                   {running.status === "loading" ? t("import.loadingCore") : t("import.running")}
                 </h3>
-                {typicalHint && <span className="text-[11px] text-ok-ink">{typicalHint}</span>}
+                {typicalHint && <span className="text-meta text-ok-ink">{typicalHint}</span>}
               </div>
 
               {(running.points_expected ?? running.points_received) > 0 ? (
@@ -635,7 +635,7 @@ export default function ImportDialog({
                       }}
                     />
                   </div>
-                  <p className="mt-1.5 text-[11px] text-ok-ink">
+                  <p className="mt-1.5 text-meta text-ok-ink">
                     {t("import.progressOf", {
                       done: running.points_processed,
                       total: running.points_expected ?? running.points_received,
@@ -643,7 +643,7 @@ export default function ImportDialog({
                   </p>
                 </>
               ) : (
-                <p className="text-[11px] text-ok-ink">
+                <p className="text-meta text-ok-ink">
                   {t("import.progressCounted", { count: running.points_processed })}
                 </p>
               )}
@@ -669,21 +669,21 @@ export default function ImportDialog({
                   <p className="text-xs leading-relaxed text-ink-secondary">{plan.reason}</p>
 
                   {plan.confidence === "low" && (
-                    <p className="rounded-xl bg-surface-muted px-3 py-2 text-[11px] text-ink-muted">
+                    <p className="rounded-xl bg-surface-muted px-3 py-2 text-meta text-ink-muted">
                       {t("import.tooIrregular")}
                     </p>
                   )}
 
                   {plan.skipped_ranges.length > 0 && (
                     <div>
-                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-ink-muted">
+                      <p className="mb-1 flex items-center gap-1.5 text-meta font-bold text-ink-muted">
                         <SkipForward className="h-3.5 w-3.5" /> {t("import.willSkip")}
                       </p>
                       <ul className="space-y-1">
                         {plan.skipped_ranges.map((r) => (
                           <li
                             key={`${r.start}-${r.end}`}
-                            className="flex items-center justify-between rounded-lg bg-surface px-2.5 py-1.5 text-[11px] text-ink-muted"
+                            className="flex items-center justify-between rounded-lg bg-surface px-2.5 py-1.5 text-meta text-ink-muted"
                           >
                             <span className="font-mono">{formatRange(formatDateTime, r)}</span>
                             <span className="text-ink-muted">{durationLabel(t, r)}</span>
@@ -695,16 +695,16 @@ export default function ImportDialog({
 
                   {effective ? (
                     <div>
-                      <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold text-brand">
+                      <p className="mb-1 flex items-center gap-1.5 text-meta font-bold text-brand">
                         <RefreshCw className="h-3.5 w-3.5" /> {t("import.willImport")}
                       </p>
-                      <div className="flex items-center justify-between rounded-lg border border-ok-line bg-ok-soft px-2.5 py-1.5 text-[11px] text-ok-ink">
+                      <div className="flex items-center justify-between rounded-lg border border-ok-line bg-ok-soft px-2.5 py-1.5 text-meta text-ok-ink">
                         <span className="font-mono">{formatRange(formatDateTime, effective)}</span>
                         <span>{durationLabel(t, effective)}</span>
                       </div>
                     </div>
                   ) : (
-                    <p className="flex items-center gap-1.5 text-[11px] font-semibold text-ok-ink">
+                    <p className="flex items-center gap-1.5 text-meta font-semibold text-ok-ink">
                       <CheckCircle2 className="h-3.5 w-3.5" /> {t("import.nothingToImportShort")}
                     </p>
                   )}
@@ -714,7 +714,7 @@ export default function ImportDialog({
                       href={plan.docs_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-block text-[11px] text-brand underline"
+                      className="inline-block text-meta text-brand underline"
                     >
                       {t("import.howItWorks")}
                     </a>
@@ -732,7 +732,7 @@ export default function ImportDialog({
               </summary>
               <ul className="mt-3 space-y-2">
                 {runs.map((run) => (
-                  <li key={run.id} className="rounded-xl bg-page px-3 py-2 text-[11px]">
+                  <li key={run.id} className="rounded-xl bg-page px-3 py-2 text-meta">
                     <div className="flex items-center justify-between">
                       <span className="font-semibold text-ink-secondary">
                         {formatDateTime(run.started_at)}

@@ -48,7 +48,7 @@ export default function OperatorRunDiagnostics({
     run.duration_seconds >= Math.max(300, (typicalSeconds ?? 0) * 2);
 
   return (
-    <section className="mt-3 rounded-2xl border border-line bg-surface-muted p-3 text-[11px] text-ink-secondary dark:bg-slate-800/80">
+    <section className="mt-3 rounded-2xl border border-line bg-surface-muted p-3 text-meta text-ink-secondary">
       <p className="font-bold uppercase tracking-wide text-ink-muted">
         {t("importerDetail.operatorDiagnostics")}
       </p>

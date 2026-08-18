@@ -170,7 +170,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-surface-muted p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
       {/* Background Orbs */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-500/10 rounded-full blur-[120px] pointer-events-none" />
+      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-brand/10 rounded-full blur-[120px] pointer-events-none" />
 
       <div className="z-10 w-full max-w-md">
         <div className="mb-4 flex justify-end">
@@ -325,7 +325,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <span className="h-px flex-1 bg-surface-muted" />
-                  <span className="text-[11px] font-semibold uppercase tracking-wider text-ink-muted">
+                  <span className="text-meta font-semibold uppercase tracking-wider text-ink-muted">
                     {t("auth.or")}
                   </span>
                   <span className="h-px flex-1 bg-surface-muted" />

@@ -63,11 +63,11 @@ export default function UploadBanner() {
                 })}
               >
                 <div
-                  className="h-full rounded-full bg-sky-600 transition-[width] duration-200"
+                  className="h-full rounded-full bg-info transition-[width] duration-200"
                   style={{ width: `${uploadPercent(job)}%` }}
                 />
               </div>
-              <p className="mt-1.5 text-[11px] text-ink-muted">
+              <p className="mt-1.5 text-meta text-ink-muted">
                 {job.phase === "assembling"
                   ? t("upload.assembling")
                   : t("upload.sentOf", {
@@ -80,18 +80,18 @@ export default function UploadBanner() {
           )}
 
           {job.phase === "done" && (
-            <p className="mt-1.5 text-[11px] text-ok-ink">{t("upload.doneBody")}</p>
+            <p className="mt-1.5 text-meta text-ok-ink">{t("upload.doneBody")}</p>
           )}
 
           {job.phase === "error" && (
             <>
-              <p className="mt-1.5 text-[11px] text-danger-ink-on-soft">
+              <p className="mt-1.5 text-meta text-danger-ink-on-soft">
                 {job.detail ?? t("upload.errorBody")}
               </p>
               {job.resumable && (
                 <button
                   onClick={() => retry(job.id)}
-                  className="mt-2 flex items-center gap-1.5 rounded-xl bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-800"
+                  className="mt-2 flex items-center gap-1.5 rounded-xl bg-inverse px-3 py-1.5 text-meta font-bold text-white hover:bg-inverse/90"
                 >
                   <RotateCcw className="h-3 w-3" /> {t("upload.resume")}
                 </button>
@@ -100,7 +100,7 @@ export default function UploadBanner() {
           )}
 
           {job.phase === "cancelled" && (
-            <p className="mt-1.5 text-[11px] text-ink-muted">{t("upload.cancelledBody")}</p>
+            <p className="mt-1.5 text-meta text-ink-muted">{t("upload.cancelledBody")}</p>
           )}
         </article>
       ))}
@@ -125,7 +125,7 @@ function Header({
     <div className="flex items-start justify-between gap-2">
       <div className="flex min-w-0 items-start gap-2">
         <span className="mt-0.5 shrink-0">
-          {running && <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-600" />}
+          {running && <Loader2 className="h-3.5 w-3.5 animate-spin text-info" />}
           {job.phase === "done" && <CheckCircle2 className="h-3.5 w-3.5 text-ok" />}
           {job.phase === "error" && <AlertTriangle className="h-3.5 w-3.5 text-danger-ink-on-soft" />}
           {job.phase === "cancelled" && <Upload className="h-3.5 w-3.5 text-ink-muted" />}
@@ -137,7 +137,7 @@ function Header({
             {job.phase === "error" && t("upload.errorTitle", { name: job.sourceName })}
             {job.phase === "cancelled" && t("upload.cancelledTitle", { name: job.sourceName })}
           </p>
-          <p className="truncate text-[11px] text-ink-muted" title={job.fileName}>
+          <p className="truncate text-meta text-ink-muted" title={job.fileName}>
             {job.fileName}
           </p>
         </div>

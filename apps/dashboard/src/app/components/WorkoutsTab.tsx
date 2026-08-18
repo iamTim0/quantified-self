@@ -214,7 +214,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
               onClick={() => setDays(option.days)}
               className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 days === option.days
-                  ? "bg-slate-900 text-white shadow-sm"
+                  ? "bg-inverse text-white shadow-sm"
                   : "text-ink-muted hover:text-ink"
               }`}
             >
@@ -275,12 +275,12 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
                             15:45`), false for English, whose 12-hour form ends
                             in `…5 PM`, so the card advertised `45 PM` as the
                             start of the session. */}
-                        <span className="shrink-0 text-[11px] text-ink-muted">
+                        <span className="shrink-0 text-meta text-ink-muted">
                           {formatTime(entry.start)}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-meta text-ink-muted">
                         {measures.map(([metric, value]) => {
                           const described = describeMetric(metric, locale);
                           return (
@@ -298,7 +298,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
                         })}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+                      <div className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
                         {entry.exercise_count > 0 && (
                           <span className="flex items-center gap-1">
                             <Timer className="h-3 w-3" />

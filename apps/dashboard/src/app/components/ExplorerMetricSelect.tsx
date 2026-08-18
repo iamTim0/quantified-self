@@ -119,7 +119,7 @@ export default function ExplorerMetricSelect({
                   className="w-full rounded-xl border border-line bg-surface py-1.5 pl-8 pr-2.5 text-xs text-ink outline-none focus-visible:border-brand"
                 />
               </div>
-              <div className="mt-2 flex items-center justify-between px-0.5 text-[11px] font-bold">
+              <div className="mt-2 flex items-center justify-between px-0.5 text-meta font-bold">
                 <button
                   type="button"
                   onClick={() => onChange(visible.map(({ key }) => key))}
@@ -172,11 +172,11 @@ export default function ExplorerMetricSelect({
                         {/* The canonical key stays visible: this is the raw-data
                             explorer, so the name an API call needs must be readable
                             without hovering. */}
-                        <span className="block truncate font-mono text-[10px] text-ink-muted">
+                        <span className="block truncate font-mono text-meta text-ink-muted">
                           {key}
                         </span>
                       </span>
-                      <span className="shrink-0 rounded-full bg-surface-muted px-1.5 text-[10px] font-bold text-ink-muted">
+                      <span className="shrink-0 rounded-full bg-surface-muted px-1.5 text-meta font-bold text-ink-muted">
                         {formatNumber(count)}
                       </span>
                     </button>

@@ -327,7 +327,7 @@ export default function ConnectorsPage({
             {busyCount > 0 && (
               <span
                 title={t("connectors.runsActiveHint", { count: busyCount })}
-                className="rounded-full border border-warn-line bg-warn-soft px-1.5 text-[10px] font-bold text-warn-ink"
+                className="rounded-full border border-warn-line bg-warn-soft px-1.5 text-meta font-bold text-warn-ink"
               >
                 {busyCount}
               </span>
@@ -383,7 +383,7 @@ export default function ConnectorsPage({
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-ink">{t("connectors.tableTitle")}</h3>
-                <span className="text-[10px] font-semibold text-ok-ink bg-ok-soft px-2.5 py-0.5 rounded-full border border-ok-line flex items-center gap-1">
+                <span className="text-meta font-semibold text-ok-ink bg-ok-soft px-2.5 py-0.5 rounded-full border border-ok-line flex items-center gap-1">
                   <Radio className="w-2.5 h-2.5 text-ok animate-pulse" />{" "}
                   {t("connectors.autoRefresh", { seconds: POLL_INTERVAL_MS / 1000 })}
                 </span>
@@ -408,7 +408,7 @@ export default function ConnectorsPage({
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-line text-ink-muted uppercase tracking-wider font-bold text-[11px]">
+                    <tr className="border-b border-line text-ink-muted uppercase tracking-wider font-bold text-meta">
                       <th className="pb-3 px-3">{t("connectors.colSource")}</th>
                       <th className="pb-3 px-3">{t("connectors.colQueue")}</th>
                       <th className="pb-3 px-3">{t("connectors.colLastSync")}</th>
@@ -456,7 +456,7 @@ export default function ConnectorsPage({
                                     title={t("connectors.openDocs")}
                                   >
                                     <BookOpen className="w-3 h-3" />
-                                    <span className="text-[10px]">{t("connectors.docs")}</span>
+                                    <span className="text-meta">{t("connectors.docs")}</span>
                                   </a>
                                   <Link
                                     href={`/connectors/${encodeURIComponent(c.id)}`}
@@ -464,24 +464,24 @@ export default function ConnectorsPage({
                                     title={t("connectors.openDetails")}
                                   >
                                     <Activity className="h-3 w-3" />
-                                    <span className="text-[10px]">{t("connectors.details")}</span>
+                                    <span className="text-meta">{t("connectors.details")}</span>
                                   </Link>
                                 </div>
-                                <div className="text-[10px] font-semibold uppercase tracking-wide text-ink-muted">
+                                <div className="text-meta font-semibold uppercase tracking-wide text-ink-muted">
                                   {c.source_type}
                                 </div>
                                 <div
                                   className={
                                     rowIsPassive
-                                      ? "text-[10px] font-bold uppercase tracking-wider text-violet-700"
-                                      : "text-[10px] font-bold uppercase tracking-wider text-sky-700"
+                                      ? "text-meta font-bold uppercase tracking-wider text-info-ink"
+                                      : "text-meta font-bold uppercase tracking-wider text-info-ink"
                                   }
                                 >
                                   {rowIsPassive
                                     ? t("connectors.passiveHint")
                                     : t("connectors.activeHint")}
                                 </div>
-                                <div className="text-[10px] text-ink-muted font-mono">
+                                <div className="text-meta text-ink-muted font-mono">
                                   Fernet AES-256 Encrypted
                                 </div>
                               </div>
@@ -490,11 +490,11 @@ export default function ConnectorsPage({
                           <td className="py-3.5 px-3">
                             <div className="space-y-1">
                               <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase border inline-flex items-center gap-1.5 ${
+                                className={`px-2.5 py-0.5 rounded-full text-meta font-bold uppercase border inline-flex items-center gap-1.5 ${
                                   rowIsBusy
                                     ? "bg-warn-soft text-warn-ink border-warn-line animate-pulse"
                                     : c.sync_status === "error"
-                                      ? "bg-danger-soft text-rose-800 border-rose-300"
+                                      ? "bg-danger-soft text-danger-ink-on-soft border-danger-line"
                                       : "bg-ok-soft text-ok-ink border-ok-line"
                                 }`}
                               >
@@ -519,7 +519,7 @@ export default function ConnectorsPage({
                               </span>
                               {c.last_sync_message && (
                                 <div
-                                  className={`text-[10px] font-mono leading-tight ${
+                                  className={`text-meta font-mono leading-tight ${
                                     c.sync_status === "error"
                                       ? "text-danger-ink-on-soft font-semibold"
                                       : "text-ink-muted"
@@ -530,7 +530,7 @@ export default function ConnectorsPage({
                               )}
                             </div>
                           </td>
-                          <td className="py-3.5 px-3 text-ink-muted font-mono text-[11px]">
+                          <td className="py-3.5 px-3 text-ink-muted font-mono text-meta">
                             {c.last_sync_at ? formatDateTime(c.last_sync_at) : t("common.pending")}
                           </td>
                           <td className="py-3.5 px-3 text-ink-muted">
@@ -584,7 +584,7 @@ export default function ConnectorsPage({
                                 onClick={() => onOpenConfigureModal(c)}
                                 className={`px-3 py-1.5 rounded-xl font-semibold transition-colors shadow-xs inline-flex items-center gap-1 whitespace-nowrap ${
                                   c.sync_status === "error"
-                                    ? "bg-rose-600 hover:bg-rose-700 text-white"
+                                    ? "bg-danger hover:bg-danger/90 text-white"
                                     : "bg-brand hover:bg-brand-hover text-brand-ink"
                                 }`}
                               >
@@ -604,7 +604,7 @@ export default function ConnectorsPage({
                               <button
                                 onClick={() => handleDeleteConnector(c)}
                                 disabled={deletingSource === c.id}
-                                className="px-3 py-1.5 rounded-xl bg-danger-soft hover:bg-rose-100 border border-danger-line text-danger-ink-on-soft font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
+                                className="px-3 py-1.5 rounded-xl bg-danger-soft hover:bg-danger-soft/70 border border-danger-line text-danger-ink-on-soft font-semibold transition-colors disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap"
                                 title={t("connectors.disconnect")}
                               >
                                 <Trash2 className="w-3 h-3" />
@@ -652,7 +652,7 @@ export default function ConnectorsPage({
                         <Icon className="h-6 w-6" />
                       </div>
                       {count > 0 && (
-                        <span className="rounded-full border border-ok-line bg-ok-soft px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-ok-ink">
+                        <span className="rounded-full border border-ok-line bg-ok-soft px-2.5 py-1 text-meta font-bold uppercase tracking-wider text-ok-ink">
                           {t(
                             plural(
                               count,
@@ -693,7 +693,7 @@ export default function ConnectorsPage({
       )}
 
       {runsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-4">
           <div
             ref={runsDialogRef}
             role="dialog"

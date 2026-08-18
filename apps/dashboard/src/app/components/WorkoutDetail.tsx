@@ -246,7 +246,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                 key={measure.metric_type}
                 className="glass-card rounded-2xl border border-line bg-surface p-4 shadow-sm"
               >
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+                <p className="text-meta font-semibold uppercase tracking-wide text-ink-muted">
                   {described.label}
                 </p>
                 <p className="mt-1 text-lg font-extrabold text-ink">
@@ -256,12 +256,12 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                   <span className="text-xs font-semibold text-ink-muted">{measure.unit}</span>
                 </p>
                 {measure.derived_by && measure.derived_from && (
-                  <p className="mt-1 text-[11px] text-ink-muted">
+                  <p className="mt-1 text-meta text-ink-muted">
                     {t("workouts.derived", { fields: measure.derived_from.join(", ") })}
                   </p>
                 )}
                 {measure.provider_value !== null && measure.units && (
-                  <p className="mt-0.5 text-[11px] text-ink-muted">
+                  <p className="mt-0.5 text-meta text-ink-muted">
                     {t("workouts.providerValue", {
                       value: formatNumber(measure.provider_value, {
                         maximumFractionDigits: 3,
@@ -284,7 +284,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
             {t("workouts.route")}
           </h3>
           <LocationMap points={routePoints} showHeader={false} />
-          <p className="flex flex-wrap gap-x-3 text-[11px] text-ink-muted">
+          <p className="flex flex-wrap gap-x-3 text-meta text-ink-muted">
             <span>
               {t(
                 plural(
@@ -341,7 +341,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
             {t("workouts.strength")}
           </h3>
           {body.strength.set_rows_truncated && (
-            <p className="text-[11px] text-warn-ink">{t("workouts.strengthTruncated")}</p>
+            <p className="text-meta text-warn-ink">{t("workouts.strengthTruncated")}</p>
           )}
           <div className="space-y-3">
             {body.strength.exercises.map((exercise) => (
@@ -356,14 +356,14 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                     </span>
                     {exercise.muscle_group && (
                       <span
-                        className="rounded-full bg-surface-muted px-2 py-0.5 text-[11px] text-ink-muted"
+                        className="rounded-full bg-surface-muted px-2 py-0.5 text-meta text-ink-muted"
                         title={exercise.exercise_category ?? undefined}
                       >
                         {t(muscleKey(exercise.muscle_group))}
                       </span>
                     )}
                   </div>
-                  <div className="flex gap-3 text-[11px] text-ink-muted">
+                  <div className="flex gap-3 text-meta text-ink-muted">
                     {exercise.top_set_weight !== null && (
                       <span>
                         {t("workouts.topSet")}:{" "}
@@ -390,7 +390,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[420px] text-left text-xs">
-                    <thead className="text-[11px] uppercase tracking-wide text-ink-muted">
+                    <thead className="text-meta uppercase tracking-wide text-ink-muted">
                       <tr>
                         <th className="px-4 py-2 font-semibold">{t("workouts.setNumber")}</th>
                         <th className="px-4 py-2 font-semibold">{t("workouts.weight")}</th>
@@ -436,7 +436,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
           <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
             {t("workouts.surroundings")}
           </h3>
-          <p className="text-[11px] text-ink-muted">{t("workouts.surroundingsHint")}</p>
+          <p className="text-meta text-ink-muted">{t("workouts.surroundingsHint")}</p>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {body.surroundings.map((row) => {
               const described = describeMetric(row.metric_type, locale);
@@ -454,7 +454,7 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
                       : formatNumber(row.value, {
                           maximumFractionDigits: described.precision,
                         })}{" "}
-                    <span className="text-[11px] font-semibold text-ink-muted">{row.unit}</span>
+                    <span className="text-meta font-semibold text-ink-muted">{row.unit}</span>
                   </span>
                 </div>
               );

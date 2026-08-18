@@ -67,12 +67,16 @@ RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     ),
 )
 
-#: Files that are allowed to hold hex literals because they *define* the palette
-#: or generate an asset from it, rather than consuming one.
+#: Files that *define* the palette or generate an asset from it, rather than
+#: consuming one. `globals.css` is exempt from every rule, not just the hex one:
+#: it declares the tokens, and its comments quote the very class names the other
+#: rules look for -- explaining what was replaced is not a violation.
 COLOR_SOURCES = {
-    "apps/dashboard/src/app/globals.css",
     "apps/dashboard/scripts/generate-icons.ts",
 }
+
+#: Exempt from all rules. The palette cannot be written in terms of itself.
+PALETTE_DEFINITION = "apps/dashboard/src/app/globals.css"
 
 
 def load_allowlist() -> dict[str, list[str]]:
@@ -91,6 +95,8 @@ def scan() -> tuple[list[str], dict[str, list[str]]]:
         if path.suffix not in {".tsx", ".ts", ".css"} or not path.is_file():
             continue
         rel = path.relative_to(REPO_ROOT).as_posix()
+        if rel == PALETTE_DEFINITION:
+            continue
         allowed = set(allowlist.get(rel, []))
         text = path.read_text(encoding="utf-8")
         hit_ids: list[str] = []

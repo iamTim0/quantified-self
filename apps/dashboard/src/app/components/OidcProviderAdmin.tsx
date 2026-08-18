@@ -174,7 +174,7 @@ export default function OidcProviderAdmin({ apiBase }: { apiBase: string }) {
     <label className="block">
       <span className="mb-1 block text-xs font-semibold text-ink-muted">{label}</span>
       <input
-        className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-ink outline-none focus-visible:border-emerald-500"
+        className="w-full rounded-2xl border border-line bg-surface px-4 py-2.5 text-sm text-ink outline-none focus-visible:border-brand"
         value={String(draft?.[key] ?? "")}
         onChange={(e) => setDraft((d) => (d ? { ...d, [key]: e.target.value } : d))}
         {...props}

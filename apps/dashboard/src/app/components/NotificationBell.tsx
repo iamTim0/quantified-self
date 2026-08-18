@@ -226,7 +226,7 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
         <Bell className="h-4 w-4" aria-hidden="true" />
         {badge > 0 && (
           <span
-            className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-bold ${
+            className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-nav font-bold ${
               data && data.failed_unseen_count > 0
                 ? "bg-danger text-danger-ink"
                 : "bg-brand text-brand-ink"
@@ -277,7 +277,7 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
                       <span className="text-ink truncate text-sm font-semibold">
                         {subjectOf(job)}
                       </span>
-                      <span className="text-ink-muted shrink-0 text-[11px]">
+                      <span className="text-ink-muted shrink-0 text-meta">
                         {t(TRIGGER_LABEL[job.trigger] ?? "jobs.trigger.scheduled")}
                       </span>
                     </span>
@@ -300,12 +300,12 @@ export default function NotificationBell({ apiBase }: { apiBase: string }) {
                       // No bar rather than a made-up one: a push import and a
                       // derivation both have no denominator, and a bar that sits at
                       // one value for the whole run reads as a stuck job.
-                      <span className="text-ink-muted mt-1 flex items-center gap-1 text-[11px]">
+                      <span className="text-ink-muted mt-1 flex items-center gap-1 text-meta">
                         <Clock className="h-3 w-3" aria-hidden="true" />
                         {t("jobs.running")}
                       </span>
                     )}
-                    <span className="text-ink-muted mt-0.5 block text-[11px]">
+                    <span className="text-ink-muted mt-0.5 block text-meta">
                       {formatDateTime(job.finished_at ?? job.started_at)}
                     </span>
                   </span>

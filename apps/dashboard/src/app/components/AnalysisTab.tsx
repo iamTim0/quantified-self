@@ -430,7 +430,7 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                     style={{ width: `${group.set_share_pct}%` }}
                   />
                 </div>
-                <span className="w-24 shrink-0 text-right text-[11px] text-ink-muted">
+                <span className="w-24 shrink-0 text-right text-meta text-ink-muted">
                   {t(plural(group.sets, "workouts.sets_one", "workouts.sets_other"), {
                     count: group.sets,
                   })}
@@ -473,7 +473,7 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
                     {exercise.exercise_title}
                   </span>
                   {exercise.muscle_group && (
-                    <span className="ml-2 rounded-full bg-surface-muted px-2 py-0.5 text-[11px] text-ink-muted">
+                    <span className="ml-2 rounded-full bg-surface-muted px-2 py-0.5 text-meta text-ink-muted">
                       {t(muscleKey(exercise.muscle_group))}
                     </span>
                   )}
@@ -1092,7 +1092,7 @@ export default function AnalysisTab({
                     formatNumber,
                   )}
                 </p>
-                <p className="mt-1 text-[11px] text-ink-muted">
+                <p className="mt-1 text-meta text-ink-muted">
                   {t("analysis.trendStats", {
                     mean: metricValue(metric, trend.mean, locale, formatNumber),
                     r2: formatNumber(trend.r_squared, { maximumFractionDigits: 3 }),
@@ -1133,7 +1133,7 @@ export default function AnalysisTab({
                     {a.anomalies.slice(-6).map((x) => (
                       <li
                         key={x.date}
-                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
+                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-meta"
                       >
                         <span className="font-mono text-ink-muted">
                           {formatDay(x.date)}
@@ -1149,7 +1149,7 @@ export default function AnalysisTab({
                     ))}
                   </ul>
                 )}
-                <p className="mt-2 text-[11px] text-ink-muted">
+                <p className="mt-2 text-meta text-ink-muted">
                   {t("analysis.anomalyBasis", { days: formatNumber(a.sample_size) })}
                 </p>
               </article>
@@ -1243,7 +1243,7 @@ export default function AnalysisTab({
                         className={`rounded px-1.5 py-0.5 font-semibold ${
                           q.sufficient
                             ? "bg-ok-soft text-ok-ink"
-                            : "bg-surface-muted text-ink-muted dark:bg-slate-700 "
+                            : "bg-surface-muted text-ink-muted "
                         }`}
                       >
                         {q.sufficient ? t("analysis.sufficient") : t("analysis.tooThin")}
@@ -1311,7 +1311,7 @@ function HeatmapLegend() {
     { color: POS[0], label: t("analysis.scaleStrongSame") },
   ];
   return (
-    <div className="flex items-center gap-2 text-[11px] text-ink-muted">
+    <div className="flex items-center gap-2 text-meta text-ink-muted">
       <span>{t("analysis.scaleMin")}</span>
       <span
         className="flex overflow-hidden rounded"
@@ -1459,7 +1459,7 @@ function Heatmap({
                               }),
                             })}
                           </span>
-                          <span className="text-[10px] font-normal opacity-90">
+                          <span className="text-meta font-normal opacity-90">
                             {t(
                               c.q_value === undefined
                                 ? "analysis.pValueShort"
@@ -1536,7 +1536,7 @@ function MatrixMobileCard({
           })}
         </span>
       </div>
-      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ink-muted">
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-meta text-ink-muted">
         <span>{t("analysis.sharedDays", { count: formatNumber(c.sample_size) })}</span>
         <span>
           {t(c.q_value === undefined ? "analysis.pValueLabel" : "analysis.qValueLabel")}{" "}
@@ -1631,7 +1631,7 @@ function CorrelationCard({
             })}
           </span>
           {!c.significant && (
-            <span className="rounded bg-surface-muted px-1.5 py-0.5 text-[10px] font-bold text-ink-muted">
+            <span className="rounded bg-surface-muted px-1.5 py-0.5 text-meta font-bold text-ink-muted">
               {t("analysis.notSignificant")}
             </span>
           )}
@@ -1812,7 +1812,7 @@ function WeekdayChart({
   return (
     <div className="space-y-1">
       {data.map((d) => (
-        <div key={d.weekday} className="flex items-center gap-2 text-[11px]">
+        <div key={d.weekday} className="flex items-center gap-2 text-meta">
           <span className="w-20 shrink-0 text-ink-muted">
             {WEEKDAY_KEYS[d.weekday] ? t(WEEKDAY_KEYS[d.weekday]) : d.weekday}
           </span>
@@ -1836,7 +1836,7 @@ function WeekdayChart({
 function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
   const { t, formatDate, formatDateTime } = useI18n();
   return (
-    <p className="text-[11px] text-ink-muted">
+    <p className="text-meta text-ink-muted">
       {t("analysis.provenanceSummary", {
         start: formatDate(provenance.window_start),
         end: formatDate(provenance.window_end),

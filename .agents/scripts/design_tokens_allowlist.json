@@ -1,122 +1,15 @@
 {
   "apps/dashboard/src/app/components/AnalysisTab.tsx": [
-    "arbitrary-font-size",
-    "hex-literal",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ApiKeyManager.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/AuthScreen.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ConnectorModal.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ConnectorsPage.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/DataQualityTab.tsx": [
-    "arbitrary-font-size"
-  ],
-  "apps/dashboard/src/app/components/ExplorerChart.tsx": [
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ExplorerMetricOverview.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ExplorerMetricSelect.tsx": [
-    "arbitrary-font-size"
-  ],
-  "apps/dashboard/src/app/components/ExplorerRawTable.tsx": [
-    "arbitrary-font-size"
+    "hex-literal"
   ],
   "apps/dashboard/src/app/components/ExplorerTab.tsx": [
-    "arbitrary-font-size",
-    "hex-literal",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ImportDialog.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ImportRunsOverview.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ImporterDetailPage.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/LanguageSwitcher.tsx": [
-    "arbitrary-font-size"
+    "hex-literal"
   ],
   "apps/dashboard/src/app/components/LocationMap.tsx": [
-    "arbitrary-font-size",
     "hex-literal"
-  ],
-  "apps/dashboard/src/app/components/MobileTabBar.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/NotificationBell.tsx": [
-    "arbitrary-font-size"
-  ],
-  "apps/dashboard/src/app/components/OidcProviderAdmin.tsx": [
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/OperatorRunDiagnostics.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ProfileTab.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ReportStatus.tsx": [
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/Sidebar.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
   ],
   "apps/dashboard/src/app/components/StreamChart.tsx": [
-    "arbitrary-font-size",
     "hex-literal"
-  ],
-  "apps/dashboard/src/app/components/SystemWarnings.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/ThemeSwitcher.tsx": [
-    "arbitrary-font-size"
-  ],
-  "apps/dashboard/src/app/components/TopHeader.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/UploadBanner.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/WorkoutDetail.tsx": [
-    "arbitrary-font-size"
-  ],
-  "apps/dashboard/src/app/components/WorkoutsTab.tsx": [
-    "arbitrary-font-size",
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/components/import-run.ts": [
-    "raw-palette"
-  ],
-  "apps/dashboard/src/app/globals.css": [
-    "arbitrary-font-size",
-    "raw-palette"
   ],
   "apps/dashboard/src/app/layout.tsx": [
     "hex-literal"

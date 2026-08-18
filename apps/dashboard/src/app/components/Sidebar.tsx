@@ -47,7 +47,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
             <span className="text-xl font-bold text-ink tracking-tight block leading-none">
               Quantified
             </span>
-            <span className="text-[10px] font-semibold tracking-wider text-ok-ink uppercase">
+            <span className="text-meta font-semibold tracking-wider text-ok-ink uppercase">
               Self Platform
             </span>
           </div>
@@ -55,7 +55,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
 
         {/* MENU Section */}
         <div className="mb-8">
-          <span className="text-[11px] font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
+          <span className="text-meta font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
             {t("sidebar.menu")}
           </span>
           <nav className="space-y-1">
@@ -76,7 +76,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
                     <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-ink-muted"}`} />
                     <span>{item.label}</span>
                   </div>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />}
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-brand-soft" />}
                 </button>
               );
             })}
@@ -85,7 +85,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
 
         {/* GENERAL Section */}
         <div>
-          <span className="text-[11px] font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
+          <span className="text-meta font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
             {t("sidebar.general")}
           </span>
           <nav className="space-y-1">
@@ -129,7 +129,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
                     <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-ink-muted"}`} />
                     <span>{t(entry.labelKey)}</span>
                   </div>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-emerald-300" />}
+                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-brand-soft" />}
                 </button>
               );
             })}

@@ -321,6 +321,11 @@ tasks:
       - uv run --with ruff ruff check packages/shared-schemas/ services/ specs/
       - bun run --cwd apps/dashboard lint
       - bun run --cwd apps/dashboard tsc --noEmit
+      # A ratchet, not a gate: every violation that existed when it was written is
+      # in the allowlist beside it, and only new ones fail. See the script's
+      # docstring for why raw palette utilities and pixel font sizes are the two
+      # things worth catching.
+      - python .agents/scripts/check_design_tokens.py
 
   run:core:
     desc: "Run Core Data Service on port 8001"

@@ -143,7 +143,7 @@ export default function ExplorerChart({ dates, series, chartType }: ExplorerChar
           <Line data={chartData} options={options} />
         )
       ) : (
-        <div className="w-full h-full flex items-center justify-center text-xs text-neutral-500">
+        <div className="w-full h-full flex items-center justify-center text-xs text-ink-muted">
           {t("chart.emptyFilter")}
         </div>
       )}

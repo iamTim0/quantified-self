@@ -56,7 +56,7 @@ const INGESTION_PENDING_ERROR = "ingestion_reset_pending_events";
 
 const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: MessageKey }> = {
   critical: {
-    box: "border-rose-300 bg-danger-soft text-rose-950",
+    box: "border-danger-line bg-danger-soft text-danger-ink-on-soft",
     icon: <ShieldAlert className="w-5 h-5 text-danger-ink-on-soft shrink-0" aria-hidden />,
     label: "warnings.severity.critical",
   },
@@ -285,7 +285,7 @@ export default function SystemWarnings({
               {style.icon}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">
+                  <span className="text-meta font-bold uppercase tracking-widest opacity-70">
                     {t(style.label)}
                   </span>
                   <h3 className="text-sm font-bold">{field(t, w, "title", w.title)}</h3>
@@ -296,7 +296,7 @@ export default function SystemWarnings({
                 <p className="mt-2 text-sm font-semibold">
                   {/* The action is a command or a setting, not advice, so it is
                       rendered as something you can copy. */}
-                  <code className="rounded bg-surface/70 px-1.5 py-0.5 font-mono text-[12px] break-all">
+                  <code className="rounded bg-surface/70 px-1.5 py-0.5 font-mono text-meta break-all">
                     {field(t, w, "action", w.action)}
                   </code>
                 </p>
@@ -333,7 +333,7 @@ export default function SystemWarnings({
                   </p>
                   <button
                     type="button"
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-code px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => void resetIngestion()}
                     disabled={resetState === "busy" || resetState === "success"}
                   >
@@ -356,7 +356,7 @@ export default function SystemWarnings({
 
                   {resetState === "error" && resetError && (
                     <div
-                      className="mt-3 rounded-xl border border-rose-300 bg-rose-100/70 px-3 py-2 text-sm"
+                      className="mt-3 rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm"
                       data-reset-error-code={resetError.code}
                       data-num-pending={resetError.numPending}
                       data-num-ack-pending={resetError.numAckPending}

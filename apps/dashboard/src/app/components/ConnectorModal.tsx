@@ -609,7 +609,7 @@ export default function ConnectorModal({
   const fileOnly = supportsFileImport && importMode === "file";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-900/60 backdrop-blur-md p-4 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-scrim backdrop-blur-md p-4 animate-in fade-in duration-200">
       <div
         ref={dialogRef}
         role="dialog"
@@ -685,7 +685,7 @@ export default function ConnectorModal({
                       <div className="flex justify-between items-center">
                         <Icon className={`w-5 h-5 ${provider.iconColor}`} />
                         <span
-                          className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                          className={`text-meta px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
                             isAvailable
                               ? "bg-ok-soft text-ok-ink border border-ok-line"
                               : "bg-surface-muted text-ink-muted border border-line"
@@ -698,15 +698,15 @@ export default function ConnectorModal({
                       <span
                         className={
                           provider.direction === "active"
-                            ? "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-info-soft text-sky-800 border border-info-line"
-                            : "inline-flex text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-info-soft text-violet-800 border border-info-line"
+                            ? "inline-flex text-meta px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-info-soft text-info-ink border border-info-line"
+                            : "inline-flex text-meta px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider bg-info-soft text-info-ink border border-info-line"
                         }
                       >
                         {provider.direction === "active"
                           ? t("modal.activeShort")
                           : t("modal.passiveShort")}
                       </span>
-                      <p className="text-[11px] text-ink-muted leading-snug">
+                      <p className="text-meta text-ink-muted leading-snug">
                         {t(provider.descriptionKey)}
                       </p>
                     </div>
@@ -723,7 +723,7 @@ export default function ConnectorModal({
                         <span
                           key={m}
                           title={m}
-                          className="text-[9px] px-1.5 py-0.5 rounded bg-surface text-ink-muted border border-line font-mono"
+                          className="text-nav px-1.5 py-0.5 rounded bg-surface text-ink-muted border border-line font-mono"
                         >
                           {describeMetric(m, locale).label}
                         </span>
@@ -741,19 +741,19 @@ export default function ConnectorModal({
               className={
                 isPassive
                   ? "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-info-soft border-info-line text-info-ink"
-                  : "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-info-soft border-info-line text-sky-950"
+                  : "p-3.5 rounded-2xl border text-xs flex items-start gap-2.5 bg-info-soft border-info-line text-info-ink"
               }
             >
               {isPassive ? (
-                <Upload className="w-4 h-4 text-violet-600 shrink-0 mt-0.5" />
+                <Upload className="w-4 h-4 text-info shrink-0 mt-0.5" />
               ) : (
-                <Download className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                <Download className="w-4 h-4 text-info shrink-0 mt-0.5" />
               )}
               <div>
                 <span className="font-bold block">
                   {isPassive ? t("modal.passiveTitle") : t("modal.activeTitle")}
                 </span>
-                <span className="text-[11px] leading-relaxed block mt-0.5">
+                <span className="text-meta leading-relaxed block mt-0.5">
                   {isPassive ? t("modal.passiveBody") : t("modal.activeBody")}
                 </span>
               </div>
@@ -764,7 +764,7 @@ export default function ConnectorModal({
                 <ShieldCheck className="w-4 h-4 text-ok shrink-0 mt-0.5" />
                 <div>
                   <span className="font-bold block">{t("modal.credentialsStored")}</span>
-                  <span className="text-[11px] text-ok-ink leading-relaxed block mt-0.5">
+                  <span className="text-meta text-ok-ink leading-relaxed block mt-0.5">
                     {t("modal.credentialsStoredBody")}
                   </span>
                 </div>
@@ -788,7 +788,7 @@ export default function ConnectorModal({
                 placeholder={t("modal.displayNamePlaceholder")}
                 className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm outline-none focus-ring"
               />
-              <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+              <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                 {t("modal.displayNameHint")}
               </p>
             </div>
@@ -827,7 +827,7 @@ export default function ConnectorModal({
                     {t("modal.modeFile")}
                   </button>
                 </div>
-                <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+                <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                   {t(fileOnly ? "modal.modeFileHint" : "modal.modeConnectHint")}
                 </p>
               </div>
@@ -899,7 +899,7 @@ export default function ConnectorModal({
                       <Key className="w-3.5 h-3.5 text-brand" />
                       <span>Yazio Bearer Access Token</span>
                       {isEditing && (
-                        <span className="text-ink-muted font-normal text-[11px] lowercase">
+                        <span className="text-ink-muted font-normal text-meta lowercase">
                           (optional)
                         </span>
                       )}
@@ -938,7 +938,7 @@ export default function ConnectorModal({
                     <Key className="w-3.5 h-3.5 text-brand" />
                     <span>Dawarich API Key</span>
                     {isEditing && (
-                      <span className="text-ink-muted font-normal text-[11px] lowercase">
+                      <span className="text-ink-muted font-normal text-meta lowercase">
                         (optional)
                       </span>
                     )}
@@ -969,7 +969,7 @@ export default function ConnectorModal({
                     placeholder="https://outlook.office365.com/owa/calendar/.../calendar.ics"
                     className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm outline-none focus-ring"
                   />
-                  <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+                  <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                     {t("modal.icsHint")}{" "}
                     <a
                       href="/docs/importers/calendar/"
@@ -1024,7 +1024,7 @@ export default function ConnectorModal({
                       placeholder="https://archive-api.open-meteo.com/v1/archive?latitude=52.52&longitude=13.41&hourly=temperature_2m"
                       className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-xs font-mono outline-none focus-ring"
                     />
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+                    <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                       {t("modal.weatherRequestUrlHint")}
                     </p>
                   </div>
@@ -1063,7 +1063,7 @@ export default function ConnectorModal({
                         </button>
                       </div>
                       {weatherSearchError && (
-                        <p className="mt-1.5 text-[11px] text-danger-ink-on-soft">{weatherSearchError}</p>
+                        <p className="mt-1.5 text-meta text-danger-ink-on-soft">{weatherSearchError}</p>
                       )}
                       {weatherPlaces.length > 0 && (
                         <ul className="mt-2 space-y-1">
@@ -1082,7 +1082,7 @@ export default function ConnectorModal({
                         </ul>
                       )}
                       {weatherPlaceLabel && (
-                        <p className="mt-1.5 text-[11px] text-ink-muted">
+                        <p className="mt-1.5 text-meta text-ink-muted">
                           {t("modal.weatherChosenPlace", { place: weatherPlaceLabel })}
                         </p>
                       )}
@@ -1130,7 +1130,7 @@ export default function ConnectorModal({
                         placeholder={WEATHER_DEFAULT_BASE_URL}
                         className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm outline-none focus-ring"
                       />
-                      <p className="mt-1.5 text-[11px] leading-relaxed text-ink-muted">
+                      <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                         {t("modal.weatherBaseUrlHint")}{" "}
                         <a
                           href="/docs/importers/weather/"
@@ -1208,7 +1208,7 @@ export default function ConnectorModal({
                 </h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="block text-[11px] text-ink-muted font-bold mb-1 flex items-center gap-1">
+                    <label className="block text-meta text-ink-muted font-bold mb-1 flex items-center gap-1">
                       <Clock className="w-3 h-3 text-brand" /> {t("modal.syncFrequency")}
                     </label>
                     <select
@@ -1238,7 +1238,7 @@ export default function ConnectorModal({
                   </div>
 
                   <div>
-                    <label className="block text-[11px] text-ink-muted font-bold mb-1 flex items-center gap-1">
+                    <label className="block text-meta text-ink-muted font-bold mb-1 flex items-center gap-1">
                       <Calendar className="w-3 h-3 text-ok" /> {t("modal.importPeriod")}
                     </label>
                     <select
@@ -1272,8 +1272,8 @@ export default function ConnectorModal({
 
             {isPassive && !fileOnly && (
               <div className="pt-3 border-t border-line">
-                <p className="text-[11px] text-ink-muted">
-                  <span className="font-bold text-violet-700">{t("modal.passiveFlowLead")}</span>{" "}
+                <p className="text-meta text-ink-muted">
+                  <span className="font-bold text-info-ink">{t("modal.passiveFlowLead")}</span>{" "}
                   {t("modal.passiveFlowBody")}
                 </p>
               </div>
@@ -1281,8 +1281,8 @@ export default function ConnectorModal({
 
             {fileOnly && (
               <div className="pt-3 border-t border-line">
-                <p className="text-[11px] text-ink-muted">
-                  <span className="font-bold text-sky-700">{t("modal.fileFlowLead")}</span>{" "}
+                <p className="text-meta text-ink-muted">
+                  <span className="font-bold text-info-ink">{t("modal.fileFlowLead")}</span>{" "}
                   {t("modal.fileFlowBody")}
                 </p>
               </div>

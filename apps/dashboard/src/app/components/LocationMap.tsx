@@ -431,14 +431,14 @@ export default function LocationMap({
       </div>
 
       {!showTiles && (
-        <p className="flex items-start gap-1.5 rounded-2xl bg-page px-3 py-2 text-[11px] leading-relaxed text-ink-muted">
+        <p className="flex items-start gap-1.5 rounded-2xl bg-page px-3 py-2 text-meta leading-relaxed text-ink-muted">
           <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
           <span>{t("map.privacyDetail")}</span>
         </p>
       )}
 
       {tileError && (
-        <p className="rounded-2xl border border-warn-line bg-warn-soft px-3 py-2 text-[11px] text-warn-ink">
+        <p className="rounded-2xl border border-warn-line bg-warn-soft px-3 py-2 text-meta text-warn-ink">
           {tileError}
         </p>
       )}
@@ -505,7 +505,7 @@ export default function LocationMap({
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-ink-muted">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-meta text-ink-muted">
         <span className="flex items-center gap-1.5">
           <Navigation className="h-3.5 w-3.5 text-brand" />
           {t("map.pointCount", { count: formatNumber(totalPoints) })}

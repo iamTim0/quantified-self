@@ -317,7 +317,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                 <div className="text-xs font-bold text-ink">{gap.metric_type}</div>
                 <ul className="mt-1 space-y-0.5">
                   {gap.missing_ranges.slice(0, 5).map((range) => (
-                    <li key={range.start} className="text-[11px] text-ink-muted">
+                    <li key={range.start} className="text-meta text-ink-muted">
                       {formatDate(range.start)} – {formatDate(range.end)}
                     </li>
                   ))}
@@ -352,7 +352,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                     {ranges.slice(0, 3).map((r) => (
                       <li
                         key={`${r.start}-${r.end}`}
-                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
+                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-meta"
                       >
                         <span className="font-mono text-ink-muted">
                           {r.start === r.end
@@ -369,7 +369,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                       </li>
                     ))}
                     {ranges.length > 3 && (
-                      <li className="text-[11px] text-ink-muted">
+                      <li className="text-meta text-ink-muted">
                         {t("quality.moreRanges", { count: ranges.length - 3 })}
                       </li>
                     )}
@@ -398,13 +398,13 @@ export default function DataQualityTab({ apiBase }: Props) {
                         sourceName: c.display_name || c.source_type,
                       })
                     }
-                    className="rounded-xl border border-ok-line bg-ok-soft px-3 py-1.5 text-[11px] font-semibold text-ok-ink hover:bg-ok-soft"
+                    className="rounded-xl border border-ok-line bg-ok-soft px-3 py-1.5 text-meta font-semibold text-ok-ink hover:bg-ok-soft"
                   >
                     {t("quality.backfillSource", { source: c.source_type })}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-ink-muted">{t("quality.backfillHint")}</p>
+              <p className="mt-2 text-meta text-ink-muted">{t("quality.backfillHint")}</p>
             </div>
           )}
         </article>
@@ -450,7 +450,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                       {conflict.candidates.map((candidate) => (
                         <li
                           key={candidate.id}
-                          className="flex items-baseline justify-between gap-3 rounded-lg bg-page px-2.5 py-1.5 text-[11px]"
+                          className="flex items-baseline justify-between gap-3 rounded-lg bg-page px-2.5 py-1.5 text-meta"
                         >
                           <span className="min-w-0 truncate text-ink-muted">
                             {connectorLabel(connectors, candidate.source_id)}
@@ -470,7 +470,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                 );
               })}
               {conflictItems.length > CONFLICTS_SHOWN && (
-                <p className="mt-3 text-[11px] text-ink-muted">
+                <p className="mt-3 text-meta text-ink-muted">
                   {t("quality.conflictsMore", { count: conflictItems.length - CONFLICTS_SHOWN })}
                 </p>
               )}

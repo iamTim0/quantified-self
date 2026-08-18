@@ -63,7 +63,7 @@ export default function MobileTabBar({
     <>
       {sheetOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-900/40 md:hidden"
+          className="fixed inset-0 z-40 bg-scrim md:hidden"
           // A backdrop that dismisses is what a phone user expects; without it
           // the only way out is the close button, which is the far corner.
           onClick={closeSheet}
@@ -184,7 +184,7 @@ export default function MobileTabBar({
               // `min-w-0` is what makes `truncate` real — without it the span's
               // cross size is fit-content, so the ellipsis can never fire and a
               // longer label silently widens the bar instead.
-              className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium ${
+              className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium ${
                 isActive ? "font-bold text-ok-ink" : "text-ink-muted"
               }`}
             >
@@ -209,7 +209,7 @@ export default function MobileTabBar({
           onClick={() => setSheetOpen((open) => !open)}
           aria-expanded={sheetOpen}
           aria-label={t("nav.more")}
-          className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] font-medium ${
+          className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium ${
             inSheet || sheetOpen ? "font-bold text-ok-ink" : "text-ink-muted"
           }`}
         >

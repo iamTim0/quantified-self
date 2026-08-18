@@ -44,7 +44,7 @@ interface TopHeaderProps {
  * - **Language and theme move to Settings.** Both are set once and then never
  *   again, which is the definition of something that should not occupy the row
  *   above every screen.
- * - **The profile pill loses its email line.** It was `text-[10px]` in
+ * - **The profile pill loses its email line.** It was `text-meta` in
  *   `text-ink-muted` — 2.56:1 at ten pixels — and Settings shows the address
  *   properly one tap away.
  */
@@ -105,7 +105,7 @@ export default function TopHeader({
           aria-label={t("sidebar.settings")}
           className="group flex h-11 min-w-11 items-center gap-3 rounded-2xl border border-line bg-surface px-2 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-line"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-linear-to-br from-emerald-600 to-teal-700 text-meta font-bold text-white shadow-inner">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-meta font-bold text-white shadow-inner">
             {getInitials(userName)}
           </span>
           <span className="hidden max-w-40 truncate pr-1 text-meta font-bold text-ink group-hover:text-brand lg:block">

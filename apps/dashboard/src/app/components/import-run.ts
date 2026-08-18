@@ -60,8 +60,8 @@ export function modeKey(mode: string): MessageKey {
 
 export function statusClass(status: string): string {
   if (status === "success") return "border-ok-line bg-ok-soft text-ok-ink";
-  if (status === "error") return "border-danger-line bg-danger-soft text-rose-800";
-  if (status === "loading") return "border-info-line bg-info-soft text-sky-800";
+  if (status === "error") return "border-danger-line bg-danger-soft text-danger-ink-on-soft";
+  if (status === "loading") return "border-info-line bg-info-soft text-info-ink";
   if (status === "skipped") return "border-line bg-surface-muted text-ink-secondary";
   return "border-warn-line bg-warn-soft text-warn-ink";
 }
