@@ -117,6 +117,11 @@ export const de: Record<MessageKey, string> = {
     "Der Hash dieses Passworts stand in einer veröffentlichten Quelle — es war der Entwicklungs-Zugang, den frühere Versionen dieses Projekts mitgeliefert haben. bcrypt verzögert einen Angriff, es verhindert ihn nicht. Wer den Hash hat, kann das Passwort offline durchprobieren, so lange er möchte.",
   "warning.password_published.action":
     "Passwort jetzt ändern — und falls es anderswo verwendet wird, dort ebenfalls.",
+  "warning.connectors_overdue.title": "Geplante Importe laufen nicht",
+  "warning.connectors_overdue.detail":
+    "{count} Connector(en) sind über ihr Abfrageintervall hinaus. Der längste, {connector}, hat vor {hours} Stunden zuletzt importiert.",
+  "warning.connectors_overdue.action":
+    "Prüfe das Scheduler-Log von Core. Eine Verbindung, die „idle in transaction“ hängt, hält den Advisory-Lock des Schedulers und stoppt jeden geplanten Import.",
   "warning.insecure_jwt_secret.title": "JWT_SECRET ist ein veröffentlichter Standardwert",
   "warning.insecure_jwt_secret.detail":
     "Sitzungen werden mit einem Schlüssel signiert, der im Quellcode dieses Projekts steht. Wer ihn kennt, kann sich ein Token für jedes Konto und jeden Arbeitsbereich ausstellen.",

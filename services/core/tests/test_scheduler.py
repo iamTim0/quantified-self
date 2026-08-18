@@ -10,6 +10,7 @@ Maps to Fizzbee Invariants:
 - SchedulerSingleFlight
 """
 
+import asyncio
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -25,7 +26,10 @@ from core.scheduler import (
     is_due,
     poll_interval_hours,
     run_once,
+    sweep_stale_runs,
 )
+from sqlalchemy import select, text, update
+from sqlalchemy.exc import SQLAlchemyError
 
 from tests.db_helpers import cleanup_test_tenant, create_test_tenant
 
@@ -316,5 +320,152 @@ async def test_run_once_enqueues_due_connectors_and_survives_one_failing():
         # Both were attempted; only the healthy one counts as enqueued.
         assert {"oura", "weather"} <= set(seen)
         assert enqueued == len(seen) - 1
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+# ── The tick must not hold anything while it acts ────────────────────────────
+#
+# These pin the shape of a production deadlock that stopped every scheduled import
+# for a day and survived a restart. See `run_once` for the full account.
+
+
+@pytest.mark.asyncio
+async def test_the_tick_holds_no_lock_while_enqueueing():
+    """Phase 2 runs with the advisory lock already released.
+
+    The direct statement of the invariant: if the tick can still be holding
+    `SCHEDULER_LOCK_KEY` when it calls out, then anything that call touches can
+    block against it — and the outer transaction is waiting in Python, so Postgres
+    sees no cycle and never breaks it.
+
+    Verifies Fizzbee Invariant: SchedulerSingleFlight
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        await _connector(tenant_id, source_type="weather", config={"poll_interval_hours": 1})
+        lock_free_during_enqueue: list[bool] = []
+
+        async def enqueue(connector: DueConnector) -> None:
+            async with async_session_maker() as other:
+                lock_free_during_enqueue.append(await acquire_tick_lock(other))
+                await other.rollback()
+
+        await run_once(enqueue, now=NOW)
+
+        assert lock_free_during_enqueue, "the connector was never enqueued"
+        assert all(lock_free_during_enqueue), (
+            "the scheduler lock was still held while enqueueing; a session opened by "
+            "the enqueue path can deadlock against the tick that started it"
+        )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_connector_with_a_dead_run_can_still_be_enqueued():
+    """The exact production failure, reproduced.
+
+    `expire_stale_runs` writes `data_sources.config` when it retires a dead run, so
+    the tick held a row lock on that connector. The real enqueue path opens its own
+    session — deliberately — and updates the same row, which blocked; the tick was
+    meanwhile waiting for the enqueue to return. Nothing timed out, because neither
+    side was waiting on something Postgres could see.
+
+    `lock_timeout` is what turns a regression into a failed assertion instead of a
+    suite that hangs until CI kills it.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _connector(
+            tenant_id, source_type="weather", config={"poll_interval_hours": 1}
+        )
+        # Dead long enough for the sweep to retire it, which is what makes the tick
+        # write `data_sources.config` before it enqueues anything.
+        await _run(
+            tenant_id,
+            "weather",
+            source_id,
+            status="loading",
+            started_at=NOW - timedelta(hours=12),
+        )
+
+        blocked: list[str] = []
+
+        async def enqueue(connector: DueConnector) -> None:
+            if connector.source_id != source_id:
+                return
+            async with async_session_maker() as other:
+                await other.execute(text("SET LOCAL lock_timeout = '2s'"))
+                try:
+                    await other.execute(
+                        update(DataSource)
+                        .where(DataSource.id == connector.source_id)
+                        .values(config={"poll_interval_hours": 1, "touched": True})
+                    )
+                    await other.commit()
+                except SQLAlchemyError as exc:  # pragma: no cover - regression only
+                    # Narrow on purpose: a lock timeout arrives as a database error,
+                    # and catching everything here would swallow a genuine bug in the
+                    # test itself and report it as the regression under study.
+                    blocked.append(type(exc).__name__)
+                    await other.rollback()
+
+        await asyncio.wait_for(run_once(enqueue, now=NOW), timeout=30)
+
+        assert not blocked, (
+            f"the enqueue path could not write `data_sources` ({blocked}); the tick "
+            "is still holding a row lock while it calls out"
+        )
+
+        # And the dead run was actually retired rather than merely stepped over.
+        async with async_session_maker() as session:
+            row = (
+                await session.execute(
+                    select(SyncRun.status).where(SyncRun.source_id == source_id)
+                )
+            ).scalars().all()
+        assert row == ["error"], row
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_the_stale_sweep_does_not_need_the_scheduler_lock():
+    """The repair must not share a fate with the thing it repairs.
+
+    Retiring a dead run used to happen only inside the sync tick. When that tick
+    wedged on its advisory lock, the repair wedged with it, and a run sat in
+    `loading` for twenty-seven hours while the mechanism meant to retire it waited
+    behind the failure it would have fixed.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _connector(
+            tenant_id, source_type="weather", config={"poll_interval_hours": 1}
+        )
+        await _run(
+            tenant_id,
+            "weather",
+            source_id,
+            status="loading",
+            started_at=NOW - timedelta(hours=12),
+        )
+
+        # Somebody else holds the sync lock for the whole sweep, exactly as the hung
+        # transaction did in production.
+        async with async_session_maker() as holder:
+            assert await acquire_tick_lock(holder) is True
+            retired = await sweep_stale_runs(now=NOW)
+            await holder.rollback()
+
+        assert retired >= 1, "the sweep did nothing while the sync lock was held"
+        async with async_session_maker() as session:
+            statuses = (
+                await session.execute(
+                    select(SyncRun.status).where(SyncRun.source_id == source_id)
+                )
+            ).scalars().all()
+        assert statuses == ["error"], statuses
     finally:
         await cleanup_test_tenant(tenant_id)

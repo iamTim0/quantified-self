@@ -164,7 +164,9 @@ from core.scheduler import (
     DueConnector,
     acquire_connector_lock,
     has_in_flight_run,
+    overdue_connector_warning,
     run_scheduler,
+    run_stale_run_sweep,
 )
 from core.security import login_throttle
 from core.security.auth import (
@@ -399,6 +401,7 @@ async def lifespan(app: FastAPI):
     scheduler_task = None
     report_task = None
     backfill_task = None
+    stale_sweep_task = None
     if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
         # Same role as the sync scheduler and for the same reason: it is the one
@@ -411,6 +414,11 @@ async def lifespan(app: FastAPI):
         backfill_task = asyncio.create_task(
             run_field_backfill_scheduler(_enqueue_field_backfill)
         )
+        # A fourth, and the one that must not share a fate with the others: retiring
+        # a dead run is how a wedged connector recovers, so it runs on its own timer
+        # under its own lock. It used to happen only inside the sync tick, and when
+        # that tick hung on its advisory lock the repair hung with it.
+        stale_sweep_task = asyncio.create_task(run_stale_run_sweep())
 
     # The NATS subscription is established in the background, never awaited here.
     #
@@ -483,6 +491,10 @@ async def lifespan(app: FastAPI):
             backfill_task.cancel()
             with suppress(asyncio.CancelledError):
                 await backfill_task
+        if stale_sweep_task is not None:
+            stale_sweep_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await stale_sweep_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
 
@@ -2053,6 +2065,14 @@ async def list_system_warnings(session: AsyncSession = Depends(get_session)):
             getattr(app.state, "nats_client", None)
         ):
             warnings.append(stream_warning)
+        # A connector that stopped importing is an operational fact the operator has
+        # to be able to see. Scheduled imports once stopped for a day with nothing
+        # saying so — every card still showed its last successful run, which is what
+        # a healthy connector looks like too.
+        if overdue_warning := await overdue_connector_warning(
+            session, principal.tenant_id
+        ):
+            warnings.append(overdue_warning)
 
     return {"warnings": [w.as_dict() for w in warnings]}
 

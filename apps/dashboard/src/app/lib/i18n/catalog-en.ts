@@ -118,6 +118,14 @@ export const en = {
   "warning.password_published.detail":
     "The hash of this password appeared in a published source — it was the development account earlier versions of this project shipped. bcrypt delays an attack, it does not prevent one: whoever holds the hash can try passwords offline for as long as they like.",
   "warning.password_published.action": "Change the password now — and anywhere else it is used.",
+  // A connector that stopped importing. Reported because it once stopped for a day
+  // in silence: every card still showed its last successful run, which is also what
+  // a healthy connector looks like.
+  "warning.connectors_overdue.title": "Scheduled imports are not running",
+  "warning.connectors_overdue.detail":
+    "{count} connector(s) are past their poll interval. The longest, {connector}, last imported {hours} hours ago.",
+  "warning.connectors_overdue.action":
+    "Check Core's scheduler log. A connection left idle in transaction holds the scheduler's advisory lock and stops every scheduled import.",
   "warning.insecure_jwt_secret.title": "JWT_SECRET is a published default",
   "warning.insecure_jwt_secret.detail":
     "Sessions are signed with a key that is printed in this project's own source. Anyone who knows it can issue a token for any account and any workspace.",
