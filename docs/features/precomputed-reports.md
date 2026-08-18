@@ -125,6 +125,44 @@ A report is stale when any of three things is true:
 Answering that costs two timestamps. Nothing re-scans in order to discover whether it
 should re-scan.
 
+## A stored report predates the client reading it
+
+This follows from serving stale results and is the one consequence that has actually
+broken production, so it is written down rather than left to be rediscovered.
+
+A report is stored and served while stale — deliberately, because a number carrying its
+own date beats recomputing on every page load. The corollary is that **the first client
+after a deploy reads payloads the previous release wrote.** Every field the new release
+added is absent from all of them, and that is not an edge case: it is the state of every
+existing installation on the morning after an update.
+
+It cost an outage. `logged` and `logged_limit_reached` arrived with the meal log, and the
+overview called `story.logged.reduce(...)` on a payload written the day before:
+`Cannot read properties of undefined (reading 'reduce')`. React unmounted the tree and
+Next rendered its built-in fallback, so signing in produced a blank "This page couldn't
+load" for every user — while the API answered 200 to every call and every server log
+stayed clean. Nothing in the type system objected, because the type described what the
+current server writes rather than what the database holds.
+
+So a client reading a report follows two rules:
+
+1. **The stored shape is `Partial`.** Fields added after a report kind existed are
+   optional in the type, which forces the question to be answered rather than assumed.
+2. **Normalise once, at the read.** `DailyStory` fills defaults in a single
+   `normaliseStory()` and hands the strict shape downstream; `AnalysisTab` does the same
+   for `anomalies` and `correlations`. A guard per call site is a rule enforced by
+   memory, and the next field added gets dereferenced raw by whoever adds it.
+
+Absent is rendered as **empty, not as an error**: an older run is genuinely missing that
+information rather than wrong about it, and the section reappears at the next
+recomputation.
+
+`apps/dashboard/e2e/stale-reports.spec.ts` holds the line. It serves the day report with
+those two fields deleted — derived from the current fixture by omission, so it cannot
+drift — and asserts that **no `pageerror` fires**. The assertion is the uncaught
+exception rather than any visible string, because the visible symptom was Next's own
+error page, which no locator in this repository describes.
+
 ## Reading a report
 
 All three kinds are read through one tenant-scoped endpoint. It **never computes** — it

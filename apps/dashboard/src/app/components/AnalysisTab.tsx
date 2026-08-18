@@ -335,6 +335,11 @@ interface Strength {
   disclaimer: string;
 }
 
+/**
+ * The stored insights payload. Fields a newer release added are absent from runs the
+ * previous one wrote, which is why `anomalies` and `correlations` are optional here and
+ * filled in at the single read below rather than trusted at five call sites.
+ */
 interface Insights {
   provenance: {
     analysis_version: string;
@@ -357,10 +362,12 @@ interface Insights {
     primary_reason?: string;
   }[];
   data_quality: Record<string, Quality>;
-  correlations: Correlation[];
+  /** Absent in a run written before this field existed; filled in at the read below. */
+  correlations?: Correlation[];
   lagged_correlations: LaggedCorrelation[];
   trends: Record<string, Trend>;
-  anomalies: Record<string, Anomaly>;
+  /** Absent in a run written before this field existed; filled in at the read below. */
+  anomalies?: Record<string, Anomaly>;
   routines: Record<string, Routine>;
   period_comparisons: Record<string, unknown>;
   strength?: Strength;
@@ -561,7 +568,15 @@ export default function AnalysisTab({
    * it filters what is already here and applies instantly.
    */
   const report = useReport<Insights>(apiBase, "insights");
-  const data = report.result;
+  // Normalised, for the reason `DailyStory` records at length: a report is served
+  // while stale, so this reads payloads written by the release before this one, and
+  // every field added since is absent from them. `anomalies` and `correlations` are
+  // dereferenced five times below; a stale insights run would have thrown exactly as
+  // the day report did, and there was nothing in the type to warn anybody.
+  const stored = report.result;
+  const data = stored
+    ? { ...stored, anomalies: stored.anomalies ?? {}, correlations: stored.correlations ?? [] }
+    : null;
   const loading = report.loading || report.running;
   // The window and connector the stored run used. Read from the run rather than
   // held in state, so the selectors always show what is on screen rather than

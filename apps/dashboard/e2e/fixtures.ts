@@ -449,6 +449,61 @@ const ROUTES: Array<[RegExp, unknown | ((url: string) => unknown)]> = [
 ];
 
 /**
+ * The same day report as an **older Core** would have written it.
+ *
+ * A report is stored and served while stale — `lib/reports.ts` says so outright — so a
+ * newly deployed client will read payloads written by the version before it. Every
+ * field this release added is therefore absent from the data already in the database,
+ * and that is not an edge case: it is what every existing installation looks like on
+ * the morning after an update.
+ *
+ * This shape is the one that took production down. `logged` and `logged_limit_reached`
+ * arrived with the meal log; the overview called `story.logged.reduce(...)` on a
+ * payload that predated them and threw `Cannot read properties of undefined`, which
+ * Next rendered as its own fallback page — so the whole dashboard was a blank error
+ * after every sign-in, for the one reason no test covered.
+ *
+ * Derived by deletion rather than written out, so it cannot drift from the current
+ * fixture: whatever the fresh payload gains, this one keeps lacking exactly the two
+ * fields under test.
+ */
+function staleDayStory(): Record<string, unknown> {
+  const { logged, logged_limit_reached, ...rest } = DAY_STORY as unknown as Record<string, unknown>;
+  void logged;
+  void logged_limit_reached;
+  return rest;
+}
+
+const STALE_DAY_REPORT = {
+  ...DAY_REPORT,
+  // Stale on purpose: this is a run from before the update, which is exactly why the
+  // client is handed a shape it did not write.
+  stale: true,
+  result: { offset_minutes: 0, days: [staleDayStory()] },
+};
+
+/**
+ * Serve reports in the shape an older Core wrote, and everything else as usual.
+ *
+ * Installed instead of `useFixtures`, not alongside it: the first matching route wins,
+ * so the two would fight over `/reports/day`.
+ */
+export async function useStaleReportFixtures(page: Page): Promise<void> {
+  // General first, specific second. Playwright matches the **last** registered route,
+  // so registering these the other way round let the broad `/data/**` handler answer
+  // the day report with the current shape — and the test passed while testing nothing.
+  await useFixtures(page);
+  await page.route("**/api/v1/data/reports/day*", async (route: Route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(STALE_DAY_REPORT),
+    });
+  });
+}
+
+/**
  * Serve the fixtures above for this page.
  *
  * Installed before the first navigation so a screen never renders its empty state
