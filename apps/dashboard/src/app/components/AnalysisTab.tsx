@@ -158,6 +158,10 @@ function reportErrorText(
   const keys: Record<string, MessageKey> = {
     report_failed: "report.error.report_failed",
     insights_failed: "report.error.insights_failed",
+    // A permanent refusal, not a failure that might not recur. Kept distinct
+    // because the two ask different things of the reader: one is "try again
+    // later", the other is "this cannot succeed as configured".
+    insights_rejected: "report.error.insights_rejected",
     report_load_failed: "report.error.report_load_failed",
     report_refresh_failed: "report.error.report_refresh_failed",
   report_timeout: "report.error.report_timeout",
@@ -215,12 +219,12 @@ interface Correlation {
   spearman: number;
   coefficient: number;
   strength_pct: number;
-  direction: string;
+  direction: "positive" | "negative";
   strength_label: string;
   sample_size: number;
   p_value: number;
   q_value?: number;
-  multiple_testing_method?: string;
+  multiple_testing_method?: "benjamini_hochberg";
   significant: boolean;
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
@@ -238,14 +242,14 @@ interface LaggedCorrelation {
   sample_size: number;
   p_value: number;
   significant: boolean;
-  significance_method?: string;
+  significance_method?: "unadjusted_exploratory";
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
   interpretation: string;
 }
 
 interface Trend {
-  direction: string;
+  direction: "rising" | "falling" | "flat";
   slope_per_day: number;
   change_pct_over_window: number;
   r_squared: number;
@@ -262,14 +266,30 @@ interface Anomaly {
   normal_range_low: number;
   normal_range_high: number;
   sample_size: number;
-  anomalies: { date: string; value: number; deviation_score: number; direction: string }[];
+  anomalies: {
+    date: string;
+    value: number;
+    deviation_score: number;
+    direction: "unusually high" | "unusually low";
+  }[];
   interpretation_code?: string;
   interpretation_params?: Record<string, string | number | boolean>;
   interpretation: string;
 }
 
 interface Routine {
-  per_weekday: { weekday: string; mean: number | null; sample_size: number }[];
+  per_weekday: {
+    weekday:
+      | "monday"
+      | "tuesday"
+      | "wednesday"
+      | "thursday"
+      | "friday"
+      | "saturday"
+      | "sunday";
+    mean: number | null;
+    sample_size: number;
+  }[];
   weekend_effect: {
     weekday_mean: number;
     weekend_mean: number;
@@ -299,8 +319,8 @@ interface Quality {
  * is zero at every session and calling that flat would be a wrong answer.
  */
 interface StrengthTrend {
-  direction: string;
-  basis: string;
+  direction: "rising" | "falling" | "flat";
+  basis: "estimated_1rm" | "volume" | "reps" | "none";
   change_pct_over_window: number;
   r_squared: number;
   sample_size: number;
@@ -335,12 +355,22 @@ interface Strength {
   disclaimer: string;
 }
 
+/**
+ * The insights bundle **after normalisation** — the shape the components below may
+ * rely on. What actually arrives is `StoredInsights`; see `normaliseInsights`.
+ */
 interface Insights {
+  /**
+   * Nullable on purpose. A run written before this field existed has no window and
+   * no version, and `formatDate` already renders an absent date as "—" — which is
+   * the truthful answer. A placeholder date would be a claim about when the numbers
+   * were computed, and that claim is the whole point of showing provenance at all.
+   */
   provenance: {
-    analysis_version: string;
-    computed_at: string;
-    window_start: string;
-    window_end: string;
+    analysis_version: string | null;
+    computed_at: string | null;
+    window_start: string | null;
+    window_end: string | null;
     sources: string[];
   };
   disclaimer: string;
@@ -365,6 +395,110 @@ interface Insights {
   period_comparisons: Record<string, unknown>;
   strength?: Strength;
   docs_url?: string;
+}
+
+/**
+ * The bundle as it may actually arrive, which is not the shape this release writes.
+ *
+ * A precomputed report is stored and **served while stale** — `lib/reports.ts` argues
+ * for that deliberately — so the first client after a deploy reads payloads the
+ * *previous* release wrote, and every field this one added is missing from all of
+ * them. `DailyStory` records at length what that cost: the day report gained
+ * `logged`, the overview called `story.logged.reduce(...)`, and every existing
+ * installation showed a blank error page after signing in.
+ *
+ * That fix was applied to the two fields that had broken, and this file went on
+ * dereferencing seven more of its own — `Object.keys(undefined)` throws exactly as
+ * loudly as `undefined.reduce`, and nothing in the type said so. A payload of `{}`
+ * reproduced it in one line (`e2e/partial-reports.spec.ts`).
+ *
+ * **Only containers are loosened.** An absent list is honestly an empty list, so
+ * `?? []` states nothing that was not true. An absent *number* is not zero, and
+ * defaulting `pearson` or `coverage_pct` would put a fabricated measurement on
+ * screen — indistinguishable from a real one, which is the failure AGENTS.md rule 19
+ * calls worse than a gap. Missing scalars therefore stay missing and render as "—".
+ */
+type Loose<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+
+type StoredCorrelation = Loose<Correlation, "caveats">;
+type StoredTrend = Loose<Trend, "moving_average_7d">;
+type StoredAnomaly = Loose<Anomaly, "anomalies">;
+type StoredRoutine = Loose<Routine, "per_weekday">;
+type StoredStrength = Loose<Strength, "exercises" | "muscle_groups">;
+
+export type StoredInsights = Loose<
+  Omit<Insights, "provenance" | "correlations" | "trends" | "anomalies" | "routines" | "strength">,
+  | "metrics_analysed"
+  | "metrics_excluded_for_quality"
+  | "data_quality"
+  | "lagged_correlations"
+> & {
+  provenance?: Partial<Insights["provenance"]>;
+  correlations?: StoredCorrelation[];
+  trends?: Record<string, StoredTrend>;
+  anomalies?: Record<string, StoredAnomaly>;
+  routines?: Record<string, StoredRoutine>;
+  strength?: StoredStrength;
+};
+
+/** Fill the containers of a record's values, leaving the keys and scalars alone. */
+function normaliseRecord<S, T>(
+  stored: Record<string, S> | undefined,
+  normalise: (value: S) => T,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(stored ?? {}).map(([key, value]) => [key, normalise(value)]),
+  );
+}
+
+/**
+ * One stored bundle, filled out to the shape the components below require.
+ *
+ * Normalised here rather than guarded at each of the reads, for the reason
+ * `normaliseStory` gives: a guard per call site is a rule enforced by memory, so the
+ * next field added gets dereferenced raw by whoever adds it and the failure returns
+ * one release later. Adding a container to the bundle now means deciding its default
+ * in this one function.
+ *
+ * Nested containers are filled too, because a crash does not care how deep the
+ * missing list sits — `a.anomalies.length` and `strength.muscle_groups.map` are the
+ * same defect one level down.
+ */
+function normaliseInsights(stored: StoredInsights): Insights {
+  return {
+    ...stored,
+    provenance: {
+      analysis_version: stored.provenance?.analysis_version ?? null,
+      computed_at: stored.provenance?.computed_at ?? null,
+      window_start: stored.provenance?.window_start ?? null,
+      window_end: stored.provenance?.window_end ?? null,
+      sources: stored.provenance?.sources ?? [],
+    },
+    metrics_analysed: stored.metrics_analysed ?? [],
+    metrics_excluded_for_quality: stored.metrics_excluded_for_quality ?? [],
+    data_quality: stored.data_quality ?? {},
+    correlations: (stored.correlations ?? []).map((c) => ({ ...c, caveats: c.caveats ?? [] })),
+    lagged_correlations: stored.lagged_correlations ?? [],
+    trends: normaliseRecord(stored.trends, (trend) => ({
+      ...trend,
+      moving_average_7d: trend.moving_average_7d ?? [],
+    })),
+    anomalies: normaliseRecord(stored.anomalies, (anomaly) => ({
+      ...anomaly,
+      anomalies: anomaly.anomalies ?? [],
+    })),
+    routines: normaliseRecord(stored.routines, (routine) => ({
+      ...routine,
+      per_weekday: routine.per_weekday ?? [],
+    })),
+    strength: stored.strength
+      ? {
+          ...stored.strength,
+          exercises: stored.strength.exercises ?? [],
+          muscle_groups: stored.strength.muscle_groups ?? [],
+        }
+      : undefined,
+  };
 }
 
 interface AnalysisSource {
@@ -441,7 +575,10 @@ function StrengthSection({ strength, weightUnit }: { strength: Strength; weightU
         </article>
       )}
 
-      <div className="overflow-x-auto rounded-2xl border border-line">
+      <div
+        className="overflow-x-auto rounded-2xl border border-line outline-none focus-visible:ring-2 focus-visible:ring-brand"
+        tabIndex={0}
+      >
         <table className="w-full min-w-[560px] text-xs">
           <thead className="bg-page text-left">
             <tr>
@@ -560,8 +697,14 @@ export default function AnalysisTab({
    * new run. `minStrength` does not: the coefficients are all in the payload, so
    * it filters what is already here and applies instantly.
    */
-  const report = useReport<Insights>(apiBase, "insights");
-  const data = report.result;
+  const report = useReport<StoredInsights>(apiBase, "insights");
+  // The one place the stored shape becomes the shape everything below relies on.
+  const stored = report.result;
+  // Memoised on the stored payload, not rebuilt per render: `correlations`, the
+  // heatmap and `topFindings` are all keyed on `data`, so a fresh object each render
+  // made those three `useMemo`s recompute every time and buy nothing. The inline
+  // spread this replaced had the same flaw, quietly.
+  const data = useMemo(() => (stored ? normaliseInsights(stored) : null), [stored]);
   const loading = report.loading || report.running;
   // The window and connector the stored run used. Read from the run rather than
   // held in state, so the selectors always show what is on screen rather than
@@ -1706,7 +1849,7 @@ function CorrelationCard({
                 </li>
               )}
               <li>
-                {t("analysis.analysisVersionLabel")} {provenance.analysis_version}
+                {t("analysis.analysisVersionLabel")} {provenance.analysis_version ?? "—"}
               </li>
               <li>
                 {t("analysis.computedLabel")} {formatDateTime(provenance.computed_at)}
@@ -1841,7 +1984,7 @@ function Provenance({ provenance }: { provenance: Insights["provenance"] }) {
         start: formatDate(provenance.window_start),
         end: formatDate(provenance.window_end),
         sources: provenance.sources.join(", ") || "—",
-        version: provenance.analysis_version,
+        version: provenance.analysis_version ?? "—",
         computed: formatDateTime(provenance.computed_at),
       })}
     </p>

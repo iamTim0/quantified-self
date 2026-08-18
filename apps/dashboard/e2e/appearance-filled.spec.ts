@@ -7,6 +7,7 @@ import {
   type Page,
 } from "@playwright/test";
 
+import { en } from "../src/app/lib/i18n/catalog-en";
 import { KNOWN_VIOLATIONS, violationKey } from "./appearance-allowlist";
 import { FILLED_ROUTES, useFixtures } from "./fixtures";
 import { API_BASE, newAccount, signInAnyWidth, signUp } from "./helpers";
@@ -57,6 +58,118 @@ async function expandCollapsedSections(page: Page) {
  * for thumbs is invisible to it — the suite would measure a layout no phone ever
  * renders and pass. `hasTouch` is what makes `@media (pointer: coarse)` true here.
  */
+
+/**
+ * The section tabs of the analysis screen, by their accessible names.
+ *
+ * Derived from the catalogue rather than hand-listed, so a section added to `SECTIONS`
+ * in `AnalysisTab` is covered as soon as its `analysis.tab*` label exists — which it
+ * must, since a tab needs a label. The English catalogue specifically, because the
+ * suite pins `locale: "en-GB"`.
+ *
+ * Deliberately no `data-testid`. There is not one in this repository: every locator
+ * here goes through a role and an accessible name, which is what a reader and a screen
+ * reader use, so a control that becomes unreachable by name fails a test rather than
+ * quietly keeping its hook. Adding the first test-only attribute to production markup
+ * to save three lines here would trade that away.
+ */
+function sectionNames(): string[] {
+  return Object.entries(en)
+    .filter(([key]) => key.startsWith("analysis.tab"))
+    .map(([, label]) => label);
+}
+
+/**
+ * Those actually present **in the analysis section nav**, so the loop is a no-op
+ * everywhere else.
+ *
+ * Scoped to that `nav`, and it has to be: `/workouts` has its own button reading
+ * "Strength", so an unscoped name match found it, clicked it, and then measured a
+ * workouts screen while claiming to measure an analysis section. A locator that
+ * matches the right words in the wrong place is worse than one that matches nothing.
+ */
+async function sectionTabs(page: Page): Promise<string[]> {
+  const overview = page.getByRole("button", { name: sectionNames()[0], exact: true });
+  if (!(await overview.count())) return [];
+  const nav = page.locator("nav").filter({ has: overview });
+  const present: string[] = [];
+  for (const name of sectionNames()) {
+    if (await nav.getByRole("button", { name, exact: true }).count()) present.push(name);
+  }
+  return present;
+}
+
+/**
+ * The three measurable claims, in one place.
+ *
+ * The route body and the section loop have to make the *same* claim; two copies would
+ * drift, and the copy that drifts is the one that stops failing.
+ */
+async function expectMeasurable(
+  page: Page,
+  what: string,
+  theme: string,
+  viewportName: string,
+  viewport: { width: number; height: number },
+) {
+  const unresolvedMessages = await page.evaluate(() => {
+    const attributes = Array.from(document.querySelectorAll<HTMLElement>("[aria-label], [title]"))
+      .flatMap((element) => [element.getAttribute("aria-label"), element.getAttribute("title")])
+      .filter((value): value is string => value !== null);
+    const rendered = [document.body.innerText, ...attributes].join("\n");
+    return Array.from(
+      new Set(rendered.match(/\{[a-z][a-z0-9_]*\}|\banalysis\.[a-zA-Z0-9_.]+/g) ?? []),
+    );
+  });
+  expect(
+    unresolvedMessages,
+    `filled ${what} renders unresolved message tokens (${theme}, ${viewportName}): ` +
+      unresolvedMessages.join(", "),
+  ).toEqual([]);
+
+  const scan = await new AxeBuilder({ page })
+    .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
+    .analyze();
+  const fresh = scan.violations.filter(
+    (violation) => !KNOWN_VIOLATIONS.has(violationKey(what, theme, violation.id)),
+  );
+  expect(
+    fresh,
+    `new accessibility violations on filled ${what} (${theme}, ${viewportName}):\n` +
+      fresh
+        .map(
+          (v) =>
+            `  ${v.id} (${v.impact}): ${v.help}\n` +
+            v.nodes
+              .slice(0, 3)
+              .map((n) => `    ${n.target.join(" ")}`)
+              .join("\n"),
+        )
+        .join("\n"),
+  ).toEqual([]);
+
+  const overflow = await horizontalOverflow(page);
+  expect(
+    overflow.offenders,
+    `filled ${what} overflows horizontally at ${viewport.width}px ` +
+      `(scrollWidth ${overflow.scrollWidth} > ${overflow.clientWidth}); ` +
+      `offenders: ${overflow.offenders.join(", ")}`,
+  ).toEqual([]);
+
+  const targets = await targetSizes(page);
+  if (targets.under44.length > 0) {
+    test.info().annotations.push({
+      type: "under-44px",
+      description: `filled ${what} (${viewport.width}px): ${targets.under44.join(", ")}`,
+    });
+  }
+  expect(
+    targets.tooSmall,
+    `filled ${what} has controls below the WCAG 2.5.8 floor of 24x24 at ` +
+      `${viewport.width}px: ${targets.tooSmall.join(", ")}`,
+  ).toEqual([]);
+}
+
 const VIEWPORTS = {
   phone: { viewport: { width: 390, height: 844 }, hasTouch: true },
   laptop: { viewport: { width: 1440, height: 900 }, hasTouch: false },
@@ -84,6 +197,20 @@ for (const theme of THEMES) {
           locale: "en-GB",
           viewport,
           hasTouch,
+          // Contrast is measured on resolved colours, so nothing may be mid-transition
+          // when axe runs. Clicking a section tab and measuring immediately caught the
+          // button while `transition-colors` was interpolating, and axe reported
+          // `#dee1e4` on `#36785c` — two blends that appear in no token file, failing at
+          // 4.0:1 while the real pair (white on `#0d5c3a`) passes comfortably. A test
+          // that invents a contrast defect is worse than one that misses a real one,
+          // because somebody goes and "fixes" a correct colour.
+          //
+          // `reducedMotion` rather than a timeout: `globals.css` already collapses every
+          // transition to 0.01ms under `prefers-reduced-motion`, so this is a mode the
+          // app genuinely supports and every measurement becomes deterministic instead
+          // of racing an animation. `expandCollapsedSections` keeps its wait — a
+          // disclosure still needs a layout frame to reach its height.
+          reducedMotion: "reduce",
         });
         page = await context.newPage();
         await page.addInitScript(
@@ -113,47 +240,35 @@ for (const theme of THEMES) {
             });
           }
 
-          const scan = await new AxeBuilder({ page })
-            .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-            .analyze();
-          const fresh = scan.violations.filter(
-            (violation) => !KNOWN_VIOLATIONS.has(violationKey(route, theme, violation.id)),
-          );
-          expect(
-            fresh,
-            `new accessibility violations on filled ${route} (${theme}, ${viewportName}):\n` +
-              fresh
-                .map(
-                  (v) =>
-                    `  ${v.id} (${v.impact}): ${v.help}\n` +
-                    v.nodes
-                      .slice(0, 3)
-                      .map((n) => `    ${n.target.join(" ")}`)
-                      .join("\n"),
-                )
-                .join("\n"),
-          ).toEqual([]);
+          // Sections behind a tab are outside the document until the tab is clicked,
+          // and on `/analysis` that is where all the dense content lives: the
+          // correlation heatmap, the trend sparkline, the strength table, the outlier
+          // list and the weekday chart. `expandCollapsedSections` above handles
+          // `Disclosure`, which these are not — so the first pass measured the overview
+          // and reported on the screen while six sevenths of it had never rendered.
+          await expectMeasurable(page, route, theme, viewportName, viewport);
 
-          const overflow = await horizontalOverflow(page);
-          expect(
-            overflow.offenders,
-            `filled ${route} overflows horizontally at ${viewport.width}px ` +
-              `(scrollWidth ${overflow.scrollWidth} > ${overflow.clientWidth}); ` +
-              `offenders: ${overflow.offenders.join(", ")}`,
-          ).toEqual([]);
-
-          const targets = await targetSizes(page);
-          if (targets.under44.length > 0) {
-            test.info().annotations.push({
-              type: "under-44px",
-              description: `filled ${route} (${viewport.width}px): ${targets.under44.join(", ")}`,
-            });
+          // Each section measured and shot on its own, so a failure names the section
+          // rather than the route.
+          const sections = await sectionTabs(page);
+          const sectionNav = sections.length
+            ? page.locator("nav").filter({
+                has: page.getByRole("button", { name: sections[0], exact: true }),
+              })
+            : null;
+          for (const section of sections) {
+            await sectionNav!.getByRole("button", { name: section, exact: true }).click();
+            await settle(page);
+            await expandCollapsedSections(page);
+            if (SHOTS) {
+              const slug = section.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+              await page.screenshot({
+                path: `${SHOT_DIR}/${viewportName}-${theme}-analysis-${slug}.png`,
+                fullPage: true,
+              });
+            }
+            await expectMeasurable(page, `${route} > ${section}`, theme, viewportName, viewport);
           }
-          expect(
-            targets.tooSmall,
-            `filled ${route} has controls below the WCAG 2.5.8 floor of 24x24 at ` +
-              `${viewport.width}px: ${targets.tooSmall.join(", ")}`,
-          ).toEqual([]);
         });
       }
     });

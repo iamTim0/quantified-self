@@ -19,8 +19,34 @@ was computed, whether newer data has arrived since, and a **Recompute** button. 
 three lists on the page are small indexed reads and stay live, because a mapping rule has to
 take effect the instant it is saved. See [Precomputed reports](precomputed-reports.md).
 
+### "Not computed yet" is not a result
+
+Because both scans are read from a stored run, every card on this page has a state that
+is neither good nor bad: **nobody has looked yet.** Saying so is the whole point, and
+three places on one screen used to say the opposite instead.
+
+The conflicts card had it right and documented the reason in a comment — `—` rather than
+`0`, because "checked, nothing found" and "never checked" must not look the same. The
+gaps card, immediately beside it, computed its number as a `reduce` over an empty list,
+so a fresh workspace read **"0 · The data looks complete."** in green, directly under a
+header saying *Not computed yet*. The gap list below it added a third: *No data gaps
+found in the 30-day window.*
+
+The colour was the other half. The advice pill was painted with the success token
+unconditionally, so all three meanings wore the same reassuring green: *the data looks
+complete*, *fill these gaps*, and *not computed yet*. Two of those are not reassurance —
+one asks for work and the other is the absence of an answer — and a reader scanning by
+colour reads all three as fine.
+
+Each card now carries a tone that follows its meaning: green for a clean result, amber
+where it asks for work, and **grey where nothing has been computed**. Grey rather than
+amber deliberately: amber would claim something is wrong, and grey claims nothing, which
+is what is true.
+
 ## How to read it
 
+- **Not computed yet**: no scan has run for this workspace. Press **Recompute**; this is
+  not a statement about the data.
 - **0 gaps**: the data is fit for simple trends and correlations.
 - **1–3 gaps**: the analysis is usually usable, but read outliers carefully.
 - **Several gaps**: recommendations may be skewed; repair the data source first.

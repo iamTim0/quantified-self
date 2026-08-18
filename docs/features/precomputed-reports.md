@@ -125,6 +125,82 @@ A report is stale when any of three things is true:
 Answering that costs two timestamps. Nothing re-scans in order to discover whether it
 should re-scan.
 
+## A stored report predates the client reading it
+
+This follows from serving stale results and is the one consequence that has actually
+broken production, so it is written down rather than left to be rediscovered.
+
+A report is stored and served while stale — deliberately, because a number carrying its
+own date beats recomputing on every page load. The corollary is that **the first client
+after a deploy reads payloads the previous release wrote.** Every field the new release
+added is absent from all of them, and that is not an edge case: it is the state of every
+existing installation on the morning after an update.
+
+It cost an outage. `logged` and `logged_limit_reached` arrived with the meal log, and the
+overview called `story.logged.reduce(...)` on a payload written the day before:
+`Cannot read properties of undefined (reading 'reduce')`. React unmounted the tree and
+Next rendered its built-in fallback, so signing in produced a blank "This page couldn't
+load" for every user — while the API answered 200 to every call and every server log
+stayed clean. Nothing in the type system objected, because the type described what the
+current server writes rather than what the database holds.
+
+So a client reading a report follows two rules:
+
+1. **The stored shape is `Partial`.** Fields added after a report kind existed are
+   optional in the type, which forces the question to be answered rather than assumed.
+2. **Normalise once, at the read.** `DailyStory` fills defaults in a single
+   `normaliseStory()` and hands the strict shape downstream; `AnalysisTab` does the same
+   in `normaliseInsights()`. A guard per call site is a rule enforced by
+   memory, and the next field added gets dereferenced raw by whoever adds it.
+3. **Only containers get a default.** An absent list is honestly an empty list. An
+   absent *number* is not zero — defaulting `pearson` or `coverage_pct` would put a
+   fabricated measurement on screen, indistinguishable from a real one, which
+   AGENTS.md rule 19 calls worse than a gap. Missing scalars stay
+   missing and render as "—".
+
+Absent is rendered as **empty, not as an error**: an older run is genuinely missing that
+information rather than wrong about it, and the section reappears at the next
+recomputation.
+
+`apps/dashboard/e2e/stale-reports.spec.ts` holds the line. It serves the day report with
+those two fields deleted — derived from the current fixture by omission, so it cannot
+drift — and asserts that **no `pageerror` fires**. The assertion is the uncaught
+exception rather than any visible string, because the visible symptom was Next's own
+error page, which no locator in this repository describes.
+
+### The rule, rather than the two fields
+
+That test names `logged` and `logged_limit_reached`, which is right for a regression test
+and worthless as a guarantee: the next field to be added is not knowable today. The first
+fix was applied to the two fields that had broken, and the analysis tab went on
+dereferencing seven more of its own — `Object.keys(undefined)` throws exactly as loudly
+as `undefined.reduce`.
+
+`apps/dashboard/e2e/partial-reports.spec.ts` is the general form. Every report kind is
+answered with `result: {}` — the lower bound of what a stored run can hand a client, and
+a shape from which *every* field a release ever adds is missing by definition — and every
+screen that reads a report must still render. It found the analysis tab immediately.
+
+### And when normalisation cannot answer
+
+Normalisation answers absence completely. It does not answer a field whose **type**
+changed: `gaps: 7` satisfies `?? []` and then throws on `.reduce`. Validating every field
+on the client is a schema validator, which this dashboard does not have.
+
+So the second half of the answer is an **error boundary**, which the app had none of
+until this. `(dashboard)/error.tsx` sits *inside* the shell layout, so a screen that
+throws costs that screen: the sidebar and the tab bar stay mounted and the reader can
+walk to a working tab. It offers a retry, a reload and a link to the overview — which of
+the three helps depends on the cause, so the reader is not asked to guess — and puts the
+error message and its digest behind a disclosure, because on a minified production build
+that digest is the only handle anyone has on what failed.
+
+`app/error.tsx` covers sign-in, the legal pages and a throw in the dashboard layout
+itself. `app/global-error.tsx` covers a failure in the root layout, where the locale
+provider no longer exists; it resolves the language from the `qs-locale` cookie and reads
+the same catalogue, so no string escapes the catalogue and rule 16 gains no fifth
+exception.
+
 ## Reading a report
 
 All three kinds are read through one tenant-scoped endpoint. It **never computes** — it
@@ -306,6 +382,7 @@ The flag is `deferred` on the report envelope.
   | --- | --- | --- |
   | `queued` | `report_never_claimed` | Nothing ever picked it up. The Analysis Service is stopped, unreachable over gRPC, or has `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped. |
   | `running` | `report_timeout` | It *was* claimed and did not finish. Either the window is genuinely too large, or the worker died mid-computation. |
+  | — | `insights_rejected` | Core answered and **refused** the call the worker made. Written by the worker itself rather than by the expiry sweep, because a refusal is something Core is reachable enough to record. Retrying sends the identical call, so the reason is in the analysis service log rather than in the passage of time. |
 
     Both used to be `report_timeout`. `insights` is the only kind Core does not compute
     itself, so it is the only kind that can be queued and abandoned — which is why that one
@@ -343,6 +420,44 @@ The flag is `deferred` on the report envelope.
     same reason. And a `LAST` metric on a fully rolled-up workspace is a case worth a
     test of its own, which
     `test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash` now is.
+!!! danger "The same lesson, a second time: eighty-five runs, one wrong limit"
+    Found the same way — in a deployment's logs — and it is the danger above with the
+    crash removed and the misdiagnosis left in place. That is the part worth noticing:
+    the first fix repaired the handler that crashed, and the mechanism that *reported*
+    a permanent failure as a temporary one was left exactly as it was, so it produced a
+    second outage of its own.
+
+    `build_insights_bundle` names no metric types. It is asking for whatever the
+    workspace holds, so Core fell back to every metric with data in the window — and a
+    ceiling of a hundred rejected the answer with `INVALID_ARGUMENT` because the
+    workspace had a hundred and twelve.
+
+    The ceiling was wrong in two independent ways. It ran **after** the query it claimed
+    to bound had already executed and been accumulated, so it discarded finished work
+    rather than preventing any. And no fixed number could have been right, because
+    `home_assistant_*` and `apple_health_*` are open namespaces
+    (AGENTS.md rule 15) sized by the reader's own installation. The
+    response is bounded by `MAX_SERIES_BUCKETS` — series times buckets, checked before
+    anything is serialised, in the unit a response is actually measured in. The
+    request-side cap stays, because a caller wrote that list and rejecting it costs
+    nothing.
+
+    What made it last seven days was the classification. Every `AioRpcError` in
+    `core_client.py` became `CoreUnavailable`, so a deterministic refusal took the
+    branch built for an absent Core: the worker deliberately writes no failure there,
+    because Core is the thing that would have to store it. The run was left in flight,
+    Core's sweep failed it as `report_timeout` half an hour later, the next tick claimed
+    it again — **eighty-five identical failures, no error code stored anywhere, and a
+    dashboard that said "temporarily unavailable" throughout.**
+
+    `CoreRejected` now exists beside `CoreUnavailable`, deliberately *not* a subclass so
+    the retry branches cannot catch it by accident — the accident is the whole story. It
+    is stored as `insights_rejected`, which has an entry in both catalogues that says
+    repeating will not help, because "try again later" and "this cannot succeed as
+    configured" ask different things of whoever reads it. `UNAUTHENTICATED` and
+    `RESOURCE_EXHAUSTED` are deliberately *not* permanent: an expired service credential
+    is refreshed on the next call, which is precisely a retry that helps.
+
 - A late result arriving after Core has timed the run out is **refused**
   (`RUN_ALREADY_FINISHED`), because the timeout may already have queued a replacement and a
   stale result must not overwrite a newer one.

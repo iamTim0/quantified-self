@@ -26,6 +26,21 @@ export const de: Record<MessageKey, string> = {
   "common.years_one": "{count} Jahr",
   "common.years_other": "{count} Jahre",
 
+  // ── When a screen throws ────────────────────────────────────────────────────
+  "crash.title": "Diese Ansicht funktioniert nicht mehr",
+  "crash.detail":
+    "In dieser Ansicht ist beim Darstellen etwas fehlgeschlagen. Deine Daten sind davon nicht betroffen — es wurde nichts geschrieben, und der Rest der Anwendung funktioniert weiter.",
+  "crash.retry": "Ansicht erneut versuchen",
+  "crash.reload": "Seite neu laden",
+  "crash.home": "Zurück zur Übersicht",
+  "crash.technical": "Technische Details",
+  "crash.technicalHint":
+    "Bitte mitschicken, wenn du das Problem meldest. Es benennt den fehlgeschlagenen Code, nicht deine Daten.",
+  "crash.digest": "Kennung",
+  "crash.fatalTitle": "Die Anwendung konnte nicht starten",
+  "crash.fatalDetail":
+    "Die Seite ist fehlgeschlagen, bevor sie etwas laden konnte — deshalb ist diese Meldung nicht übersetzt.",
+
   // ── Language switcher ──────────────────────────────────────────────────────
   "lang.label": "Sprache",
   "lang.switchTo": "Auf {language} umstellen",
@@ -117,6 +132,11 @@ export const de: Record<MessageKey, string> = {
     "Der Hash dieses Passworts stand in einer veröffentlichten Quelle — es war der Entwicklungs-Zugang, den frühere Versionen dieses Projekts mitgeliefert haben. bcrypt verzögert einen Angriff, es verhindert ihn nicht. Wer den Hash hat, kann das Passwort offline durchprobieren, so lange er möchte.",
   "warning.password_published.action":
     "Passwort jetzt ändern — und falls es anderswo verwendet wird, dort ebenfalls.",
+  "warning.connectors_overdue.title": "Geplante Importe laufen nicht",
+  "warning.connectors_overdue.detail":
+    "{count} Connector(en) sind über ihr Abfrageintervall hinaus. Der längste, {connector}, hat vor {hours} Stunden zuletzt importiert.",
+  "warning.connectors_overdue.action":
+    "Prüfe das Scheduler-Log von Core. Eine Verbindung, die „idle in transaction“ hängt, hält den Advisory-Lock des Schedulers und stoppt jeden geplanten Import.",
   "warning.insecure_jwt_secret.title": "JWT_SECRET ist ein veröffentlichter Standardwert",
   "warning.insecure_jwt_secret.detail":
     "Sitzungen werden mit einem Schlüssel signiert, der im Quellcode dieses Projekts steht. Wer ihn kennt, kann sich ein Token für jedes Konto und jeden Arbeitsbereich ausstellen.",
@@ -805,6 +825,8 @@ export const de: Record<MessageKey, string> = {
   "explorer.rawCount_other": "{count} Treffer",
   "explorer.rawTruncated": "Angezeigt werden die neuesten {shown} von {total} Treffern.",
   "explorer.liveQuery": "Live-TimescaleDB-Abfrage",
+  "explorer.mixedUnits":
+    "Diese Metriken werden in unterschiedlichen Einheiten gemessen ({units}) und teilen eine Achse — eine Reihe mit kleineren Werten wird dadurch von einer größeren plattgedrückt. Vergleiche jeweils eine Einheit, oder nutze die Metrik-Übersicht.",
   "explorer.seriesQueryNote":
     "Jede ausgewählte Metrik wird separat als aktuelle serverseitige Reihe geladen. Die API wendet die metrikgerechte Aggregation an; fehlende Zeitabschnitte bleiben leer.",
   "explorer.rawSeriesQueryNote":
@@ -1033,6 +1055,8 @@ export const de: Record<MessageKey, string> = {
     "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",
   "report.error.insights_failed":
     "Die Analyse konnte nicht berechnet werden. Das vorherige Ergebnis ist weiterhin verfügbar.",
+  "report.error.insights_rejected":
+    "Der Analysedienst hat etwas angefragt, das mit den Daten dieses Arbeitsbereichs nicht möglich ist — ein erneuter Versuch hilft nicht. Das vorherige Ergebnis bleibt verfügbar; der Grund steht im Log des Analysedienstes.",
   "report.error.report_load_failed":
     "Der gespeicherte Bericht konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
   "report.error.report_timeout":

@@ -111,8 +111,36 @@ export async function targetSizes(page: Page): Promise<TargetSizes> {
       'button, [role="button"], a[href], input[type="checkbox"], input[type="radio"], select',
     );
 
+    /**
+     * What a user can actually hit.
+     *
+     * For a checkbox or radio, that is not the input — it is the input *plus its
+     * label*, because clicking the words toggles it. The analysis screen's
+     * "only significant" toggle is a 13x13 input inside a `<label class="min-h-11">`,
+     * so measuring the input reported a 13x13 target for a control with 44px of
+     * operable height, and the honest reading of WCAG 2.5.8 is the second number.
+     *
+     * This surfaced the moment the filled suite started measuring sections behind a
+     * tab, which had never rendered before — and it was the second finding in a row
+     * that turned out to be about the check rather than the interface. Both were
+     * worth the trip: a check that invents defects gets somebody to "fix" correct
+     * code, which is more expensive than the defect it imagined.
+     *
+     * A bare checkbox with no label is still measured as itself, which is right.
+     */
+    const hitArea = (control: HTMLElement): DOMRect => {
+      const tag = control.tagName;
+      if (tag !== "INPUT") return control.getBoundingClientRect();
+      const wrapping = control.closest("label");
+      const referenced = control.id
+        ? document.querySelector<HTMLElement>(`label[for="${CSS.escape(control.id)}"]`)
+        : null;
+      const label = wrapping ?? referenced;
+      return (label ?? control).getBoundingClientRect();
+    };
+
     for (const control of Array.from(controls)) {
-      const box = control.getBoundingClientRect();
+      const box = hitArea(control);
       const style = getComputedStyle(control);
       if (box.width === 0 || box.height === 0) continue;
       if (style.visibility === "hidden") continue;

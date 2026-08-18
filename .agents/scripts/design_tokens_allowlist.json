@@ -11,6 +11,9 @@
   "apps/dashboard/src/app/components/StreamChart.tsx": [
     "hex-literal"
   ],
+  "apps/dashboard/src/app/global-error.tsx": [
+    "hex-literal"
+  ],
   "apps/dashboard/src/app/layout.tsx": [
     "hex-literal"
   ],

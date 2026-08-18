@@ -84,7 +84,53 @@ class StrengthSetsResponse:
 
 
 class CoreUnavailable(Exception):
-    """Core could not be reached or refused the call."""
+    """Core could not be reached, or failed in a way that may not recur.
+
+    The name is the contract: **a caller may retry this.** Both the report worker
+    and the HTTP edge treat it that way — the worker deliberately does not record a
+    failure for it, because Core is the thing that would have to store one.
+    """
+
+
+class CoreRejected(Exception):
+    """Core answered, and refused. Retrying the identical call will not help.
+
+    Deliberately **not** a subclass of `CoreUnavailable`, so the retry branches
+    cannot catch it by accident. That accident is what happened: every
+    `AioRpcError` became `CoreUnavailable` regardless of status, so an
+    INVALID_ARGUMENT — a deterministic refusal of a call that will be identical
+    next time — was reported as Core being temporarily away. The worker left the
+    run in flight for Core to time out, the next tick claimed it again, and one
+    over-strict limit produced eighty-five identical failures across seven days
+    with no error code stored anywhere and a dashboard that said "temporarily
+    unavailable" the whole time.
+
+    A wrong diagnosis costs more than no diagnosis, because it is acted upon.
+    """
+
+
+#: Statuses that mean the request itself is wrong, not the moment.
+#:
+#: `UNAUTHENTICATED` is **not** here on purpose: a service credential that has just
+#: expired produces it, and the next call carries a fresh one, which is precisely a
+#: retry that helps. `RESOURCE_EXHAUSTED` likewise — it is a "later" answer.
+_PERMANENT_STATUSES = frozenset(
+    {
+        grpc.StatusCode.INVALID_ARGUMENT,
+        grpc.StatusCode.OUT_OF_RANGE,
+        grpc.StatusCode.UNIMPLEMENTED,
+        grpc.StatusCode.NOT_FOUND,
+        grpc.StatusCode.PERMISSION_DENIED,
+    }
+)
+
+
+def _rpc_failure(exc: grpc.aio.AioRpcError, what: str) -> Exception:
+    """Turn a gRPC status into the exception whose name is true of it."""
+    detail = f"Core gRPC {what} failed: {exc.code().name}: {exc.details() or ''}".strip()
+    if exc.code() in _PERMANENT_STATUSES:
+        return CoreRejected(detail)
+    return CoreUnavailable(detail)
 
 
 @dataclass(frozen=True)
@@ -269,7 +315,7 @@ class CoreClient:
                         f"Pagination did not terminate after {MAX_PAGES} pages"
                     )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(f"Core gRPC query failed: {exc.code().name}") from exc
+            raise _rpc_failure(exc, "query") from exc
 
         return PointBatch(points=points, truncated=False)
 
@@ -304,9 +350,7 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC metric series query failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "metric series query") from exc
 
         return MetricSeriesResponse(
             buckets=[
@@ -393,9 +437,7 @@ class CoreClient:
                     # stronger", where an exception answers nothing.
                     truncated = True
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC strength set query failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "strength set query") from exc
 
         return StrengthSetsResponse(sets=collected, truncated=truncated)
 
@@ -410,9 +452,7 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC metric listing failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "metric listing") from exc
 
         return sorted(set(response.metric_types))
 
@@ -436,9 +476,7 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC source listing failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "source listing") from exc
 
         return {
             source.id: source.source_type
@@ -469,6 +507,11 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
+            # Not classified, deliberately. An invalid session is a *successful* RPC
+            # here — it comes back as `valid=False` with a code — so a status error
+            # is always about the call rather than the credential. Calling any of
+            # them permanent would turn a serving hiccup into a hard refusal on the
+            # authentication path, which is the last place to guess.
             raise CoreUnavailable(
                 f"Core gRPC session validation failed: {exc.code().name}"
             ) from exc
@@ -491,9 +534,7 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC report claim failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "report claim") from exc
 
         claimed: list[DueAnalysisReport] = []
         for report in response.reports:
@@ -540,7 +581,5 @@ class CoreClient:
                     metadata=_metadata(request_id),
                 )
         except grpc.aio.AioRpcError as exc:
-            raise CoreUnavailable(
-                f"Core gRPC report write failed: {exc.code().name}"
-            ) from exc
+            raise _rpc_failure(exc, "report write") from exc
         return response.code

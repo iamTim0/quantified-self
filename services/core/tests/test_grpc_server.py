@@ -30,7 +30,7 @@ from core.db.models import (
     User,
 )
 from core.db.session import async_session_maker
-from core.grpc.server import serve_grpc
+from core.grpc.server import MAX_SERIES_METRICS, serve_grpc
 from core.security.tokens import (
     create_access_token,
     create_service_token,
@@ -40,6 +40,7 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from quantified_self.v1 import common_pb2 as common_pb
 from quantified_self.v1 import core_service_pb2 as pb
 from quantified_self.v1 import core_service_pb2_grpc as pb_grpc
+from shared_schemas.metrics import METRIC_CATALOG
 
 from tests.db_helpers import cleanup_test_tenant, create_test_tenant, owner_user_id
 
@@ -511,6 +512,118 @@ async def test_metric_series_uses_registry_aggregation_and_emits_gaps(grpc_chann
         assert not selected.issues
         assert {bucket.source_id for bucket in selected.buckets} == {source_id}
         assert selected.buckets[0].value == pytest.approx(350.0)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_series_over_everything_is_not_capped_by_metric_count(grpc_channel):
+    """A workspace is not punished for holding more than a hundred metric types.
+
+    This failed in production for seven days, eighty-five runs, and looked like an
+    outage of the Analysis Service. `build_insights_bundle` names no metric types —
+    it is asking for whatever exists — so Core fell back to every metric with data
+    in the window. A ceiling then rejected the answer with INVALID_ARGUMENT because
+    the tenant had a hundred and twelve of them.
+
+    The ceiling was wrong twice over. It ran *after* the query it claimed to bound
+    had already executed and been accumulated, so it discarded finished work rather
+    than preventing any; and no fixed number could have been right, because
+    `home_assistant_*` and `apple_health_*` are open namespaces (rule 15) sized by
+    the reader's own installation. The response is bounded by `MAX_SERIES_BUCKETS`,
+    in the unit a response is actually measured in.
+
+    Deliberately more than a hundred metric types with real points behind them, so
+    a reintroduced count cap fails here instead of in somebody's dashboard.
+    """
+    tenant_id = await create_test_tenant()
+    # Registry keys rather than invented names: an unknown metric_type is rejected
+    # earlier for a different reason, and the test would then pass while proving
+    # nothing about the cap (rule 15).
+    metrics = sorted(METRIC_CATALOG)[:110]
+    assert len(metrics) > MAX_SERIES_METRICS, (
+        "the registry no longer holds enough metrics to exceed the request cap; "
+        "this test needs more than MAX_SERIES_METRICS of them to mean anything"
+    )
+    source_id = str(uuid.uuid4())
+    start = datetime(2026, 5, 1, tzinfo=timezone.utc)
+    try:
+        async with async_session_maker() as session:
+            session.add(
+                DataSource(
+                    id=source_id,
+                    tenant_id=tenant_id,
+                    source_type="apple_health",
+                    display_name="Apple Health",
+                )
+            )
+            await session.flush()
+            for index, metric in enumerate(metrics):
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type=metric,
+                        timestamp=start + timedelta(hours=1),
+                        value=float(index + 1),
+                        idempotency_key=f"wide-{metric}-{uuid.uuid4().hex}",
+                    )
+                )
+            await session.commit()
+
+        start_stamp = Timestamp()
+        start_stamp.FromDatetime(start)
+        end_stamp = Timestamp()
+        end_stamp.FromDatetime(start + timedelta(days=2))
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.QueryMetricSeries(
+            # No `metric_types`: this is the call the insights bundle makes.
+            pb.QueryMetricSeriesRequest(
+                tenant_id=tenant_id,
+                start_time=start_stamp,
+                end_time=end_stamp,
+                resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+            ),
+            metadata=_auth(),
+        )
+
+        returned = {bucket.metric_type for bucket in response.buckets}
+        assert returned == set(metrics), (
+            f"{len(set(metrics) - returned)} metric type(s) missing from the series"
+        )
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_request_that_names_too_many_metric_types_is_still_refused(grpc_channel):
+    """The request-side cap stays: the caller wrote that list, and it costs nothing.
+
+    The distinction is the point of the change above. Rejecting a list a caller
+    typed happens before any query and protects the server; rejecting an answer
+    because a tenant has data happens after the work and protects nobody.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        start_stamp = Timestamp()
+        start_stamp.FromDatetime(datetime(2026, 5, 1, tzinfo=timezone.utc))
+        end_stamp = Timestamp()
+        end_stamp.FromDatetime(datetime(2026, 5, 3, tzinfo=timezone.utc))
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        with pytest.raises(grpc.aio.AioRpcError) as excinfo:
+            await stub.QueryMetricSeries(
+                pb.QueryMetricSeriesRequest(
+                    tenant_id=tenant_id,
+                    start_time=start_stamp,
+                    end_time=end_stamp,
+                    resolution=pb.METRIC_SERIES_RESOLUTION_DAY,
+                    metric_types=sorted(METRIC_CATALOG)[: MAX_SERIES_METRICS + 5],
+                ),
+                metadata=_auth(),
+            )
+        assert excinfo.value.code() == grpc.StatusCode.INVALID_ARGUMENT
     finally:
         await cleanup_test_tenant(tenant_id)
 

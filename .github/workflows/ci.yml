@@ -167,8 +167,35 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: "1"
 
+      # Cached, because it is the one step here that downloads ~150 MB from a
+      # third-party CDN on every single run. Twice it stalled long enough to eat
+      # the job's whole 20-minute budget -- reported as "cancelled", with every
+      # other job green, which reads like an infrastructure mystery rather than a
+      # slow download. The key carries the resolved Playwright version, so a
+      # dependency bump invalidates it instead of restoring a browser the new
+      # client refuses to drive.
+      - name: Playwright version
+        id: pw
+        working-directory: apps/dashboard
+        run: echo "version=$(bunx playwright --version | tr -d '\n')" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      # The hosted Ubuntu image already carries Chromium's shared-library runtime.
+      # `--with-deps` still ran `apt update` on every job merely to add optional font
+      # packages, and the Azure Ubuntu mirror repeatedly stopped responding there --
+      # before a browser test had started and despite a warm browser cache. Install
+      # only the versioned browser artifacts here; the cache can now make this step
+      # independent of apt altogether. Keep the timeout so a stalled browser CDN is
+      # still named at the step that owns it rather than consuming the test budget.
       - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
+        timeout-minutes: 6
+        run: bunx playwright install chromium
         working-directory: apps/dashboard
 
       - name: Start the stack

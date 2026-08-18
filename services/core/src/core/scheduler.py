@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.connectors import is_scheduled
 from core.db.models import DataSource, SyncRun, Tenant
 from core.db.session import async_session_maker
+from core.deployment_warnings import Warning_
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,16 @@ STALE_RUN_AFTER = timedelta(hours=6)
 IN_FLIGHT_STATUSES = ("queued", "running", "loading")
 
 DEFAULT_POLL_INTERVAL_HOURS = 6.0
+
+# After how many consecutive lock denials the scheduler says so out loud. Twelve
+# ticks is an hour: long enough that ordinary contention between replicas never
+# reaches it, short enough that a wedged lock is reported the same morning.
+LOCK_DENIED_TICKS_BEFORE_WARNING = 12
+
+#: Consecutive ticks that could not take the lock. Module-level because the tick is
+#: a function, not an object, and the count is what distinguishes "another replica
+#: is working" from "nothing will ever schedule again".
+_lock_denied_ticks = 0
 
 
 @dataclass(frozen=True)
@@ -284,28 +295,62 @@ async def run_once(
     """One scheduling tick. Returns how many syncs were enqueued."""
     now = now or datetime.now(timezone.utc)
 
+    global _lock_denied_ticks
+
+    # ── Phase 1: decide, under the lock, and commit before doing anything ──────
+    #
+    # The commit is the fix for a production deadlock that stopped every scheduled
+    # import for a day, and it is worth stating exactly, because the shape recurs
+    # whenever a transaction is held across a call that opens its own.
+    #
+    # `expire_stale_runs` writes `data_sources.config` when it retires a dead run,
+    # so this transaction held a row lock on that connector. `enqueue` then opened a
+    # *separate* session — deliberately, so one connector's failure cannot roll back
+    # another's `SyncRun` — and its `UPDATE data_sources SET config = …` blocked on
+    # that row lock. The outer transaction was meanwhile waiting, in Python, for
+    # `enqueue` to return.
+    #
+    # Postgres cannot break that: the outer connection is not waiting on a database
+    # lock, so there is no cycle for the deadlock detector to see. It simply hung,
+    # holding `SCHEDULER_LOCK_KEY`, and every later tick failed
+    # `pg_try_advisory_xact_lock` and returned silently. Worse, it was
+    # self-perpetuating — the expiry never committed, so the stale run that
+    # triggered it was still there for the next tick to trip over, which is why a
+    # restart did not clear it.
     async with async_session_maker() as session:
         if not await acquire_tick_lock(session):
-            logger.debug("Another replica holds the scheduler lock; skipping this tick")
+            _lock_denied_ticks += 1
+            # `warning`, not `debug`, once this stops looking like contention. A
+            # permanently held lock and an idle scheduler produce identical silence,
+            # and the whole failure above was invisible for a day for that reason.
+            if _lock_denied_ticks >= LOCK_DENIED_TICKS_BEFORE_WARNING:
+                logger.warning(
+                    "Scheduler lock unavailable for %s consecutive ticks (~%s min). "
+                    "A held advisory lock stops every scheduled import; look for a "
+                    "connection idle in transaction.",
+                    _lock_denied_ticks,
+                    int(_lock_denied_ticks * TICK_SECONDS / 60),
+                )
             return 0
+        _lock_denied_ticks = 0
 
         due = await find_due_connectors(session, now=now)
-
-        enqueued = 0
-        for connector in due:
-            try:
-                await enqueue(connector)
-                enqueued += 1
-            except Exception:
-                # One bad connector must not stop the rest of the tick.
-                logger.exception(
-                    "Scheduled sync failed to enqueue for %s/%s",
-                    connector.tenant_id,
-                    connector.source_type,
-                )
-
-        # Releases the advisory lock.
+        # Before any enqueue, so no row lock is held while another session writes.
         await session.commit()
+
+    # ── Phase 2: act, with no transaction and no lock held ────────────────────
+    enqueued = 0
+    for connector in due:
+        try:
+            await enqueue(connector)
+            enqueued += 1
+        except Exception:
+            # One bad connector must not stop the rest of the tick.
+            logger.exception(
+                "Scheduled sync failed to enqueue for %s/%s",
+                connector.tenant_id,
+                connector.source_type,
+            )
 
     if enqueued:
         logger.info("Scheduler enqueued %s sync(s)", enqueued)
@@ -330,3 +375,155 @@ async def run_scheduler(
             # A scheduler that dies on one bad tick is worse than no scheduler:
             # it looks like it is running.
             logger.exception("Scheduler tick failed; continuing")
+
+
+# ── The stale-run sweep, deliberately not part of the sync tick ───────────────
+#
+# `expire_stale_runs` is called from `find_due_connectors` and that is still the
+# right place: a dead run should not delay the connector it belongs to by a whole
+# sweep interval. But it was the *only* place, and that turned out to be a trap.
+#
+# The tick that would have retired a dead run is the same tick that wedged on the
+# advisory lock, so the repair died with the thing it repairs — a weather run sat in
+# `loading` for twenty-seven hours while the mechanism designed to retire it was in
+# the queue behind it. A heal job that lives inside its own subject heals nothing.
+#
+# So this runs on its own timer, under its own lock, reachable even when the sync
+# scheduler cannot take a step.
+
+#: Its own key, so a held sync lock cannot stop the sweep as well.
+STALE_SWEEP_LOCK_KEY = 0x5153_5354_414C_4500  # "QSSTALE\0"
+
+#: Slower than the sync tick. Retiring a run that has already been dead for six
+#: hours is not urgent; being able to do it at all is the point.
+STALE_SWEEP_TICK_SECONDS = 600
+
+
+async def sweep_stale_runs(*, now: datetime | None = None) -> int:
+    """Retire dead runs for every connector, independently of the sync tick.
+
+    Cross-tenant like the scheduler itself, and scoped to real tenant rows for the
+    same reason (rule 2). Returns how many runs were retired.
+    """
+    now = now or datetime.now(timezone.utc)
+    async with async_session_maker() as session:
+        held = await session.execute(
+            select(func.pg_try_advisory_xact_lock(STALE_SWEEP_LOCK_KEY))
+        )
+        if not bool(held.scalar()):
+            return 0
+
+        sources = (
+            await session.execute(
+                select(DataSource).where(
+                    DataSource.tenant_id.in_(select(Tenant.id)),
+                    DataSource.deleted_at.is_(None),
+                )
+            )
+        ).scalars().all()
+
+        expired = 0
+        for source in sources:
+            expired += await expire_stale_runs(session, source, now=now)
+        await session.commit()
+
+    if expired:
+        logger.info("Stale-run sweep retired %s run(s)", expired)
+    return expired
+
+
+async def run_stale_run_sweep(*, tick_seconds: int = STALE_SWEEP_TICK_SECONDS) -> None:
+    """Tick forever. Cancelled by the caller on shutdown."""
+    logger.info("Stale-run sweep started (tick=%ss)", tick_seconds)
+    while True:
+        try:
+            await asyncio.sleep(tick_seconds)
+            await sweep_stale_runs()
+        except asyncio.CancelledError:
+            logger.info("Stale-run sweep stopped")
+            raise
+        except Exception:
+            logger.exception("Stale-run sweep failed; continuing")
+
+
+# ── Saying it out loud ────────────────────────────────────────────────────────
+
+
+#: How far past its interval a connector has to be before the dashboard says so.
+#: Three intervals, so an import that merely ran late never raises it, and a
+#: connector that has genuinely stopped does within the day.
+OVERDUE_INTERVAL_FACTOR = 3.0
+
+
+async def overdue_connector_warning(
+    session: AsyncSession, tenant_id: str, *, now: datetime | None = None
+) -> Warning_ | None:
+    """A connector that should have imported long ago, as something a reader sees.
+
+    This is the finding of an outage rather than a nicety. Scheduled imports stopped
+    for a day and nothing said so: the tick was wedged on an advisory lock, the only
+    log line for that was `debug`, and every connector kept its last successful run
+    on its card as though it were current. The data simply stopped arriving, and the
+    interface looked exactly as it does when everything is fine.
+
+    A repair mechanism was not what was missing — the sweep existed. What was missing
+    was anybody knowing. So the condition is reported where the operator already
+    looks, through the same `code`/`params` channel as the rest (rule 17).
+
+    Tenant-scoped: this is one workspace's view of its own connectors (rule 2).
+    """
+    now = now or datetime.now(timezone.utc)
+    rows = (
+        await session.execute(
+            select(DataSource).where(
+                DataSource.tenant_id == tenant_id,
+                DataSource.deleted_at.is_(None),
+            )
+        )
+    ).scalars().all()
+
+    worst_name: str | None = None
+    worst_hours = 0.0
+    overdue = 0
+    for source in rows:
+        config = source.config or {}
+        if not is_scheduled(source.source_type, config):
+            continue
+        if config.get("status") == "inactive":
+            continue
+        last = _parse_timestamp(config.get("last_sync_at"))
+        if last is None:
+            # Never synced is the case of a connector just configured. `is_due`
+            # treats it as due immediately and the first tick will take it; calling
+            # that "overdue" would greet every new connector with a warning.
+            continue
+        interval = poll_interval_hours(config)
+        late_hours = (now - last).total_seconds() / 3600.0
+        if late_hours < interval * OVERDUE_INTERVAL_FACTOR:
+            continue
+        overdue += 1
+        if late_hours > worst_hours:
+            worst_hours = late_hours
+            worst_name = source.display_name or source.source_type
+
+    if not overdue or worst_name is None:
+        return None
+
+    return Warning_(
+        code="connectors_overdue",
+        severity="warning",
+        title="Scheduled imports are not running",
+        detail=(
+            f"{overdue} connector(s) are past their poll interval. The longest, "
+            f"{worst_name}, last imported {int(worst_hours)} hours ago."
+        ),
+        action=(
+            "Check Core's scheduler log. A connection left idle in transaction holds "
+            "the scheduler's advisory lock and stops every scheduled import."
+        ),
+        params={
+            "count": str(overdue),
+            "connector": worst_name,
+            "hours": str(int(worst_hours)),
+        },
+    )

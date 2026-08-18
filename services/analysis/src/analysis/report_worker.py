@@ -36,7 +36,12 @@ import logging
 import uuid
 
 from analysis.config import settings
-from analysis.core_client import CoreClient, CoreUnavailable, DueAnalysisReport
+from analysis.core_client import (
+    CoreClient,
+    CoreRejected,
+    CoreUnavailable,
+    DueAnalysisReport,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +89,26 @@ async def _compute_one(report: DueAnalysisReport) -> None:
         # nowhere to report it. Left in flight for Core's own timeout to fail.
         logger.warning("[req_id=%s] Core unavailable while computing: %s", request_id, exc)
         raise
+    except CoreRejected as exc:
+        # The opposite decision, for the opposite condition. Core answered and
+        # refused, so it is reachable and *can* store the outcome — and the next
+        # attempt would send the identical call and be refused identically. Leaving
+        # it in flight is what produced eighty-five silent retries of one broken
+        # window: the run expired, the next tick claimed it again, and no error code
+        # was ever written for a reader to see.
+        #
+        # A distinct code rather than the generic one, because the two conditions
+        # need different actions: "try again later" against "this run cannot succeed
+        # as configured, and the reason is in the logs".
+        logger.error("[req_id=%s] Core refused the insights run: %s", request_id, exc)
+        await core_client.put_analysis_report(
+            run_id=report.run_id,
+            tenant_id=report.tenant_id,
+            payload=None,
+            error_code="insights_rejected",
+            request_id=request_id,
+        )
+        return
     except Exception as exc:
         logger.exception("[req_id=%s] Insights run %s failed", request_id, report.run_id)
         await core_client.put_analysis_report(

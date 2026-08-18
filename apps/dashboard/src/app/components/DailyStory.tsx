@@ -184,10 +184,55 @@ function relativeDay(day: string, offsetMinutes: number): "today" | "yesterday" 
 }
 
 /** Both days as one stored answer, which is what the run holds. */
+/**
+ * The report as it may actually arrive, which is not the same as what this release
+ * writes.
+ *
+ * A precomputed report is stored and **served while stale** — see `lib/reports.ts`,
+ * which argues for that deliberately. The consequence is unavoidable and was missed:
+ * the first client after a deploy reads payloads the *previous* release wrote, so every
+ * field this one added is absent from all of them. That is not an edge case; it is what
+ * every existing installation looks like on the morning after an update.
+ *
+ * It cost a production outage. `logged` and `logged_limit_reached` arrived with the meal
+ * log, and the overview called `story.logged.reduce(...)` on a payload from the day
+ * before: `Cannot read properties of undefined (reading 'reduce')`, React unmounted the
+ * tree, and Next rendered its own fallback page. Signing in produced a blank error
+ * while every API call returned 200 and every server log stayed clean.
+ */
+export type StoredDayStory = Partial<DayStory> & Pick<DayStory, "day">;
+
 export type DayReport = {
   offset_minutes: number;
-  days: DayStory[];
+  days: StoredDayStory[];
 };
+
+/**
+ * One stored story, filled out to the shape the components below require.
+ *
+ * Normalised here rather than guarded at each of the seven reads, because a guard per
+ * call site is a rule enforced by memory: the next field to be added gets dereferenced
+ * raw by whoever adds it, and the failure reappears one release later. `DayStory` stays
+ * strict for everything downstream, so adding a field means deciding its default here
+ * and nowhere else — and `day` is the one field required above, because a story without
+ * a date cannot be placed and is not worth rendering.
+ *
+ * Absent is rendered as empty rather than as an error. A report from an older release is
+ * genuinely missing that information; it is not wrong about it, and the section simply
+ * does not appear until the next recomputation fills it in.
+ */
+function normaliseStory(stored: StoredDayStory): DayStory {
+  return {
+    day: stored.day,
+    is_today: stored.is_today ?? false,
+    complete: stored.complete ?? false,
+    lanes: stored.lanes ?? [],
+    events: stored.events ?? [],
+    event_limit_reached: stored.event_limit_reached ?? false,
+    logged: stored.logged ?? [],
+    logged_limit_reached: stored.logged_limit_reached ?? false,
+  };
+}
 
 function MetricValue({ metric }: { metric: LaneMetric }) {
   const { t, formatNumber, locale } = useI18n();
@@ -592,9 +637,9 @@ export default function DailyStory({
       const relative = relativeDay(story.day, offset);
       return relative === "today" ? 0 : relative === "yesterday" ? 1 : 2;
     };
-    return [...(report.result?.days ?? [])].sort(
-      (a, b) => rank(a) - rank(b) || b.day.localeCompare(a.day),
-    );
+    return (report.result?.days ?? [])
+      .map(normaliseStory)
+      .sort((a, b) => rank(a) - rank(b) || b.day.localeCompare(a.day));
   }, [offset, report.result?.days]);
   const requestFresh = () => void report.refresh({ offset_minutes: offset });
 

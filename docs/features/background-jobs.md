@@ -85,6 +85,52 @@ seconds when it is not. The server decides which, so the two ends cannot hold
 different opinions about what "still running" means — and the bell still notices a
 scheduled run that starts while nobody is watching.
 
+## When scheduling itself stops
+
+Every scheduled import stopped for a day and nothing said so. It is written down here
+because the shape is general and the silence was the expensive part.
+
+A scheduler tick takes a Postgres advisory lock so that one replica owns it. That tick
+also calls `expire_stale_runs`, which writes `data_sources.config` when it retires a
+dead run — so the transaction held a row lock on that connector. It then called the
+enqueue path, which opens **its own** session (deliberately: one connector's failure
+must not roll back another's `SyncRun`) and updates the same row. The inner session
+blocked on the outer's row lock while the outer waited, in Python, for the inner to
+return.
+
+Postgres cannot break that. The outer connection is not waiting on a database lock, so
+there is no cycle for the deadlock detector to see. It hung, holding the lock, and every
+later tick failed `pg_try_advisory_xact_lock` and returned — at `debug`. It was also
+self-perpetuating: the expiry never committed, so the dead run that triggered it was
+still there for the next tick, which is why restarting did not help.
+
+Four things changed, and only the first is the fix:
+
+1. **The tick decides under the lock and commits before it acts.** `run_once` now
+   collects the due connectors, commits — releasing the advisory lock *and* the row
+   locks — and enqueues afterwards. Nothing is held while it calls out.
+2. **A denied lock becomes audible.** After twelve consecutive denials (about an hour)
+   the scheduler logs a warning. A permanently held lock and an idle scheduler produce
+   identical silence, which is the only reason this lasted a day.
+3. **The repair no longer shares a fate with its subject.** Retiring dead runs happens
+   inside the tick *and* in `run_stale_run_sweep`, on its own timer under its own lock
+   key. A heal job that lives inside the thing it heals heals nothing — a weather run
+   sat in `loading` for twenty-seven hours while the mechanism meant to retire it was
+   queued behind the failure it would have fixed.
+4. **The operator is told.** `connectors_overdue` is a deployment warning like any
+   other, raised when a connector is past three times its interval, and it names the
+   worst one and how long it has been. Every connector card kept showing its last
+   successful run throughout the outage — which is also what a healthy connector looks
+   like.
+
+Underneath all of it, `docker-compose.prod.yml` sets
+`idle_in_transaction_session_timeout=5min` and `lock_timeout=30s` on Postgres. That is
+deliberately a server setting rather than a watchdog job: a timeout in the database
+cannot be blocked by the thing it is watching, which is precisely how the in-process
+repair failed. There is no `statement_timeout`, because legitimate work here is long —
+a year-long report recompute and an Apple Health import of millions of points both
+belong to queries that must be allowed to finish.
+
 ## Related
 
 - [Precomputed reports](precomputed-reports.md) — the report lifecycle these rows come
