@@ -23,7 +23,12 @@ from core.security.oidc import end_session_url
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete, select
 
-from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import (
+    as_platform_tenant,
+    auth_headers,
+    cleanup_test_tenant,
+    create_test_tenant,
+)
 
 app.state.testing = True
 
@@ -116,9 +121,11 @@ def test_end_session_url_appends_to_an_endpoint_that_already_has_a_query():
 
 
 @pytest.mark.asyncio
-async def test_create_stores_the_secret_encrypted_and_never_returns_it():
+async def test_create_stores_the_secret_encrypted_and_never_returns_it(monkeypatch: pytest.MonkeyPatch):
     """Verifies Fizzbee Invariant: SecretMaskedInReadResponse"""
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         async with AsyncClient(
@@ -150,9 +157,11 @@ async def test_create_stores_the_secret_encrypted_and_never_returns_it():
 
 
 @pytest.mark.asyncio
-async def test_editing_without_a_secret_keeps_the_stored_one():
+async def test_editing_without_a_secret_keeps_the_stored_one(monkeypatch: pytest.MonkeyPatch):
     """Otherwise toggling a checkbox would require re-entering the secret."""
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         async with AsyncClient(
@@ -203,8 +212,10 @@ async def test_a_member_cannot_manage_providers():
 
 
 @pytest.mark.asyncio
-async def test_a_duplicate_slug_is_refused():
+async def test_a_duplicate_slug_is_refused(monkeypatch: pytest.MonkeyPatch):
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         async with AsyncClient(
@@ -228,12 +239,14 @@ async def test_a_duplicate_slug_is_refused():
 
 
 @pytest.mark.asyncio
-async def test_a_provider_in_use_cannot_be_deleted():
+async def test_a_provider_in_use_cannot_be_deleted(monkeypatch: pytest.MonkeyPatch):
     """Deleting it would orphan an OIDC-only account that has no password.
 
     Disabling is the reversible action; deletion is for one never used.
     """
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         async with AsyncClient(
@@ -276,8 +289,10 @@ async def test_a_provider_in_use_cannot_be_deleted():
 
 
 @pytest.mark.asyncio
-async def test_an_unused_provider_can_be_deleted():
+async def test_an_unused_provider_can_be_deleted(monkeypatch: pytest.MonkeyPatch):
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         async with AsyncClient(
@@ -299,7 +314,7 @@ async def test_an_unused_provider_can_be_deleted():
 
 
 @pytest.mark.asyncio
-async def test_logout_returns_the_provider_end_session_url_for_a_federated_user():
+async def test_logout_returns_the_provider_end_session_url_for_a_federated_user(monkeypatch: pytest.MonkeyPatch):
     """The local logout is not enough on its own.
 
     Without this the provider session stays live and the next "sign in with…"
@@ -312,6 +327,8 @@ async def test_logout_returns_the_provider_end_session_url_for_a_federated_user(
     Verifies Fizzbee Invariant: SessionRevocationIsComplete
     """
     tenant_id = await create_test_tenant()
+    # Providers belong to the deployment, not to a workspace.
+    as_platform_tenant(monkeypatch, tenant_id)
     slug = f"idp-{uuid.uuid4().hex[:8]}"
     try:
         from tests.db_helpers import owner_user_id

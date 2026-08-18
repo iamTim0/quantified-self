@@ -383,6 +383,11 @@ services:
       - "3000:3000"
     depends_on:
       - api-gateway
+    environment:
+      # Server-side only: the legal pages fetch the stored imprint and privacy
+      # policy while rendering, so they are in the first response. Unlike
+      # NEXT_PUBLIC_*, this is read at runtime and can therefore live here.
+      - INTERNAL_API_URL=http://api-gateway:8000
     # No NEXT_PUBLIC_API_URL: it used to be set here and did nothing, because Next
     # inlines NEXT_PUBLIC_* at build time. The UI calls its own origin, so the way
     # in is Traefik on http://localhost:${TRAEFIK_HTTP_PORT:-8080} -- it routes /

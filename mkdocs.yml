@@ -50,6 +50,7 @@ nav:
       - Stateless MCP analytics: features/mcp.md
       - AI chat: features/ai-chat.md
       - GPS visualization: features/gps-visualization.md
+      - Legal texts: features/legal-documents.md
   - Security:
       - Authentication and sessions: features/authentication.md
       - External sign-in (OIDC): features/oidc.md

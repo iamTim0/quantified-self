@@ -68,11 +68,12 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
           <LanguageSwitcher />
         </nav>
 
+        {/*
+          The footnote is rendered by the document, not here. This layout wraps both
+          the shipped template and whatever the operator wrote, and "these texts are
+          a template" is true of only one of them — see `LegalFootnote`.
+        */}
         <main className="legal-prose">{children}</main>
-
-        <footer className="mt-12 border-t border-line pt-4 text-sm text-ink-muted">
-          <p>{t("legal.disclaimer")}</p>
-        </footer>
       </div>
     </div>
   );

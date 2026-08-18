@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
 import LanguageSwitcher from "./LanguageSwitcher";
+import LegalDocumentAdmin from "./LegalDocumentAdmin";
 import OidcProviderAdmin from "./OidcProviderAdmin";
 import ThemeSwitcher from "./ThemeSwitcher";
 import { useT } from "../lib/i18n/provider";
@@ -642,6 +643,13 @@ export default function ProfileTab({
           the component renders that as an explanation rather than an error. */}
       <div className="rounded-3xl border border-line bg-surface p-5">
         <OidcProviderAdmin apiBase={apiBase} />
+      </div>
+
+      {/* Owner/admin only, on the same terms: the endpoint answers 403 for a
+          member and the component renders that as an explanation. Placed above the
+          links to the two documents, because this is where they are written. */}
+      <div className="rounded-3xl border border-line bg-surface p-5">
+        <LegalDocumentAdmin apiBase={apiBase} />
       </div>
 
       <div className="pt-2">

@@ -19,7 +19,7 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime, timedelta, timezone
 from statistics import median
-from typing import Any, Literal
+from typing import Any, Final, Literal
 from urllib.parse import parse_qs
 
 import httpx
@@ -73,6 +73,7 @@ from core.db.models import (
     DataSource,
     ExplorerView,
     IngestFieldReport,
+    LegalDocument,
     MetricIngestPolicy,
     MetricMappingRule,
     MetricRollup,
@@ -173,6 +174,7 @@ from core.security.auth import (
     AuthenticationMiddleware,
     Principal,
     get_current_principal,
+    require_platform_admin,
     require_role,
 )
 from core.security.cookies import (
@@ -1502,7 +1504,7 @@ def _admin_provider_view(provider: OidcProvider) -> dict[str, Any]:
 @app.get("/api/v1/data/oidc/providers")
 async def admin_list_oidc_providers(
     session: AsyncSession = Depends(get_session),
-    _principal: Principal = Depends(require_role("owner", "admin")),
+    _principal: Principal = Depends(require_platform_admin("owner", "admin")),
 ):
     """Every provider, enabled or not, with the secret redacted."""
     res = await session.execute(select(OidcProvider).order_by(OidcProvider.display_name))
@@ -1528,7 +1530,7 @@ async def _validate_provider_issuer(issuer: str) -> None:
 async def admin_create_oidc_provider(
     req: OidcProviderRequest,
     session: AsyncSession = Depends(get_session),
-    _principal: Principal = Depends(require_role("owner", "admin")),
+    _principal: Principal = Depends(require_platform_admin("owner", "admin")),
 ):
     existing = await session.execute(
         select(OidcProvider).where(OidcProvider.slug == req.slug)
@@ -1569,7 +1571,7 @@ async def admin_update_oidc_provider(
     slug: str,
     req: OidcProviderRequest,
     session: AsyncSession = Depends(get_session),
-    _principal: Principal = Depends(require_role("owner", "admin")),
+    _principal: Principal = Depends(require_platform_admin("owner", "admin")),
 ):
     res = await session.execute(select(OidcProvider).where(OidcProvider.slug == slug))
     provider = res.scalars().first()
@@ -1609,7 +1611,7 @@ async def admin_update_oidc_provider(
 async def admin_delete_oidc_provider(
     slug: str,
     session: AsyncSession = Depends(get_session),
-    _principal: Principal = Depends(require_role("owner", "admin")),
+    _principal: Principal = Depends(require_platform_admin("owner", "admin")),
 ):
     """Remove a provider.
 
@@ -1643,6 +1645,169 @@ async def admin_delete_oidc_provider(
         "[req_id=%s] OIDC provider %s deleted", get_current_request_id(), slug
     )
     return Response(status_code=204)
+
+
+# ─── Legal documents ────────────────────────────────────────
+#
+# The imprint and the privacy policy, as text rather than as code. Both used to
+# be TSX components carrying `[placeholder]` markers, so naming the operator meant
+# editing source and rebuilding an image — and a deployment whose owner does not
+# do that served a public legal notice identifying nobody.
+#
+# Markdown, never HTML. These are the only pages the platform serves to readers who
+# are not signed in, and the dashboard's CSP still permits `'unsafe-inline'` in
+# `script-src`; storing HTML here would be storing script on the widest-reach,
+# least-authenticated page in the product. `react-markdown` does not pass raw HTML
+# through, so nothing downstream has to be trusted to sanitise it.
+
+#: The documents that exist. Closed on purpose: each is a statutory obligation with
+#: a route of its own, not a page an operator invents, and a slug that reaches the
+#: database without being in this set would be a page nothing renders.
+LEGAL_DOCUMENT_SLUGS: Final[tuple[str, ...]] = ("imprint", "privacy")
+
+#: Generous against any real policy — the longest German privacy policy in the wild
+#: is a few tens of thousands of characters. Present so an accidental paste of a
+#: whole website is refused with an explanation rather than truncated in silence.
+MAX_LEGAL_BODY_CHARS: Final[int] = 200_000
+
+
+class LegalDocumentRequest(BaseModel):
+    """One document, both halves.
+
+    Both bodies are optional and both may be cleared: emptying the German half is
+    how an operator goes back to the shipped default, and refusing to accept an
+    empty string would make that a database chore instead of an edit.
+    """
+
+    body_de: str | None = Field(None, max_length=MAX_LEGAL_BODY_CHARS)
+    body_en: str | None = Field(None, max_length=MAX_LEGAL_BODY_CHARS)
+
+
+def _legal_document_view(slug: str, document: LegalDocument | None) -> dict[str, Any]:
+    """What both the public route and the editor read.
+
+    `source` is the field that matters and the reason this is not just the row:
+    a client cannot tell a deployment that wrote its own imprint from one still
+    showing the template by looking at the text, and the difference is exactly
+    what an operator needs to see. `custom` means at least one language was
+    written; `default` means the shipped document is what a visitor gets.
+    """
+    body_de = (document.body_de or "").strip() if document else ""
+    body_en = (document.body_en or "").strip() if document else ""
+    return {
+        "slug": slug,
+        "body_de": body_de or None,
+        "body_en": body_en or None,
+        "source": "custom" if (body_de or body_en) else "default",
+        "updated_at": document.updated_at.isoformat() if document and document.updated_at else None,
+    }
+
+
+async def _legal_documents(session: AsyncSession) -> dict[str, LegalDocument]:
+    res = await session.execute(select(LegalDocument))
+    return {row.slug: row for row in res.scalars().all()}
+
+
+@app.get("/api/v1/legal/documents/{slug}")
+async def get_legal_document(
+    slug: str,
+    session: AsyncSession = Depends(get_session),
+):
+    """The stored text of one document. Unauthenticated by design.
+
+    An imprint that only a signed-in reader can see does not discharge the
+    obligation to publish one, so this endpoint is exempt from the auth middleware
+    alongside the sign-in routes. It exposes nothing else: two markdown bodies the
+    operator wrote in order to publish them.
+    """
+    if slug not in LEGAL_DOCUMENT_SLUGS:
+        raise HTTPException(status_code=404, detail="Unknown legal document")
+
+    res = await session.execute(select(LegalDocument).where(LegalDocument.slug == slug))
+    return _legal_document_view(slug, res.scalars().first())
+
+
+@app.get("/api/v1/data/legal/documents")
+async def admin_list_legal_documents(
+    session: AsyncSession = Depends(get_session),
+    _principal: Principal = Depends(require_platform_admin("owner", "admin")),
+):
+    """Both documents, for the editor. Every slug appears, stored or not.
+
+    A document nobody has written yet comes back with null bodies rather than
+    being absent, so the editor renders the same two panels on a fresh deployment
+    as on an established one and "not written yet" is a state instead of a gap.
+    """
+    stored = await _legal_documents(session)
+    return {
+        "documents": [
+            _legal_document_view(slug, stored.get(slug)) for slug in LEGAL_DOCUMENT_SLUGS
+        ]
+    }
+
+
+@app.put("/api/v1/data/legal/documents/{slug}")
+async def admin_save_legal_document(
+    slug: str,
+    req: LegalDocumentRequest,
+    session: AsyncSession = Depends(get_session),
+    principal: Principal = Depends(require_platform_admin("owner", "admin")),
+):
+    """Write one document.
+
+    Both halves are saved in one call, which is the closest a database row gets to
+    the guarantee rule 16 used to obtain from the type system: while the documents
+    were code, `Record<SectionId, ReactNode>` made a section present in German and
+    missing in English a compile error. Nothing can typecheck a row, so the next
+    best thing is that the two halves cannot be saved at different moments, and the
+    one `updated_at` covers both.
+
+    Neither half is required, and the German one governs (rule 16). What is refused
+    is the combination that has no honest reading: English text with no German text
+    at all, on a document whose binding version is the German one.
+    """
+    if slug not in LEGAL_DOCUMENT_SLUGS:
+        raise HTTPException(status_code=404, detail="Unknown legal document")
+
+    body_de = (req.body_de or "").strip()
+    body_en = (req.body_en or "").strip()
+
+    if body_en and not body_de:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "The German version is the binding one and cannot be empty while "
+                "the English version is set. Write the German text first; readers "
+                "of either language are shown it until an English version exists."
+            ),
+        )
+
+    res = await session.execute(select(LegalDocument).where(LegalDocument.slug == slug))
+    document = res.scalars().first()
+    now = datetime.now(timezone.utc)
+
+    if document is None:
+        document = LegalDocument(slug=slug, created_at=now)
+        session.add(document)
+
+    document.body_de = body_de or None
+    document.body_en = body_en or None
+    document.updated_by = principal.user_id
+    document.updated_at = now
+
+    await session.commit()
+    await session.refresh(document)
+
+    # The text itself is never logged. It is not a secret, but it is a document
+    # measured in tens of kilobytes and a log is not where it belongs.
+    logger.info(
+        "[req_id=%s] Legal document %s saved (de=%s, en=%s)",
+        get_current_request_id(),
+        slug,
+        "set" if document.body_de else "empty",
+        "set" if document.body_en else "empty",
+    )
+    return _legal_document_view(slug, document)
 
 
 class OidcStartRequest(BaseModel):
@@ -2079,7 +2244,7 @@ async def list_system_warnings(session: AsyncSession = Depends(get_session)):
 
 @app.post("/api/v1/data/system/ingestion/reset")
 async def reset_ingestion_stream(
-    _principal: Principal = Depends(require_role("owner")),
+    _principal: Principal = Depends(require_platform_admin("owner")),
 ):
     """Reset the shared ingestion stream only from its consumer-owning role."""
     if settings.CORE_ROLE.lower() not in {"all", "ingest"}:

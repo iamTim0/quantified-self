@@ -88,6 +88,8 @@ export const de: Record<MessageKey, string> = {
     "Diese Texte sind eine Vorlage und ersetzen keine Rechtsberatung. Vor dem produktiven Einsatz durch eine qualifizierte Stelle prüfen lassen.",
   "legal.translationNote":
     "Dies ist eine Übersetzung als Lesehilfe. Verbindlich ist die deutsche Fassung.",
+  "legal.germanOnlyNote":
+    "Dieses Dokument ist nur auf Deutsch veröffentlicht. Verbindlich ist die deutsche Fassung.",
 
   // ── Sign-in ─────────────────────────────────────────────────────────────────
   "auth.tagline": "Deine persönliche Gesundheits- und Analyse-Plattform.",
@@ -585,7 +587,32 @@ export const de: Record<MessageKey, string> = {
   "apikeys.create": "Key erzeugen",
   "apikeys.rotationHint":
     "Mehrere aktive Schlüssel sind vorgesehen: so lässt sich rotieren, ohne dass die Datenübertragung unterbrochen wird. Den alten erst widerrufen, wenn die",
-  "oidc.forbidden": "Nur Inhaber und Administratoren können Anbieter verwalten.",
+  "oidc.forbidden":
+    "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können Login-Anbieter verwalten.",
+  "legalAdmin.title": "Rechtstexte",
+  "legalAdmin.lead":
+    "Impressum und Datenschutzerklärung selbst verfassen. Bis dahin wird die mitgelieferte Vorlage veröffentlicht — mitsamt Platzhaltern.",
+  "legalAdmin.forbidden":
+    "Nur Inhaber und Administratoren des Plattform-Workspace dieser Installation können die Rechtstexte bearbeiten.",
+  "legalAdmin.loadFailed": "Die Rechtstexte konnten nicht geladen werden.",
+  "legalAdmin.saveFailed": "Das Dokument konnte nicht gespeichert werden.",
+  "legalAdmin.stateCustom": "Es wird ein eigener Text veröffentlicht.",
+  "legalAdmin.stateDefault": "Es wird die mitgelieferte Vorlage veröffentlicht.",
+  "legalAdmin.edit": "Bearbeiten",
+  "legalAdmin.german": "Deutsch",
+  "legalAdmin.english": "Englisch",
+  "legalAdmin.preview": "Vorschau",
+  "legalAdmin.write": "Schreiben",
+  "legalAdmin.previewEmpty": "In dieser Sprache ist noch nichts geschrieben.",
+  "legalAdmin.placeholder":
+    "# Impressum\n\nAngaben gemäß § 5 DDG…\n\nMarkdown: # Überschrift, **fett**, - Liste, [Link](https://example.org)",
+  "legalAdmin.germanHint":
+    "Die verbindliche Fassung. Markdown wird unterstützt; HTML erscheint als reiner Text statt gerendert, damit auf einer öffentlichen Seite kein Skript ausgeführt werden kann.",
+  "legalAdmin.englishHint":
+    "Eine Übersetzung als Lesehilfe, optional. Bis es sie gibt, wird englischen Lesern der deutsche Text mit einem Hinweis gezeigt — ein aktuelles Dokument in der falschen Sprache ist besser als ein veraltetes in der richtigen.",
+  "legalAdmin.emptyMeansDefault":
+    "Wird der deutsche Text geleert, gilt wieder die mitgelieferte Vorlage.",
+  "legalAdmin.saved": "Gespeichert. Die öffentliche Seite zeigt den neuen Text sofort.",
   "oidc.loadFailed": "Anbieter konnten nicht geladen werden.",
   "oidc.saveFailed": "Speichern fehlgeschlagen.",
   "oidc.deleteFailed": "Löschen fehlgeschlagen.",
@@ -895,7 +922,29 @@ export const de: Record<MessageKey, string> = {
   "modal.desc.github": "Aktiv: Liest deine eigene Beitragsaktivität mit einem fein granularen Access Token.",
   "modal.needEmailPassword": "Bitte gib sowohl E-Mail als auch Passwort ein.",
   "modal.needYazioToken": "Bitte gib einen Yazio Bearer Access Token ein.",
+  "modal.needWhoopToken": "Bitte gib einen WHOOP Access Token ein.",
+  "modal.needWhoopGrantComplete":
+    "Die Erneuerung braucht alle drei zusammen: Client ID, Client Secret und Refresh Token. Lass alle drei leer, um den Connector nur mit dem Access Token einzurichten.",
+  "modal.whoopTokenLabel": "WHOOP Access Token",
+  "modal.pasteWhoopToken": "Füge den WHOOP Access Token hier ein",
+  "modal.whoopGrantTitle": "Damit es über die erste Stunde hinaus funktioniert",
+  "modal.whoopGrantHint":
+    "Ein WHOOP Access Token läuft nach etwa einer Stunde ab, synchronisiert wird alle paar Stunden. Mit Client ID, Client Secret und Refresh Token der OAuth-Anwendung wird das Token vor dem Ablauf erneuert. Beide Geheimnisse werden verschlüsselt gespeichert und erreichen den Importer nie.",
+  "modal.whoopGrantKept": "Lass ein Feld leer, um den gespeicherten Wert zu behalten.",
+  "modal.whoopClientIdLabel": "Client ID",
+  "modal.whoopClientSecretLabel": "Client Secret",
+  "modal.whoopRefreshTokenLabel": "Refresh Token",
   "modal.needDawarichKey": "Bitte gib den Dawarich API Key ein.",
+  "modal.needGithubToken": "Bitte gib einen GitHub Personal Access Token ein.",
+  "modal.githubTokenLabel": "GitHub Personal Access Token",
+  "modal.pasteGithubToken": "github_pat_… oder ghp_…",
+  "modal.githubTokenHint":
+    "Ein fein granularer Token mit Contents: read und Metadata: read für die Repositories, die gezählt werden sollen. Followers: read ergänzt die Follower-Zahl.",
+  "modal.githubPerRepoLabel": "Aufschlüsselung pro Repository",
+  "modal.githubPerRepoHint":
+    "Neben den kontoweiten Summen eine Serie pro Repository speichern. Stille Tage werden dort weggelassen.",
+  "modal.githubPerRepoKept":
+    "Die gespeicherte Einstellung bleibt erhalten, solange du dieses Feld nicht änderst.",
   "modal.needCalendarUrl": "Bitte gib die URL deines Kalender-Feeds (.ics) ein.",
   "modal.calendarUrlScheme": "Die Kalender-URL muss mit http:// oder https:// beginnen.",
   "modal.needBaseUrl": "Bitte gib die HTTPS-Basis-URL der Provider-API ein.",

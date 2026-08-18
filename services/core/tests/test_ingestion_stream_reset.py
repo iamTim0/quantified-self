@@ -15,7 +15,12 @@ from core.main import app
 from httpx import ASGITransport, AsyncClient
 from nats.js.api import RetentionPolicy, StreamConfig
 
-from tests.db_helpers import auth_headers, cleanup_test_tenant, create_test_tenant
+from tests.db_helpers import (
+    as_platform_tenant,
+    auth_headers,
+    cleanup_test_tenant,
+    create_test_tenant,
+)
 
 
 class _FakeJetStream:
@@ -216,6 +221,10 @@ async def test_reset_endpoint_is_owner_only(monkeypatch: pytest.MonkeyPatch) -> 
     """Verifies Fizzbee Invariant: OnlyOperatorCanReset."""
     tenant_id = await create_test_tenant()
     try:
+        # Resetting the stream discards every tenant's pending events, so it is a
+        # deployment operation and needs the deployment's workspace.
+        as_platform_tenant(monkeypatch, tenant_id)
+
         class _Controller:
             async def reset(self) -> dict[str, str]:
                 return {"code": "ingestion_stream_reset", "status": "recreated"}

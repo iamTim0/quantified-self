@@ -90,6 +90,8 @@ export const en = {
     "These texts are a template and are no substitute for legal advice. Have them reviewed by a qualified party before production use.",
   "legal.translationNote":
     "This is a courtesy translation. The German version is the legally binding one.",
+  "legal.germanOnlyNote":
+    "This document has been published in German only. The German version is the legally binding one.",
 
   // ── Sign in / sign up ──────────────────────────────────────────────────────
   "auth.tagline": "Your personal health and analytics platform.",
@@ -589,7 +591,31 @@ export const en = {
   "apikeys.create": "Create key",
   "apikeys.rotationHint":
     "Several active keys are intended: that is how you rotate without interrupting the data flow. Revoke the old one once the",
-  "oidc.forbidden": "Only owners and administrators can manage providers.",
+  "oidc.forbidden":
+    "Only owners and administrators of the deployment's platform workspace can manage login providers.",
+  "legalAdmin.title": "Legal texts",
+  "legalAdmin.lead":
+    "Write your own imprint and privacy policy. Until you do, the template shipped with the platform is published — placeholders and all.",
+  "legalAdmin.forbidden":
+    "Only owners and administrators of the deployment's platform workspace can edit the legal texts.",
+  "legalAdmin.loadFailed": "The legal texts could not be loaded.",
+  "legalAdmin.saveFailed": "The document could not be saved.",
+  "legalAdmin.stateCustom": "Your own text is published.",
+  "legalAdmin.stateDefault": "The shipped template is published.",
+  "legalAdmin.edit": "Edit",
+  "legalAdmin.german": "German",
+  "legalAdmin.english": "English",
+  "legalAdmin.preview": "Preview",
+  "legalAdmin.write": "Write",
+  "legalAdmin.previewEmpty": "Nothing written in this language yet.",
+  "legalAdmin.placeholder":
+    "# Legal notice\n\nInformation pursuant to § 5 DDG…\n\nMarkdown: # heading, **bold**, - list, [link](https://example.org)",
+  "legalAdmin.germanHint":
+    "The binding version. Markdown is supported; HTML is shown as plain text rather than rendered, so a public page cannot be made to run a script.",
+  "legalAdmin.englishHint":
+    "A courtesy translation, and optional. Readers of English are shown the German text with a note until one exists — a current document in the wrong language beats a stale one in the right one.",
+  "legalAdmin.emptyMeansDefault": "Clearing the German text restores the shipped template.",
+  "legalAdmin.saved": "Saved. The public page shows the new text immediately.",
   "oidc.loadFailed": "The providers could not be loaded.",
   "oidc.saveFailed": "Saving failed.",
   "oidc.deleteFailed": "Deleting failed.",
@@ -892,7 +918,29 @@ export const en = {
   "modal.desc.github": "Active: reads your own contribution activity with a fine-grained access token.",
   "modal.needEmailPassword": "Please enter both an email address and a password.",
   "modal.needYazioToken": "Please enter a Yazio bearer access token.",
+  "modal.needWhoopToken": "Please enter a WHOOP access token.",
+  "modal.needWhoopGrantComplete":
+    "Renewal needs all three together: client ID, client secret and refresh token. Leave all three empty to set the connector up with the access token alone.",
+  "modal.whoopTokenLabel": "WHOOP access token",
+  "modal.pasteWhoopToken": "Paste the WHOOP access token here",
+  "modal.whoopGrantTitle": "Keep it working past the first hour",
+  "modal.whoopGrantHint":
+    "A WHOOP access token expires after about an hour, and syncs run every few hours. With the OAuth application's client ID, its secret and a refresh token, the token is renewed before it expires. Both secrets are stored encrypted and never reach the importer.",
+  "modal.whoopGrantKept": "Leave a field empty to keep what is stored.",
+  "modal.whoopClientIdLabel": "Client ID",
+  "modal.whoopClientSecretLabel": "Client secret",
+  "modal.whoopRefreshTokenLabel": "Refresh token",
   "modal.needDawarichKey": "Please enter the Dawarich API key.",
+  "modal.needGithubToken": "Please enter a GitHub personal access token.",
+  "modal.githubTokenLabel": "GitHub personal access token",
+  "modal.pasteGithubToken": "github_pat_… or ghp_…",
+  "modal.githubTokenHint":
+    "A fine-grained token with Contents: read and Metadata: read on the repositories you want counted. Add Followers: read for the follower count.",
+  "modal.githubPerRepoLabel": "Per-repository breakdown",
+  "modal.githubPerRepoHint":
+    "Store one series per repository alongside the account-wide totals. Quiet days are omitted there.",
+  "modal.githubPerRepoKept":
+    "The stored setting is kept unless you change this box.",
   "modal.needCalendarUrl": "Please enter the URL of your calendar feed (.ics).",
   "modal.calendarUrlScheme": "The calendar URL has to start with http:// or https://.",
   "modal.needBaseUrl": "Please enter the HTTPS base URL of the provider API.",

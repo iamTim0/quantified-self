@@ -20,6 +20,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    Text,
     UniqueConstraint,
     text,
 )
@@ -955,4 +956,65 @@ class LoginAttempt(Base):
     __table_args__ = (
         Index("idx_login_attempts_email_time", "email_hash", "attempted_at"),
         Index("idx_login_attempts_time", "attempted_at"),
+    )
+
+
+class LegalDocument(Base):
+    """The imprint and the privacy policy, as text the operator owns.
+
+    Both documents ship with a written German and English default, and for a long
+    time that default was the only thing a deployment could show: the text lived in
+    two TSX components full of ``[placeholder]`` markers, so filling in a company
+    address meant editing source and rebuilding an image. An operator who cannot do
+    that ran a public service with a legal notice that named nobody — which is the
+    failure § 5 DDG exists to prevent.
+
+    Three properties of this table are decisions rather than defaults:
+
+    * **No ``tenant_id``, deliberately, and rule 2 has nothing to bite on.** An
+      imprint identifies the natural or legal person operating the service, and
+      that is a property of the deployment, not of a workspace inside it. The
+      documents are served from ``/legal/*`` to readers who are not signed in and
+      for whom no tenant exists to scope by. ``oidc_providers`` is deployment-wide
+      for the same reason.
+    * **Both languages live in one row.** Rule 16 requires the two halves of a legal
+      document to change together, and the type system enforced that while the text
+      was code. It cannot enforce anything about a database row, so the next best
+      thing is to make saving one language without the other a visible act rather
+      than an invisible one: one row, one ``updated_at``, one editor screen.
+    * **Markdown, not HTML.** These pages are public, unauthenticated, and served
+      under a CSP that still permits ``'unsafe-inline'`` in ``script-src``. Stored
+      HTML would be stored script on exactly the page with the widest audience and
+      the least authentication. Markdown renders through ``react-markdown``, which
+      does not pass raw HTML through at all, so the question of sanitising it never
+      arises. See ``docs/features/legal-documents.md``.
+    """
+
+    __tablename__ = "legal_documents"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    #: Which document. ``imprint`` or ``privacy`` -- the set is closed, because each
+    #: one is a statutory obligation with its own route, not a page somebody adds.
+    #: A unique constraint carries its own index in Postgres, so there is no
+    #: separate `index=True` here to create a second one.
+    slug: Mapped[str] = mapped_column(String(32), unique=True, nullable=False)
+    #: The binding half (rule 16). Empty means "no custom text": the shipped default
+    #: document is shown instead, rather than a blank page where a notice must be.
+    body_de: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: The courtesy translation. Empty while ``body_de`` is set means English readers
+    #: are shown the German text with the note saying which version governs -- a
+    #: current document in the wrong language beats a stale one in the right one.
+    body_en: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Who saved it last, for the audit trail an operator needs when a policy
+    #: changes. Nulled rather than blocking the delete when that account goes.
+    updated_by: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

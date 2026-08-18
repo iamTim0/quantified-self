@@ -109,7 +109,9 @@ Assistant's entities do (rule 15).
 a year of zeros is half a million rows saying nothing; the `code_*` series is the one that
 carries the promise of a value every day, and this is the breakdown beneath it.
 
-Turn it off with `per_repository: false` in the connector configuration.
+Turn it off with the **Per-repository breakdown** checkbox in the connector dialog, which
+stores `per_repository: false` in the connector configuration. It is on by default,
+because that is what the importer does when the key is absent.
 
 ## Bounds, and what says so
 

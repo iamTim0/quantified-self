@@ -369,6 +369,39 @@ async def proxy_auth_service(
             )
 
 
+@app.get("/api/v1/legal/documents/{slug}")
+async def proxy_legal_document(slug: str, request: Request):
+    """Proxy the stored imprint / privacy policy to Core. Unauthenticated by design.
+
+    Its own route rather than a case inside the `/api/v1/data/` proxy, because that
+    proxy's first act is to refuse a request with no session — which is every
+    request for a legal notice. An imprint a reader has to sign in to see does not
+    discharge the obligation to publish one.
+
+    Read-only, and the path is spelled out rather than taken as a prefix: writing
+    these documents is an owner-only operation living under `/api/v1/data/legal/`,
+    where it is authenticated like everything else. A wildcard here is how the
+    write path would have quietly become public too.
+    """
+    target_url = f"{settings.CORE_SERVICE_URL}/api/v1/legal/documents/{slug}"
+
+    forwarded_headers = {
+        k: v for k, v in request.headers.items()
+        if k.lower() in _SAFE_FORWARD_HEADERS
+    }
+    forwarded_headers["X-Request-ID"] = get_current_request_id()
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        try:
+            response = await client.get(target_url, headers=forwarded_headers)
+            return _relay_response(response)
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Core Data Service unavailable: {e!s}",
+            )
+
+
 @app.api_route("/api/v1/ingest/apple-health", methods=["POST"])
 async def proxy_apple_health_ingest(request: Request):
     """Proxy Apple Health Push / Webhook ingest requests to the Apple Health importer.
