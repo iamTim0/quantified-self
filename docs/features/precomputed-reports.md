@@ -155,7 +155,7 @@ So a client reading a report follows two rules:
 3. **Only containers get a default.** An absent list is honestly an empty list. An
    absent *number* is not zero — defaulting `pearson` or `coverage_pct` would put a
    fabricated measurement on screen, indistinguishable from a real one, which
-   [AGENTS.md](../../AGENTS.md) rule 19 calls worse than a gap. Missing scalars stay
+   AGENTS.md rule 19 calls worse than a gap. Missing scalars stay
    missing and render as "—".
 
 Absent is rendered as **empty, not as an error**: an older run is genuinely missing that
@@ -436,7 +436,7 @@ The flag is `deferred` on the report envelope.
     to bound had already executed and been accumulated, so it discarded finished work
     rather than preventing any. And no fixed number could have been right, because
     `home_assistant_*` and `apple_health_*` are open namespaces
-    ([AGENTS.md](../../AGENTS.md) rule 15) sized by the reader's own installation. The
+    (AGENTS.md rule 15) sized by the reader's own installation. The
     response is bounded by `MAX_SERIES_BUCKETS` — series times buckets, checked before
     anything is serialised, in the unit a response is actually measured in. The
     request-side cap stays, because a caller wrote that list and rejecting it costs

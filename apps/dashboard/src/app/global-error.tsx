@@ -22,9 +22,16 @@ import { translate } from "./lib/i18n/translate";
  *
  * Styling is inline for the same reason the text is resolved by hand: a failure this
  * deep may have taken the stylesheet with it, and a message nobody can read is not a
- * message. Both colours are hardcoded light values on purpose — the theme bootstrap
- * lives in the root layout, so there is no `data-theme` to honour and guessing dark
- * would be a coin flip.
+ * message. The design tokens live in `globals.css`, which the root layout imports —
+ * the same root layout that just threw — so `var(--color-…)` here would resolve to
+ * nothing exactly when it mattered. Hence the literals, and hence this file's entry in
+ * `.agents/scripts/design_tokens_allowlist.json`: an allowance is a decision that gets
+ * written down (AGENTS.md rule 14), and the reason is this paragraph.
+ *
+ * They are light values, deliberately. The theme bootstrap also lives in the root
+ * layout, so there is no `data-theme` to honour and no persisted preference reachable
+ * before paint; guessing dark would be a coin flip on a page that must be legible on
+ * the first try.
  */
 function clientLocale(): Locale {
   if (typeof document === "undefined") return "en";
