@@ -36,6 +36,16 @@ export type ConnectorDirection = "active" | "passive";
  */
 export const WEATHER_DEFAULT_BASE_URL = "https://api.open-meteo.com";
 
+/**
+ * How long a WHOOP access token lives, in seconds — WHOOP states about an hour.
+ *
+ * Sent alongside a newly entered token because Core only renews a credential
+ * whose expiry it knows: `needs_refresh` deliberately leaves a connector with no
+ * recorded expiry alone, on the assumption the token is long-lived. Omitting this
+ * is therefore what would make a refresh grant sit unused until the token died.
+ */
+export const WHOOP_TOKEN_LIFETIME_SECONDS = 3600;
+
 /** One place returned by Core's `/api/v1/data/geocode` proxy. */
 interface GeocodeResult {
   name: string;
@@ -281,6 +291,29 @@ export default function ConnectorModal({
   const [dawarichApiKey, setDawarichApiKey] = useState("");
   const [providerBaseUrl, setProviderBaseUrl] = useState("");
 
+  // GitHub's only real choice: the token is the whole credential, and whether the
+  // per-repository breakdown is written alongside the account-wide totals. Default
+  // on, because that is what the importer already does when `per_repository` is
+  // absent — a checkbox that reports the existing behaviour rather than changing it.
+  //
+  // The second flag is what keeps editing honest. The listing deliberately does not
+  // hand out a connector's stored config (it holds the encrypted token), so this
+  // dialog cannot know which way the box was left. Sending the unread default on
+  // every edit would silently switch the breakdown back on for anyone who had
+  // turned it off and then renamed their connector. Untouched means no `config`,
+  // and Core merges, so the stored value survives.
+  const [githubPerRepository, setGithubPerRepository] = useState(true);
+  const [githubPerRepositoryTouched, setGithubPerRepositoryTouched] = useState(false);
+
+  // WHOOP's access token dies after an hour against a six-hour poll, so the
+  // credential that matters is the refresh grant beside it. Core stores the
+  // refresh token and the client secret encrypted and hands the importer only the
+  // short-lived access token, which is why all three are entered here and none of
+  // them is ever read back into this form.
+  const [whoopRefreshToken, setWhoopRefreshToken] = useState("");
+  const [whoopClientId, setWhoopClientId] = useState("");
+  const [whoopClientSecret, setWhoopClientSecret] = useState("");
+
   // Weather is configured by place, not by URL. The coordinates are what actually
   // gets stored -- the search only fills them in, and stays editable afterwards so
   // a location the lookup does not know can still be entered by hand.
@@ -342,6 +375,11 @@ export default function ConnectorModal({
       // Was missing, so configuring Home Assistant and then opening Weather showed
       // the Home Assistant URL still sitting in the field.
       setProviderBaseUrl("");
+      setGithubPerRepository(true);
+      setGithubPerRepositoryTouched(false);
+      setWhoopRefreshToken("");
+      setWhoopClientId("");
+      setWhoopClientSecret("");
       setWeatherBaseUrl(WEATHER_DEFAULT_BASE_URL);
       setWeatherPlaceQuery("");
       setWeatherPlaces([]);
@@ -427,6 +465,16 @@ export default function ConnectorModal({
     try {
       let finalToken = accessToken.trim();
       let payloadConfig: Record<string, any> | undefined = undefined;
+      // The OAuth refresh grant travels at the top level rather than inside
+      // `config`, because Core encrypts the refresh token and the client secret
+      // before either reaches the database and it can only do that for fields it
+      // knows by name (rule 12).
+      const oauthGrant: {
+        refresh_token?: string;
+        client_id?: string;
+        client_secret?: string;
+        expires_in?: number;
+      } = {};
 
       if (fileOnly) {
         // Nothing to authenticate against: the data arrives when the user uploads
@@ -544,6 +592,44 @@ export default function ConnectorModal({
           setLoading(false);
           return;
         }
+      } else if (selectedProvider.id === "whoop") {
+        // Connect mode had no fields at all, so the only way to reach a polled
+        // WHOOP connector was the export upload. The access token alone is
+        // accepted — it works for the hour WHOOP grants it — but without the
+        // grant beside it the connector is dead by the next scheduled sync.
+        if (!finalToken && !isEditing) {
+          setError(t("modal.needWhoopToken"));
+          setLoading(false);
+          return;
+        }
+        const refreshToken = whoopRefreshToken.trim();
+        const clientId = whoopClientId.trim();
+        const clientSecret = whoopClientSecret.trim();
+        const grantParts = [refreshToken, clientId, clientSecret].filter(Boolean).length;
+        // Only when creating. On an edit Core carries each of the three over
+        // individually, so filling in one of them is how a rotated client secret
+        // is entered without re-pasting a refresh token this form cannot read back.
+        if (!isEditing && grantParts > 0 && grantParts < 3) {
+          setError(t("modal.needWhoopGrantComplete"));
+          setLoading(false);
+          return;
+        }
+        if (refreshToken) oauthGrant.refresh_token = refreshToken;
+        if (clientId) oauthGrant.client_id = clientId;
+        if (clientSecret) oauthGrant.client_secret = clientSecret;
+        if (finalToken) oauthGrant.expires_in = WHOOP_TOKEN_LIFETIME_SECONDS;
+      } else if (selectedProvider.id === "github") {
+        // There was no field for the token at all, so creating a GitHub connector
+        // always ended on the generic "enter an API key" message with nothing on
+        // screen to enter one into. The importer stays idle without it (rule 8).
+        if (!finalToken && !isEditing) {
+          setError(t("modal.needGithubToken"));
+          setLoading(false);
+          return;
+        }
+        if (!isEditing || githubPerRepositoryTouched) {
+          payloadConfig = { per_repository: githubPerRepository };
+        }
       } else if (isPassive) {
         // Push connectors authenticate with tenant-bound API keys managed separately
         // (see ApiKeyManager), so there is no provider credential to enter here.
@@ -575,6 +661,7 @@ export default function ConnectorModal({
           source_id: initialSourceId || undefined,
           display_name: displayName.trim() || undefined,
           access_token: finalToken || undefined,
+          ...oauthGrant,
           status: "active",
           // The Core contract requires a positive value; passive importers ignore it and wait for webhook events.
           poll_interval_hours: Number(pollIntervalHours),
@@ -589,6 +676,8 @@ export default function ConnectorModal({
         setAccessToken("");
         setYazioEmail("");
         setYazioPassword("");
+        setWhoopRefreshToken("");
+        setWhoopClientSecret("");
         onSaved();
         setTimeout(() => {
           onClose();
@@ -1177,6 +1266,145 @@ export default function ConnectorModal({
                     className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
                   />
                 </div>
+              </div>
+            )}
+
+            {selectedProvider?.id === "whoop" && !fileOnly && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-brand" />
+                    <span>{t("modal.whoopTokenLabel")}</span>
+                    {isEditing && (
+                      <span className="text-ink-muted font-normal text-meta lowercase">
+                        (optional)
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="password"
+                    required={!isEditing}
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    placeholder={
+                      isEditing ? t("modal.keepTokenPlaceholder") : t("modal.pasteWhoopToken")
+                    }
+                    className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
+                  />
+                </div>
+
+                {/*
+                  The part that decides whether this connector still works
+                  tomorrow. Presented as its own group rather than three more
+                  fields, because "the access token expires in an hour" is the
+                  reason all three are being asked for.
+                */}
+                <div className="rounded-2xl border border-line bg-surface p-3 space-y-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-ink">{t("modal.whoopGrantTitle")}</h4>
+                    <p className="mt-0.5 text-meta leading-relaxed text-ink-muted">
+                      {t("modal.whoopGrantHint")}
+                    </p>
+                    {isEditing && (
+                      <p className="mt-0.5 text-meta leading-relaxed text-ink-muted">
+                        {t("modal.whoopGrantKept")}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5">
+                      {t("modal.whoopClientIdLabel")}
+                    </label>
+                    <input
+                      type="text"
+                      value={whoopClientId}
+                      onChange={(event) => setWhoopClientId(event.target.value)}
+                      placeholder={
+                        isEditing
+                          ? t("modal.keepUnchanged")
+                          : "0000aaaa-11bb-22cc-33dd-444444eeeeee"
+                      }
+                      className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5">
+                      {t("modal.whoopClientSecretLabel")}
+                    </label>
+                    <input
+                      type="password"
+                      value={whoopClientSecret}
+                      onChange={(event) => setWhoopClientSecret(event.target.value)}
+                      placeholder={isEditing ? t("modal.keepUnchanged") : "••••••••"}
+                      className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5">
+                      {t("modal.whoopRefreshTokenLabel")}
+                    </label>
+                    <input
+                      type="password"
+                      value={whoopRefreshToken}
+                      onChange={(event) => setWhoopRefreshToken(event.target.value)}
+                      placeholder={isEditing ? t("modal.keepUnchanged") : "••••••••"}
+                      className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {selectedProvider?.id === "github" && (
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5 flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-brand" />
+                    <span>{t("modal.githubTokenLabel")}</span>
+                    {isEditing && (
+                      <span className="text-ink-muted font-normal text-meta lowercase">
+                        (optional)
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    type="password"
+                    required={!isEditing}
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    placeholder={
+                      isEditing ? t("modal.keepTokenPlaceholder") : t("modal.pasteGithubToken")
+                    }
+                    className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm font-mono outline-none focus-ring"
+                  />
+                  <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
+                    {t("modal.githubTokenHint")}
+                  </p>
+                </div>
+                <label className="flex items-start gap-3 rounded-2xl border border-line bg-surface p-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={githubPerRepository}
+                    onChange={(event) => {
+                      setGithubPerRepository(event.target.checked);
+                      setGithubPerRepositoryTouched(true);
+                    }}
+                  />
+                  <span>
+                    <span className="block text-xs font-bold text-ink">
+                      {t("modal.githubPerRepoLabel")}
+                    </span>
+                    <span className="mt-0.5 block text-meta leading-relaxed text-ink-muted">
+                      {t("modal.githubPerRepoHint")}
+                    </span>
+                    {isEditing && !githubPerRepositoryTouched && (
+                      <span className="mt-0.5 block text-meta leading-relaxed text-ink-muted">
+                        {t("modal.githubPerRepoKept")}
+                      </span>
+                    )}
+                  </span>
+                </label>
               </div>
             )}
 

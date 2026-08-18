@@ -31,6 +31,15 @@ Besides the access token, that needs:
 | `client_secret` | stored encrypted |
 | `expires_in` | lifetime of the access token, in seconds |
 
+The first three are entered in the connector dialog, under **Keep it working past the first
+hour**. `expires_in` is not asked for: the dialog sends WHOOP's stated hour whenever a new
+access token is entered, because a connector whose expiry Core does not know is one Core
+deliberately never renews.
+
+Editing the connector later may leave any of them blank — Core carries each stored value over
+individually, so a rotated client secret can be entered without re-pasting a refresh token
+that no screen can read back.
+
 WHOOP also swaps the refresh token on every renewal and invalidates the previous one; the new
 one is stored. If the response carries none, the existing one is kept — deleting it would
 make a still-valid connector impossible to renew.
@@ -58,7 +67,8 @@ provider payloads are not stored in the database.
 ## Setup
 
 1. Open the data source under **Connectors** in the dashboard.
-2. Enter the credentials, or the export configuration.
+2. Enter the access token, and the client ID, client secret and refresh token that let Core
+   renew it — or switch the connector to **File** and upload the emailed export instead.
 3. Save; Core encrypts the credentials with Fernet AES-256.
 4. For active importers, click **Sync now**, or wait for Core's scheduler to find the
    connector due. The importer has no timer of its own — it acts on the task Core

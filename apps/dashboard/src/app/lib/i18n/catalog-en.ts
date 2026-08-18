@@ -892,7 +892,29 @@ export const en = {
   "modal.desc.github": "Active: reads your own contribution activity with a fine-grained access token.",
   "modal.needEmailPassword": "Please enter both an email address and a password.",
   "modal.needYazioToken": "Please enter a Yazio bearer access token.",
+  "modal.needWhoopToken": "Please enter a WHOOP access token.",
+  "modal.needWhoopGrantComplete":
+    "Renewal needs all three together: client ID, client secret and refresh token. Leave all three empty to set the connector up with the access token alone.",
+  "modal.whoopTokenLabel": "WHOOP access token",
+  "modal.pasteWhoopToken": "Paste the WHOOP access token here",
+  "modal.whoopGrantTitle": "Keep it working past the first hour",
+  "modal.whoopGrantHint":
+    "A WHOOP access token expires after about an hour, and syncs run every few hours. With the OAuth application's client ID, its secret and a refresh token, the token is renewed before it expires. Both secrets are stored encrypted and never reach the importer.",
+  "modal.whoopGrantKept": "Leave a field empty to keep what is stored.",
+  "modal.whoopClientIdLabel": "Client ID",
+  "modal.whoopClientSecretLabel": "Client secret",
+  "modal.whoopRefreshTokenLabel": "Refresh token",
   "modal.needDawarichKey": "Please enter the Dawarich API key.",
+  "modal.needGithubToken": "Please enter a GitHub personal access token.",
+  "modal.githubTokenLabel": "GitHub personal access token",
+  "modal.pasteGithubToken": "github_pat_… or ghp_…",
+  "modal.githubTokenHint":
+    "A fine-grained token with Contents: read and Metadata: read on the repositories you want counted. Add Followers: read for the follower count.",
+  "modal.githubPerRepoLabel": "Per-repository breakdown",
+  "modal.githubPerRepoHint":
+    "Store one series per repository alongside the account-wide totals. Quiet days are omitted there.",
+  "modal.githubPerRepoKept":
+    "The stored setting is kept unless you change this box.",
   "modal.needCalendarUrl": "Please enter the URL of your calendar feed (.ics).",
   "modal.calendarUrlScheme": "The calendar URL has to start with http:// or https://.",
   "modal.needBaseUrl": "Please enter the HTTPS base URL of the provider API.",

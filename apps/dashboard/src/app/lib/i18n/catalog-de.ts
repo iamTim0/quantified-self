@@ -895,7 +895,29 @@ export const de: Record<MessageKey, string> = {
   "modal.desc.github": "Aktiv: Liest deine eigene Beitragsaktivität mit einem fein granularen Access Token.",
   "modal.needEmailPassword": "Bitte gib sowohl E-Mail als auch Passwort ein.",
   "modal.needYazioToken": "Bitte gib einen Yazio Bearer Access Token ein.",
+  "modal.needWhoopToken": "Bitte gib einen WHOOP Access Token ein.",
+  "modal.needWhoopGrantComplete":
+    "Die Erneuerung braucht alle drei zusammen: Client ID, Client Secret und Refresh Token. Lass alle drei leer, um den Connector nur mit dem Access Token einzurichten.",
+  "modal.whoopTokenLabel": "WHOOP Access Token",
+  "modal.pasteWhoopToken": "Füge den WHOOP Access Token hier ein",
+  "modal.whoopGrantTitle": "Damit es über die erste Stunde hinaus funktioniert",
+  "modal.whoopGrantHint":
+    "Ein WHOOP Access Token läuft nach etwa einer Stunde ab, synchronisiert wird alle paar Stunden. Mit Client ID, Client Secret und Refresh Token der OAuth-Anwendung wird das Token vor dem Ablauf erneuert. Beide Geheimnisse werden verschlüsselt gespeichert und erreichen den Importer nie.",
+  "modal.whoopGrantKept": "Lass ein Feld leer, um den gespeicherten Wert zu behalten.",
+  "modal.whoopClientIdLabel": "Client ID",
+  "modal.whoopClientSecretLabel": "Client Secret",
+  "modal.whoopRefreshTokenLabel": "Refresh Token",
   "modal.needDawarichKey": "Bitte gib den Dawarich API Key ein.",
+  "modal.needGithubToken": "Bitte gib einen GitHub Personal Access Token ein.",
+  "modal.githubTokenLabel": "GitHub Personal Access Token",
+  "modal.pasteGithubToken": "github_pat_… oder ghp_…",
+  "modal.githubTokenHint":
+    "Ein fein granularer Token mit Contents: read und Metadata: read für die Repositories, die gezählt werden sollen. Followers: read ergänzt die Follower-Zahl.",
+  "modal.githubPerRepoLabel": "Aufschlüsselung pro Repository",
+  "modal.githubPerRepoHint":
+    "Neben den kontoweiten Summen eine Serie pro Repository speichern. Stille Tage werden dort weggelassen.",
+  "modal.githubPerRepoKept":
+    "Die gespeicherte Einstellung bleibt erhalten, solange du dieses Feld nicht änderst.",
   "modal.needCalendarUrl": "Bitte gib die URL deines Kalender-Feeds (.ics) ein.",
   "modal.calendarUrlScheme": "Die Kalender-URL muss mit http:// oder https:// beginnen.",
   "modal.needBaseUrl": "Bitte gib die HTTPS-Basis-URL der Provider-API ein.",
