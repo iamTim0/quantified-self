@@ -1964,6 +1964,171 @@ export const METRIC_CATALOG: Record<string, MetricDefinition> = {
     ingestResolution: "raw",
     rawRetentionDays: 90,
   },
+  "code_commits": {
+    key: "code_commits",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Commits",
+    labelEn: "Commits",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 2000.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_lines_added": {
+    key: "code_lines_added",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Hinzugefügte Zeilen",
+    labelEn: "Lines added",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: null,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_lines_removed": {
+    key: "code_lines_removed",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Entfernte Zeilen",
+    labelEn: "Lines removed",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: null,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_repositories_touched": {
+    key: "code_repositories_touched",
+    unit: "count",
+    aggregation: "max",
+    category: "developer",
+    labelDe: "Bearbeitete Repositories",
+    labelEn: "Repositories touched",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 200.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_pull_requests_opened": {
+    key: "code_pull_requests_opened",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Geöffnete Pull Requests",
+    labelEn: "Pull requests opened",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 200.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_pull_requests_merged": {
+    key: "code_pull_requests_merged",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Gemergte Pull Requests",
+    labelEn: "Pull requests merged",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 200.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_reviews_submitted": {
+    key: "code_reviews_submitted",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Abgegebene Reviews",
+    labelEn: "Reviews submitted",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 500.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_issues_opened": {
+    key: "code_issues_opened",
+    unit: "count",
+    aggregation: "sum",
+    category: "developer",
+    labelDe: "Geöffnete Issues",
+    labelEn: "Issues opened",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: 500.0,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_contribution_streak": {
+    key: "code_contribution_streak",
+    unit: "count",
+    aggregation: "last",
+    category: "developer",
+    labelDe: "Aktuelle Serie",
+    labelEn: "Current streak",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: null,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_followers": {
+    key: "code_followers",
+    unit: "count",
+    aggregation: "last",
+    category: "developer",
+    labelDe: "Follower",
+    labelEn: "Followers",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: null,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
+  "code_stars_received": {
+    key: "code_stars_received",
+    unit: "count",
+    aggregation: "last",
+    category: "developer",
+    labelDe: "Sterne insgesamt",
+    labelEn: "Stars received",
+    sources: ["github"],
+    aliases: [],
+    plausibleMin: 0.0,
+    plausibleMax: null,
+    precision: 0,
+    ingestResolution: "raw",
+    rawRetentionDays: 90,
+  },
   "weather_temperature": {
     key: "weather_temperature",
     unit: "°C",
@@ -2256,6 +2421,12 @@ export const NAMESPACES: MetricNamespace[] = [
     labelEn: "Apple Health (uncatalogued)",
   },
   {
+    prefix: "github_",
+    category: "developer",
+    labelDe: "GitHub (pro Repository)",
+    labelEn: "GitHub (per repository)",
+  },
+  {
     prefix: "custom_",
     category: "custom",
     labelDe: "Eigene Metrik",
@@ -2289,6 +2460,31 @@ export function resolveMetric(raw: string): MetricDefinition | null {
  * derived from the namespace suffix, or the raw name for a metric the registry has
  * never heard of (a tenant's older rows survive a catalog change that way).
  */
+/**
+ * Units that are a dimension in the registry and noise on a screen.
+ *
+ * `count` is what the registry calls a bare number, and it belongs there: a value
+ * without a declared unit is how a unit bug starts (rule 15). But printed beside the
+ * figure it reads "16,400 count" on the day's step tile and "42 count" beside a
+ * commit total — a word that adds nothing a reader did not already know from the
+ * label. The quantity is the noun; "count" is the type of the noun.
+ *
+ * Suppressed here rather than at each of the twenty call sites, because a display
+ * rule applied by convention is a display rule with exceptions nobody meant. The
+ * true unit stays available: `METRIC_CATALOG[key].unit` is untouched, and the docs
+ * table still documents it, because reference material should state the dimension.
+ *
+ * `index` is deliberately *not* in this set. "6.4 index" also reads oddly, but an
+ * index without its word is a bare number a reader cannot place at all, and which of
+ * the two is worse is a judgement for whoever owns the wording.
+ */
+const DIMENSIONLESS_UNITS = new Set(["count"]);
+
+/** The unit as a reader should see it — empty where the dimension is not worth saying. */
+function displayUnit(unit: string): string {
+  return DIMENSIONLESS_UNITS.has(unit) ? "" : unit;
+}
+
 export function describeMetric(raw: string, locale: "de" | "en" = "de"): {
   label: string;
   unit: string;
@@ -2299,7 +2495,7 @@ export function describeMetric(raw: string, locale: "de" | "en" = "de"): {
   if (definition) {
     return {
       label: locale === "de" ? definition.labelDe : definition.labelEn,
-      unit: definition.unit,
+      unit: displayUnit(definition.unit),
       aggregation: definition.aggregation,
       precision: definition.precision,
     };

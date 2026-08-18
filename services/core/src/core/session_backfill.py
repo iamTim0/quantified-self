@@ -61,10 +61,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from shared_schemas.sessions import session_metadata
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.daily_story import EVENT_PREFIXES
+from core.daily_story import session_metric_predicate
 from core.db.models import DataPoint
 from core.db.session import async_session_maker
 
@@ -91,16 +91,6 @@ class BackfillReport:
         return sum(count for _, _, count in self.skipped)
 
 
-def _event_metric_predicate():
-    """Workout- and strength-shaped metrics, the ones a session groups.
-
-    ``startswith(..., autoescape=True)`` rather than a bare LIKE, because ``_``
-    is a single-character wildcard in SQL and ``LIKE 'workout_%'`` also matches
-    ``workoutX``. ``core.daily_story`` documents the same trap.
-    """
-    return or_(
-        *[DataPoint.metric_type.startswith(prefix, autoescape=True) for prefix in EVENT_PREFIXES]
-    )
 
 
 def _untagged():
@@ -124,7 +114,7 @@ async def _groups(
                 DataPoint.timestamp,
             ).where(
                 DataPoint.tenant_id == tenant_id,
-                _event_metric_predicate(),
+                session_metric_predicate(),
                 _untagged(),
             )
         )

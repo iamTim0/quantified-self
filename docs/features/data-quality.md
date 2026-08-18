@@ -10,6 +10,7 @@ for analysis.
 | Data gaps | Days without a value, for metrics that are expected daily (see below) | Check the connector, renew the token, or start the sync again. |
 | Source conflicts | Values for the same metric differ noticeably between sources | [Pick a primary source](metric-source-selection.md), or check the units. |
 | Not yet supported | Fields a connector receives and this platform does not store | Copy the shape-only report, or resolve a held metric below. |
+| Now supported | Fields that used to arrive unstored and are stored now | Nothing — the missed period is re-imported automatically where the provider can still be asked for it. |
 | Held for decision | Point values whose metric name is not yet recognised | Map, adopt, discard or keep the connector-specific name. |
 
 The gap scan and the conflict scan walk the workspace's history, so they are not computed
@@ -74,6 +75,75 @@ takes the observations with it.
 
 **Copy report** produces a Markdown block of field names, types and counts — no values, no
 identifiers — ready to paste into an issue.
+
+### Is it supported *now*?
+
+A field leaving the unsupported list is not, by itself, an answer. It is
+indistinguishable from a field that simply stopped arriving — and the question a user
+comes back with is the other one: *the thing I reported as missing, does it work now?*
+
+`supported_since` records the transition. It is set once, by the same upsert, at the
+moment a row's `metric_type` goes from `NULL` to a name, and never cleared. The
+**Now supported** panel lists those transitions from the last 90 days.
+
+!!! info "Re-checking is a property of importing, not of a sweep"
+    Whether a provider field maps to a metric is decided by that provider's
+    transformer, which lives in the importer. Core holds no such table and could not
+    evaluate it, so there is no server-side job that could re-check support on a
+    timer.
+
+    It does not need one. Every scheduled import re-reports the field it saw, and the
+    upsert records the transition for free. The list fills itself in as connectors
+    run, which is as often as the data itself is re-checked.
+
+### Recovering what was never stored
+
+Recording the transition says the gap exists. It does not close it: every reading that
+arrived while nothing knew how to store the field is still missing, and support
+arriving today does nothing for yesterday.
+
+So the platform closes it. A sweep in Core (`core.field_backfill`) looks for fields
+that have become supported and whose history has not yet been fetched, and queues a
+**force** import over `unstored_from … unstored_until`. Force rather than smart,
+because the coverage planner considers that period complete — it is, for every metric
+except the ones that were not being stored yet, and coverage counts data points
+without knowing which fields produced them.
+
+It runs on a quarter-hourly tick, holds its own advisory lock so only one replica
+sweeps, and is bounded three ways:
+
+| Bound | Why |
+| --- | --- |
+| Only connectors that can be re-imported | A device-fed or archive-fed connector has no provider to ask. |
+| One import per connector, not per field | An importer release maps a dozen paths at once; that is one provider fetch. |
+| At most 90 days per recovery | Re-fetching a year is the most expensive thing this platform can ask of a provider. A longer gap gets its most recent 90 days and the run records that it was shortened. |
+
+A field is stamped `history_backfilled_at` only once the run is actually queued. A
+connector that was busy stays pending and is picked up on the next sweep — which is
+what keeps "it did not run" distinguishable from "it ran and found nothing".
+
+**Earlier data** in the panel therefore has three states, not two:
+
+- *Being fetched automatically* — recoverable, and the sweep has not reached it yet.
+- *Fetched again on ⟨date⟩* — the force import was queued on that date.
+- *Only on the device that sent it* — nothing here can ask for it again.
+
+The last one is a real distinction rather than a hedge, and it covers more than push
+connectors: a connector fed by an [export archive](../importers/index.md) cannot be
+re-fetched either, because the history is in a file only the user has. That check was
+previously "is this a push type", which is the narrower question, so an archive-fed
+connector was told its history was recoverable and offered a recovery that could
+never run.
+
+The backfill run appears in the import history and the notification bell like any
+other import, marked `field_backfill`, with the reason it was started.
+
+!!! warning "A field could previously be un-supported by one odd payload"
+    The upsert overwrote `metric_type` unconditionally. One import that saw a path in
+    a shape its transformer had no rule for — a provider omitting the field it usually
+    nests under, an entry of an unfamiliar kind — flipped an established mapping back
+    to `NULL`, and the field reappeared under **Not yet supported** while being stored
+    perfectly well. It now uses `coalesce`, so support is only ever gained.
 
 The report is collapsed by default so it does not compete with the active quality indicators.
 It is a live schema report, not a deletion queue: a field leaves the list after an importer

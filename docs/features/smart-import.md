@@ -179,6 +179,19 @@ The dashboard keeps each request row separate. A queued or failed request remain
 own `request_id`, status and message code; it is not replaced by the latest successful run. This
 avoids implying that a request worked when only a later retry produced data.
 
+!!! info "`points_duplicate` is the record, not the log"
+    A duplicate is the idempotency key doing its job — the expected outcome of any
+    re-import — so the consumer counts it per run and logs it at `debug`, not per event
+    at `info`.
+
+    It used to be one `info` line per duplicate, which made the ingest consumer by far
+    the loudest stream in a deployment: 77,000 lines in 48 hours, of which essentially
+    every one said this. Nothing was at risk of filling the disk — Docker rotates at
+    10 MB × 3 — but that is the problem rather than the reassurance, because the
+    rotation window is measured in hours and a genuine error scrolls out of it before
+    anybody looks. `points_duplicate` on the run answers "how much of that import was
+    new" without reading a log at all.
+
 ## How to read it, and its limits
 
 - `confidence: "low"` means the data does not support a reliable statement about ranges. The full

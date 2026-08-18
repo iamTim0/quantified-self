@@ -56,6 +56,73 @@ const CATEGORIES = [
 /** Three measures is what fits a card without turning it into a table. */
 const CARD_MEASURES = 3;
 
+/**
+ * Which three, decided here rather than by the serializer.
+ *
+ * This was `Object.entries(entry.measures).slice(0, 3)`, so which numbers a card
+ * showed was whatever order the JSON happened to arrive in — and nothing marked
+ * that more existed. Two cards side by side could therefore be comparing
+ * different quantities without saying so, which is the sort of quiet wrongness
+ * this codebase treats as worse than a gap.
+ *
+ * The order is by what the session *is*: a run is a distance and a duration, a
+ * lifting session is volume and sets. Anything not listed still appears, after
+ * the listed ones, so a provider sending something unusual does not lose it.
+ */
+const CARD_MEASURE_ORDER: Record<string, readonly string[]> = {
+  strength: [
+    "strength_session_volume",
+    "strength_session_sets",
+    "workout_duration",
+    "strength_session_reps",
+  ],
+  workout: ["workout_duration", "workout_distance", "workout_energy", "workout_heart_rate_avg"],
+};
+
+/** The session's measures, most telling first for its category. */
+function orderedMeasures(
+  measures: Record<string, number>,
+  category: string,
+): [string, number][] {
+  const preferred = CARD_MEASURE_ORDER[category] ?? CARD_MEASURE_ORDER.workout;
+  const rank = (key: string) => {
+    const index = preferred.indexOf(key);
+    return index === -1 ? preferred.length : index;
+  };
+  return Object.entries(measures).sort(([a], [b]) => rank(a) - rank(b));
+}
+
+/**
+ * How the list groups, which follows the range rather than always being days.
+ *
+ * A year of training is roughly two hundred day headings, and a heading per row
+ * is not a grouping. Weeks and months keep the list scannable at the ranges
+ * where a day stops being a useful unit.
+ */
+function groupingFor(days: number): "day" | "week" | "month" {
+  if (days <= 30) return "day";
+  if (days <= 90) return "week";
+  return "month";
+}
+
+/** The Monday of the week a `YYYY-MM-DD` falls in, as another such string. */
+function startOfWeek(day: string): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  // `getUTCDay()` is 0 on Sunday; the ISO week starts on Monday, so Sunday has
+  // to reach six days back rather than none.
+  const offset = (date.getUTCDay() + 6) % 7;
+  date.setUTCDate(date.getUTCDate() - offset);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * How many sessions one request asks for.
+ *
+ * Named rather than inlined because the response's `has_more` is only
+ * interpretable against it: "there are more" is a fact about this number.
+ */
+const SESSION_LIMIT = 100;
+
 export function muscleKey(group: string): MessageKey {
   return `muscle.${group}` as MessageKey;
 }
@@ -117,10 +184,15 @@ interface Props {
 }
 
 export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) {
-  const { t, locale, formatDateTime, formatDay, formatNumber } = useI18n();
+  const { t, locale, formatTime, formatDay, formatNumber } = useI18n();
   const [sessions, setSessions] = useState<WorkoutSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [truncated, setTruncated] = useState(false);
+  // A second, different truncation. `scan_limit_reached` says the server stopped
+  // scanning; `has_more` says the server found more than this request asked for.
+  // Only the first had a banner, so a 365-day range holding 120 sessions showed
+  // the newest 100 and looked complete — the oldest month simply was not there.
+  const [hasMore, setHasMore] = useState(false);
   const [days, setDays] = useState<number>(30);
   const [category, setCategory] = useState<string>("all");
 
@@ -134,7 +206,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
         // evening it happened in rather than to the following UTC day.
         offset_minutes: String(readerOffsetMinutes()),
         category,
-        limit: "100",
+        limit: String(SESSION_LIMIT),
       });
       const response = await apiFetch(`${apiBase}/api/v1/data/workouts?${query}`, {
         cache: "no-store",
@@ -147,6 +219,7 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
       const body: WorkoutListResponse = await response.json();
       setSessions(body.sessions ?? []);
       setTruncated(Boolean(body.scan_limit_reached));
+      setHasMore(Boolean(body.has_more));
     } finally {
       setLoading(false);
     }
@@ -156,52 +229,59 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
     void load();
   }, [load]);
 
+  const grouping = groupingFor(days);
+
   const byDay = useMemo(() => {
     const groups = new Map<string, WorkoutSummary[]>();
     for (const entry of sessions) {
+      // The bucket is still keyed by a *day* — the reader's own, via
+      // `localDayOf` — and widened afterwards. Rounding to a week or a month
+      // first would reintroduce the UTC boundary this function exists to avoid.
       const day = localDayOf(entry.start);
-      const bucket = groups.get(day);
+      const key =
+        grouping === "day" ? day : grouping === "month" ? day.slice(0, 7) : startOfWeek(day);
+      const bucket = groups.get(key);
       if (bucket) bucket.push(entry);
-      else groups.set(day, [entry]);
+      else groups.set(key, [entry]);
     }
     return [...groups.entries()];
-  }, [sessions]);
+  }, [sessions, grouping]);
 
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h2 className="flex items-center gap-2 text-xl font-extrabold text-slate-900">
-          <Dumbbell className="h-5 w-5 text-[#0d5c3a]" />
+        <h2 className="flex items-center gap-2 text-xl font-extrabold text-ink">
+          <Dumbbell className="h-5 w-5 text-brand" />
           {t("workouts.title")}
         </h2>
-        <p className="text-sm text-slate-500">{t("workouts.subtitle")}</p>
+        <p className="text-sm text-ink-muted">{t("workouts.subtitle")}</p>
       </header>
 
       <div className="flex flex-wrap items-center gap-2">
-        <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
+        <div className="flex rounded-xl border border-ok-line bg-ok-soft p-1 text-xs">
           {CATEGORIES.map((option) => (
             <button
               key={option.value}
               onClick={() => setCategory(option.value)}
               className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 category === option.value
-                  ? "bg-[#0d5c3a] text-white shadow-sm"
-                  : "text-emerald-800 hover:text-emerald-950"
+                  ? "bg-brand text-brand-ink shadow-sm"
+                  : "text-ok-ink hover:text-ok-ink"
               }`}
             >
               {t(option.labelKey)}
             </button>
           ))}
         </div>
-        <div className="flex rounded-xl border border-slate-200 bg-slate-50 p-1 text-xs">
+        <div className="flex rounded-xl border border-line bg-page p-1 text-xs">
           {RANGES.map((option) => (
             <button
               key={option.days}
               onClick={() => setDays(option.days)}
               className={`min-h-9 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                 days === option.days
-                  ? "bg-slate-900 text-white shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
+                  ? "bg-inverse text-white shadow-sm"
+                  : "text-ink-muted hover:text-ink"
               }`}
             >
               {t(option.labelKey)}
@@ -211,67 +291,93 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
       </div>
 
       {truncated && (
-        <p className="flex items-start gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <p className="flex items-start gap-2 rounded-2xl border border-warn-line bg-warn-soft p-3 text-xs text-warn-ink">
           <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
           {t("workouts.scanTruncated")}
         </p>
       )}
 
+      {hasMore && (
+        <p className="flex items-start gap-2 rounded-2xl border border-line bg-page p-3 text-xs text-ink-secondary">
+          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          {t("workouts.listTruncated", { count: SESSION_LIMIT })}
+        </p>
+      )}
+
       {loading && sessions.length === 0 ? (
-        <p className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-400">
+        <p className="rounded-3xl border border-line bg-surface p-6 text-sm text-ink-muted">
           {t("workouts.loading")}
         </p>
       ) : sessions.length === 0 ? (
-        <div className="space-y-1 rounded-3xl border border-slate-200 bg-white p-6">
-          <p className="text-sm font-semibold text-slate-700">{t("workouts.empty")}</p>
-          <p className="text-xs text-slate-500">{t("workouts.emptyHint")}</p>
+        <div className="space-y-1 rounded-3xl border border-line bg-surface p-6">
+          <p className="text-sm font-semibold text-ink-secondary">{t("workouts.empty")}</p>
+          <p className="text-xs text-ink-muted">{t("workouts.emptyHint")}</p>
         </div>
       ) : (
         <div className="space-y-6">
           {byDay.map(([day, entries]) => (
             <section key={day} className="space-y-2">
-              <h3 className="text-xs font-bold uppercase tracking-wide text-slate-400">
+              <h3 className="text-xs font-bold uppercase tracking-wide text-ink-muted">
                 {/* `formatDay`, not `formatDate`: a date-only string parses as UTC
                     midnight and shows the previous day to any reader west of UTC. */}
-                {formatDay(day)}
+                {grouping === "day"
+                  ? formatDay(day)
+                  : grouping === "week"
+                    ? t("workouts.weekOf", { date: formatDay(day) })
+                    : formatDay(`${day}-01`)}
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {entries.map((entry) => {
-                  const measures = Object.entries(entry.measures).slice(0, CARD_MEASURES);
+                  const ordered = orderedMeasures(entry.measures, entry.category);
+                  const measures = ordered.slice(0, CARD_MEASURES);
+                  const hiddenMeasures = ordered.length - measures.length;
                   return (
                     <button
                       key={entry.session_key}
                       onClick={() => onOpen(entry.session_key)}
-                      className="glass-card flex min-h-24 flex-col gap-2 rounded-2xl border border-slate-200/80 bg-white p-4 text-left shadow-sm transition-shadow hover:shadow-md"
+                      className="glass-card flex min-h-24 flex-col gap-2 rounded-2xl border border-line bg-surface p-4 text-left shadow-sm transition-shadow hover:shadow-md"
                     >
                       <div className="flex min-w-0 items-start justify-between gap-2">
-                        <span className="truncate text-sm font-bold text-slate-900">
+                        <span className="truncate text-sm font-bold text-ink">
                           {entry.title || t(categoryLabel(entry.category))}
                         </span>
-                        <span className="shrink-0 text-[11px] text-slate-400">
-                          {formatDateTime(entry.start).slice(-5)}
+                        {/* `formatTime`, not the last five characters of a
+                            localized datetime. `slice(-5)` assumed every locale
+                            ends in `HH:MM` — true for German (`17.08.2026,
+                            15:45`), false for English, whose 12-hour form ends
+                            in `…5 PM`, so the card advertised `45 PM` as the
+                            start of the session. */}
+                        <span className="shrink-0 text-meta text-ink-muted">
+                          {formatTime(entry.start)}
                         </span>
                       </div>
 
-                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                      <div className="flex flex-wrap gap-x-3 gap-y-1 text-meta text-ink-muted">
                         {measures.map(([metric, value]) => {
                           const described = describeMetric(metric, locale);
                           return (
                             <span key={metric} className="flex items-center gap-1">
-                              <span className="font-semibold text-slate-800">
+                              <span className="font-semibold text-ink-secondary">
                                 {formatNumber(value, {
                                   maximumFractionDigits: described.precision,
                                 })}
                               </span>
-                              <span className="text-slate-400">
+                              <span className="text-ink-muted">
                                 {described.unit || described.label}
                               </span>
                             </span>
                           );
                         })}
+                        {/* Says that the card is a summary. Three of five with
+                            nothing to mark it is a card that looks complete. */}
+                        {hiddenMeasures > 0 && (
+                          <span className="text-ink-muted">
+                            {t("workouts.moreMeasures", { count: hiddenMeasures })}
+                          </span>
+                        )}
                       </div>
 
-                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400">
+                      <div className="flex flex-wrap items-center gap-2 text-meta text-ink-muted">
                         {entry.exercise_count > 0 && (
                           <span className="flex items-center gap-1">
                             <Timer className="h-3 w-3" />
@@ -288,14 +394,14 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
                         {entry.muscle_groups.map((group) => (
                           <span
                             key={group}
-                            className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600"
+                            className="rounded-full bg-surface-muted px-2 py-0.5 text-ink-muted"
                           >
                             {t(muscleKey(group))}
                           </span>
                         ))}
                         {entry.identity === "timestamp_title" && (
                           <span
-                            className="flex items-center gap-1 text-amber-700"
+                            className="flex items-center gap-1 text-warn-ink"
                             title={t("workouts.approximateHint")}
                           >
                             <Info className="h-3 w-3" />

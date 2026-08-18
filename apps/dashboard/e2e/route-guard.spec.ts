@@ -78,7 +78,11 @@ test.describe("route guard", () => {
 
     await page.getByRole("button", { name: "Workouts" }).first().click();
     await expect(page).toHaveURL(/\/workouts$/);
-    await expect(page.getByRole("heading", { name: "Workouts" })).toBeVisible();
+    // `level: 2` — the tab's own heading. The shell header now carries an `h1`
+    // with the same text, so matching on the name alone finds two; and the `h1`
+    // is derived from the route, so asserting on it would prove only that the
+    // URL changed, which the line above already does. The `h2` is the page.
+    await expect(page.getByRole("heading", { name: "Workouts", level: 2 })).toBeVisible();
   });
 
   test("the selected theme survives a reload", async ({ page, request }) => {
@@ -86,6 +90,10 @@ test.describe("route guard", () => {
     await signUp(request, account);
     await signIn(page, account);
 
+    // The theme switcher lives in Settings, not in the header: it is set once
+    // and then never again, which is not what belongs above every screen.
+    await page.getByRole("button", { name: "Settings" }).first().click();
+    await expect(page).toHaveURL(/\/profile$/);
     await page.getByRole("button", { name: "Dark" }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
     await page.reload();

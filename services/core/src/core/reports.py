@@ -44,7 +44,7 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from shared_schemas.metrics import METRIC_CATALOG, Cadence
-from sqlalchemy import func, select, update
+from sqlalchemy import Integer, case, cast, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.analytics import (
@@ -99,12 +99,45 @@ SOURCE_REASONS: frozenset[str] = frozenset(
 #: it crashed, or the Analysis Service never answered. Without this one lost run
 #: would block a kind forever, which is the failure the sync scheduler already
 #: learned (`core.scheduler.STALE_RUN_AFTER`).
+#:
+#: This is the allowance for a run over :data:`REFERENCE_WINDOW_DAYS`. A larger
+#: window gets proportionally longer — see :func:`stale_after_interval`.
 STALE_RUN_AFTER = timedelta(minutes=30)
+
+#: The window `STALE_RUN_AFTER` is the allowance for. The dashboard's default, so
+#: today's behaviour is unchanged for the window most runs actually use.
+REFERENCE_WINDOW_DAYS = 90
+
+#: The ceiling however large a window is asked for. A run that has been going for
+#: two hours is not slow, it is gone, and the point of failing it is to stop one
+#: lost run blocking its kind forever.
+MAX_STALE_RUN_AFTER = timedelta(hours=2)
 
 #: How stale a report may get with no new data at all. New data is the normal
 #: trigger; this is the backstop that catches a report whose *inputs* changed
 #: without an import — a mapping rule adopted, a connector deleted.
 MAX_REPORT_AGE = timedelta(hours=12)
+
+#: A scheduled recompute over a window longer than this waits for a quiet hour.
+#:
+#: The dashboard's own default is 90 days, so everything a reader sees without
+#: choosing anything is unaffected — this is about the 180- and 365-day windows,
+#: which read years of a workspace's history to redraw a page that was already
+#: correct. Nothing here touches an on-demand run: asking for one is a statement
+#: that you want it now.
+DEFER_WINDOW_OVER_DAYS = REFERENCE_WINDOW_DAYS
+
+#: The reader's *local* hours a deferred recompute may start in, as [start, end).
+#: Local, because the point is that it happens while nobody is looking, and which
+#: hours those are is a fact about the reader and not about the server.
+QUIET_HOUR_START = 1
+QUIET_HOUR_END = 5
+
+#: However long the quiet hour fails to arrive. A Core that was down all night, a
+#: laptop whose clock offset changed, a workspace read from two time zones — none
+#: of those should mean "never". Comfortably longer than a day, so it only fires
+#: when a night has genuinely been missed rather than merely been late.
+MAX_DEFERRAL = timedelta(hours=36)
 
 #: Default window for the gap scan, in days. The reader can ask for another, but
 #: a scheduled run has to pick one, and this is what the dashboard opens with.
@@ -294,22 +327,62 @@ async def latest_failed_report(
     ).scalars().first()
 
 
+def stale_after_interval():
+    """How long a run may take, from what it was asked to compute.
+
+    A flat thirty minutes gave a 365-day insights bundle the same allowance as a
+    90-day one, though it reads four times the history. Whatever the right absolute
+    number turns out to be, a *constant* is the wrong shape: the only run the flat
+    value was ever calibrated against is the default window.
+
+    So the allowance scales with `params.days` and is clamped at both ends. A
+    90-day run keeps exactly the allowance it has today — this cannot shorten
+    anything — and a kind that states no window (the gap, conflict and day reports,
+    all computed inside Core in seconds) falls back to the reference and is
+    unaffected.
+
+    Expressed in SQL because the caller is one bulk `UPDATE` across every tenant,
+    and pulling the runs into Python to divide a number would turn a single
+    statement into a scan.
+    """
+    stated = case(
+        (
+            func.jsonb_typeof(ReportRun.params.op("->")("days")) == "number",
+            cast(ReportRun.params.op("->>")("days"), Integer),
+        ),
+        else_=None,
+    )
+    window = func.greatest(func.coalesce(stated, REFERENCE_WINDOW_DAYS), 1)
+    seconds = STALE_RUN_AFTER.total_seconds() * window / REFERENCE_WINDOW_DAYS
+    bounded = func.least(
+        func.greatest(seconds, STALE_RUN_AFTER.total_seconds()),
+        MAX_STALE_RUN_AFTER.total_seconds(),
+    )
+    return func.make_interval(0, 0, 0, 0, 0, 0, bounded)
+
 async def has_in_flight_report(
     session: AsyncSession, tenant_id: str, kind: str, *, now: datetime
 ) -> bool:
-    """Is a run for this tenant and kind already queued or running (and not stale)?"""
-    cutoff = now - STALE_RUN_AFTER
+    """Is a run for this tenant and kind already queued or running (and not stale)?
+
+    The same allowance `expire_stale_report_runs` uses, and it has to be: if this
+    called a run stale at thirty minutes while the sweep still allowed it two hours,
+    a click in minute thirty-one would queue a second run alongside the first — the
+    "row of impatient clicks becomes a row of identical scans" that this guard exists
+    to prevent, reappearing precisely for the long windows that take longest.
+    """
     found = await session.scalar(
         select(ReportRun.id)
         .where(
             ReportRun.tenant_id == tenant_id,
             ReportRun.kind == kind,
             ReportRun.status.in_(IN_FLIGHT_STATUSES),
-            ReportRun.started_at >= cutoff,
+            ReportRun.started_at >= now - stale_after_interval(),
         )
         .limit(1)
     )
     return found is not None
+
 
 
 async def expire_stale_report_runs(
@@ -321,20 +394,50 @@ async def expire_stale_report_runs(
     The caller is a cross-tenant worker and already holds the tenant list, so
     there is nothing to gain from an unqualified UPDATE and rule 2 admits no
     exceptions — a write that names no tenant is one nobody can reason about.
+
+    **Two different failures, two different codes.** Both used to be
+    `report_timeout`, and they are not the same event:
+
+    - A run still `queued` was never claimed. Nothing computed it, because the
+      Analysis Service is down, is not reachable over gRPC, or has
+      `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped, and the
+      operator has to restart something.
+    - A run that reached `running` *was* claimed and did not finish in time. That
+      one is about the work: either the window is genuinely too large or the worker
+      died mid-computation.
+
+    Telling a reader "the report did not complete before the run timeout" when in
+    fact no worker ever existed sends them looking for a slow query that is not
+    there. `insights` is the only kind Core does not compute itself, so it is the
+    only kind that can be queued and abandoned — which is exactly why this was the
+    one message anybody ever saw.
     """
     if not tenant_ids:
         return 0
+    never_claimed = ReportRun.status == "queued"
     result = await session.execute(
         update(ReportRun)
         .where(
             ReportRun.tenant_id.in_(tenant_ids),
             ReportRun.status.in_(IN_FLIGHT_STATUSES),
-            ReportRun.started_at < now - STALE_RUN_AFTER,
+            ReportRun.started_at < now - stale_after_interval(),
         )
         .values(
             status="error",
-            message="The report did not complete before the run timeout.",
-            message_code="report_timeout",
+            message=case(
+                (
+                    never_claimed,
+                    (
+                        "No analysis worker claimed this report. The Analysis "
+                        "Service may be stopped or unreachable."
+                    ),
+                ),
+                else_="The report did not complete before the run timeout.",
+            ),
+            message_code=case(
+                (never_claimed, "report_never_claimed"),
+                else_="report_timeout",
+            ),
             message_params={},
             finished_at=now,
         )
@@ -387,6 +490,79 @@ def report_is_stale(run: ReportRun | None, high_water: datetime | None) -> bool:
     return datetime.now(timezone.utc) - run.finished_at >= MAX_REPORT_AGE
 
 
+def window_days(params: dict[str, Any] | None) -> int | None:
+    """The window a run was asked for, when it names one.
+
+    `None` rather than a default: a kind that takes no window at all — the day
+    report answers for one day — must not be treated as having a small one, and a
+    default would make "not applicable" and "90" the same value.
+    """
+    raw = (params or {}).get("days")
+    if raw is None:
+        return None
+    try:
+        days = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return days if days > 0 else None
+
+
+def reader_local_hour(now: datetime, params: dict[str, Any] | None) -> int | None:
+    """The hour of the clock the reader of this report is looking at.
+
+    `None` when the run does not record an offset, which is the honest answer for
+    a run stored before the dashboard sent one. A guess would be worse than an
+    absence: at UTC+12, treating UTC as local puts "the middle of the night" in
+    the middle of the afternoon.
+    """
+    raw = (params or {}).get("offset_minutes")
+    if raw is None:
+        return None
+    try:
+        offset = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if abs(offset) > 14 * 60:
+        return None
+    return (now + timedelta(minutes=offset)).hour
+
+
+def defer_to_quiet_hours(
+    latest: ReportRun | None, params: dict[str, Any] | None, *, now: datetime
+) -> bool:
+    """Whether this scheduled recompute should wait for the reader's night.
+
+    A 365-day insights run reads a workspace's whole history to redraw a page that
+    is already on screen and already correct. Doing that the moment an import lands
+    spends the most expensive computation the platform has at the time it is most
+    in the way, and the result differs from the one on screen by one day in three
+    hundred and sixty-five.
+
+    Four things stop this becoming "the report is never fresh":
+
+    * only windows longer than `DEFER_WINDOW_OVER_DAYS`, so every default is
+      unaffected;
+    * never when there is no result yet — a reader with an empty page is waiting
+      for a first answer, not for a tidier schedule;
+    * never past `MAX_DEFERRAL`, so a night that does not arrive delays a report
+      rather than cancelling it;
+    * never for a run the reader asked for. This is `find_due_reports` only; a
+      refresh is a statement that you want it now, and it is why deferring is
+      reasonable at all.
+    """
+    days = window_days(params)
+    if days is None or days <= DEFER_WINDOW_OVER_DAYS:
+        return False
+    if latest is None or latest.finished_at is None:
+        return False
+    if now - latest.finished_at >= MAX_DEFERRAL:
+        return False
+    hour = reader_local_hour(now, params)
+    if hour is None:
+        return False
+    return not (QUIET_HOUR_START <= hour < QUIET_HOUR_END)
+
+
 async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueReport]:
     """Every tenant/kind pair whose report needs recomputing.
 
@@ -423,7 +599,8 @@ async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueR
                 select(ReportRun.tenant_id, ReportRun.kind).where(
                     ReportRun.tenant_id.in_(tenant_ids),
                     ReportRun.status.in_(IN_FLIGHT_STATUSES),
-                    ReportRun.started_at >= now - STALE_RUN_AFTER,
+                    # Same allowance as the sweep above, for the same reason.
+                    ReportRun.started_at >= now - stale_after_interval(),
                 )
             )
         ).all()
@@ -461,6 +638,12 @@ async def find_due_reports(session: AsyncSession, *, now: datetime) -> list[DueR
                 continue
             latest = latest_by_key.get((tenant_id, kind))
             if not report_is_stale(latest, high_water):
+                continue
+            # Stale and worth recomputing, but not necessarily right now: a window
+            # of years waits for the reader's night. Checked after staleness so a
+            # deferred report keeps being offered every tick until a quiet hour
+            # arrives, rather than being consumed by the first tick that saw it.
+            if defer_to_quiet_hours(latest, dict(latest.params or {}) if latest else {}, now=now):
                 continue
             reason = "no_report" if latest is None else (
                 "new_data"
@@ -915,12 +1098,18 @@ def report_payload(
     *,
     stale: bool,
     error: ReportRun | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """The wire shape of a stored report.
 
     `computed_at` and `stale` travel with the result on purpose: a reader shown a
     precomputed number is entitled to know when it was true, and a number with no
     date on it is the reason on-the-fly computation felt safer than it was.
+
+    `deferred` is the same courtesy applied to the other direction. A long-window
+    report that is stale and waiting for a quiet hour looks, without it, exactly
+    like one the scheduler has forgotten — and "stale" invites a reader to press
+    refresh over and over for something that was already going to happen.
     """
     if run is None:
         payload: dict[str, Any] = {
@@ -942,6 +1131,9 @@ def report_payload(
             "params": run.params or {},
             "result": run.payload,
         }
+    payload["deferred"] = stale and defer_to_quiet_hours(
+        run, dict(run.params or {}) if run else {}, now=now or datetime.now(timezone.utc)
+    )
     payload["error"] = (
         {
             "code": error.message_code or "report_failed",

@@ -8,6 +8,8 @@ const REPORT_ERROR_KEYS: Record<string, MessageKey> = {
   insights_failed: "report.error.insights_failed",
   report_load_failed: "report.error.report_load_failed",
   report_refresh_failed: "report.error.report_refresh_failed",
+  report_timeout: "report.error.report_timeout",
+  report_never_claimed: "report.error.report_never_claimed",
 };
 
 /**
@@ -21,6 +23,7 @@ const REPORT_ERROR_KEYS: Record<string, MessageKey> = {
 export default function ReportStatus({
   computedAt,
   stale,
+  deferred = false,
   running,
   neverComputed,
   error,
@@ -28,6 +31,13 @@ export default function ReportStatus({
 }: {
   computedAt: string | null;
   stale: boolean;
+  /**
+   * Stale on purpose: a window of years is recomputed overnight rather than the
+   * moment an import lands. Without saying so, "outdated" reads as "forgotten"
+   * and invites the reader to press recompute for something already scheduled —
+   * which starts the very run the deferral moved out of their way.
+   */
+  deferred?: boolean;
   running: boolean;
   neverComputed: boolean;
   error?: {
@@ -54,7 +64,7 @@ export default function ReportStatus({
     : null;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
       {running ? (
         <span className="inline-flex items-center gap-1.5">
           <RefreshCw className="h-3 w-3 animate-spin" aria-hidden="true" />
@@ -71,22 +81,31 @@ export default function ReportStatus({
       )}
 
       {error && !running ? (
-        <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800 dark:bg-red-500/15 dark:text-red-300">
+        <span className="rounded-full bg-danger-soft px-2 py-0.5 font-medium text-danger-ink-on-soft">
           {errorText}
         </span>
       ) : null}
 
       {stale && !running && !neverComputed ? (
-        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-          {t("report.stale")}
-        </span>
+        deferred ? (
+          <span
+            className="rounded-full bg-surface-muted px-2 py-0.5 font-medium text-ink-muted"
+            title={t("report.deferredTitle")}
+          >
+            {t("report.deferred")}
+          </span>
+        ) : (
+          <span className="rounded-full bg-warn-soft px-2 py-0.5 font-medium text-warn-ink">
+            {t("report.stale")}
+          </span>
+        )
       ) : null}
 
       <button
         type="button"
         onClick={onRefresh}
         disabled={running}
-        className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 px-2 py-1 font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-800"
+        className="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-line px-3 py-1 font-medium text-ink-secondary transition-colors hover:bg-surface-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         <RefreshCw className="h-3 w-3" aria-hidden="true" />
         {t("report.recompute")}

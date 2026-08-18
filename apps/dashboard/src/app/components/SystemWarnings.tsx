@@ -56,18 +56,18 @@ const INGESTION_PENDING_ERROR = "ingestion_reset_pending_events";
 
 const STYLES: Record<Severity, { box: string; icon: React.ReactNode; label: MessageKey }> = {
   critical: {
-    box: "border-rose-300 bg-rose-50 text-rose-950",
-    icon: <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" aria-hidden />,
+    box: "border-danger-line bg-danger-soft text-danger-ink-on-soft",
+    icon: <ShieldAlert className="w-5 h-5 text-danger-ink-on-soft shrink-0" aria-hidden />,
     label: "warnings.severity.critical",
   },
   warning: {
-    box: "border-amber-300 bg-amber-50 text-amber-950",
-    icon: <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" aria-hidden />,
+    box: "border-warn-line bg-warn-soft text-warn-ink",
+    icon: <AlertTriangle className="w-5 h-5 text-warn shrink-0" aria-hidden />,
     label: "warnings.severity.warning",
   },
   info: {
-    box: "border-slate-300 bg-slate-50 text-slate-800",
-    icon: <Info className="w-5 h-5 text-slate-500 shrink-0" aria-hidden />,
+    box: "border-line bg-page text-ink-secondary",
+    icon: <Info className="w-5 h-5 text-ink-muted shrink-0" aria-hidden />,
     label: "warnings.severity.info",
   },
 };
@@ -92,7 +92,7 @@ function field(
 ): string {
   const key = `warning.${warning.code}.${part}`;
   if (!(key in en)) return fallback;
-  return t(key as MessageKey, { generate: GENERATE_SECRET, ...(warning.params ?? {}) });
+  return t(key as MessageKey, { generate: GENERATE_SECRET, ...warning.params });
 }
 
 /** Where a dismissal is remembered, and for how long. */
@@ -285,7 +285,7 @@ export default function SystemWarnings({
               {style.icon}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase tracking-widest opacity-70">
+                  <span className="text-meta font-bold uppercase tracking-widest">
                     {t(style.label)}
                   </span>
                   <h3 className="text-sm font-bold">{field(t, w, "title", w.title)}</h3>
@@ -296,7 +296,7 @@ export default function SystemWarnings({
                 <p className="mt-2 text-sm font-semibold">
                   {/* The action is a command or a setting, not advice, so it is
                       rendered as something you can copy. */}
-                  <code className="rounded bg-white/70 px-1.5 py-0.5 font-mono text-[12px] break-all">
+                  <code className="break-words rounded bg-surface/70 px-1.5 py-0.5 font-mono text-meta">
                     {field(t, w, "action", w.action)}
                   </code>
                 </p>
@@ -305,7 +305,7 @@ export default function SystemWarnings({
                     href={w.docs}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-2 inline-block text-xs font-semibold underline underline-offset-2 opacity-80 hover:opacity-100"
+                    className="mt-2 inline-block text-xs font-semibold underline underline-offset-2"
                   >
                     {t("warnings.openDocs")}
                   </a>
@@ -315,7 +315,10 @@ export default function SystemWarnings({
                 <button
                   type="button"
                   onClick={() => dismissCode(w.code)}
-                  className="shrink-0 rounded-lg p-1 opacity-50 transition-opacity hover:opacity-100"
+                  // 44x44 like every other dismiss in the app. `p-1` around a
+                  // 16px icon made this 24x24 — the same defect the connector and
+                  // import dialogs were fixed for, missed on this one surface.
+                  className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg opacity-50 transition-opacity hover:opacity-100"
                   aria-label={t("warnings.dismiss")}
                   title={t("warnings.dismissTitle")}
                 >
@@ -333,7 +336,7 @@ export default function SystemWarnings({
                   </p>
                   <button
                     type="button"
-                    className="mt-3 inline-flex items-center gap-2 rounded-xl bg-slate-950 px-3.5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="mt-3 inline-flex min-h-11 items-center gap-2 rounded-xl bg-code px-3.5 py-2 text-sm font-semibold text-code-ink disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => void resetIngestion()}
                     disabled={resetState === "busy" || resetState === "success"}
                   >
@@ -356,7 +359,7 @@ export default function SystemWarnings({
 
                   {resetState === "error" && resetError && (
                     <div
-                      className="mt-3 rounded-xl border border-rose-300 bg-rose-100/70 px-3 py-2 text-sm"
+                      className="mt-3 rounded-xl border border-danger-line bg-danger-soft px-3 py-2 text-sm"
                       data-reset-error-code={resetError.code}
                       data-num-pending={resetError.numPending}
                       data-num-ack-pending={resetError.numAckPending}

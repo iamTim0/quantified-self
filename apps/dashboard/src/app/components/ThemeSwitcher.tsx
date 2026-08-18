@@ -26,7 +26,7 @@ export default function ThemeSwitcher() {
     <div
       role="group"
       aria-label={t("theme.label")}
-      className="inline-flex h-11 shrink-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+      className="inline-flex h-11 shrink-0 overflow-hidden rounded-2xl border border-line bg-surface shadow-sm"
     >
       {THEMES.map((candidate) => {
         const Icon = THEME_ICON[candidate];
@@ -41,10 +41,10 @@ export default function ThemeSwitcher() {
             aria-label={label}
             title={label}
             className={[
-              "inline-flex h-full items-center justify-center gap-1 px-2.5 text-[11px] font-bold transition-colors",
+              "inline-flex h-full items-center justify-center gap-1 px-2.5 text-meta font-bold transition-colors",
               active
-                ? "bg-[#0d5c3a] text-white"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
+                ? "bg-brand text-brand-ink"
+                : "text-ink-muted hover:bg-page hover:text-ink",
             ].join(" ")}
           >
             <Icon className="h-3.5 w-3.5" aria-hidden="true" />

@@ -1,5 +1,45 @@
 @import "tailwindcss";
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/*
+ * True only in an installed app.
+ *
+ * Standalone mode removes the browser's own chrome, which takes two things with
+ * it that the web version could rely on: the reload button and, on iOS, any
+ * visible way back. So a handful of affordances are added back *only* here
+ * rather than being carried permanently by every visitor who never installs.
+ */
+@custom-variant standalone (@media (display-mode: standalone));
+
+/*
+  Thumb-sized targets, on the devices aimed at with a thumb.
+
+  `docs/features/dashboard-appearance.md` states 44x44 as the goal, and about forty
+  controls across the Explorer, Workouts, Quality, Connectors and Profile screens sat
+  between 28 and 42 — the filter chips, the view tabs, the segmented ranges. Raising
+  each one everywhere was the obvious fix and the wrong one: those rows are dense on
+  purpose, and 44px of height per chip makes a desktop filter bar into a toolbar.
+
+  The requirement is about fingers. WCAG 2.5.5 asks 44x44 at AAA; the AA floor is
+  2.5.8's 24x24, which this app clears everywhere and which the browser suite enforces
+  as a hard gate. So the enlargement is scoped to `pointer: coarse` — a touchscreen —
+  where a 30px chip genuinely is hard to hit, and pointer devices keep their density.
+
+  Deliberately only `button` and `select`. Not links: an underlined link inside a
+  sentence cannot gain height without becoming a button, which 2.5.8 exempts for that
+  reason. Not `[role="button"]`, because those are composed elements whose height is
+  usually set by a parent that would fight this.
+*/
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 2.75rem;
+    /* Width as well as height, or an icon-only button stays a 28px-wide sliver that
+       is merely tall — which is what the first version of this rule produced on the
+       Explorer's three chart-type toggles. A text button is already wider than this,
+       so the floor only ever bites where it should. */
+    min-width: 2.75rem;
+  }
+}
 /* Self-hosted so the map needs no third-party script or stylesheet. The former
    unpkg.com CDN load was blocked by our own CSP, which left the map a grey box. */
 @import "leaflet/dist/leaflet.css";
@@ -94,16 +134,106 @@
   --secondary: #f1f5f9;
   --secondary-foreground: #0f172a;
   --muted: #f1f5f9;
-  --muted-foreground: #64748b;
+  --muted-foreground: #475569;
+  /*
+   * Two more text roles, so "how loud is this text" stops being answered with a
+   * slate number picked per component.
+   *
+   * `--ink-faint` exists to be used on **non-text**: dividers, decorative icons,
+   * a chevron. It is 2.56:1 on white, which is below the 4.5:1 WCAG 1.4.3 asks
+   * of body text and below the 3:1 it asks of meaningful graphics — that is why
+   * it is named for its weakness rather than for a slate step. Anything that is
+   * a word or a number takes `--muted-foreground` (4.71:1) at the very least.
+   */
+  --ink-secondary: #334155;
+  --ink-faint: #94a3b8;
+  /* The page behind the cards, distinct from a card's own surface. */
+  --page: #f8fafc;
+  /*
+   * Status, as four-part sets rather than as whichever Tailwind step looked
+   * right that afternoon.
+   *
+   * `soft` is the tinted background, `ink` the text that sits on it, `line` its
+   * border, and the bare name the saturated colour for an icon or a bar. The
+   * dark values below are the ones the `!important` shim was already resolving
+   * these to — written as tokens instead of as selectors, which is the whole
+   * difference between a palette and a patch.
+   */
+  --ok: #047857;
+  --ok-soft: #d1fae5;
+  --ok-ink: #065f46;
+  --ok-line: #a7f3d0;
+  --warn: #b45309;
+  --warn-soft: #fef3c7;
+  --warn-ink: #92400e;
+  --warn-line: #fde68a;
+  --danger-soft: #fee2e2;
+  --danger-ink-on-soft: #991b1b;
+  --danger-line: #fecaca;
+  --info: #1d4ed8;
+  --info-soft: #dbeafe;
+  --info-ink: #1e40af;
+  --info-line: #bfdbfe;
+  /*
+   * One hue per connector, and deliberately not a status colour.
+   *
+   * These are the provider gallery's icon tints. They carry no meaning beyond
+   * "these are different things", which is exactly why they need naming: the
+   * first pass of the token migration read Apple Health's red as `danger` and
+   * GitHub's slate as `ink-secondary`, turning a decorative palette into
+   * assertions the interface does not make. A set that has no semantics still
+   * has to be written down, or the next sweep makes the same guess.
+   *
+   * Only `github` differs by theme, because its mark is achromatic and would
+   * otherwise vanish into whichever background it sits on.
+   */
+  --provider-yazio: #d97706;
+  --provider-whoop: #dc2626;
+  --provider-apple: #e11d48;
+  --provider-dawarich: #059669;
+  --provider-home: #0284c7;
+  --provider-weather: #ea580c;
+  --provider-calendar: #7c3aed;
+  --provider-github: #334155;
+  /*
+   * The two fixed bars' heights, as tokens.
+   *
+   * Three places need to agree on the tab bar's height — the bar itself, the
+   * scroll padding that keeps focus clear of it, and the upload banner that sits
+   * above it. They used to agree by three separate hand-written constants
+   * (`min-h-14`, `pb-[calc(6rem+…)]`, `bottom-[calc(4.5rem+…)]`), which is to say
+   * they agreed until one of them changed.
+   */
+  --header-h: 3.5rem;
+  --tabbar-h: 3.5rem;
   --accent: #10b981;
   --accent-light: #d1fae5;
   --accent-foreground: #047857;
-  --destructive: #ef4444;
+  --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #e2e8f0;
   --input: #e2e8f0;
   --ring: #0d5c3a;
   --radius: 1.25rem;
+  /* A code block is dark in the light theme by convention, so it needs its own
+     pair rather than one of the surface tokens. */
+  --code: #0f172a;
+  --code-foreground: #e2e8f0;
+  /* The single-series colour for stream charts. A hue, not a surface, so it gets
+     its own pair: `--accent` is the brand green and a heart-rate trace is not a
+     brand statement. This is the strong blue `AnalysisTab` documents, which
+     passes the palette validator against `--card` in this theme. */
+  --chart-series: #1d4ed8;
+  --chart-series-band: rgba(29, 78, 216, 0.14);
+  /*
+   * A surface that is dark in the light theme on purpose — a tooltip, a solid
+   * action button, the backdrop behind a dialog. Not `--card` at a different
+   * lightness: these are meant to read as *not* the page, so they keep their own
+   * pair and move little between themes.
+   */
+  --inverse: #0f172a;
+  --inverse-ink: #f8fafc;
+  --scrim: rgb(15 23 42 / 0.6);
 }
 
 [data-theme="dark"] {
@@ -121,6 +251,38 @@
   --secondary-foreground: #e5edf7;
   --muted: #18263b;
   --muted-foreground: #9fb0c6;
+  /* The values the `!important` shim already resolves `text-slate-700` and
+     `text-slate-400` to in this palette, promoted to tokens so a component can
+     ask for the role instead of a slate step the shim then has to intercept. */
+  --ink-secondary: #d7e3f1;
+  --ink-faint: #8295ad;
+  --page: #0b1220;
+  /* The shim's own dark values, promoted. `soft` backgrounds are dark tints,
+     `ink` the light text that reads on them. */
+  --ok: #34d399;
+  --ok-soft: #123c31;
+  --ok-ink: #9ce8c8;
+  --ok-line: #1c5c47;
+  --warn: #fbbf24;
+  --warn-soft: #3c2d16;
+  --warn-ink: #f6d58b;
+  --warn-line: #5c4520;
+  --danger-soft: #3b1d2a;
+  --danger-ink-on-soft: #fda4af;
+  --danger-line: #6b2a3c;
+  --info: #60a5fa;
+  --info-soft: #16294a;
+  --info-ink: #bfdbfe;
+  --info-line: #27406b;
+  /* Lightened so each stays legible on a dark card; `github` inverts outright. */
+  --provider-yazio: #fbbf24;
+  --provider-whoop: #f87171;
+  --provider-apple: #fb7185;
+  --provider-dawarich: #34d399;
+  --provider-home: #38bdf8;
+  --provider-weather: #fb923c;
+  --provider-calendar: #a78bfa;
+  --provider-github: #d7e3f1;
   --accent: #34d399;
   --accent-light: #123c31;
   --accent-foreground: #6ee7b7;
@@ -129,12 +291,149 @@
   --border: #2b3d56;
   --input: #2b3d56;
   --ring: #34d399;
+  /* Below `--card`, not above it: a code block sitting on a card has to read as
+     recessed. `#0f172a` — the light theme's value — is within a few percent of
+     `--card` here, which is why code blocks lost all definition in dark. */
+  --code: #060e1b;
+  --code-foreground: #d7e3f1;
+  /* Lighter, because the light theme's `#1d4ed8` sits at roughly 1.6:1 against
+     `--card` here — a trace the reader has to hunt for on the palette where the
+     chart is otherwise most legible. */
+  --chart-series: #60a5fa;
+  --chart-series-band: rgba(96, 165, 250, 0.18);
+  /* Slightly *lighter* than the light theme's: an inverse surface on a dark page
+     still has to separate from it, so it moves up rather than down. */
+  --inverse: #1e2c44;
+  --inverse-ink: #f1f5f9;
+  --scrim: rgb(2 6 15 / 0.7);
+}
+
+/*
+ * The tokens above, as Tailwind utilities.
+ *
+ * `@theme inline` rather than `@theme`: the values are `var(…)` references that
+ * change under `[data-theme="dark"]`, and `inline` is what makes a utility resolve
+ * them where it is used rather than freezing the light value at build time.
+ *
+ * These replaced a block of `[data-theme="dark"] .bg-white { … !important }`
+ * rules that translated Tailwind palette utilities for the dark theme. That shim
+ * could only ever cover the exact class strings somebody thought to list, which
+ * is how `bg-slate-50/60` and `bg-slate-900` stayed near-white and near-invisible
+ * in dark mode while plain `bg-slate-50` was handled — and it could not reach a
+ * colour inside a canvas or an SVG attribute at all.
+ *
+ * A screen written against `bg-surface` / `text-ink` / `bg-brand` follows the
+ * theme by construction, so there is nothing left to enumerate.
+ * `.agents/scripts/check_design_tokens.py` is what keeps it that way.
+ */
+@theme inline {
+  --color-surface: var(--card);
+  --color-surface-muted: var(--muted);
+  --color-ink: var(--foreground);
+  --color-ink-secondary: var(--ink-secondary);
+  --color-ink-muted: var(--muted-foreground);
+  /* Decorative only — see the token's own note above. */
+  --color-ink-faint: var(--ink-faint);
+  --color-line: var(--border);
+  --color-brand: var(--primary);
+  --color-brand-hover: var(--primary-hover);
+  --color-brand-ink: var(--primary-foreground);
+  --color-brand-soft: var(--accent-light);
+  --color-brand-strong: var(--accent-foreground);
+  --color-danger: var(--destructive);
+  --color-danger-ink: var(--destructive-foreground);
+  --color-code: var(--code);
+  --color-code-ink: var(--code-foreground);
+  --color-page: var(--page);
+  --color-inverse: var(--inverse);
+  --color-inverse-ink: var(--inverse-ink);
+  --color-scrim: var(--scrim);
+
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-ok-line: var(--ok-line);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-warn-line: var(--warn-line);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink-on-soft: var(--danger-ink-on-soft);
+  --color-danger-line: var(--danger-line);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-ink: var(--info-ink);
+  --color-info-line: var(--info-line);
+
+  --color-provider-yazio: var(--provider-yazio);
+  --color-provider-whoop: var(--provider-whoop);
+  --color-provider-apple: var(--provider-apple);
+  --color-provider-dawarich: var(--provider-dawarich);
+  --color-provider-home: var(--provider-home);
+  --color-provider-weather: var(--provider-weather);
+  --color-provider-calendar: var(--provider-calendar);
+  --color-provider-github: var(--provider-github);
+
+  /*
+   * The type scale, named by role rather than by size.
+   *
+   * Six steps, and the smallest is 12px. There are 180 uses of `text-[10px]` and
+   * `text-[11px]` in this app, almost all of them on numbers and explanations —
+   * sizes at which a unit or a sample count stops being readable on a phone and
+   * which no amount of contrast rescues. `meta` is the floor for anything that
+   * is a word or a number; the platform-conventional 10px survives only where a
+   * platform convention actually exists, which is the bottom tab bar's labels.
+   */
+  /*
+   * 10px, and the only place it is allowed.
+   *
+   * Bottom-tab labels and a count inside a badge are both platform conventions
+   * at this size — iOS sets tab labels at 10pt — and both are read as part of a
+   * shape rather than as prose. Everything else that was `text-[10px]` was a
+   * measurement or an explanation, which is what `--text-meta` is the floor for.
+   */
+  --text-nav: 0.625rem;
+  --text-nav--line-height: 0.875rem;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1rem;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.375rem;
+  --text-emph: 1rem;
+  --text-emph--line-height: 1.5rem;
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.625rem;
+  --text-page: 1.375rem;
+  --text-page--line-height: 1.875rem;
+  --text-stat: 1.75rem;
+  --text-stat--line-height: 2rem;
+}
+
+/*
+ * Where a scrolled-to element comes to rest.
+ *
+ * There was no `scroll-margin` or `scroll-padding` anywhere in this app, and two
+ * fixed bars to collide with: the sticky header above and, below `md`, the tab
+ * bar. WCAG 2.2 SC 2.4.11 (Focus Not Obscured) is about exactly this — Tab your
+ * way down a long page and the focused element lands underneath the bar, so the
+ * one indicator a keyboard user has is behind something opaque.
+ *
+ * Declared on `html` as `scroll-padding` rather than per element as
+ * `scroll-margin`: it is a property of the viewport's obstructions, not of any
+ * particular element, and one declaration cannot be forgotten by the next
+ * component somebody writes.
+ */
+html {
+  scroll-padding-top: calc(var(--header-h) + 0.5rem);
+  scroll-padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 0.5rem);
 }
 
 body {
   background-color: var(--background);
   color: var(--foreground);
-  min-height: 100vh;
+  /* `dvh`, not `vh`: on mobile browsers `100vh` is the viewport *without* the
+     address bar, so it overflows by exactly the bar's height for as long as the
+     bar is showing — the oldest layout bug on the mobile web. */
+  min-height: 100dvh;
   font-family:
     var(--font-outfit),
     "Outfit",
@@ -144,89 +443,40 @@ body {
 }
 
 /*
- * Most dashboard surfaces intentionally use Tailwind's neutral utility names.
- * These theme translations keep the existing component language coherent while
- * allowing new screens to use semantic variables directly. The selectors are
- * scoped to the resolved theme, so the light palette remains byte-for-byte the
- * default and native controls follow the same `color-scheme` as the shell.
+ * The legal documents, in dark.
+ *
+ * They are the one place in the app where colour is set by plain element
+ * selectors rather than utilities, so nothing above reaches them: `.legal-prose p`
+ * hardcodes slate-700, and the wrapper's `bg-white` does follow the theme, which
+ * left the body text of the imprint and the privacy policy at 1.4:1 on a dark
+ * card. The two pages whose entire purpose is being read were the two that could
+ * not be.
+ *
+ * Unlike the utility shim, this list is closed: every colour `.legal-prose`
+ * declares appears below, so nothing can be missed by omission.
  */
-[data-theme="dark"] .bg-white {
-  background-color: var(--card) !important;
+[data-theme="dark"] .legal-prose p,
+[data-theme="dark"] .legal-prose li {
+  color: #d7e3f1;
 }
-[data-theme="dark"] .bg-\[\#f8fafc\],
-[data-theme="dark"] .bg-slate-50 {
-  background-color: var(--background) !important;
+[data-theme="dark"] .legal-prose th,
+[data-theme="dark"] .legal-prose td {
+  border-color: var(--border);
 }
-[data-theme="dark"] .bg-\[\#fcfdfe\] {
-  background-color: var(--card) !important;
+[data-theme="dark"] .legal-prose th {
+  background: var(--background);
 }
-[data-theme="dark"] .bg-slate-100 {
-  background-color: var(--secondary) !important;
+/* Still has to read as "fill this in", so it keeps the amber rather than fading
+   into the page — the dark amber the shim already uses for `bg-amber-100`. */
+[data-theme="dark"] .legal-prose .placeholder {
+  background: #3c2d16;
+  color: #f6d58b;
 }
-[data-theme="dark"] .bg-slate-200,
-[data-theme="dark"] .bg-slate-200\/60 {
-  background-color: #17243a !important;
+[data-theme="dark"] .legal-prose .legal-notice {
+  border-left-color: var(--border);
+  color: #aabbd0;
 }
-[data-theme="dark"] .bg-emerald-50 {
-  background-color: #123c31 !important;
-}
-[data-theme="dark"] .bg-emerald-100 {
-  background-color: #164e3b !important;
-}
-[data-theme="dark"] .bg-amber-50,
-[data-theme="dark"] .bg-amber-100 {
-  background-color: #3c2d16 !important;
-}
-[data-theme="dark"] .bg-rose-50,
-[data-theme="dark"] .bg-red-50 {
-  background-color: #3b1d2a !important;
-}
-[data-theme="dark"] .text-slate-900 {
-  color: var(--foreground) !important;
-}
-[data-theme="dark"] .text-slate-800,
-[data-theme="dark"] .text-slate-700 {
-  color: #d7e3f1 !important;
-}
-[data-theme="dark"] .text-slate-600,
-[data-theme="dark"] .text-slate-500 {
-  color: #aabbd0 !important;
-}
-[data-theme="dark"] .text-slate-400 {
-  color: #8295ad !important;
-}
-[data-theme="dark"] .text-emerald-800,
-[data-theme="dark"] .text-emerald-900 {
-  color: #9ce8c8 !important;
-}
-[data-theme="dark"] .text-amber-800,
-[data-theme="dark"] .text-amber-900 {
-  color: #f6d58b !important;
-}
-[data-theme="dark"] .text-rose-700,
-[data-theme="dark"] .text-red-700,
-[data-theme="dark"] .text-red-800 {
-  color: #fda4af !important;
-}
-[data-theme="dark"] .border-slate-100,
-[data-theme="dark"] .border-slate-200,
-[data-theme="dark"] .border-slate-200\/70,
-[data-theme="dark"] .border-slate-200\/80,
-[data-theme="dark"] .border-slate-300 {
-  border-color: var(--border) !important;
-}
-[data-theme="dark"] .divide-slate-100 > :not(:last-child),
-[data-theme="dark"] .divide-slate-200 > :not(:last-child) {
-  border-color: var(--border) !important;
-}
-[data-theme="dark"] [class~="hover:bg-slate-50"]:hover,
-[data-theme="dark"] [class~="hover:bg-slate-100\/80"]:hover,
-[data-theme="dark"] [class~="hover:bg-slate-100"]:hover {
-  background-color: #1d2c43 !important;
-}
-[data-theme="dark"] [class~="hover:text-slate-900"]:hover {
-  color: var(--foreground) !important;
-}
+
 [data-theme="dark"] .glass-card {
   background: var(--card);
   border-color: var(--border);
@@ -311,7 +561,10 @@ pre,
    radius in every current browser, and setting it would overwrite whatever
    rounding the element was given. */
 .focus-ring:focus-visible {
-  outline: 2px solid #0d5c3a;
+  /* `var(--ring)`, not the brand hex it used to hardcode: in dark mode that green
+     sat at roughly 1.3:1 against `--background`, so the one indicator a keyboard
+     user has was very nearly invisible on the theme where it matters most. */
+  outline: 2px solid var(--ring);
   outline-offset: 1px;
 }
 

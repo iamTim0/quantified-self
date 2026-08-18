@@ -185,76 +185,76 @@ export default function ApiKeyManager({
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2.5 rounded-2xl border border-emerald-200/80 bg-emerald-50/80 p-4">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-900">
-          <Plug className="h-4 w-4 text-[#0d5c3a]" />
+      <div className="space-y-2.5 rounded-2xl border border-ok-line bg-ok-soft p-4">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-ink">
+          <Plug className="h-4 w-4 text-brand" />
           <span>{t("apikeys.webhookTitle", { provider: providerLabel })}</span>
         </div>
         <div className="space-y-1.5">
-          <div className="text-[11px] font-bold text-slate-600">1. URL:</div>
-          <div className="select-all break-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-bold text-[#0d5c3a] shadow-sm">
+          <div className="text-meta font-bold text-ink-muted">1. URL:</div>
+          <div className="select-all break-all rounded-xl border border-line bg-surface p-2 font-mono text-meta font-bold text-brand shadow-sm">
             {apiBase}
             {ingestPath}
           </div>
         </div>
         <div className="space-y-1.5">
-          <div className="text-[11px] font-bold text-slate-600">2. Header:</div>
-          <div className="inline-block select-all rounded-xl border border-slate-200 bg-white p-2 font-mono text-[11px] font-extrabold text-slate-900 shadow-sm">
+          <div className="text-meta font-bold text-ink-muted">2. Header:</div>
+          <div className="inline-block select-all rounded-xl border border-line bg-surface p-2 font-mono text-meta font-extrabold text-ink shadow-sm">
             {t("apikeys.headerExample")}
           </div>
-          <p className="text-[11px] text-slate-500">{t("apikeys.headerHint")}</p>
+          <p className="text-meta text-ink-muted">{t("apikeys.headerHint")}</p>
         </div>
         <a
           href="/docs/features/api-keys/"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#0d5c3a] underline"
+          className="inline-flex items-center gap-1.5 text-meta font-semibold text-brand underline"
         >
           <BookOpen className="h-3.5 w-3.5" /> {t("apikeys.docs")}
         </a>
       </div>
 
       {revealedKey && (
-        <div className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-4">
-          <div className="flex items-center gap-1.5 text-xs font-bold text-amber-900">
+        <div className="space-y-2 rounded-2xl border border-warn-line bg-warn-soft p-4">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-warn-ink">
             <AlertTriangle className="h-4 w-4" />
             {t("apikeys.shownOnce")}
           </div>
           <div className="flex items-center gap-2">
-            <code className="flex-1 select-all break-all rounded-xl border border-amber-200 bg-white p-2.5 font-mono text-[11px] text-slate-900">
+            <code className="flex-1 select-all break-all rounded-xl border border-warn-line bg-surface p-2.5 font-mono text-meta text-ink">
               {revealedKey}
             </code>
             <button
               type="button"
               onClick={copyKey}
-              className="shrink-0 rounded-xl border border-amber-300 bg-white p-2.5 text-amber-800 hover:bg-amber-100"
+              className="shrink-0 rounded-xl border border-warn-line bg-surface p-2.5 text-warn-ink hover:bg-warn-soft"
               title={t("apikeys.copy")}
             >
               {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
-          <p className="text-[11px] text-amber-900">{t("apikeys.storeNow")}</p>
+          <p className="text-meta text-warn-ink">{t("apikeys.storeNow")}</p>
           <button
             type="button"
             onClick={() => setRevealedKey(null)}
-            className="text-[11px] font-semibold text-amber-900 underline"
+            className="text-meta font-semibold text-warn-ink underline"
           >
             {t("apikeys.hideRevealed")}
           </button>
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4">
+      <div className="rounded-2xl border border-line bg-surface p-4">
         <div className="mb-2.5 flex items-center gap-1.5">
-          <KeyRound className="h-4 w-4 text-[#0d5c3a]" />
-          <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+          <KeyRound className="h-4 w-4 text-brand" />
+          <h3 className="text-xs font-bold uppercase tracking-wider text-ink-muted">
             {t("apikeys.title", { count: activeKeys.length })}
           </h3>
-          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+          {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-muted" />}
         </div>
 
         {keys.length === 0 && !loading && (
-          <p className="mb-3 text-[11px] text-slate-500">
+          <p className="mb-3 text-meta text-ink-muted">
             {t("apikeys.none", { provider: providerLabel })}
           </p>
         )}
@@ -265,15 +265,15 @@ export default function ApiKeyManager({
               key={k.id}
               className={`rounded-xl border p-2.5 ${
                 k.status === "active"
-                  ? "border-slate-200 bg-slate-50"
-                  : "border-slate-200 bg-slate-100 opacity-60"
+                  ? "border-line bg-page"
+                  : "border-line bg-surface-muted opacity-60"
               }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[11px] font-bold text-slate-800">{k.name}</p>
-                  <p className="font-mono text-[11px] text-slate-500">{k.key_prefix}…</p>
-                  <p className="mt-0.5 text-[10px] text-slate-400">
+                  <p className="truncate text-meta font-bold text-ink-secondary">{k.name}</p>
+                  <p className="font-mono text-meta text-ink-muted">{k.key_prefix}…</p>
+                  <p className="mt-0.5 text-meta text-ink-muted">
                     {t("apikeys.created", { date: formatDate(k.created_at) })}
                     {k.expires_at &&
                       ` · ${t("apikeys.expires", { date: formatDate(k.expires_at) })}`}
@@ -285,10 +285,10 @@ export default function ApiKeyManager({
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <span
-                    className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                    className={`rounded px-1.5 py-0.5 text-meta font-bold ${
                       k.status === "active"
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-slate-200 text-slate-600"
+                        ? "bg-ok-soft text-ok-ink"
+                        : "bg-surface-muted text-ink-muted"
                     }`}
                   >
                     {k.status === "active" ? t("apikeys.statusActive") : t("apikeys.statusRevoked")}
@@ -300,7 +300,7 @@ export default function ApiKeyManager({
                         onClick={() => handleRotate(k.id)}
                         disabled={busy === k.id}
                         title={t("apikeys.rotateTitle")}
-                        className="rounded-lg border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                        className="rounded-lg border border-line bg-surface p-1.5 text-ink-muted hover:bg-surface-muted disabled:opacity-50"
                       >
                         <RefreshCw className="h-3.5 w-3.5" />
                       </button>
@@ -309,7 +309,7 @@ export default function ApiKeyManager({
                         onClick={() => handleRevoke(k.id, k.key_prefix)}
                         disabled={busy === k.id}
                         title={t("apikeys.revokeTitle")}
-                        className="rounded-lg border border-rose-200 bg-rose-50 p-1.5 text-rose-600 hover:bg-rose-100 disabled:opacity-50"
+                        className="rounded-lg border border-danger-line bg-danger-soft p-1.5 text-danger-ink-on-soft hover:bg-danger-soft/70 disabled:opacity-50"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -321,9 +321,9 @@ export default function ApiKeyManager({
           ))}
         </ul>
 
-        <div className="flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap items-end gap-2 border-t border-line pt-3">
           <label className="min-w-[140px] flex-1">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="mb-1 block text-meta font-bold uppercase tracking-wider text-ink-muted">
               Name
             </span>
             <input
@@ -331,11 +331,11 @@ export default function ApiKeyManager({
               value={newKeyName}
               onChange={(e) => setNewKeyName(e.target.value)}
               placeholder={t("apikeys.namePlaceholder")}
-              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-visible:border-[#0d5c3a]"
+              className="w-full rounded-xl border border-line px-3 py-2 text-xs outline-none focus-visible:border-brand"
             />
           </label>
           <label>
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-wider text-slate-500">
+            <span className="mb-1 block text-meta font-bold uppercase tracking-wider text-ink-muted">
               {t("apikeys.expiryLabel")}
             </span>
             <select
@@ -343,7 +343,7 @@ export default function ApiKeyManager({
               onChange={(e) =>
                 setExpiresInDays(e.target.value === "" ? "" : Number(e.target.value))
               }
-              className="rounded-xl border border-slate-200 px-3 py-2 text-xs outline-none focus-ring"
+              className="rounded-xl border border-line px-3 py-2 text-xs outline-none focus-ring"
             >
               <option value="">{t("apikeys.noExpiry")}</option>
               <option value={90}>{t("quality.windowDays", { count: 90 })}</option>
@@ -355,7 +355,7 @@ export default function ApiKeyManager({
             type="button"
             onClick={handleCreate}
             disabled={busy === "create"}
-            className="flex items-center gap-1.5 rounded-xl bg-[#0d5c3a] px-4 py-2 text-xs font-bold text-white hover:bg-[#08432a] disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-xl bg-brand px-4 py-2 text-xs font-bold text-brand-ink hover:bg-brand-hover disabled:opacity-50"
           >
             {busy === "create" ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -367,7 +367,7 @@ export default function ApiKeyManager({
         </div>
 
         {activeKeys.length > 1 && (
-          <p className="mt-2 text-[10px] text-slate-400">
+          <p className="mt-2 text-meta text-ink-muted">
             {t("apikeys.rotationHint")}
             App auf den neuen umgestellt ist.
           </p>
@@ -375,7 +375,7 @@ export default function ApiKeyManager({
       </div>
 
       {error && (
-        <p className="rounded-2xl border border-red-200 bg-red-50 px-3.5 py-2.5 text-xs text-red-700">
+        <p className="rounded-2xl border border-danger-line bg-danger-soft px-3.5 py-2.5 text-xs text-danger-ink-on-soft">
           {error}
         </p>
       )}

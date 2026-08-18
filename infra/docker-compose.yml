@@ -188,6 +188,7 @@ services:
       - HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011
       - WEATHER_IMPORTER_URL=http://weather-importer:8012
       - CALENDAR_IMPORTER_URL=http://calendar-importer:8013
+      - GITHUB_IMPORTER_URL=http://github-importer:8014
       # The Gateway serves the UI on / by proxying it. In this network that is
       # the container; the code default is loopback, for a local checkout.
       - DASHBOARD_URL=http://dashboard:3000
@@ -357,6 +358,22 @@ services:
       - HEALTH_PORT=8013
     expose:
       - "8013"
+    networks: [qs-network]
+
+  github-importer:
+    build:
+      # Repo root: the importer needs packages/shared-schemas for the metric
+      # catalog, which is outside services/importers.
+      context: ..
+      dockerfile: services/importers/github/Dockerfile
+    depends_on: [nats, core]
+    environment:
+      - NATS_URL=nats://nats:4222
+      - CORE_SERVICE_URL=http://core:8001
+      - INTERNAL_SERVICE_SECRET=${INTERNAL_SERVICE_SECRET:-dev-internal-service-secret-quantified-self-2026}
+      - HEALTH_PORT=8014
+    expose:
+      - "8014"
     networks: [qs-network]
 
   dashboard:

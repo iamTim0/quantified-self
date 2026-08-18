@@ -905,3 +905,42 @@ async def test_unknown_chat_operation_is_not_proxied():
                 headers={"Authorization": f"Bearer {_make_token()}"},
             )
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_an_apple_health_push_that_ends_early_is_not_a_server_error():
+    """A phone that drops mid-upload is a fact about the connection.
+
+    This route buffered the body with `await request.body()` inside a `try` that
+    caught `httpx.RequestError` only, so a `ClientDisconnect` -- routine over a
+    tunnel -- escaped as an unhandled ASGI exception. Production showed a 60-second
+    wait, a full Starlette traceback, and no answer to the phone at all. A 5xx would
+    also be wrong: it tells Health Auto Export the server is broken and makes it
+    retry against a service that is fine.
+    """
+    from gateway import main as gateway_main
+    from starlette.requests import ClientDisconnect
+
+    async def upstream(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+        raise AssertionError("the importer must not be reached when the body never arrived")
+
+    class _Disconnecting:
+        """A body stream that dies partway, the way a dropped connection does."""
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            raise ClientDisconnect()
+
+    with _upstreams(upstream):
+        transport = ASGITransport(app=gateway_main.app)
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            response = await ac.post(
+                "/api/v1/ingest/apple-health",
+                content=_Disconnecting(),
+                headers={"X-Api-Key": "irrelevant", "Content-Type": "application/json"},
+            )
+
+    assert response.status_code == 499
+    assert response.json()["detail"]["code"] == "ingest_client_disconnected"

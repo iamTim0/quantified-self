@@ -262,7 +262,13 @@ tasks:
     # exercises the Fernet envelope); everything else they use is stdlib.
     dir: specs
     cmds:
-      - python .agents/scripts/check_invariant_tests.py
+      # Absolute, and quoted for the same reason `test:e2e` quotes it: the task
+      # runs from `specs/`, so a repository-relative path resolves to
+      # `specs/.agents/…` and the invariant check could only ever fail with
+      # "No such file". It failed loudly rather than silently, which is the one
+      # good thing about it -- `task test:all` stopped here and never reached the
+      # spec suite behind it.
+      - python "{{.ROOT_DIR}}/.agents/scripts/check_invariant_tests.py"
       - uv run --with pytest --with cryptography pytest tests
 
   test:service:
@@ -315,6 +321,11 @@ tasks:
       - uv run --with ruff ruff check packages/shared-schemas/ services/ specs/
       - bun run --cwd apps/dashboard lint
       - bun run --cwd apps/dashboard tsc --noEmit
+      # A ratchet, not a gate: every violation that existed when it was written is
+      # in the allowlist beside it, and only new ones fail. See the script's
+      # docstring for why raw palette utilities and pixel font sizes are the two
+      # things worth catching.
+      - python .agents/scripts/check_design_tokens.py
 
   run:core:
     desc: "Run Core Data Service on port 8001"
@@ -350,6 +361,11 @@ tasks:
     desc: "Run the Calendar importer microservice"
     cmds:
       - uv run --directory services/importers/calendar python -m calendar_importer.main
+
+  run:importer:github:
+    desc: "Run the GitHub importer microservice"
+    cmds:
+      - uv run --directory services/importers/github python -m github_importer.main
 
   run:importer:dawarich:
     desc: "Run the Dawarich location importer microservice"

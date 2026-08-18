@@ -10,10 +10,13 @@ Maps to Fizzbee Invariants:
 - NoDuplicateRecords
 """
 
+import asyncio
 import io
+import os
 import zipfile
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
@@ -65,7 +68,14 @@ async def test_single_request_body_is_streamed_to_a_private_spool():
     session = await _spool_request(_StreamingRequest(chunks), TENANT, SOURCE)
     try:
         assert session.path.read_bytes() == b"".join(chunks)
-        assert session.path.stat().st_mode & 0o777 == 0o600
+        if os.name != "nt":
+            # NTFS has no POSIX mode bits: `os.chmod` sets read-only and nothing
+            # else, so this reads 0o666 however the spool was created. The spool
+            # is no less private there — `%LOCALAPPDATA%\Temp` is already scoped
+            # to the user by inherited ACLs — but the property cannot be stated
+            # this way, and asserting it anyway made the suite permanently red on
+            # a Windows checkout. The importer only ever runs on Linux.
+            assert session.path.stat().st_mode & 0o777 == 0o600
     finally:
         session.path.unlink(missing_ok=True)
         assert not any(item.source_id == SOURCE for item in web._uploads.sessions())
@@ -113,25 +123,48 @@ def test_parts_reassemble_into_the_export_the_parser_reads(
     assert mock_open.await_count == 1
 
 
+@pytest.mark.asyncio
 @patch("whoop_importer.web.resolve_upload_target", new_callable=AsyncMock)
 @patch("whoop_importer.web.resolve_session", new_callable=AsyncMock)
-def test_the_assembled_file_does_not_outlive_the_import(mock_session, mock_target):
-    """A Whoop export is somebody's history; the spool is not where it lives."""
+async def test_the_assembled_file_does_not_outlive_the_import(mock_session, mock_target):
+    """A Whoop export is somebody's history; the spool is not where it lives.
+
+    Driven through `httpx` in this test's own event loop rather than `TestClient`,
+    and the import is *awaited*. `/upload/complete` answers 202 the moment the
+    background task exists — deletion is that task's job, so a bare assertion after
+    the response was reading a file the importer had not finished with. `TestClient`
+    tears its loop down with the response, which cancelled the import mid-read; the
+    assertion then depended on whether cleanup won that race, and on Windows it lost
+    and left the export on disk. A test for "the archive does not survive the import"
+    has to let the import happen.
+    """
+    from whoop_importer import web
+
     mock_session.return_value = TENANT
     mock_target.return_value = UploadTarget(TENANT, SOURCE, "whoop")
 
     payload = _archive()
-    upload_id = client.post(f"/upload/begin?source_id={SOURCE}", headers=AUTH).json()["upload_id"]
-    client.post(f"/upload/chunk?upload_id={upload_id}&offset=0", content=payload, headers=AUTH)
-    spooled = _uploads.session(upload_id, TENANT).path
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as ac:
+        begin = await ac.post(f"/upload/begin?source_id={SOURCE}", headers=AUTH)
+        upload_id = begin.json()["upload_id"]
+        await ac.post(
+            f"/upload/chunk?upload_id={upload_id}&offset=0", content=payload, headers=AUTH
+        )
+        spooled = _uploads.session(upload_id, TENANT).path
+        assert spooled.exists()
 
-    with (
-        patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock) as mock_open,
-        patch("whoop_importer.web.report_sync_progress", new_callable=AsyncMock),
-        patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock),
-    ):
-        mock_open.return_value = "run-2"
-        client.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
+        with (
+            patch("whoop_importer.web.open_sync_run", new_callable=AsyncMock) as mock_open,
+            patch("whoop_importer.web.report_sync_progress", new_callable=AsyncMock),
+            patch("whoop_importer.web.close_sync_run", new_callable=AsyncMock),
+        ):
+            mock_open.return_value = "run-2"
+            accepted = await ac.post(f"/upload/complete?upload_id={upload_id}", headers=AUTH)
+            assert accepted.status_code == 202
+            # The handler hands the archive to a task and returns. That task is what
+            # owns the file from here on, so this is the thing to wait for.
+            await asyncio.gather(*tuple(web._running_imports), return_exceptions=True)
 
     assert not spooled.exists()
 

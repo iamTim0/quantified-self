@@ -59,11 +59,11 @@ export function modeKey(mode: string): MessageKey {
 }
 
 export function statusClass(status: string): string {
-  if (status === "success") return "border-emerald-200 bg-emerald-50 text-emerald-800";
-  if (status === "error") return "border-rose-200 bg-rose-50 text-rose-800";
-  if (status === "loading") return "border-sky-200 bg-sky-50 text-sky-800";
-  if (status === "skipped") return "border-slate-200 bg-slate-100 text-slate-700";
-  return "border-amber-200 bg-amber-50 text-amber-800";
+  if (status === "success") return "border-ok-line bg-ok-soft text-ok-ink";
+  if (status === "error") return "border-danger-line bg-danger-soft text-danger-ink-on-soft";
+  if (status === "loading") return "border-info-line bg-info-soft text-info-ink";
+  if (status === "skipped") return "border-line bg-surface-muted text-ink-secondary";
+  return "border-warn-line bg-warn-soft text-warn-ink";
 }
 
 export function durationLabel(

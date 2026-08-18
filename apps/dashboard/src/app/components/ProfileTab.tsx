@@ -15,9 +15,12 @@ import {
   Trash2,
   AlertTriangle,
   RefreshCw,
+  Palette,
 } from "lucide-react";
 import { apiFetch } from "../lib/api";
+import LanguageSwitcher from "./LanguageSwitcher";
 import OidcProviderAdmin from "./OidcProviderAdmin";
+import ThemeSwitcher from "./ThemeSwitcher";
 import { useT } from "../lib/i18n/provider";
 
 interface ProfileTabProps {
@@ -210,15 +213,15 @@ export default function ProfileTab({
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">
+          <h1 className="text-3xl font-extrabold text-ink tracking-tight">
             {t("profile.title")}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">{t("profile.subtitle")}</p>
+          <p className="text-xs text-ink-muted mt-1">{t("profile.subtitle")}</p>
         </div>
 
         <div className="flex items-center gap-3">
-          <span className="text-xs font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 border border-emerald-200 px-3.5 py-1.5 rounded-full flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
+          <span className="text-xs font-bold uppercase tracking-wider bg-ok-soft text-ok-ink border border-ok-line px-3.5 py-1.5 rounded-full flex items-center gap-1.5">
+            <ShieldCheck className="w-4 h-4 text-ok" />
             <span>{t("profile.tenantIsolated")}</span>
           </span>
         </div>
@@ -228,21 +231,21 @@ export default function ProfileTab({
         {/* Left 2 Columns: User Info, Password & 1-Click Delete */}
         <div className="lg:col-span-2 space-y-6">
           {/* User Profile Info Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-6">
-            <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#0d5c3a] text-white flex items-center justify-center font-extrabold text-xl shadow-lg shadow-[#0d5c3a]/20">
+          <div className="glass-card p-6 bg-surface border border-line rounded-3xl space-y-6">
+            <div className="flex items-center gap-4 border-b border-line pb-4">
+              <div className="w-14 h-14 rounded-2xl bg-brand text-brand-ink flex items-center justify-center font-extrabold text-xl shadow-lg shadow-brand/20">
                 {userName ? userName[0].toUpperCase() : t("profile.defaultInitial")}
               </div>
               <div>
-                <h2 className="text-lg font-extrabold text-slate-900">
+                <h2 className="text-lg font-extrabold text-ink">
                   {userName || t("profile.defaultUser")}
                 </h2>
-                <p className="text-xs text-slate-500">{userEmail}</p>
+                <p className="text-xs text-ink-muted">{userEmail}</p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full border border-slate-200">
+                  <span className="text-meta font-bold uppercase tracking-wider bg-surface-muted text-ink-secondary px-2.5 py-0.5 rounded-full border border-line">
                     {t("profile.role", { role: userRole })}
                   </span>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-800 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                  <span className="text-meta font-bold uppercase tracking-wider bg-ok-soft text-ok-ink px-2.5 py-0.5 rounded-full border border-ok-line">
                     {tenantName}
                   </span>
                 </div>
@@ -254,12 +257,12 @@ export default function ProfileTab({
                 <div>
                   <label
                     htmlFor="profile-name"
-                    className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1"
+                    className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1"
                   >
                     {t("profile.username")}
                   </label>
                   <div className="relative">
-                    <User className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                    <User className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                     <input
                       id="profile-name"
                       type="text"
@@ -267,7 +270,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileName(e.target.value)}
                       maxLength={128}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -275,12 +278,12 @@ export default function ProfileTab({
                 <div>
                   <label
                     htmlFor="profile-email"
-                    className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1"
+                    className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1"
                   >
                     {t("profile.email")}
                   </label>
                   <div className="relative">
-                    <Mail className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                    <Mail className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                     <input
                       id="profile-email"
                       type="email"
@@ -288,7 +291,7 @@ export default function ProfileTab({
                       onChange={(e) => setProfileEmail(e.target.value)}
                       maxLength={320}
                       required
-                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                     />
                   </div>
                 </div>
@@ -297,12 +300,12 @@ export default function ProfileTab({
               <div>
                 <label
                   htmlFor="profile-workspace"
-                  className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1"
+                  className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1"
                 >
                   {t("profile.workspaceName")}
                 </label>
                 <div className="relative">
-                  <Building className="absolute left-3.5 top-3 w-4 h-4 text-slate-400" />
+                  <Building className="absolute left-3.5 top-3 w-4 h-4 text-ink-muted" />
                   <input
                     id="profile-workspace"
                     type="text"
@@ -311,11 +314,11 @@ export default function ProfileTab({
                     maxLength={128}
                     required
                     disabled={userRole === "member"}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors disabled:bg-slate-100 disabled:text-slate-500"
+                    className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors disabled:bg-surface-muted disabled:text-ink-muted"
                   />
                 </div>
                 {userRole === "member" && (
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-meta text-ink-muted">
                     {t("profile.workspaceAdminOnly")}
                   </p>
                 )}
@@ -324,15 +327,15 @@ export default function ProfileTab({
               {profileError && (
                 <div
                   role="alert"
-                  className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold"
+                  className="p-3 rounded-2xl bg-danger-soft border border-danger-line text-xs text-danger-ink-on-soft font-semibold"
                 >
                   {profileError}
                 </div>
               )}
 
               {profileSuccess && (
-                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2 font-semibold">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="p-3 rounded-2xl bg-ok-soft border border-ok-line text-xs text-ok-ink flex items-center gap-2 font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
                   <span>{profileSuccess}</span>
                 </div>
               )}
@@ -341,7 +344,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={profileLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-brand/20"
                 >
                   {profileLoading ? t("profile.saving") : t("profile.save")}
                 </button>
@@ -350,30 +353,30 @@ export default function ProfileTab({
           </div>
 
           {/* 1-Click Data Deletion & GDPR Art. 17 Card */}
-          <div className="glass-card p-6 bg-white border border-rose-200 rounded-3xl space-y-4 shadow-sm">
-            <div className="flex items-center justify-between border-b border-rose-100 pb-3">
+          <div className="glass-card p-6 bg-surface border border-danger-line rounded-3xl space-y-4 shadow-sm">
+            <div className="flex items-center justify-between border-b border-danger-line pb-3">
               <div className="flex items-center gap-2">
-                <Trash2 className="w-5 h-5 text-rose-600" />
-                <h3 className="text-base font-extrabold text-slate-900">
+                <Trash2 className="w-5 h-5 text-danger-ink-on-soft" />
+                <h3 className="text-base font-extrabold text-ink">
                   {t("profile.gdprTitle")}
                 </h3>
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider bg-rose-50 text-rose-700 px-2.5 py-0.5 rounded-full border border-rose-200">
+              <span className="text-meta font-bold uppercase tracking-wider bg-danger-soft text-danger-ink-on-soft px-2.5 py-0.5 rounded-full border border-danger-line">
                 {t("profile.gdprBadge")}
               </span>
             </div>
 
-            <p className="text-xs text-slate-600 leading-relaxed">{t("profile.gdprBody")}</p>
+            <p className="text-xs text-ink-muted leading-relaxed">{t("profile.gdprBody")}</p>
 
             {wipeSuccess && (
-              <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 font-semibold flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <div className="p-3 rounded-2xl bg-ok-soft border border-ok-line text-xs text-ok-ink font-semibold flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
                 <span>{wipeSuccess}</span>
               </div>
             )}
 
             {wipeError && (
-              <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">
+              <div className="p-3 rounded-2xl bg-danger-soft border border-danger-line text-xs text-danger-ink-on-soft font-semibold">
                 {wipeError}
               </div>
             )}
@@ -381,15 +384,15 @@ export default function ProfileTab({
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
               <button
                 onClick={() => setShowWipeModal(true)}
-                className="py-3 px-4 rounded-2xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-bold transition-colors flex items-center justify-center gap-2"
+                className="py-3 px-4 rounded-2xl bg-warn-soft hover:bg-warn-soft border border-warn-line text-warn-ink text-xs font-bold transition-colors flex items-center justify-center gap-2"
               >
-                <RefreshCw className="w-4 h-4 text-amber-700" />
+                <RefreshCw className="w-4 h-4 text-warn-ink" />
                 <span>{t("profile.wipeButton")}</span>
               </button>
 
               <button
                 onClick={() => setShowAccountModal(true)}
-                className="py-3 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-rose-600/20"
+                className="py-3 px-4 rounded-2xl bg-danger hover:bg-danger/90 text-danger-ink text-xs font-bold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 shadow-md shadow-danger/20"
               >
                 <Trash2 className="w-4 h-4" />
                 <span>{t("profile.deleteAccountButton")}</span>
@@ -398,15 +401,15 @@ export default function ProfileTab({
           </div>
 
           {/* Change Password Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Lock className="w-5 h-5 text-[#0d5c3a]" />
-              <h3 className="text-base font-bold text-slate-900">{t("profile.changePassword")}</h3>
+          <div className="glass-card p-6 bg-surface border border-line rounded-3xl space-y-4">
+            <div className="flex items-center gap-2 border-b border-line pb-3">
+              <Lock className="w-5 h-5 text-brand" />
+              <h3 className="text-base font-bold text-ink">{t("profile.changePassword")}</h3>
             </div>
 
             <form onSubmit={handlePasswordChange} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1">
                   {t("profile.currentPassword")}
                 </label>
                 <input
@@ -415,13 +418,13 @@ export default function ProfileTab({
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
                   required
-                  className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                  className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                 />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1">
                     {t("profile.newPassword")}
                   </label>
                   <input
@@ -431,12 +434,12 @@ export default function ProfileTab({
                     onChange={(e) => setNewPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1">
                     {t("profile.confirm")}
                   </label>
                   <input
@@ -446,7 +449,7 @@ export default function ProfileTab({
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     required
                     minLength={6}
-                    className="w-full px-4 py-2.5 rounded-2xl bg-white border border-slate-200 text-slate-900 text-sm focus-visible:border-[#0d5c3a] focus-visible:ring-2 focus-visible:ring-[#0d5c3a]/20 outline-none transition-colors"
+                    className="w-full px-4 py-2.5 rounded-2xl bg-surface border border-line text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
                   />
                 </div>
               </div>
@@ -454,15 +457,15 @@ export default function ProfileTab({
               {passwordError && (
                 <div
                   role="alert"
-                  className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold"
+                  className="p-3 rounded-2xl bg-danger-soft border border-danger-line text-xs text-danger-ink-on-soft font-semibold"
                 >
                   {passwordError}
                 </div>
               )}
 
               {passwordSuccess && (
-                <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2 font-semibold">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <div className="p-3 rounded-2xl bg-ok-soft border border-ok-line text-xs text-ok-ink flex items-center gap-2 font-semibold">
+                  <CheckCircle2 className="w-4 h-4 text-ok shrink-0" />
                   <span>{passwordSuccess}</span>
                 </div>
               )}
@@ -471,7 +474,7 @@ export default function ProfileTab({
                 <button
                   type="submit"
                   disabled={passwordLoading}
-                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-[#0d5c3a] hover:bg-[#08432a] text-white [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-[#0d5c3a]/20"
+                  className="px-5 py-2.5 text-xs font-bold rounded-2xl bg-brand hover:bg-brand-hover text-brand-ink [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] disabled:opacity-50 shadow-md shadow-brand/20"
                 >
                   {passwordLoading ? t("profile.changing") : t("profile.changePassword")}
                 </button>
@@ -480,44 +483,71 @@ export default function ProfileTab({
           </div>
         </div>
 
-        {/* Right Column: Workspace & JWT Inspection */}
+        {/* Right Column: Appearance, Workspace & JWT Inspection */}
         <div className="space-y-6">
+          {/*
+            Language and theme, which used to sit in the header of every screen.
+
+            Both are set once and then never again, so they were occupying the
+            most valuable row in the application — above every page, on every
+            visit — to serve a decision most readers make in their first minute.
+            Settings is where a once-ever choice belongs.
+          */}
+          <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6">
+            <div className="flex items-center gap-2 border-b border-line pb-3">
+              <Palette className="h-5 w-5 text-brand" />
+              <h3 className="text-sm font-bold text-ink">{t("profile.appearance")}</h3>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <p className="text-meta font-semibold text-ink-secondary">
+                  {t("profile.language")}
+                </p>
+                <LanguageSwitcher />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-meta font-semibold text-ink-secondary">{t("profile.theme")}</p>
+                <ThemeSwitcher />
+              </div>
+            </div>
+          </div>
+
           {/* Workspace Security Info Card */}
-          <div className="glass-card p-6 bg-white border border-slate-200/80 rounded-3xl space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <Building className="w-5 h-5 text-[#0d5c3a]" />
-              <h3 className="text-sm font-bold text-slate-900">{t("profile.workspaceDetails")}</h3>
+          <div className="glass-card p-6 bg-surface border border-line rounded-3xl space-y-4">
+            <div className="flex items-center gap-2 border-b border-line pb-3">
+              <Building className="w-5 h-5 text-brand" />
+              <h3 className="text-sm font-bold text-ink">{t("profile.workspaceDetails")}</h3>
             </div>
 
             <div className="space-y-3">
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1.5">
+              <div className="p-3 rounded-2xl bg-page border border-line space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  <span className="text-meta text-ink-muted font-bold uppercase tracking-wider">
                     {t("profile.tenantId")}
                   </span>
                   <button
                     onClick={() => handleCopy(tenantId, setCopiedTenantId)}
-                    className="flex items-center gap-1 text-[11px] text-[#0d5c3a] hover:underline font-mono transition-colors"
+                    className="-mx-1 flex min-h-6 items-center gap-1 rounded px-1 text-meta font-mono text-brand transition-colors hover:underline"
                   >
                     {copiedTenantId ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <Check className="w-3.5 h-3.5 text-ok" />
                     ) : (
                       <Copy className="w-3.5 h-3.5" />
                     )}
                     <span>{copiedTenantId ? t("profile.copied") : t("profile.copy")}</span>
                   </button>
                 </div>
-                <p className="text-[11px] text-slate-900 font-mono bg-white p-2 rounded-xl border border-slate-200 break-all select-all">
+                <p className="text-meta text-ink font-mono bg-surface p-2 rounded-xl border border-line break-all select-all">
                   {tenantId}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                <div className="flex items-center gap-2 text-xs font-bold text-slate-900">
-                  <Lock className="w-4 h-4 text-[#0d5c3a]" />
+              <div className="p-3.5 rounded-2xl bg-page border border-line space-y-1">
+                <div className="flex items-center gap-2 text-xs font-bold text-ink">
+                  <Lock className="w-4 h-4 text-brand" />
                   <span>{t("profile.encryptedSecrets")}</span>
                 </div>
-                <p className="text-[11px] text-slate-500 leading-snug">
+                <p className="text-meta text-ink-muted leading-snug">
                   {t("profile.encryptionNote")}
                 </p>
               </div>
@@ -525,15 +555,15 @@ export default function ProfileTab({
           </div>
 
           {/* Session & Logout */}
-          <div className="glass-card p-6 bg-white border border-rose-200 rounded-3xl space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <AlertCircle className="w-4 h-4 text-rose-500" />
-              <h3 className="text-sm font-bold text-slate-900">{t("profile.sessionTitle")}</h3>
+          <div className="glass-card p-6 bg-surface border border-danger-line rounded-3xl space-y-4">
+            <div className="flex items-center gap-2 border-b border-line pb-3">
+              <AlertCircle className="w-4 h-4 text-danger-ink-on-soft" />
+              <h3 className="text-sm font-bold text-ink">{t("profile.sessionTitle")}</h3>
             </div>
 
             <button
               onClick={onLogout}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 text-xs font-bold transition-colors"
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl bg-danger-soft hover:bg-danger-soft/70 border border-danger-line text-danger-ink-on-soft text-xs font-bold transition-colors"
             >
               <LogOut className="w-4 h-4" />
               <span>{t("profile.signOut")}</span>
@@ -544,28 +574,28 @@ export default function ProfileTab({
 
       {/* 1-Click Data Points Wipe Confirmation Modal */}
       {showWipeModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3 text-amber-600">
-              <div className="p-2.5 rounded-2xl bg-amber-50 border border-amber-200">
+        <div className="fixed inset-0 bg-scrim backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-surface border border-line rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-warn">
+              <div className="p-2.5 rounded-2xl bg-warn-soft border border-warn-line">
                 <AlertTriangle className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">
+              <h3 className="text-lg font-extrabold text-ink">
                 {t("profile.wipeConfirmTitle")}
               </h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">{t("profile.wipeConfirmBody")}</p>
+            <p className="text-xs text-ink-muted leading-relaxed">{t("profile.wipeConfirmBody")}</p>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowWipeModal(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-surface-muted text-ink-secondary hover:bg-surface-muted transition-colors"
               >
                 {t("common.cancel")}
               </button>
               <button
                 onClick={handleWipeDataPoints}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-warn text-white hover:bg-warn/90 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.wipeRunning") : t("profile.wipeConfirmAction")}
               </button>
@@ -576,30 +606,30 @@ export default function ProfileTab({
 
       {/* Full Account & Data Wipe Confirmation Modal */}
       {showAccountModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-rose-200 rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
-            <div className="flex items-center gap-3 text-rose-600">
-              <div className="p-2.5 rounded-2xl bg-rose-50 border border-rose-200">
+        <div className="fixed inset-0 bg-scrim backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-surface border border-danger-line rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-center gap-3 text-danger-ink-on-soft">
+              <div className="p-2.5 rounded-2xl bg-danger-soft border border-danger-line">
                 <Trash2 className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-extrabold text-slate-900">
+              <h3 className="text-lg font-extrabold text-ink">
                 {t("profile.deleteAccountTitle")}
               </h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
+            <p className="text-xs text-ink-muted leading-relaxed">
               {t("profile.deleteAccountBody")}
             </p>
             <div className="flex justify-end gap-2 pt-2">
               <button
                 onClick={() => setShowAccountModal(false)}
-                className="px-4 py-2 text-xs font-semibold rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors"
+                className="px-4 py-2 text-xs font-semibold rounded-xl bg-surface-muted text-ink-secondary hover:bg-surface-muted transition-colors"
               >
                 {t("common.cancel")}
               </button>
               <button
                 onClick={handleAccountWipe}
                 disabled={wipeLoading}
-                className="px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 text-white hover:bg-rose-700 transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-bold rounded-xl bg-danger text-danger-ink hover:bg-danger/90 transition-colors disabled:opacity-50"
               >
                 {wipeLoading ? t("profile.deleteAccountRunning") : t("profile.deleteAccountAction")}
               </button>
@@ -610,27 +640,27 @@ export default function ProfileTab({
 
       {/* Owner/admin only in practice: the endpoint returns 403 for a member and
           the component renders that as an explanation rather than an error. */}
-      <div className="rounded-3xl border border-slate-200 bg-white p-5">
+      <div className="rounded-3xl border border-line bg-surface p-5">
         <OidcProviderAdmin apiBase={apiBase} />
       </div>
 
       <div className="pt-2">
-        <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-slate-500">
+        <h3 className="mb-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
           {t("profile.legalTitle")}
         </h3>
-        <p className="mb-2 text-xs text-slate-500">{t("profile.privacyLead")}</p>
+        <p className="mb-2 text-xs text-ink-muted">{t("profile.privacyLead")}</p>
         <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs">
-          <a href="/legal/datenschutz" className="text-[#0d5c3a] underline hover:text-[#08432a]">
+          <a href="/legal/datenschutz" className="text-brand underline hover:text-brand-hover">
             {t("footer.privacy")}
           </a>
-          <a href="/legal/impressum" className="text-[#0d5c3a] underline hover:text-[#08432a]">
+          <a href="/legal/impressum" className="text-brand underline hover:text-brand-hover">
             {t("footer.imprint")}
           </a>
           <a
             href="/docs/"
             target="_blank"
             rel="noreferrer"
-            className="text-[#0d5c3a] underline hover:text-[#08432a]"
+            className="text-brand underline hover:text-brand-hover"
           >
             {t("profile.documentation")}
           </a>

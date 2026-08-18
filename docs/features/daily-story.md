@@ -128,10 +128,15 @@ that.
 A day with no lanes at all is not complete either. `complete` requires at least one lane, so
 *we hold nothing for this day* is never dressed up as *this day is fully accounted for*.
 
-In the interface an incomplete lane carries a small warning glyph whose tooltip says when
-that connector last imported, or that it has never completed one. That is the whole point of
-the field: **no workout** and **the workout connector last ran at 06:00** are now two
-different things on the screen.
+In the interface an incomplete lane states in plain text, next to its heading, when that
+connector last imported or that it has never completed one. That is the whole point of the
+field: **no workout** and **the workout connector last ran at 06:00** are two different
+things on the screen.
+
+The line is text rather than a tooltip on a glyph, and that is not cosmetic. `title`
+attributes never fire on a touch device, so for the whole of this feature's first life the
+distinction it exists to draw was invisible on exactly the device most readers open the page
+on. The note stays legible while the lane is collapsed, for the same reason.
 
 ## One connector answers per metric
 
@@ -171,10 +176,24 @@ A workout is not stored as a workout. It arrives as a fan of metrics — `workou
 one `workout_name` in their metadata. Rendered individually, a 45-minute run is a dozen
 unrelated numbers, which is a large part of what made the old page a card collection.
 
-The endpoint groups them back into events. A point is event-shaped when its metric name
-begins with `workout_`, `strength_set_` or `strength_session_`, or is one of
-`nutrition_item_energy`, `nutrition_meal_energy` or `calendar_meeting_duration`. Everything
-else describes the day rather than a moment in it, and belongs in a lane.
+The endpoint groups them back into events. A point may be placed at an hour when its metric
+name begins with `workout_`, `strength_set_` or `strength_session_`, or is
+`calendar_meeting_duration`. Everything else either describes the day rather than a moment in
+it — and belongs in a lane — or was *logged for* a day rather than *at* a time, and belongs
+in the day's log below.
+
+!!! warning "A stamp that means "some time that day" must not become an hour"
+    `nutrition_item_energy` and `nutrition_meal_energy` used to be on this list. Yazio stamps
+    every item of a day at that day's midnight UTC, so rendering those points on a timeline
+    put a reader's entire food intake at **02:00** in CEST — every item at the same wrong
+    hour, which reads as a fact about the day rather than as an artefact of how a diary is
+    stamped.
+
+    They are now told as [the day's log](#the-days-log), grouped by meal, with a clock time
+    shown only where the provider stated one in `metadata.logged_time`. Re-stamping them in
+    the importer would be the other fix and is the wrong one: the timestamp is part of the
+    idempotency key (rule 4), so changing it does not correct the existing points, it
+    duplicates every one of them.
 
 | Field | Contents |
 | --- | --- |
@@ -204,6 +223,32 @@ difference between a moment and a span.
     That is bounded and deliberate — what never happens is one row in both, because
     its measures would then be counted twice. See
     [Workout detail](workout-detail.md) and `specs/workout_sessions.fizz`.
+
+## The day's log
+
+Some things are recorded *for* a day rather than *at* a time. Food is the case that
+matters: a diary app knows what was eaten on the 15th, and often knows nothing more precise
+than that.
+
+These arrive in `logged`, grouped by `meal_category`, ordered breakfast → lunch → dinner →
+snack with anything else after them under its own name. Each group carries:
+
+| Field | Contents |
+| --- | --- |
+| `group` | `breakfast`, `lunch`, `dinner`, `snack` or the provider's own name — a stable identifier, never prose (rule 17) |
+| `energy` | The meal's total |
+| `energy_derived` | `true` when that total is our sum of the items, `false` when the provider stated it outright |
+| `entries` | The individual items, each with `title`, `value`, `unit`, `amount`, `serving_unit` |
+| `logged_at` | The clock time the provider stated, where it stated one; `null` otherwise |
+
+`energy_derived` is rule 19 in one field. A meal that arrives with both a stated total and
+its individual items holds two different claims about one meal, and adding them together is
+the double count the rule exists to prevent — so the stated figure wins and the derived one
+is marked as derived rather than passed off as measured.
+
+`logged_at` comes from `metadata.logged_time`, which the Yazio importer has always written
+and which nothing read until now. Where it is present the interface shows it; where it is
+absent no hour is invented.
 
 ## Reading it through the API
 
@@ -261,7 +306,30 @@ that it buckets in UTC.
       "measures": { "workout_duration": 2700.0, "workout_distance": 8200.0 }
     }
   ],
-  "event_limit_reached": false
+  "event_limit_reached": false,
+  "logged": [
+    {
+      "group": "breakfast",
+      "category": "nutrition",
+      "energy": 412.0,
+      "energy_derived": true,
+      "unit": "kcal",
+      "entry_count": 2,
+      "logged_at": "2026-08-15T07:05:00",
+      "entries": [
+        {
+          "title": "Porridge",
+          "metric_type": "nutrition_item_energy",
+          "value": 320.0,
+          "unit": "kcal",
+          "logged_at": "2026-08-15T07:05:00",
+          "amount": 60.0,
+          "serving_unit": "g"
+        }
+      ]
+    }
+  ],
+  "logged_limit_reached": false
 }
 ```
 
@@ -273,6 +341,8 @@ that it buckets in UTC.
 | `lanes` | Non-empty categories only, in the order a day happens: sleep, activity, workout, strength, heart, nutrition, body, location, calendar, environment, home |
 | `events` | The day's discrete moments in time order, at most 200 |
 | `event_limit_reached` | The 200-event cap was hit and the timeline is truncated |
+| `logged` | What was logged for the day, grouped by meal — see [The day's log](#the-days-log) |
+| `logged_limit_reached` | The 200-entry cap was hit and the log is truncated |
 
 Every query filters on the `tenant_id` the Gateway injected (rule 2).
 `test_a_day_shows_only_the_authenticated_tenants_data` verifies the Fizzbee invariant
@@ -286,21 +356,49 @@ leads because it is the first question the reader asks; its **Still arriving** b
 lane's last-import timestamp make its partial coverage explicit rather than presenting a gap
 as a fact.
 
+**Three numbers, then everything else on request.** The page opens with up to three headline
+figures for the day — sleep duration, steps, energy intake, falling through a fixed priority
+list of canonical registry keys to whatever the day actually holds. A day with fewer shows
+fewer; no slot is ever filled with an invented figure, because a headline is precisely where
+one would be believed. Each carries the previous day's difference beside it, which costs
+nothing: the report already contains both days.
+
+The difference is deliberately not coloured by direction. Whether more steps is good and
+more body weight is bad is a judgement about a reader's goals that this platform does not
+hold, and a green arrow would state one anyway.
+
+Everything below the headline is a collapsed section — one per lane, one for the timeline,
+one for the day's log, one for the map — each labelled with what it contains ("4 values",
+"12 events", "1,830 kcal") so a closed section is still navigable. A single **Expand all**
+switch per day covers the wide-screen case, where a column of closed rows would be a click
+per fact. The default is the same on a phone and in a browser: a default that varies by
+width makes "why is this one open" unanswerable.
+
 - Today's heading carries a **Still arriving** badge, from `is_today`.
-- Each lane is a card. An incomplete lane shows the warning glyph and its tooltip.
-- A metric more than one connector reports is annotated with the connector that answered,
-  and the tooltip says the two are never added together.
+- An incomplete lane states its last import as a visible line, which survives collapsing.
+- A metric more than one connector reports names the connector that answered, and the lane
+  says once that the two are never added together.
 - The timeline lists each event's clock time, its title and its first three measures, with a
   truncation note when `event_limit_reached` is set.
+- The map is mounted only when its section is opened — required, not merely thrifty: Leaflet
+  sizes itself from its container, and a container inside a closed `<details>` has no box.
+
+All of these use the shared `Disclosure` component, which is a native `<details>`/`<summary>`
+pair. Keyboard operation and the expanded state announced to assistive technology come from
+the element rather than from hand-written ARIA, and each section title stays a real heading
+so collapsing the page does not delete its outline.
 
 Every string comes from the message catalogue under `day.*`, in both languages (rule 16);
 dates, timestamps and lane values are formatted through `useI18n()` rather than against a
 hardcoded locale. Category names are mapped from the server's stable identifiers to
 catalogue keys in the component, so the server never sends prose (rule 17).
 
-Nothing here is precomputed. A day story is a derivation, but it is bounded to a single day
-and to one tenant's rows in that day, so it is computed on the request rather than stored —
-unlike the three whole-history derivations in [Precomputed reports](precomputed-reports.md).
+The page reads a **stored report**, not a fresh computation. Aggregating a day of points on
+every visit was the same mistake as the whole-history summary it replaced, in a smaller
+frame: for a workspace with per-minute sampling and a location trace that is six figures of
+rows, twice, for an answer that cannot change until an import does. It is a report like the
+gap and conflict scans — see [Precomputed reports](precomputed-reports.md) — so the reader
+sees the last good answer with a note when newer data has arrived.
 
 ## Interpretation and limitations
 

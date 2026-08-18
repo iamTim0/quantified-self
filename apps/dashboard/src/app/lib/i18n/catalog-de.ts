@@ -184,10 +184,30 @@ export const de: Record<MessageKey, string> = {
   "day.nothingRecorded": "Für diesen Tag wurde nichts aufgezeichnet.",
   "day.timeline": "Im Tagesverlauf",
   "day.timelineTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.logged": "An dem Tag erfasst",
+  "day.loggedNote":
+    "Nach Mahlzeit gruppiert statt auf der Zeitachse: diese Einträge gehören zu einem Tag, nicht zu einer Uhrzeit. Eine Uhrzeit steht dort, wo die erfassende App selbst eine genannt hat.",
+  "day.loggedSummed": "Aus den einzelnen Einträgen summiert, nicht vom Anbieter angegeben.",
+  "day.loggedTruncated": "Es werden nur die ersten Einträge dieses Tages gezeigt.",
+  "day.mealBreakfast": "Frühstück",
+  "day.mealLunch": "Mittagessen",
+  "day.mealDinner": "Abendessen",
+  "day.mealSnack": "Snack",
+  "day.mealOther": "Sonstiges",
   "day.lastImport": "Dieser Connector hat zuletzt {timestamp} importiert",
   "day.neverImported": "Dieser Connector hat noch nie einen Import abgeschlossen",
-  "day.answeredBy":
-    "Beantwortet von {source}. Ein weiterer Connector meldet diese Metrik ebenfalls; beide werden nie addiert.",
+  "day.vsPreviousDay": "ggü. Vortag",
+  "day.expandAll": "Alle aufklappen",
+  "day.collapseAll": "Alle zuklappen",
+  "day.mapSection": "Wo der Tag stattfand",
+  "day.valueCount_one": "{count} Wert",
+  "day.valueCount_other": "{count} Werte",
+  "day.eventCount_one": "{count} Eintrag",
+  "day.eventCount_other": "{count} Einträge",
+  "day.mealCount_one": "{count} Mahlzeit",
+  "day.mealCount_other": "{count} Mahlzeiten",
+  "day.multiSourceNote":
+    "Wo mehrere Connectoren einen Wert gemeldet haben, steht die angezeigte Quelle in Klammern. Beide werden nie addiert.",
   "day.laneSleep": "Schlaf",
   "day.laneActivity": "Aktivität",
   "day.laneWorkout": "Workouts",
@@ -199,6 +219,7 @@ export const de: Record<MessageKey, string> = {
   "day.laneCalendar": "Kalender",
   "day.laneEnvironment": "Wetter",
   "day.laneHome": "Zuhause",
+  "day.laneDeveloper": "Code",
   "day.laneCustom": "Eigene Metriken",
   "day.laneOther": "Sonstiges",
 
@@ -224,6 +245,12 @@ export const de: Record<MessageKey, string> = {
   "quality.conflictsDetail": "Abweichungen über 5 %",
   "quality.conflictsNone": "Keine auffälligen konkurrierenden Quellen.",
   "quality.conflictsHelp": "Einheiten und bevorzugte Primärquelle prüfen.",
+  "quality.perConnectorMoved":
+    "Metriken in Quarantäne, nicht gespeicherte Anbieterfelder und neu unterstützte Felder stehen auf der Seite des jeweiligen Connectors, weil jede dieser Entscheidungen genau diesen Connector betrifft. Unter Connectoren einen davon öffnen, um sie zu bearbeiten.",
+  "quality.conflictsListTitle": "Welche Messwerte sich widersprechen",
+  "quality.conflictsListHint":
+    "Dieselbe Metrik am selben Tag, von zwei Connectoren unterschiedlich gemeldet. Beide Werte bleiben erhalten; welcher verwendet wird, entscheidet die primäre Quelle pro Metrik.",
+  "quality.conflictsMore": "{count} weitere Widersprüche nicht angezeigt",
   "quality.recommendationComplete": "Datenbasis wirkt vollständig.",
   "quality.recommendationMinor": "Leichte Lücken: Analyse nutzbar, aber Trends prüfen.",
   "quality.recommendationSerious":
@@ -236,6 +263,17 @@ export const de: Record<MessageKey, string> = {
   "quality.interruptionsHint":
     "Fortlaufend aufgezeichnete Metriken — Puls, Wetter — gemessen an der tatsächlich eingehaltenen Rate statt an Kalendertagen.",
   "quality.unsupportedTitle": "Noch nicht unterstützt",
+  "quality.newlySupportedTitle": "Jetzt unterstützt ({count})",
+  "quality.newlySupportedHint":
+    "Diese Felder kamen früher an, ohne gespeichert zu werden, und werden jetzt gespeichert. Die Unterstützung wird bei jedem Import neu geprüft, diese Liste füllt sich also von selbst — und wo die früheren Daten beim Anbieter noch abrufbar sind, werden sie automatisch nachgeholt.",
+  "quality.colConnector": "Connector",
+  "quality.colField": "Feld",
+  "quality.colMetric": "Metrik",
+  "quality.colSince": "Seit",
+  "quality.colHistory": "Frühere Daten",
+  "quality.historyQueued": "Wird automatisch nachgeholt",
+  "quality.historyRecovered": "Am {date} nachgeholt",
+  "quality.historyOnDevice": "Nur auf dem Gerät, das sie gesendet hat",
   "quality.unsupportedHint":
     "Dein Gerät sendet diese Felder, und diese Plattform speichert sie noch nicht. Erfasst sind ausschließlich Feldnamen und Typen — nie ein Wert.",
   "quality.unsupportedSummary": "Nicht unterstützte Felder ({count})",
@@ -297,10 +335,6 @@ export const de: Record<MessageKey, string> = {
   "quality.backfillSource": "{source} nachladen",
   "quality.backfillHint":
     "Der Importdialog schlägt den benötigten Zeitraum vor und überspringt bereits vorhandene Bereiche.",
-  "quality.conflictsNoneLong": "Keine widersprüchlichen Messwerte gefunden.",
-  "quality.conflictsSome": "{count} Messwerte weichen zwischen Quellen deutlich voneinander ab.",
-  "quality.conflictsAdvice":
-    "Bei Konflikten sollte die zuverlässigste Quelle pro Metrik priorisiert und die Einheit im Importer-Transformer geprüft werden.",
 
   // ── Charts and map ──────────────────────────────────────────────────────
   "chart.calories": "Kalorien (kcal)",
@@ -320,6 +354,7 @@ export const de: Record<MessageKey, string> = {
   "chart.typeBar": "Balkendiagramm",
   "chart.refresh": "Diagramm aktualisieren",
   "chart.emptyPeriod": "Keine Datenpunkte für den ausgewählten Zeitraum vorhanden.",
+  "chart.aria": "Diagramm von {metrics}",
   "chart.emptyFilter": "Keine Datenpunkte für die aktuelle Filterauswahl vorhanden.",
   "map.routeAria": "Karte der aufgezeichneten Route",
   "map.tilesFailed":
@@ -361,6 +396,7 @@ export const de: Record<MessageKey, string> = {
   "connectors.desc.home_assistant": "Temperatur, Luftfeuchte, Licht- und Geräuschsensoren.",
   "connectors.desc.weather": "Temperatur, Luftdruck, Niederschlag und UV-Index.",
   "connectors.desc.calendar": "ICS-Feeds, Termine, Meetingdauer und Busy Hours pro Tag.",
+  "connectors.desc.github": "Commits, geänderte Zeilen, Pull Requests und Reviews pro Tag und pro Repository.",
   "connectors.nameWeather": "Wetter",
   "connectors.nameCalendar": "Kalender",
   "connectors.confirmDelete":
@@ -591,6 +627,9 @@ export const de: Record<MessageKey, string> = {
   "profile.changing": "Wird geändert…",
   "profile.encryptionNote":
     "Connector-Tokens werden vor der Speicherung mit Fernet AES-256 verschlüsselt.",
+  "profile.appearance": "Darstellung und Sprache",
+  "profile.language": "Sprache der Oberfläche",
+  "profile.theme": "Erscheinungsbild",
   "profile.workspaceDetails": "Workspace und Mandanten-ID",
   "profile.tenantId": "Mandanten-ID (UUID)",
   "profile.copy": "Kopieren",
@@ -723,11 +762,16 @@ export const de: Record<MessageKey, string> = {
     "Noch keine gespeicherten Ansichten. Filter einstellen und auf „Aktuelle Ansicht speichern“ klicken.",
   "explorer.source": "Quelle:",
   "explorer.allSources": "Alle Quellen",
-  "explorer.importResolution": "Importauflösung:",
-  "explorer.importResolutionHint":
-    "Dies ändert die Auflösung zukünftiger Importe für die ausgewählten Metriken.",
-  "explorer.resolutionAuto": "Registerstandard",
+  "explorer.pointLimitReached":
+    "Zeigt die neuesten {count} Punkte für {metrics}. Für den vollständigen Bestand den Zeitraum verkleinern.",
+  "explorer.colStorage": "Speicherung",
+  "explorer.storageHint":
+    "Die Speicherung legt fest, wie fein eine Metrik beim Eintreffen abgelegt wird. Sie wirkt nur auf künftige Importe — bereits gespeicherte Punkte bleiben unberührt.",
+  "explorer.storageApply": "Übernehmen",
+  "explorer.storageIsDefault": "Registerstandard",
+  "explorer.storageIsOverride": "Für diesen Workspace gesetzt",
   "explorer.resolutionRaw": "Rohdaten",
+  "explorer.resolutionSecond": "Sekunde",
   "explorer.resolutionMinute": "Minute",
   "explorer.resolutionHour": "Stunde",
   "explorer.resolutionDay": "Tag",
@@ -826,6 +870,7 @@ export const de: Record<MessageKey, string> = {
   "modal.desc.weather":
     "Aktiv: Importiert lokale Wetterzeitreihen über eine Open-Meteo-kompatible API.",
   "modal.desc.calendar": "Aktiv: Importiert freigegebene Termine und tägliche Belegungsdauer.",
+  "modal.desc.github": "Aktiv: Liest deine eigene Beitragsaktivität mit einem fein granularen Access Token.",
   "modal.needEmailPassword": "Bitte gib sowohl E-Mail als auch Passwort ein.",
   "modal.needYazioToken": "Bitte gib einen Yazio Bearer Access Token ein.",
   "modal.needDawarichKey": "Bitte gib den Dawarich API Key ein.",
@@ -978,6 +1023,9 @@ export const de: Record<MessageKey, string> = {
   "report.neverComputed": "Noch nicht berechnet",
   "report.running": "Wird berechnet…",
   "report.stale": "Neue Daten seitdem",
+  "report.deferred": "Wird nachts aktualisiert",
+  "report.deferredTitle":
+    "Es sind neue Daten eingetroffen. Ein so langer Zeitraum wird nachts neu berechnet statt während der Arbeit — wenn du nicht warten möchtest, jetzt neu berechnen.",
   "report.recompute": "Neu berechnen",
   "report.failed":
     "Die letzte Berechnung ist fehlgeschlagen; das vorherige Ergebnis ist weiterhin verfügbar.",
@@ -987,10 +1035,50 @@ export const de: Record<MessageKey, string> = {
     "Die Analyse konnte nicht berechnet werden. Das vorherige Ergebnis ist weiterhin verfügbar.",
   "report.error.report_load_failed":
     "Der gespeicherte Bericht konnte nicht geladen werden. Prüfe die Verbindung und versuche es erneut.",
+  "report.error.report_timeout":
+    "Die Analyse wurde gestartet, ist aber nicht rechtzeitig fertig geworden. Sie wird nach dem nächsten Import erneut versucht; ein kürzerer Zeitraum läuft in der Regel durch.",
+  "report.error.report_never_claimed":
+    "Kein Analyse-Worker hat diesen Bericht übernommen. Der Analyse-Dienst ist vermutlich gestoppt oder nicht erreichbar — längeres Warten hilft nicht.",
   "report.error.report_refresh_failed":
     "Der Bericht konnte nicht gestartet werden. Prüfe die Verbindung und versuche es erneut.",
   "report.pendingFirstRun":
     "Das wird nach einem Import im Hintergrund berechnet. Jetzt starten, um es sofort zu sehen.",
+
+  // ─── Hintergrund-Jobs (Benachrichtigungsglocke) ───────────
+  "jobs.title": "Aktivität",
+  "jobs.bell": "Hintergrund-Aktivität",
+  "jobs.bellWithCount": "Hintergrund-Aktivität, {count} neu",
+  "jobs.refresh": "Aktualisieren",
+  "jobs.empty": "In den letzten zwei Wochen ist nichts gelaufen.",
+  "jobs.loadFailed": "Die Aktivitätsliste konnte nicht geladen werden.",
+  "jobs.running": "Läuft…",
+  "jobs.pointsStored": "{count} Werte gespeichert",
+  "jobs.overDays": "Über {days} Tage",
+  "jobs.subject.insights": "Analyse",
+  "jobs.subject.gaps": "Lückensuche",
+  "jobs.subject.conflicts": "Konfliktsuche",
+  "jobs.subject.day": "Tagesübersicht",
+  "jobs.trigger.manual": "Von dir gestartet",
+  "jobs.trigger.scheduled": "Geplant",
+  "jobs.trigger.nightly": "Über Nacht",
+  "jobs.trigger.webhook": "Vom Anbieter gesendet",
+  "jobs.trigger.upload": "Aus einem Upload",
+  // ── Ergebnisse von Import- und Report-Läufen ──────────────────────────
+  // Core sendet einen stabilen `code` plus seinen eigenen englischen Satz
+  // (Regel 17). Der Satz ist der Rückfall für einen Code, den dieser Build
+  // nicht kennt — nicht der Normalfall, zu dem er geworden war: die Glocke
+  // kannte zwei Codes, Core sendet acht.
+  "jobs.code.sync_skipped": "Nichts Neues — der Zeitraum war bereits abgedeckt.",
+  "jobs.code.sync_queued": "Zum Import eingereiht.",
+  "jobs.code.sync_in_flight": "Für diesen Connector lief bereits ein Import.",
+  "jobs.code.sync_not_scheduled":
+    "Dieser Connector hat keinen geplanten Import; er empfängt Daten per Webhook oder Upload.",
+  "jobs.code.sync_plan_failed": "Der zu importierende Zeitraum konnte nicht bestimmt werden.",
+  "jobs.code.sync_failed": "Der Import wurde nicht abgeschlossen.",
+  "jobs.code.core_ingest_delivery_failed":
+    "Der Importer hat Daten veröffentlicht, die nach {attempts} Versuch(en) nicht an den Speicher übergeben werden konnten.",
+  "jobs.code.report_timeout": "Gestartet, aber nicht rechtzeitig fertig",
+  "jobs.code.report_never_claimed": "Kein Analyse-Worker hat ihn übernommen",
 
   // ─── Primary source selection ─────────────────────────────
   "sources.title": "Metriken aus mehreren Connectoren",
@@ -1055,6 +1143,12 @@ export const de: Record<MessageKey, string> = {
   "analysis.matrixCellAria": "{first} und {second}: Korrelationskoeffizient {value}",
   "analysis.strongestTitle": "Auffälligste Zusammenhänge",
   "analysis.matrixTitle": "Korrelationsmatrix",
+  "analysis.matrixSize": "{count} Metriken",
+  "analysis.runTitle": "Welcher Lauf das ist",
+  "analysis.runSummary": "{days} Tage · {source}",
+  "analysis.runNote":
+    "Fenster oder Quelle zu ändern startet einen neuen Analyselauf, der einige Minuten dauert. Die Filter darunter ändern nur die Anzeige.",
+  "analysis.laggedTruncated": "Zeigt {shown} von {total}.",
   "analysis.matrixAria": "Korrelationsmatrix der Metriken",
   "analysis.interpretationTitle": "Interpretation",
   "analysis.sharedDays": "Gemeinsame Tage: {count}",
@@ -1189,6 +1283,10 @@ export const de: Record<MessageKey, string> = {
     "Diese Einheit wurde importiert, bevor Trainings eine Kennung trugen. Ihre Punkte sind über Zeitstempel und Titel gruppiert: zwei gleich gestempelte Einheiten können als eine erscheinen, eine Einheit als zwei.",
   "workouts.scanTruncated":
     "Dieser Zeitraum enthält mehr Zeilen, als ein Durchlauf liest. Wähle einen kürzeren Zeitraum, um alles zu sehen.",
+  "workouts.weekOf": "Woche ab {date}",
+  "workouts.moreMeasures": "+{count} weitere",
+  "workouts.listTruncated":
+    "Zeigt die neuesten {count} Sitzungen in diesem Zeitraum. Wähle einen kürzeren Zeitraum, um ältere zu erreichen.",
   "workouts.back": "Alle Trainings",
   "workouts.exercises_one": "{count} Übung",
   "workouts.exercises_other": "{count} Übungen",

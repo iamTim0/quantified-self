@@ -31,27 +31,27 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
   const rows = points.slice(0, MAX_ROWS);
 
   return (
-    <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6">
+    <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-sm font-bold text-slate-900">
+        <h3 className="text-sm font-bold text-ink">
           {t("explorer.tabRaw")}{" "}
-          <span className="font-normal text-slate-400">
+          <span className="font-normal text-ink-muted">
             {t(plural(points.length, "explorer.rawCount_one", "explorer.rawCount_other"), {
               count: formatNumber(points.length),
             })}
           </span>
         </h3>
-        <span className="font-mono text-[11px] text-slate-400">{t("explorer.liveQuery")}</span>
+        <span className="font-mono text-meta text-ink-muted">{t("explorer.liveQuery")}</span>
       </div>
 
       {rows.length === 0 ? (
-        <p className="py-4 text-xs text-slate-400">{t("explorer.empty")}</p>
+        <p className="py-4 text-xs text-ink-muted">{t("explorer.empty")}</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                <tr className="border-b border-line text-meta font-bold uppercase tracking-wider text-ink-muted">
                   <th className="px-3 pb-3">{t("explorer.colTimestamp")}</th>
                   <th className="px-3 pb-3">{t("explorer.colSource")}</th>
                   <th className="px-3 pb-3">{t("explorer.colMetric")}</th>
@@ -60,7 +60,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                   <th className="px-3 pb-3 text-right">{t("explorer.colDetails")}</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-line">
                 {rows.map((point) => {
                   const { label, unit, precision } = describeMetric(point.metric_type, locale);
                   const itemName = point.metadata?.food_name || point.metadata?.name;
@@ -75,7 +75,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                     // scrollbar does not jump as they render.
                     <tr
                       key={point.id}
-                      className="[contain-intrinsic-size:auto_2.5rem] [content-visibility:auto] font-mono transition-colors hover:bg-slate-50"
+                      className="[contain-intrinsic-size:auto_2.5rem] [content-visibility:auto] font-mono transition-colors hover:bg-page"
                     >
                       {/*
                         Formatted for the reader, exact in the tooltip. The stored
@@ -85,23 +85,23 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                         the reader's format nor the database's value.
                       */}
                       <td
-                        className="px-3 py-2.5 text-[11px] text-slate-500"
+                        className="px-3 py-2.5 text-meta text-ink-muted"
                         title={point.timestamp}
                       >
                         {point.timestamp ? formatDateTime(point.timestamp) : "—"}
                       </td>
-                      <td className="px-3 py-2.5 text-[10px] font-bold uppercase text-slate-900">
+                      <td className="px-3 py-2.5 text-meta font-bold uppercase text-ink">
                         {/*
                           `|| "yazio"` before this, so every point whose metadata
                           carried no source was labelled as the one connector that
                           happened to be built first.
                         */}
-                        <span className="rounded-full border border-slate-200 bg-slate-100 px-2 py-0.5 text-slate-700">
+                        <span className="rounded-full border border-line bg-surface-muted px-2 py-0.5 text-ink-secondary">
                           {point.source_type || point.metadata?.source_type || t("common.unknown")}
                         </span>
                       </td>
                       <td className="px-3 py-2.5" title={point.metric_type}>
-                        <span className="font-sans font-bold text-[#0d5c3a]">{label}</span>
+                        <span className="font-sans font-bold text-brand">{label}</span>
                       </td>
                       {/*
                         Rounded to the precision the registry declares for this
@@ -111,7 +111,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                         stored value is in the tooltip either way.
                       */}
                       <td
-                        className="px-3 py-2.5 font-bold text-slate-900"
+                        className="px-3 py-2.5 font-bold text-ink"
                         title={String(point.value)}
                       >
                         {formatNumber(point.value, { maximumFractionDigits: precision })}
@@ -119,18 +119,18 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                             ambiguous without it -- which is how kJ and kcal used to
                             sit in one column looking comparable. */}
                         {unit && (
-                          <span className="ml-1 text-[10px] font-normal text-slate-500">
+                          <span className="ml-1 text-meta font-normal text-ink-muted">
                             {unit}
                           </span>
                         )}
                       </td>
-                      <td className="max-w-xs truncate px-3 py-2.5 text-[11px] text-slate-500">
+                      <td className="max-w-xs truncate px-3 py-2.5 text-meta text-ink-muted">
                         {itemName ? (
-                          <span className="mr-1.5 font-sans font-bold text-emerald-700">
+                          <span className="mr-1.5 font-sans font-bold text-ok-ink">
                             {itemName}
                           </span>
                         ) : null}
-                        <span className="text-slate-400">
+                        <span className="text-ink-muted">
                           {JSON.stringify(point.metadata || {})}
                         </span>
                       </td>
@@ -140,7 +140,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
                           onClick={() => onInspect(point)}
                           title={t("explorer.inspect")}
                           aria-label={t("explorer.inspect")}
-                          className="p-1 text-slate-400 transition-colors hover:text-[#0d5c3a]"
+                          className="p-1 text-ink-muted transition-colors hover:text-brand"
                         >
                           <ChevronRight className="h-4 w-4" />
                         </button>
@@ -153,7 +153,7 @@ export default function ExplorerRawTable({ points, onInspect }: ExplorerRawTable
           </div>
 
           {points.length > rows.length && (
-            <p className="text-[11px] text-slate-400">
+            <p className="text-meta text-ink-muted">
               {t("explorer.rawTruncated", {
                 shown: formatNumber(rows.length),
                 total: formatNumber(points.length),

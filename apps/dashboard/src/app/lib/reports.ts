@@ -35,6 +35,12 @@ export interface ReportEnvelope<T> {
   status: "ready" | "never_computed";
   /** Newer data has arrived since this was computed. */
   stale: boolean;
+  /**
+   * Stale, and deliberately waiting for the reader's quiet hours rather than
+   * forgotten. Only ever true for a window longer than the default — see
+   * `defer_to_quiet_hours` in Core. A refresh overrides it.
+   */
+  deferred: boolean;
   /** A run is in flight right now. */
   running: boolean;
   computed_at: string | null;
@@ -66,6 +72,7 @@ export interface ReportState<T> extends ReportEnvelope<T> {
 const EMPTY: Omit<ReportEnvelope<never>, "kind"> = {
   status: "never_computed",
   stale: true,
+  deferred: false,
   running: false,
   computed_at: null,
   covers_data_through: null,
@@ -127,7 +134,15 @@ export function useReport<T>(apiBase: string, kind: ReportKind): ReportState<T> 
         const response = await apiFetch(`${apiBase}/api/v1/data/reports/${kind}/refresh`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(params ?? {}),
+          // The reader's offset on every kind, not only the ones that slice by
+          // day. A scheduled re-run inherits the params of the last one, and the
+          // server needs this to know whose night it is before it puts a
+          // year-long recompute off until then. An explicit value still wins:
+          // the day report passes the offset for the day it is asking about.
+          body: JSON.stringify({
+            offset_minutes: -new Date().getTimezoneOffset(),
+            ...params,
+          }),
         });
         if (!response.ok) {
           setEnvelope((current) => ({

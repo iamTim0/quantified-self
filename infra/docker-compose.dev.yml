@@ -151,6 +151,12 @@ services:
     environment:
       - PYTHONPATH=/app/services/importers/calendar/src
 
+  github-importer:
+    volumes:
+      - ../services/importers/github/src:/app/services/importers/github/src
+    environment:
+      - PYTHONPATH=/app/services/importers/github/src
+
   # No hot reload here, and the mount is still worth having.
   #
   # Measured on a Windows host, not assumed: Turbopack watches with inotify, and a

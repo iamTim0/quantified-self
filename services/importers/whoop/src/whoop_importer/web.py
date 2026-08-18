@@ -403,7 +403,20 @@ async def _import_archive(
                 # removing the path here still prevents a private archive from
                 # surviving the request.
                 pass
-        Path(path).unlink(missing_ok=True)
+        try:
+            Path(path).unlink(missing_ok=True)
+        except OSError as exc:
+            # Never raise from here. This runs both in a `finally` — where a throw
+            # would replace whatever the import was already failing with — and from
+            # a task's done-callback, where it becomes an unraisable nobody reads.
+            # A spool file left behind is a disk-space problem and gets swept; an
+            # error swallowed on the way out is a debugging problem forever.
+            logger.warning(
+                "[req_id=%s] Could not remove the spooled archive %s: %s",
+                req_id,
+                path,
+                exc,
+            )
 
     try:
         if nc is None or not nc.is_connected:

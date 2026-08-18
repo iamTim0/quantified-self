@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Self
 
 import pytest
 from apple_health_importer import client as client_module
@@ -18,7 +18,7 @@ class _AsyncClient:
         self.outcomes = outcomes
         self.calls: list[dict[str, Any]] = []
 
-    async def __aenter__(self) -> "_AsyncClient":
+    async def __aenter__(self) -> Self:
         return self
 
     async def __aexit__(self, *_args: object) -> None:

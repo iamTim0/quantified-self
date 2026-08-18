@@ -89,6 +89,7 @@ IMAGES: tuple[Image, ...] = (
     Image("importer-home-assistant", ".", "services/importers/home_assistant/Dockerfile"),
     Image("importer-weather", ".", "services/importers/weather/Dockerfile"),
     Image("importer-calendar", ".", "services/importers/calendar/Dockerfile"),
+    Image("importer-github", ".", "services/importers/github/Dockerfile"),
 )
 
 # Dockerfiles that exist but are deliberately not published: the Fizzbee model

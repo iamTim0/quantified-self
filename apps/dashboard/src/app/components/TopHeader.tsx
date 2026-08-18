@@ -1,23 +1,57 @@
 "use client";
 
 import React from "react";
-import { BookOpen, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
-import LanguageSwitcher from "./LanguageSwitcher";
-import ThemeSwitcher from "./ThemeSwitcher";
+import NotificationBell from "./NotificationBell";
+import { NAV, type TabType } from "./navigation";
 
 interface TopHeaderProps {
+  apiBase: string;
   userName: string;
   userEmail: string;
+  activeTab: TabType;
   onOpenConfigureModal: () => void;
   onNavigateToProfile: () => void;
   onRefresh: () => void;
 }
 
+/**
+ * The persistent header: where you are, what needs attention, and one action.
+ *
+ * This used to hold seven controls in a wrapping row — docs, notifications,
+ * refresh, add connector, language, theme, profile — and no page title at all.
+ * On a phone five of them survived the breakpoints and wrapped onto two lines
+ * *before* the content of every page. It was all controls and no orientation.
+ *
+ * The cut is by how often each is actually needed, which the navigation registry
+ * already states for destinations and which applies just as well here:
+ *
+ * - **Notifications stay.** It is the only surface where a failed nightly report
+ *   becomes visible at all, so it is the one control that has to be reachable at
+ *   any moment — which it was not, because this header used to render *inside*
+ *   `<main>` and scrolled away with the page.
+ * - **Add connector stays on desktop.** It is rare after setup, but it is the
+ *   one "get data in" affordance; on a phone it goes, and `/connectors` carries
+ *   its own primary button.
+ * - **Refresh is gone.** Returning to the tab already re-fetches everything
+ *   (`visibilitychange` in the dashboard layout), each report has its own
+ *   recompute in `ReportStatus`, and the browser has a reload button. On a phone
+ *   it survives in the "More" sheet, where there is no such button in view.
+ * - **Docs is gone from here.** The sidebar has the same link; two of them is a
+ *   duplicate, not a convenience.
+ * - **Language and theme move to Settings.** Both are set once and then never
+ *   again, which is the definition of something that should not occupy the row
+ *   above every screen.
+ * - **The profile pill loses its email line.** It was `text-meta` in
+ *   `text-ink-muted` — 2.56:1 at ten pixels — and Settings shows the address
+ *   properly one tap away.
+ */
 export default function TopHeader({
+  apiBase,
   userName,
-  userEmail,
+  activeTab,
   onOpenConfigureModal,
   onNavigateToProfile,
   onRefresh,
@@ -32,61 +66,51 @@ export default function TopHeader({
   };
 
   return (
-    <header className="mb-6 flex flex-col items-stretch gap-4 border-b border-slate-200/70 pb-6 sm:flex-row sm:items-center sm:justify-end">
-      {/* Every control shares the same 44px track. This keeps the row stable when
-          a translated label or the profile name takes a different width. */}
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-2 sm:gap-3">
-        <a
-          href="/docs/"
-          target="_blank"
-          rel="noreferrer"
-          className="hidden h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50 hover:text-slate-900 sm:flex"
-          title={t("sidebar.docsTitle")}
-        >
-          <BookOpen className="w-3.5 h-3.5 text-[#0d5c3a]" />
-          <span>{t("header.docs")}</span>
-        </a>
+    // Sticky, and the top safe-area inset lives here now: this is what sits
+    // against the status bar and the notch, so it is what has to clear them.
+    <header className="sticky top-0 z-30 border-b border-line bg-surface/90 pt-[env(safe-area-inset-top)] backdrop-blur">
+      <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 lg:px-8">
+        {/* The orientation this header never had. `h1` because it names the
+            page; the pages themselves carry `h2` downwards. */}
+        <h1 className="min-w-0 flex-1 truncate text-title font-bold text-ink">
+          {t(NAV[activeTab].labelKey)}
+        </h1>
+
+        {/* Only in an installed app, where the browser's reload button is gone.
+            In a tab this would be a permanent control for something the browser
+            already does and that `visibilitychange` handles on returning to the
+            page — which is why it left this header in the first place. */}
         <button
           onClick={onRefresh}
           aria-label={t("header.refresh")}
-          className="flex h-11 items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3.5 text-xs font-semibold text-slate-600 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-slate-50 hover:text-slate-900"
           title={t("header.refreshTitle")}
+          className="hidden min-h-11 min-w-11 items-center justify-center rounded-2xl border border-line bg-surface text-ink-muted shadow-sm hover:bg-page hover:text-ink standalone:flex"
         >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">{t("header.refresh")}</span>
+          <RefreshCw className="h-4 w-4" />
         </button>
-        {/* Add Connector Button (Primary Dark Emerald) */}
+
+        <NotificationBell apiBase={apiBase} />
+
         <button
           onClick={onOpenConfigureModal}
           aria-label={t("header.addConnector")}
-          className="flex h-11 items-center gap-2 rounded-2xl bg-[#0d5c3a] px-4 text-xs font-bold text-white shadow-md shadow-[#0d5c3a]/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-[#08432a]"
+          className="hidden h-11 items-center gap-2 rounded-2xl bg-brand px-4 text-meta font-bold text-brand-ink shadow-md shadow-brand/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-brand-hover md:flex"
         >
-          <Plus className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">{t("header.addConnector")}</span>
+          <Plus className="h-3.5 w-3.5" />
+          <span>{t("header.addConnector")}</span>
         </button>
 
-        <LanguageSwitcher />
-
-        <ThemeSwitcher />
-
-        <div className="h-6 w-px bg-slate-200 mx-1 hidden sm:block" />
-
-        {/* User Profile Pill */}
         <button
           onClick={onNavigateToProfile}
-          className="flex h-11 items-center gap-3 rounded-2xl border border-slate-200 bg-white pl-2 pr-3 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-slate-300 group"
+          aria-label={t("sidebar.settings")}
+          className="group flex h-11 min-w-11 items-center gap-3 rounded-2xl border border-line bg-surface px-2 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-line"
         >
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white font-bold text-xs flex items-center justify-center shadow-inner">
+          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-meta font-bold text-brand-ink shadow-inner">
             {getInitials(userName)}
-          </div>
-          <div className="text-left hidden lg:block">
-            <div className="text-xs font-bold text-slate-900 group-hover:text-[#0d5c3a] transition-colors leading-tight">
-              {userName}
-            </div>
-            <div className="text-[10px] text-slate-400 font-mono truncate max-w-[140px]">
-              {userEmail}
-            </div>
-          </div>
+          </span>
+          <span className="hidden max-w-40 truncate pr-1 text-meta font-bold text-ink group-hover:text-brand lg:block">
+            {userName}
+          </span>
         </button>
       </div>
     </header>

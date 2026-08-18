@@ -87,33 +87,33 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-slate-500">
+      <div className="flex items-center gap-2 text-sm text-ink-muted">
         <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
       </div>
     );
   }
 
   return (
-    <section className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+    <section className="space-y-4 rounded-2xl border border-line bg-surface p-5">
       <div className="flex items-start gap-3">
-        <GitMerge className="mt-0.5 h-5 w-5 shrink-0 text-emerald-700" aria-hidden="true" />
+        <GitMerge className="mt-0.5 h-5 w-5 shrink-0 text-ok-ink" aria-hidden="true" />
         <div>
-          <h2 className="text-sm font-bold text-slate-900">{t("sources.title")}</h2>
-          <p className="mt-1 text-xs text-slate-500">{t("sources.intro")}</p>
+          <h2 className="text-sm font-bold text-ink">{t("sources.title")}</h2>
+          <p className="mt-1 text-xs text-ink-muted">{t("sources.intro")}</p>
         </div>
       </div>
 
       {metrics.length === 0 ? (
-        <p className="text-sm text-slate-400">{t("sources.none")}</p>
+        <p className="text-sm text-ink-muted">{t("sources.none")}</p>
       ) : (
         <ul className="space-y-3">
           {metrics.map((metric) => (
             <li
               key={metric.metric_type}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+              className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-page px-3 py-2"
             >
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-slate-800">
+                <p className="truncate text-sm font-semibold text-ink-secondary">
                   {/*
                     From the generated catalogue, not from the server's
                     `definition`: that carries `label_en`/`label_de`, so reading
@@ -124,7 +124,7 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
                   */}
                   {describeMetric(metric.metric_type, locale).label}
                 </p>
-                <p className="text-xs text-slate-500">
+                <p className="text-xs text-ink-muted">
                   {failed === metric.metric_type
                     ? t("sources.saveFailed")
                     : metric.primary_reason === "preference"
@@ -139,7 +139,7 @@ export default function MetricSourcePicker({ apiBase }: { apiBase: string }) {
                 aria-label={t("analysis.chooseSource")}
                 disabled={saving === metric.metric_type}
                 onChange={(event) => void choose(metric.metric_type, event.target.value)}
-                className="max-w-64 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus-ring disabled:opacity-50"
+                className="max-w-64 rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-secondary outline-none focus-ring disabled:opacity-50"
               >
                 <option value="">{t("sources.automatic")}</option>
                 {metric.sources.map((source) => (

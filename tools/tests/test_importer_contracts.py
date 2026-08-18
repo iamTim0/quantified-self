@@ -17,7 +17,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 def test_every_importer_has_one_valid_contract():
     """Verifies the importer boundary contract for every discovered service."""
-    assert len(importer_directories()) == 8
+    assert len(importer_directories()) == 9
     assert not validate_all()
     assert all(path.name == CONTRACT_FILENAME for path in contract_paths())
 

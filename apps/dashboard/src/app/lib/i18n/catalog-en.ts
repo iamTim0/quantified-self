@@ -182,10 +182,30 @@ export const en = {
   "day.nothingRecorded": "Nothing was recorded for this day.",
   "day.timeline": "During the day",
   "day.timelineTruncated": "Only the first entries of this day are shown.",
+  "day.logged": "Logged that day",
+  "day.loggedNote":
+    "Grouped by meal rather than placed on the timeline: these are recorded for a day, not at an hour. A time is shown where the app that recorded it stated one.",
+  "day.loggedSummed": "Added up from the individual entries, not stated by the provider.",
+  "day.loggedTruncated": "Only the first entries of this day are shown.",
+  "day.mealBreakfast": "Breakfast",
+  "day.mealLunch": "Lunch",
+  "day.mealDinner": "Dinner",
+  "day.mealSnack": "Snack",
+  "day.mealOther": "Other",
   "day.lastImport": "This connector last imported {timestamp}",
   "day.neverImported": "This connector has never completed an import",
-  "day.answeredBy":
-    "Answered by {source}. Another connector also reports this metric; the two are never added together.",
+  "day.vsPreviousDay": "vs. the day before",
+  "day.expandAll": "Expand all",
+  "day.collapseAll": "Collapse all",
+  "day.mapSection": "Where the day happened",
+  "day.valueCount_one": "{count} value",
+  "day.valueCount_other": "{count} values",
+  "day.eventCount_one": "{count} event",
+  "day.eventCount_other": "{count} events",
+  "day.mealCount_one": "{count} meal",
+  "day.mealCount_other": "{count} meals",
+  "day.multiSourceNote":
+    "Where more than one connector reported a value, the source in brackets is the one shown. The two are never added together.",
   "day.laneSleep": "Sleep",
   "day.laneActivity": "Activity",
   "day.laneWorkout": "Workouts",
@@ -197,6 +217,7 @@ export const en = {
   "day.laneCalendar": "Calendar",
   "day.laneEnvironment": "Weather",
   "day.laneHome": "Home",
+  "day.laneDeveloper": "Code",
   "day.laneCustom": "Your own metrics",
   "day.laneOther": "Other",
 
@@ -222,6 +243,12 @@ export const en = {
   "quality.conflictsDetail": "Deviations above 5 %",
   "quality.conflictsNone": "No competing sources worth a second look.",
   "quality.conflictsHelp": "Check the units and which source should be the primary one.",
+  "quality.perConnectorMoved":
+    "Quarantined metrics, unstored provider fields and newly supported fields are shown on each connector's own page, because every one of them is a decision about that connector. Open a connector under Connectors to review them.",
+  "quality.conflictsListTitle": "Which measurements disagree",
+  "quality.conflictsListHint":
+    "The same metric on the same day, reported differently by two connectors. Both readings are kept; choosing a primary source per metric decides which one is used.",
+  "quality.conflictsMore": "{count} further disagreements not shown",
   "quality.recommendationComplete": "The data looks complete.",
   "quality.recommendationMinor": "Small gaps: usable for analysis, but check the trends.",
   "quality.recommendationSerious":
@@ -234,6 +261,17 @@ export const en = {
   "quality.interruptionsHint":
     "Metrics recorded continuously — heart rate, weather — measured against the rate they actually kept rather than against calendar days.",
   "quality.unsupportedTitle": "Not yet supported",
+  "quality.newlySupportedTitle": "Now supported ({count})",
+  "quality.newlySupportedHint":
+    "These fields used to arrive without being stored, and are being stored now. Support is re-checked on every import, so this list fills itself in — and where the earlier data can still be fetched from the provider, it is fetched automatically.",
+  "quality.colConnector": "Connector",
+  "quality.colField": "Field",
+  "quality.colMetric": "Metric",
+  "quality.colSince": "Since",
+  "quality.colHistory": "Earlier data",
+  "quality.historyQueued": "Being fetched automatically",
+  "quality.historyRecovered": "Fetched again on {date}",
+  "quality.historyOnDevice": "Only on the device that sent it",
   "quality.unsupportedHint":
     "Your device sends these fields and this platform does not store them yet. Only the field names and their types are recorded here — never a value.",
   "quality.unsupportedSummary": "Unsupported fields ({count})",
@@ -295,10 +333,6 @@ export const en = {
   "quality.backfillSource": "Backfill {source}",
   "quality.backfillHint":
     "The import dialog proposes the period that is missing and skips what is already stored.",
-  "quality.conflictsNoneLong": "No contradictory measurements found.",
-  "quality.conflictsSome": "{count} measurements differ noticeably between sources.",
-  "quality.conflictsAdvice":
-    "Where sources conflict, pick the most reliable one per metric and check the unit in the importer's transformer.",
 
   // ── Charts and map ──────────────────────────────────────────────────────
   "chart.calories": "Calories (kcal)",
@@ -318,6 +352,10 @@ export const en = {
   "chart.typeBar": "Bar chart",
   "chart.refresh": "Refresh the chart",
   "chart.emptyPeriod": "No data points in the selected period.",
+  // Chart.js draws into a `<canvas role="img">`, and a role of img with no
+  // accessible name is a chart a screen reader announces as nothing at all. The
+  // series names are the only useful description available here.
+  "chart.aria": "Chart of {metrics}",
   "chart.emptyFilter": "No data points for the current filter.",
   "map.routeAria": "Map of the recorded route",
   "map.tilesFailed": "The map could not be loaded. Falling back to the plain view.",
@@ -357,6 +395,7 @@ export const en = {
   "connectors.desc.home_assistant": "Temperature, humidity, light and sound sensors.",
   "connectors.desc.weather": "Temperature, air pressure, precipitation and the UV index.",
   "connectors.desc.calendar": "ICS feeds: appointments, meeting duration and busy hours per day.",
+  "connectors.desc.github": "Commits, changed lines, pull requests and reviews per day, and per repository.",
   "connectors.nameWeather": "Weather",
   "connectors.nameCalendar": "Calendar",
   "connectors.confirmDelete":
@@ -587,6 +626,9 @@ export const en = {
   "profile.changing": "Changing…",
   "profile.encryptionNote":
     "Connector tokens are encrypted with Fernet AES-256 before they are stored.",
+  "profile.appearance": "Appearance and language",
+  "profile.language": "Interface language",
+  "profile.theme": "Theme",
   "profile.workspaceDetails": "Workspace and tenant ID",
   "profile.tenantId": "Tenant ID (UUID)",
   "profile.copy": "Copy",
@@ -715,11 +757,16 @@ export const en = {
     "No saved views yet. Configure the filters and press “Save the current view”.",
   "explorer.source": "Source:",
   "explorer.allSources": "All sources",
-  "explorer.importResolution": "Import resolution:",
-  "explorer.importResolutionHint":
-    "This changes the resolution of future imports for the selected metrics.",
-  "explorer.resolutionAuto": "Registry default",
+  "explorer.pointLimitReached":
+    "Showing the newest {count} points for {metrics}. Narrow the period to see everything that is stored.",
+  "explorer.colStorage": "Storage",
+  "explorer.storageHint":
+    "Storage sets how finely a metric is kept when it arrives. It applies to future imports only — points already stored are untouched.",
+  "explorer.storageApply": "Apply",
+  "explorer.storageIsDefault": "Registry default",
+  "explorer.storageIsOverride": "Set for this workspace",
   "explorer.resolutionRaw": "Raw",
+  "explorer.resolutionSecond": "Second",
   "explorer.resolutionMinute": "Minute",
   "explorer.resolutionHour": "Hour",
   "explorer.resolutionDay": "Day",
@@ -817,6 +864,7 @@ export const en = {
   "modal.desc.weather":
     "Active: imports local weather time series through an Open-Meteo compatible API.",
   "modal.desc.calendar": "Active: imports the appointments you expose and the busy time per day.",
+  "modal.desc.github": "Active: reads your own contribution activity with a fine-grained access token.",
   "modal.needEmailPassword": "Please enter both an email address and a password.",
   "modal.needYazioToken": "Please enter a Yazio bearer access token.",
   "modal.needDawarichKey": "Please enter the Dawarich API key.",
@@ -966,6 +1014,9 @@ export const en = {
   "report.neverComputed": "Not computed yet",
   "report.running": "Computing…",
   "report.stale": "New data since",
+  "report.deferred": "Updates overnight",
+  "report.deferredTitle":
+    "New data has arrived. A window this long is recomputed during the night rather than while you are working — recompute now if you would rather not wait.",
   "report.recompute": "Recompute",
   "report.failed": "The last computation failed; the previous result remains available.",
   "report.error.report_failed":
@@ -974,10 +1025,51 @@ export const en = {
     "The analysis could not be computed. The previous result remains available.",
   "report.error.report_load_failed":
     "The saved report could not be loaded. Check the connection and try again.",
+  "report.error.report_timeout":
+    "The analysis was started but did not finish in time. It will be retried after the next import; a shorter period usually completes.",
+  "report.error.report_never_claimed":
+    "No analysis worker picked this report up. The analysis service is probably stopped or unreachable — waiting longer will not help.",
   "report.error.report_refresh_failed":
     "The report could not be started. Check the connection and try again.",
   "report.pendingFirstRun":
     "This is computed in the background after an import. Start it now to see it straight away.",
+
+  // ─── Background jobs (notification bell) ──────────────────
+  "jobs.title": "Activity",
+  "jobs.bell": "Background activity",
+  "jobs.bellWithCount": "Background activity, {count} new",
+  "jobs.refresh": "Refresh",
+  "jobs.empty": "Nothing has run in the last two weeks.",
+  "jobs.loadFailed": "The activity list could not be loaded.",
+  "jobs.running": "Running…",
+  "jobs.pointsStored": "{count} values stored",
+  "jobs.overDays": "Over {days} days",
+  "jobs.subject.insights": "Analysis",
+  "jobs.subject.gaps": "Gap scan",
+  "jobs.subject.conflicts": "Conflict scan",
+  "jobs.subject.day": "Daily story",
+  "jobs.trigger.manual": "Started by you",
+  "jobs.trigger.scheduled": "Scheduled",
+  "jobs.trigger.nightly": "Overnight",
+  "jobs.trigger.webhook": "Pushed by provider",
+  "jobs.trigger.upload": "From an upload",
+  // ── Import and report run outcomes ────────────────────────────────────
+  // Core sends a stable `code` plus its own English sentence (rule 17). The
+  // sentence is the fallback for a code this build does not know; it is not
+  // meant to be the normal path, which is what it had become — the bell knew
+  // two codes and Core emits eight, so every import notification read English
+  // in a German interface.
+  "jobs.code.sync_skipped": "Nothing new — the period was already covered.",
+  "jobs.code.sync_queued": "Queued for import.",
+  "jobs.code.sync_in_flight": "An import for this connector was already running.",
+  "jobs.code.sync_not_scheduled":
+    "This connector has no scheduled import; it receives data by webhook or upload.",
+  "jobs.code.sync_plan_failed": "Could not work out which period to import.",
+  "jobs.code.sync_failed": "The import did not finish.",
+  "jobs.code.core_ingest_delivery_failed":
+    "The importer published data that could not be handed to storage, after {attempts} attempt(s).",
+  "jobs.code.report_timeout": "Started but did not finish in time",
+  "jobs.code.report_never_claimed": "No analysis worker picked it up",
 
   // ─── Primary source selection ─────────────────────────────
   "sources.title": "Metrics from several connectors",
@@ -1040,6 +1132,12 @@ export const en = {
   "analysis.matrixCellAria": "{first} and {second}: correlation coefficient {value}",
   "analysis.strongestTitle": "Strongest relationships",
   "analysis.matrixTitle": "Correlation matrix",
+  "analysis.matrixSize": "{count} metrics",
+  "analysis.runTitle": "Which run this is",
+  "analysis.runSummary": "{days} days · {source}",
+  "analysis.runNote":
+    "Changing the window or the source starts a new analysis run, which takes a few minutes. The filters below only change what is shown.",
+  "analysis.laggedTruncated": "Showing {shown} of {total}.",
   "analysis.matrixAria": "Correlation matrix of metrics",
   "analysis.interpretationTitle": "Interpretation",
   "analysis.sharedDays": "Shared days: {count}",
@@ -1174,6 +1272,10 @@ export const en = {
     "This session was imported before workouts carried an identifier, so its points are grouped by timestamp and title. Two sessions stamped alike can appear as one, and one session can appear as two.",
   "workouts.scanTruncated":
     "This period holds more rows than one scan reads. Narrow the range to see everything.",
+  "workouts.weekOf": "Week of {date}",
+  "workouts.moreMeasures": "+{count} more",
+  "workouts.listTruncated":
+    "Showing the newest {count} sessions in this period. Narrow the range to reach older ones.",
   "workouts.back": "All workouts",
   "workouts.exercises_one": "{count} exercise",
   "workouts.exercises_other": "{count} exercises",

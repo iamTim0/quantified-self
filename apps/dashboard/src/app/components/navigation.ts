@@ -52,20 +52,34 @@ export interface NavEntry {
   icon: LucideIcon;
   /** `primary` earns a slot in the phone tab bar; `secondary` lives in "More". */
   group: "primary" | "secondary";
+  /**
+   * Which block of the desktop sidebar this belongs to.
+   *
+   * The sidebar used to express this as `NAV_ORDER.filter((id) => id !== "profile")`
+   * plus a hand-written entry further down — so the registry described the phone
+   * exhaustively and the desktop approximately, and a new settings-shaped
+   * destination would have landed in the wrong block silently.
+   */
+  section: "menu" | "general";
 }
 
 export const NAV: Record<TabType, NavEntry> = {
-  overview: { labelKey: "sidebar.overview", icon: LayoutDashboard, group: "primary" },
-  explorer: { labelKey: "sidebar.explorer", icon: LineChart, group: "primary" },
+  overview: {
+    labelKey: "sidebar.overview",
+    icon: LayoutDashboard,
+    group: "primary",
+    section: "menu",
+  },
+  explorer: { labelKey: "sidebar.explorer", icon: LineChart, group: "primary", section: "menu" },
   // Primary, and `chat` moves to "More" to make room. The docstring above calls
   // this split "a claim about frequency, not importance": a training log is
   // opened after every session, an AI chat when there is a question.
-  workouts: { labelKey: "sidebar.workouts", icon: Dumbbell, group: "primary" },
-  analysis: { labelKey: "sidebar.analysis", icon: BrainCircuit, group: "primary" },
-  chat: { labelKey: "sidebar.chat", icon: MessagesSquare, group: "secondary" },
-  quality: { labelKey: "sidebar.quality", icon: ScanSearch, group: "secondary" },
-  connectors: { labelKey: "sidebar.connectors", icon: Plug, group: "secondary" },
-  profile: { labelKey: "sidebar.settings", icon: User, group: "secondary" },
+  workouts: { labelKey: "sidebar.workouts", icon: Dumbbell, group: "primary", section: "menu" },
+  analysis: { labelKey: "sidebar.analysis", icon: BrainCircuit, group: "primary", section: "menu" },
+  chat: { labelKey: "sidebar.chat", icon: MessagesSquare, group: "secondary", section: "menu" },
+  quality: { labelKey: "sidebar.quality", icon: ScanSearch, group: "secondary", section: "menu" },
+  connectors: { labelKey: "sidebar.connectors", icon: Plug, group: "secondary", section: "menu" },
+  profile: { labelKey: "sidebar.settings", icon: User, group: "secondary", section: "general" },
 };
 
 /**
@@ -87,3 +101,14 @@ export const NAV_ORDER = [
 
 export const PRIMARY_TABS = NAV_ORDER.filter((tab) => NAV[tab].group === "primary");
 export const SECONDARY_TABS = NAV_ORDER.filter((tab) => NAV[tab].group === "secondary");
+
+/**
+ * The desktop sidebar's two blocks, derived rather than written out.
+ *
+ * Both surfaces now read the same registry through the same `NAV_ORDER`, so a
+ * destination cannot appear in one and not the other, and cannot sit in a
+ * different relative order on the two. That was the point of this file; the
+ * sidebar's hand-rolled `filter(id !== "profile")` was the last hole in it.
+ */
+export const SIDEBAR_MENU = NAV_ORDER.filter((tab) => NAV[tab].section === "menu");
+export const SIDEBAR_GENERAL = NAV_ORDER.filter((tab) => NAV[tab].section === "general");

@@ -1,21 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import {
-  AlertTriangle,
-  BookOpen,
-  CalendarX2,
-  Lightbulb,
-  RefreshCw,
-  ShieldCheck,
-} from "lucide-react";
+import { AlertTriangle, BookOpen, CalendarX2, Lightbulb, RefreshCw } from "lucide-react";
 import ImportDialog from "./ImportDialog";
 import ReportStatus from "./ReportStatus";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
 import { useReport } from "../lib/reports";
-import { CANONICAL_KEYS } from "../lib/metrics/catalog";
+import { describeMetric } from "../lib/metrics/catalog";
 
 // tenantId is no longer read: Core derives the tenant from the session credential, so the
 // prop is kept only for call-site compatibility with the other tabs.
@@ -48,71 +41,55 @@ type GapReport = {
   missing_count: number;
 };
 
-/** The stored result of a scheduled cross-source conflict run. */
-type ConflictReport = {
-  conflicts: unknown[];
+/**
+ * One connector's reading inside a disagreement.
+ *
+ * `source_id` is the connector *instance*, which is what makes two rows of the
+ * same `source_type` distinguishable — two Apple Health connectors can disagree
+ * with each other.
+ */
+type ConflictCandidate = {
+  id: string;
+  source_id: string;
+  metric_type: string;
+  timestamp: string;
+  value: number | null;
+};
+
+/** Same metric, same day, values from different connectors beyond the tolerance. */
+type Conflict = {
+  metric_type: string;
+  date: string;
+  candidates: ConflictCandidate[];
 };
 
 /**
- * One provider field that arrives and is not stored.
+ * The stored result of a scheduled cross-source conflict run.
  *
- * Deliberately shape-only: a path, the kind of value that sat there, and how often
- * it was seen. There is no value field, and there is not meant to be one — keeping
- * payloads would mean a second copy of the most sensitive data in the system.
+ * This was `unknown[]`, and only `.length` was ever read — so the page stated a
+ * count and gave advice about items it had no way to show. A number the reader
+ * cannot investigate is an accusation, not a finding; the shape is written out
+ * here because `core.analytics.find_cross_source_conflicts` has always sent it.
  */
-type UnsupportedField = {
-  source_id: string;
-  source_type: string;
-  connector_name: string;
-  field_path: string;
-  value_kind: string;
-  occurrences: number;
-  last_seen_at: string | null;
+type ConflictReport = {
+  conflicts: Conflict[];
 };
 
-type QuarantinedMetric = {
-  source_id: string;
-  source_type: string;
-  connector_name: string;
-  raw_metric_type: string;
-  points: number;
-  seen: number;
-  units: string | null;
-  first_seen_at: string;
-  last_seen_at: string;
-  action: "map" | "adopt" | "discard" | "keep" | null;
-};
+/** How many disagreements the list shows before it says how many it is hiding. */
+const CONFLICTS_SHOWN = 6;
 
-type QuarantineWarningCode =
-  | "quarantine_has_pending"
-  | "quarantine_half_full"
-  | "quarantine_near_full"
-  | "quarantine_full"
-  | "quarantine_values_refused";
-
-type QuarantineCapacity = {
-  source_id: string;
-  source_type: string;
-  connector_name: string;
-  active_rows: number;
-  max_rows: number;
-  active_names: number;
-  max_names: number;
-  usage_percent: number;
-  limiting_dimension: "rows" | "names";
-  refused_occurrences: number;
-  warning_code: QuarantineWarningCode;
-};
-
-type MappingDraft = {
-  action: "map" | "adopt" | "discard" | "keep";
-  target_metric_type: string;
-  source_unit: string;
-  target_unit: string;
-  aggregation: "average" | "sum" | "last" | "max";
-  cadence: "daily" | "continuous" | "event";
-  keep_indefinitely: boolean;
-};
+/**
+ * A connector instance's readable name.
+ *
+ * Falls back to the raw `source_id`, not to a placeholder: a connector can be
+ * deleted while the points it wrote remain, and "unknown" in both rows of a
+ * disagreement would make the two readings indistinguishable — which is the one
+ * thing this list exists to do.
+ */
+function connectorLabel(connectors: Connector[], sourceId: string): string {
+  const match = connectors.find((connector) => connector.source_id === sourceId);
+  return match?.display_name?.trim() || match?.source_type || sourceId;
+}
 
 /** Contiguous runs of missing days, so "12 days" becomes a usable backfill range. */
 function toRanges(dates: string[]): { start: string; end: string; days: number }[] {
@@ -142,7 +119,7 @@ const gapRecommendation = (t: Translate, missingDays: number): string => {
 };
 
 export default function DataQualityTab({ apiBase }: Props) {
-  const { t, formatDate, formatNumber } = useI18n();
+  const { t, locale, formatDate, formatNumber } = useI18n();
 
   // The two expensive scans, read from their scheduled run rather than computed
   // on arrival. `windowDays` is the window the *run* used, not a live query
@@ -152,19 +129,12 @@ export default function DataQualityTab({ apiBase }: Props) {
   const conflictReport = useReport<ConflictReport>(apiBase, "conflicts");
   const gaps: Gap[] = gapReport.result?.gaps ?? [];
   const cadenceGaps: CadenceGap[] = gapReport.result?.cadence_gaps ?? [];
-  const conflicts = conflictReport.result?.conflicts?.length ?? 0;
+  const conflictItems: Conflict[] = conflictReport.result?.conflicts ?? [];
+  const conflicts = conflictItems.length;
   const windowDays = Number(gapReport.params?.window_days ?? 30);
 
   const [connectors, setConnectors] = useState<Connector[]>([]);
   const [loading, setLoading] = useState(true);
-  // Fields a connector is being given and this platform does not store. Shapes
-  // only — the response carries a path and a value *kind*, never a value.
-  const [unsupported, setUnsupported] = useState<UnsupportedField[]>([]);
-  const [quarantine, setQuarantine] = useState<QuarantinedMetric[]>([]);
-  const [quarantineCapacity, setQuarantineCapacity] = useState<QuarantineCapacity[]>([]);
-  const [mappingDrafts, setMappingDrafts] = useState<Record<string, MappingDraft>>({});
-  const [savingMapping, setSavingMapping] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
   const [backfill, setBackfill] = useState<{
     sourceId: string;
     sourceType: string;
@@ -172,86 +142,27 @@ export default function DataQualityTab({ apiBase }: Props) {
   } | null>(null);
 
   /**
-   * The three lists that are *state*, not derivation.
+   * The connector list, which is all this page still fetches live.
    *
-   * Quarantine, mapping rules and unsupported fields are small indexed reads and
-   * have to be right the instant a user saves a rule, so they stay live. The two
-   * expensive scans — gaps and cross-source conflicts — come from a scheduled
-   * run instead (`useReport` above), because they walk the workspace's history
-   * and cannot answer differently until an import has changed it.
+   * The quarantine, unsupported-field and newly-supported lists moved to each
+   * connector's own page — they are per-connector decisions, and every row
+   * already carried the `source_id` that says so. The two expensive scans that
+   * remain here, gaps and cross-source conflicts, come from a scheduled run
+   * (`useReport` above) because they walk the workspace's whole history and
+   * cannot answer differently until an import has changed it.
+   *
+   * The connectors are still needed: the gap list offers a backfill per
+   * connector, and the conflict list names which one reported each value.
    */
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [connectorRes, unsupportedRes, quarantineRes] = await Promise.all([
-        apiFetch(`${apiBase}/api/v1/data/sources`),
-        apiFetch(`${apiBase}/api/v1/data/quality/unsupported-fields`),
-        apiFetch(`${apiBase}/api/v1/data/quality/quarantine`),
-      ]);
+      const connectorRes = await apiFetch(`${apiBase}/api/v1/data/sources`);
       if (connectorRes.ok) setConnectors((await connectorRes.json()).connectors ?? []);
-      if (unsupportedRes.ok) setUnsupported((await unsupportedRes.json()).fields ?? []);
-      if (quarantineRes.ok) {
-        const data = await quarantineRes.json();
-        setQuarantine(data.metrics ?? []);
-        setQuarantineCapacity(data.capacity ?? []);
-      }
     } finally {
       setLoading(false);
     }
   }, [apiBase]);
-
-  const draftFor = (metric: QuarantinedMetric): MappingDraft => {
-    const key = `${metric.source_id}:${metric.raw_metric_type}`;
-    return (
-      mappingDrafts[key] ?? {
-        action: metric.action ?? "keep",
-        target_metric_type: CANONICAL_KEYS[0] ?? "steps",
-        source_unit: metric.units ?? "count",
-        target_unit: "",
-        aggregation: "average",
-        cadence: "event",
-        keep_indefinitely: false,
-      }
-    );
-  };
-
-  const updateDraft = (metric: QuarantinedMetric, change: Partial<MappingDraft>) => {
-    const key = `${metric.source_id}:${metric.raw_metric_type}`;
-    setMappingDrafts((current) => ({
-      ...current,
-      [key]: { ...draftFor(metric), ...change },
-    }));
-  };
-
-  const saveMapping = async (metric: QuarantinedMetric) => {
-    const key = `${metric.source_id}:${metric.raw_metric_type}`;
-    const draft = draftFor(metric);
-    setSavingMapping(key);
-    try {
-      const response = await apiFetch(`${apiBase}/api/v1/data/quality/mapping-rules`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          source_id: metric.source_id,
-          raw_metric_type: metric.raw_metric_type,
-          action: draft.action,
-          target_metric_type:
-            draft.action === "map" || draft.action === "adopt"
-              ? draft.target_metric_type
-              : undefined,
-          source_unit:
-            draft.action === "map" || draft.action === "adopt" ? draft.source_unit : undefined,
-          target_unit: draft.action === "adopt" ? draft.target_unit : undefined,
-          aggregation: draft.action === "adopt" ? draft.aggregation : undefined,
-          cadence: draft.action === "adopt" ? draft.cadence : undefined,
-          keep_indefinitely: draft.action === "keep" ? draft.keep_indefinitely : false,
-        }),
-      });
-      if (response.ok) await load();
-    } finally {
-      setSavingMapping(null);
-    }
-  };
 
   useEffect(() => {
     let cancelled = false;
@@ -264,104 +175,11 @@ export default function DataQualityTab({ apiBase }: Props) {
     };
   }, [load]);
 
-  // Not polled. Nothing on this page changes on its own: the quarantine and
-  // mapping lists are reloaded by the action that changes them, and the two
-  // expensive derivations are recomputed by a report run rather than by looking
-  // at the page. A timer here re-ran a full-history gap scan and a 5,000-row
-  // conflict scan every fifteen seconds to redraw identical content.
+  // Not polled. Nothing on this page changes on its own: the two expensive
+  // derivations are recomputed by a report run rather than by looking at the
+  // page. A timer here re-ran a full-history gap scan and a 5,000-row conflict
+  // scan every fifteen seconds to redraw identical content.
   usePolling(() => void load(), null);
-
-  const quarantineWarningKey = (code: QuarantineWarningCode) => {
-    switch (code) {
-      case "quarantine_half_full":
-        return "quality.quarantineCapacityHalf" as const;
-      case "quarantine_near_full":
-        return "quality.quarantineCapacityNearFull" as const;
-      case "quarantine_full":
-        return "quality.quarantineCapacityFull" as const;
-      case "quarantine_values_refused":
-        return "quality.quarantineCapacityRefused" as const;
-      default:
-        return "quality.quarantineCapacityPending" as const;
-    }
-  };
-
-  const quarantineWarningClasses = (code: QuarantineWarningCode) => {
-    if (code === "quarantine_values_refused" || code === "quarantine_full") {
-      return {
-        container: "border-rose-300 bg-rose-50",
-        title: "text-rose-950",
-        text: "text-rose-900",
-        icon: "text-rose-700",
-      };
-    }
-    if (code === "quarantine_near_full") {
-      return {
-        container: "border-orange-300 bg-orange-50",
-        title: "text-orange-950",
-        text: "text-orange-900",
-        icon: "text-orange-700",
-      };
-    }
-    if (code === "quarantine_half_full") {
-      return {
-        container: "border-amber-300 bg-amber-50",
-        title: "text-amber-950",
-        text: "text-amber-900",
-        icon: "text-amber-700",
-      };
-    }
-    return {
-      container: "border-violet-300 bg-violet-50",
-      title: "text-violet-950",
-      text: "text-violet-900",
-      icon: "text-violet-700",
-    };
-  };
-
-  const quarantineCapacityLiveMode = quarantineCapacity.some(
-    ({ warning_code }) =>
-      warning_code === "quarantine_near_full" ||
-      warning_code === "quarantine_full" ||
-      warning_code === "quarantine_values_refused",
-  )
-    ? "assertive"
-    : "polite";
-
-  /**
-   * A ready-to-paste report of what is not being stored.
-   *
-   * Carries the provider's field names, their types and how often they were seen —
-   * and deliberately nothing else. No values, no connector ids, no workspace
-   * identifier: this is meant to be pasted into a public issue tracker, so it must
-   * be safe to paste there without anyone having to check it first.
-   */
-  const copyFieldReport = async () => {
-    const bySource = new Map<string, UnsupportedField[]>();
-    for (const field of unsupported) {
-      const list = bySource.get(field.source_type) ?? [];
-      list.push(field);
-      bySource.set(field.source_type, list);
-    }
-
-    const lines = ["## Unsupported provider fields", ""];
-    for (const [sourceType, fields] of [...bySource].sort()) {
-      lines.push(`### ${sourceType}`, "");
-      lines.push("| Field | Type | Seen |", "| --- | --- | ---: |");
-      for (const field of fields) {
-        lines.push(`| \`${field.field_path}\` | ${field.value_kind} | ${field.occurrences} |`);
-      }
-      lines.push("");
-    }
-
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // Clipboard access can be refused; the table above is still readable.
-    }
-  };
 
   const missingTotal = gaps.reduce((sum, gap) => sum + gap.missing_dates.length, 0);
   const cards = [
@@ -394,14 +212,14 @@ export default function DataQualityTab({ apiBase }: Props) {
     <section className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-emerald-700">
+          <p className="text-xs font-bold uppercase tracking-widest text-ok-ink">
             {t("quality.eyebrow")}
           </p>
-          <h1 className="text-3xl font-extrabold text-slate-900">{t("quality.title")}</h1>
-          <p className="mt-2 text-sm text-slate-500">{t("quality.subtitle")}</p>
+          <h1 className="text-3xl font-extrabold text-ink">{t("quality.title")}</h1>
+          <p className="mt-2 text-sm text-ink-muted">{t("quality.subtitle")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold text-slate-500">
+          <label className="text-xs font-semibold text-ink-muted">
             {t("quality.window")}
             <select
               value={windowDays}
@@ -414,7 +232,7 @@ export default function DataQualityTab({ apiBase }: Props) {
                 })
               }
               disabled={gapReport.running}
-              className="ml-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 outline-none focus-ring disabled:opacity-50"
+              className="ml-2 rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs text-ink-secondary outline-none focus-ring disabled:opacity-50"
             >
               {[7, 30, 90, 180, 365].map((days) => (
                 <option key={days} value={days}>
@@ -423,7 +241,7 @@ export default function DataQualityTab({ apiBase }: Props) {
               ))}
             </select>
           </label>
-          {loading && <RefreshCw className="h-5 w-5 animate-spin text-emerald-700" />}
+          {loading && <RefreshCw className="h-5 w-5 animate-spin text-ok-ink" />}
         </div>
       </div>
 
@@ -445,75 +263,30 @@ export default function DataQualityTab({ apiBase }: Props) {
         {cards.map(({ title, value, icon: Icon, detail, help }) => (
           <article
             key={title}
-            className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="rounded-3xl border border-line bg-surface p-5 shadow-sm"
           >
-            <Icon className="mb-5 h-6 w-6 text-emerald-700" />
-            <p className="text-sm font-semibold text-slate-500">{title}</p>
-            <p className="text-4xl font-black text-slate-900">{value}</p>
-            <p className="mt-2 text-xs text-slate-400">{detail}</p>
-            <p className="mt-3 rounded-2xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-800">
+            <Icon className="mb-5 h-6 w-6 text-ok-ink" />
+            <p className="text-sm font-semibold text-ink-muted">{title}</p>
+            <p className="text-4xl font-black text-ink">{value}</p>
+            <p className="mt-2 text-xs text-ink-muted">{detail}</p>
+            <p className="mt-3 rounded-2xl bg-ok-soft p-3 text-xs font-semibold text-ok-ink">
               {help}
             </p>
           </article>
         ))}
       </div>
 
-      {quarantineCapacity.length > 0 && (
-        <article className="space-y-3" aria-live={quarantineCapacityLiveMode}>
-          <div>
-            <h2 className="font-bold text-slate-900">{t("quality.quarantineCapacityTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t("quality.quarantineCapacityIntro")}</p>
-          </div>
-          {quarantineCapacity.map((capacity) => {
-            const classes = quarantineWarningClasses(capacity.warning_code);
-            return (
-              <div
-                key={capacity.source_id}
-                className={`rounded-3xl border p-5 ${classes.container}`}
-              >
-                <div className="flex gap-3">
-                  <AlertTriangle className={`mt-0.5 h-5 w-5 shrink-0 ${classes.icon}`} />
-                  <div className="min-w-0">
-                    <h3 className={`font-bold ${classes.title}`}>
-                      {capacity.connector_name || capacity.source_type}
-                    </h3>
-                    <p className={`mt-1 text-sm ${classes.text}`}>
-                      {t(quarantineWarningKey(capacity.warning_code), {
-                        percent: formatNumber(capacity.usage_percent),
-                        rows: formatNumber(capacity.active_rows),
-                        maxRows: formatNumber(capacity.max_rows),
-                        names: formatNumber(capacity.active_names),
-                        maxNames: formatNumber(capacity.max_names),
-                        refused: formatNumber(capacity.refused_occurrences),
-                      })}
-                    </p>
-                    <p className={`mt-2 text-xs ${classes.text}`}>
-                      {t("quality.quarantineCapacityUsage", {
-                        rows: formatNumber(capacity.active_rows),
-                        maxRows: formatNumber(capacity.max_rows),
-                        names: formatNumber(capacity.active_names),
-                        maxNames: formatNumber(capacity.max_names),
-                      })}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </article>
-      )}
-
-      <article className="rounded-3xl border border-amber-200 bg-amber-50 p-5">
+      <article className="rounded-3xl border border-warn-line bg-warn-soft p-5">
         <div className="flex gap-3">
-          <Lightbulb className="h-5 w-5 shrink-0 text-amber-700" />
+          <Lightbulb className="h-5 w-5 shrink-0 text-warn-ink" />
           <div>
-            <h2 className="font-bold text-slate-900">{t("quality.explainTitle")}</h2>
-            <p className="mt-1 text-sm text-slate-600">{t("quality.explainBody")}</p>
+            <h2 className="font-bold text-ink">{t("quality.explainTitle")}</h2>
+            <p className="mt-1 text-sm text-ink-muted">{t("quality.explainBody")}</p>
             <a
               href="/docs/features/data-quality/"
               target="_blank"
               rel="noreferrer"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-amber-800 underline"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-warn-ink underline"
             >
               <BookOpen className="h-3.5 w-3.5" /> {t("quality.explainDocs")}
             </a>
@@ -533,18 +306,18 @@ export default function DataQualityTab({ apiBase }: Props) {
         stopped for a week" rather than "no value on the 3rd".
       */}
       {cadenceGaps.length > 0 && (
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-1 font-bold text-slate-900">{t("quality.interruptionsTitle")}</h2>
-          <p className="mb-4 text-xs leading-relaxed text-slate-500">
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.interruptionsTitle")}</h2>
+          <p className="mb-4 text-xs leading-relaxed text-ink-muted">
             {t("quality.interruptionsHint")}
           </p>
           <ul className="space-y-2">
             {cadenceGaps.map((gap) => (
-              <li key={gap.metric_type} className="rounded-2xl bg-slate-50 px-3.5 py-2.5">
-                <div className="text-xs font-bold text-slate-900">{gap.metric_type}</div>
+              <li key={gap.metric_type} className="rounded-2xl bg-page px-3.5 py-2.5">
+                <div className="text-xs font-bold text-ink">{gap.metric_type}</div>
                 <ul className="mt-1 space-y-0.5">
                   {gap.missing_ranges.slice(0, 5).map((range) => (
-                    <li key={range.start} className="text-[11px] text-slate-600">
+                    <li key={range.start} className="text-meta text-ink-muted">
                       {formatDate(range.start)} – {formatDate(range.end)}
                     </li>
                   ))}
@@ -555,240 +328,21 @@ export default function DataQualityTab({ apiBase }: Props) {
         </article>
       )}
 
-      {unsupported.length > 0 && (
-        <details className="group rounded-3xl border border-amber-200 bg-amber-50/60 p-6 dark:border-amber-800/70 dark:bg-amber-950/30">
-          <summary className="cursor-pointer list-none font-bold text-amber-950 marker:hidden dark:text-amber-100">
-            <span className="flex items-center justify-between gap-3">
-              <span>{t("quality.unsupportedSummary", { count: unsupported.length })}</span>
-              <span className="text-xs font-semibold text-amber-700 transition group-open:rotate-180 dark:text-amber-300">
-                ↓
-              </span>
-            </span>
-          </summary>
-          <div className="mt-4">
-            <h2 className="mb-1 font-bold text-amber-900 dark:text-amber-100">
-              {t("quality.unsupportedTitle")}
-            </h2>
-            <p className="mb-2 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-              {t("quality.unsupportedHint")}
-            </p>
-            <p className="mb-4 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-              {t("quality.unsupportedLifecycle")}
-            </p>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-amber-200 text-[11px] font-bold uppercase tracking-wider text-amber-700 dark:border-amber-800 dark:text-amber-300">
-                    <th className="pb-2 pr-3">{t("quality.unsupportedConnector")}</th>
-                    <th className="pb-2 pr-3">{t("quality.unsupportedField")}</th>
-                    <th className="pb-2 pr-3">{t("quality.unsupportedKind")}</th>
-                    <th className="pb-2 pr-3 text-right">{t("quality.unsupportedSeen")}</th>
-                    <th className="pb-2 text-right">{t("quality.unsupportedLastSeen")}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-amber-100 dark:divide-amber-900">
-                  {unsupported.map((field) => (
-                    <tr key={`${field.source_id}:${field.field_path}`}>
-                      <td className="py-2 pr-3 font-semibold text-amber-900 dark:text-amber-100">
-                        {field.connector_name || field.source_type}
-                      </td>
-                      <td className="py-2 pr-3 font-mono text-amber-900 dark:text-amber-100">
-                        {field.field_path}
-                      </td>
-                      <td className="py-2 pr-3 text-amber-700 dark:text-amber-300">
-                        {field.value_kind}
-                      </td>
-                      <td className="py-2 pr-3 text-right text-amber-700 dark:text-amber-300">
-                        {field.occurrences}
-                      </td>
-                      <td className="py-2 text-right text-amber-700 dark:text-amber-300">
-                        {formatDate(field.last_seen_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void copyFieldReport()}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-2xl border border-amber-300 bg-white px-3.5 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/50 dark:text-amber-100 dark:hover:bg-amber-900/60"
-            >
-              {copied ? t("quality.unsupportedCopied") : t("quality.unsupportedCopy")}
-            </button>
-          </div>
-        </details>
-      )}
-
-      {quarantine.length > 0 && (
-        <article className="rounded-3xl border border-violet-200 bg-violet-50/60 p-6">
-          <h2 className="mb-1 font-bold text-violet-950">{t("quality.quarantineTitle")}</h2>
-          <p className="mb-4 text-xs leading-relaxed text-violet-900">
-            {t("quality.quarantineHint")}
-          </p>
-          <div className="space-y-4">
-            {quarantine.map((metric) => {
-              const key = `${metric.source_id}:${metric.raw_metric_type}`;
-              const draft = draftFor(metric);
-              return (
-                <div key={key} className="rounded-2xl border border-violet-200 bg-white p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="font-mono text-sm font-semibold text-slate-900">
-                        {metric.raw_metric_type}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {t("quality.quarantineConnectorDetail", {
-                          connector: metric.connector_name || metric.source_type,
-                          count: metric.points,
-                        })}
-                      </p>
-                    </div>
-                    <select
-                      value={draft.action}
-                      onChange={(event) =>
-                        updateDraft(metric, {
-                          action: event.target.value as MappingDraft["action"],
-                        })
-                      }
-                      className="rounded-xl border border-violet-200 bg-white px-2.5 py-1.5 text-xs text-slate-800"
-                      aria-label={t("quality.mappingDecision")}
-                    >
-                      <option value="map">{t("quality.mappingMap")}</option>
-                      <option value="adopt">{t("quality.mappingAdopt")}</option>
-                      <option value="discard">{t("quality.mappingDiscard")}</option>
-                      <option value="keep">{t("quality.mappingKeep")}</option>
-                    </select>
-                  </div>
-
-                  {(draft.action === "map" || draft.action === "adopt") && (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                      {draft.action === "map" ? (
-                        <select
-                          value={draft.target_metric_type}
-                          onChange={(event) =>
-                            updateDraft(metric, { target_metric_type: event.target.value })
-                          }
-                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                          aria-label={t("quality.mappingTarget")}
-                        >
-                          {CANONICAL_KEYS.map((keyName) => (
-                            <option key={keyName} value={keyName}>
-                              {keyName}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          value={draft.target_metric_type}
-                          onChange={(event) =>
-                            updateDraft(metric, { target_metric_type: event.target.value })
-                          }
-                          placeholder={t("quality.mappingCustomName")}
-                          className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                          aria-label={t("quality.mappingTarget")}
-                        />
-                      )}
-                      <input
-                        value={draft.source_unit}
-                        onChange={(event) =>
-                          updateDraft(metric, { source_unit: event.target.value })
-                        }
-                        placeholder={t("quality.mappingSourceUnit")}
-                        className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                        aria-label={t("quality.mappingSourceUnit")}
-                      />
-                      {draft.action === "adopt" && (
-                        <>
-                          <input
-                            value={draft.target_unit}
-                            onChange={(event) =>
-                              updateDraft(metric, { target_unit: event.target.value })
-                            }
-                            placeholder={t("quality.mappingTargetUnit")}
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                            aria-label={t("quality.mappingTargetUnit")}
-                          />
-                          <select
-                            value={draft.aggregation}
-                            onChange={(event) =>
-                              updateDraft(metric, {
-                                aggregation: event.target.value as MappingDraft["aggregation"],
-                              })
-                            }
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                            aria-label={t("quality.mappingAggregation")}
-                          >
-                            <option value="average">{t("quality.mappingAverage")}</option>
-                            <option value="sum">{t("quality.mappingSum")}</option>
-                            <option value="last">{t("quality.mappingLast")}</option>
-                            <option value="max">{t("quality.mappingMax")}</option>
-                          </select>
-                          <select
-                            value={draft.cadence}
-                            onChange={(event) =>
-                              updateDraft(metric, {
-                                cadence: event.target.value as MappingDraft["cadence"],
-                              })
-                            }
-                            className="rounded-xl border border-slate-200 px-2.5 py-2 text-xs"
-                            aria-label={t("quality.mappingCadence")}
-                          >
-                            <option value="daily">{t("quality.mappingDaily")}</option>
-                            <option value="continuous">{t("quality.mappingContinuous")}</option>
-                            <option value="event">{t("quality.mappingEvent")}</option>
-                          </select>
-                        </>
-                      )}
-                    </div>
-                  )}
-
-                  {draft.action === "keep" && (
-                    <label className="mt-3 flex items-center gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={draft.keep_indefinitely}
-                        onChange={(event) =>
-                          updateDraft(metric, { keep_indefinitely: event.target.checked })
-                        }
-                        className="rounded border-slate-300"
-                      />
-                      {t("quality.mappingKeepIndefinitely")}
-                    </label>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => void saveMapping(metric)}
-                    disabled={savingMapping === key}
-                    className="mt-3 rounded-xl bg-violet-700 px-3.5 py-2 text-xs font-semibold text-white hover:bg-violet-800 disabled:opacity-50"
-                  >
-                    {savingMapping === key ? t("quality.mappingSaving") : t("quality.mappingApply")}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </article>
-      )}
-
       <div className="grid gap-5 lg:grid-cols-2">
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <h2 className="mb-1 font-bold text-slate-900">{t("quality.largestGaps")}</h2>
-          <p className="mb-4 text-xs text-slate-500">{t("quality.largestGapsHint")}</p>
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.largestGaps")}</h2>
+          <p className="mb-4 text-xs text-ink-muted">{t("quality.largestGapsHint")}</p>
 
           {gaps.length === 0 ? (
-            <p className="text-sm text-slate-400">{t("quality.noGaps", { days: windowDays })}</p>
+            <p className="text-sm text-ink-muted">{t("quality.noGaps", { days: windowDays })}</p>
           ) : (
             gaps.slice(0, 6).map((gap) => {
               const ranges = toRanges(gap.missing_dates);
               return (
-                <div key={gap.metric_type} className="border-b border-slate-100 py-3">
+                <div key={gap.metric_type} className="border-b border-line py-3">
                   <div className="flex justify-between text-sm">
-                    <span className="font-medium text-slate-700">{gap.metric_type}</span>
-                    <span className="font-bold text-amber-600">
+                    <span className="font-medium text-ink-secondary">{gap.metric_type}</span>
+                    <span className="font-bold text-warn">
                       {t(plural(gap.missing_dates.length, "common.days_one", "common.days_other"), {
                         count: gap.missing_dates.length,
                       })}
@@ -798,16 +352,16 @@ export default function DataQualityTab({ apiBase }: Props) {
                     {ranges.slice(0, 3).map((r) => (
                       <li
                         key={`${r.start}-${r.end}`}
-                        className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-[11px]"
+                        className="flex items-center justify-between rounded-lg bg-page px-2.5 py-1.5 text-meta"
                       >
-                        <span className="font-mono text-slate-600">
+                        <span className="font-mono text-ink-muted">
                           {r.start === r.end
                             ? formatDate(`${r.start}T00:00:00Z`)
                             : `${formatDate(`${r.start}T00:00:00Z`)} – ${formatDate(
                                 `${r.end}T00:00:00Z`,
                               )}`}
                         </span>
-                        <span className="text-slate-400">
+                        <span className="text-ink-muted">
                           {t(plural(r.days, "common.days_one", "common.days_other"), {
                             count: r.days,
                           })}
@@ -815,12 +369,12 @@ export default function DataQualityTab({ apiBase }: Props) {
                       </li>
                     ))}
                     {ranges.length > 3 && (
-                      <li className="text-[11px] text-slate-400">
+                      <li className="text-meta text-ink-muted">
                         {t("quality.moreRanges", { count: ranges.length - 3 })}
                       </li>
                     )}
                   </ul>
-                  <p className="mt-1.5 text-xs text-slate-500">
+                  <p className="mt-1.5 text-xs text-ink-muted">
                     {gapRecommendation(t, gap.missing_dates.length)}
                   </p>
                 </div>
@@ -829,8 +383,8 @@ export default function DataQualityTab({ apiBase }: Props) {
           )}
 
           {gaps.length > 0 && connectors.length > 0 && (
-            <div className="mt-4 border-t border-slate-100 pt-4">
-              <p className="mb-2 text-xs font-semibold text-slate-600">
+            <div className="mt-4 border-t border-line pt-4">
+              <p className="mb-2 text-xs font-semibold text-ink-muted">
                 {t("quality.backfillTitle")}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -844,26 +398,86 @@ export default function DataQualityTab({ apiBase }: Props) {
                         sourceName: c.display_name || c.source_type,
                       })
                     }
-                    className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100"
+                    className="rounded-xl border border-ok-line bg-ok-soft px-3 py-1.5 text-meta font-semibold text-ok-ink hover:bg-ok-soft"
                   >
                     {t("quality.backfillSource", { source: c.source_type })}
                   </button>
                 ))}
               </div>
-              <p className="mt-2 text-[11px] text-slate-400">{t("quality.backfillHint")}</p>
+              <p className="mt-2 text-meta text-ink-muted">{t("quality.backfillHint")}</p>
             </div>
           )}
         </article>
 
-        <article className="rounded-3xl border border-slate-200 bg-white p-6">
-          <ShieldCheck className="mb-4 h-6 w-6 text-emerald-700" />
-          <h2 className="mb-2 font-bold text-slate-900">{t("quality.conflictsTitle")}</h2>
-          <p className="text-sm text-slate-500">
-            {conflicts === 0
-              ? t("quality.conflictsNoneLong")
-              : t("quality.conflictsSome", { count: conflicts })}
-          </p>
-          <p className="mt-3 text-xs text-slate-500">{t("quality.conflictsAdvice")}</p>
+        {/*
+          The disagreements themselves.
+
+          The card that stood here rendered none of them: it branched on
+          `conflicts === 0` — a count that falls back to zero when the scan has
+          never run — and told the reader to "check the units and pick a primary
+          source" for items nothing on the page could name. The scan has always
+          sent metric, day, and every candidate's connector and value; only the
+          client threw them away.
+
+          Which one is right is deliberately not decided here. Both readings are
+          kept, and the choice of a primary source per metric is a separate,
+          explicit act.
+        */}
+        <article className="rounded-3xl border border-line bg-surface p-6">
+          <h2 className="mb-1 font-bold text-ink">{t("quality.conflictsListTitle")}</h2>
+          <p className="mb-4 text-xs text-ink-muted">{t("quality.conflictsListHint")}</p>
+
+          {conflictReport.status !== "ready" ? (
+            <p className="text-sm text-ink-muted">{t("report.neverComputed")}</p>
+          ) : conflictItems.length === 0 ? (
+            <p className="text-sm text-ink-muted">{t("quality.conflictsNone")}</p>
+          ) : (
+            <>
+              {conflictItems.slice(0, CONFLICTS_SHOWN).map((conflict) => {
+                const described = describeMetric(conflict.metric_type, locale);
+                return (
+                  <div
+                    key={`${conflict.metric_type}:${conflict.date}`}
+                    className="border-b border-line py-3"
+                  >
+                    <div className="flex flex-wrap items-baseline justify-between gap-2 text-sm">
+                      <span className="font-medium text-ink-secondary">{described.label}</span>
+                      <span className="text-xs text-ink-muted">
+                        {formatDate(`${conflict.date}T00:00:00Z`)}
+                      </span>
+                    </div>
+                    <ul className="mt-1.5 space-y-1">
+                      {conflict.candidates.map((candidate) => (
+                        <li
+                          key={candidate.id}
+                          className="flex items-baseline justify-between gap-3 rounded-lg bg-page px-2.5 py-1.5 text-meta"
+                        >
+                          <span className="min-w-0 truncate text-ink-muted">
+                            {connectorLabel(connectors, candidate.source_id)}
+                          </span>
+                          <span className="shrink-0 font-mono tabular-nums text-ink">
+                            {candidate.value === null
+                              ? "—"
+                              : formatNumber(candidate.value, {
+                                  maximumFractionDigits: described.precision,
+                                })}{" "}
+                            <span className="font-normal text-ink-muted">{described.unit}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                );
+              })}
+              {conflictItems.length > CONFLICTS_SHOWN && (
+                <p className="mt-3 text-meta text-ink-muted">
+                  {t("quality.conflictsMore", { count: conflictItems.length - CONFLICTS_SHOWN })}
+                </p>
+              )}
+            </>
+          )}
+
+          <p className="mt-4 text-xs text-ink-muted">{t("quality.conflictsHelp")}</p>
         </article>
       </div>
 

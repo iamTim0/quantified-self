@@ -5,7 +5,13 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # `dev` as well as `main`, because `dev` is where the work actually lands and
+    # `main` only ever receives it already merged. With `main` alone, 25 commits
+    # accumulated over one night with nothing run against them, and the run that
+    # finally checked them happened because somebody asked for it by hand. A gate
+    # that only guards the branch after the merge reports problems too late to be
+    # cheap to fix.
+    branches: [main, dev]
   pull_request:
   workflow_dispatch:
 
@@ -371,6 +377,14 @@ jobs:
         run: bun run build
         env:
           NEXT_TELEMETRY_DISABLED: "1"
+      # Blocking, unlike the lint step above, and it can be: the allowlist beside
+      # the script was seeded with every violation that existed when it was
+      # written, so this fails only on a *new* raw palette utility, pixel font
+      # size or hex literal. That is the whole point of a ratchet -- a gate that
+      # fails on the tree as it stands gets switched off instead of satisfied.
+      - name: Design tokens
+        run: python .agents/scripts/check_design_tokens.py
+        working-directory: ${{ github.workspace }}
 
   docs:
     name: Documentation

@@ -85,8 +85,8 @@ export default function ExplorerMetricSelect({
 
   return (
     <div className="flex items-center gap-2">
-      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-400">
-        <Cpu className="h-3.5 w-3.5 text-[#0d5c3a]" /> {t("explorer.metrics")}
+      <span className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-ink-muted">
+        <Cpu className="h-3.5 w-3.5 text-brand" /> {t("explorer.metrics")}
       </span>
 
       <div className="relative" ref={container}>
@@ -95,42 +95,42 @@ export default function ExplorerMetricSelect({
           onClick={() => setOpen((previous) => !previous)}
           aria-expanded={open}
           aria-haspopup="listbox"
-          className="flex sm:min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-900 outline-none transition-colors hover:border-slate-300 focus-visible:border-[#0d5c3a]"
+          className="flex sm:min-w-[13rem] items-center justify-between gap-2 rounded-2xl border border-line bg-page px-3 py-1.5 text-xs font-bold text-ink outline-none transition-colors hover:border-line focus-visible:border-brand"
         >
           <span className="truncate">{summary()}</span>
           <ChevronDown
-            className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${
+            className={`h-3.5 w-3.5 shrink-0 text-ink-muted transition-transform ${
               open ? "rotate-180" : ""
             }`}
           />
         </button>
 
         {open && (
-          <div className="absolute left-0 z-30 mt-2 w-80 rounded-2xl border border-slate-200 bg-white shadow-xl">
-            <div className="border-b border-slate-100 p-2.5">
+          <div className="absolute left-0 z-30 mt-2 w-80 rounded-2xl border border-line bg-surface shadow-xl">
+            <div className="border-b border-line p-2.5">
               <div className="relative">
-                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-slate-400" />
+                <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-ink-muted" />
                 <input
                   type="text"
                   autoFocus
                   value={filter}
                   onChange={(event) => setFilter(event.target.value)}
                   placeholder={t("explorer.metricFilterPlaceholder")}
-                  className="w-full rounded-xl border border-slate-200 bg-white py-1.5 pl-8 pr-2.5 text-xs text-slate-900 outline-none focus-visible:border-[#0d5c3a]"
+                  className="w-full rounded-xl border border-line bg-surface py-1.5 pl-8 pr-2.5 text-xs text-ink outline-none focus-visible:border-brand"
                 />
               </div>
-              <div className="mt-2 flex items-center justify-between px-0.5 text-[11px] font-bold">
+              <div className="mt-2 flex items-center justify-between px-0.5 text-meta font-bold">
                 <button
                   type="button"
                   onClick={() => onChange(visible.map(({ key }) => key))}
-                  className="text-[#0d5c3a] hover:underline"
+                  className="text-brand hover:underline"
                 >
                   {t("explorer.selectAll")}
                 </button>
                 <button
                   type="button"
                   onClick={() => onChange([])}
-                  className="text-slate-400 hover:text-slate-900"
+                  className="text-ink-muted hover:text-ink"
                 >
                   {t("explorer.clearSelection")}
                 </button>
@@ -139,9 +139,9 @@ export default function ExplorerMetricSelect({
 
             <div className="max-h-72 overflow-y-auto p-1.5" role="listbox" aria-multiselectable>
               {options.length === 0 ? (
-                <p className="px-2 py-3 text-xs text-slate-400">{t("explorer.metricsEmpty")}</p>
+                <p className="px-2 py-3 text-xs text-ink-muted">{t("explorer.metricsEmpty")}</p>
               ) : visible.length === 0 ? (
-                <p className="px-2 py-3 text-xs text-slate-400">{t("explorer.metricsNoMatch")}</p>
+                <p className="px-2 py-3 text-xs text-ink-muted">{t("explorer.metricsNoMatch")}</p>
               ) : (
                 visible.map(({ key, count }) => {
                   const isSelected = selected.includes(key);
@@ -154,29 +154,29 @@ export default function ExplorerMetricSelect({
                       aria-selected={isSelected}
                       onClick={() => toggle(key)}
                       className={`flex w-full items-center gap-2.5 rounded-xl px-2 py-1.5 text-left transition-colors ${
-                        isSelected ? "bg-emerald-50" : "hover:bg-slate-50"
+                        isSelected ? "bg-ok-soft" : "hover:bg-page"
                       }`}
                     >
                       <span
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                          isSelected ? "border-[#0d5c3a] bg-[#0d5c3a]" : "border-slate-300 bg-white"
+                          isSelected ? "border-brand bg-brand" : "border-line bg-surface"
                         }`}
                       >
                         {isSelected && <Check className="h-3 w-3 text-white" />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-xs font-bold text-slate-900">
+                        <span className="block truncate text-xs font-bold text-ink">
                           {label}
-                          {unit && <span className="ml-1 font-normal text-slate-400">{unit}</span>}
+                          {unit && <span className="ml-1 font-normal text-ink-muted">{unit}</span>}
                         </span>
                         {/* The canonical key stays visible: this is the raw-data
                             explorer, so the name an API call needs must be readable
                             without hovering. */}
-                        <span className="block truncate font-mono text-[10px] text-slate-400">
+                        <span className="block truncate font-mono text-meta text-ink-muted">
                           {key}
                         </span>
                       </span>
-                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 text-[10px] font-bold text-slate-500">
+                      <span className="shrink-0 rounded-full bg-surface-muted px-1.5 text-meta font-bold text-ink-muted">
                         {formatNumber(count)}
                       </span>
                     </button>

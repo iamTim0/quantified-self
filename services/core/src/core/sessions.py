@@ -46,7 +46,7 @@ __all__ = [
 
 #: Metrics that are a *series inside* a session rather than a figure about one.
 #:
-#: They start with `workout_`, so `daily_story.EVENT_PREFIXES` would otherwise make
+#: They start with `workout_`, so `daily_story.SESSION_PREFIXES` would otherwise make
 #: them event-shaped, and a 90-minute workout at second resolution is 5,400 rows
 #: against a 4,000-row scan budget — the day timeline would silently truncate for
 #: anyone who trains. A stream metric is neither a lane nor a timeline event; it is

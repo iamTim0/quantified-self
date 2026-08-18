@@ -39,6 +39,7 @@ RELEASE_SERVICES = (
     "importer-home-assistant",
     "importer-weather",
     "importer-calendar",
+    "importer-github",
 )
 
 # The Gateway observes these targets over the private Compose network. The
@@ -59,6 +60,7 @@ HEALTH_TARGETS = (
     HealthTarget("importer-home-assistant", "HOME_ASSISTANT_IMPORTER_URL"),
     HealthTarget("importer-weather", "WEATHER_IMPORTER_URL"),
     HealthTarget("importer-calendar", "CALENDAR_IMPORTER_URL"),
+    HealthTarget("importer-github", "GITHUB_IMPORTER_URL"),
 )
 
 

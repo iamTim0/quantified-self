@@ -36,22 +36,22 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
   }, [locale, router]);
 
   return (
-    <div className="min-h-screen bg-white text-slate-900">
+    <div className="min-h-dvh bg-surface pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-ink">
       <div className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-16">
         <nav
           aria-label={t("legal.nav")}
-          className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4"
+          className="mb-10 flex flex-wrap items-center justify-between gap-4 border-b border-line pb-4"
         >
           <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
             <li>
-              <Link href="/" className="text-slate-600 underline hover:text-slate-900">
+              <Link href="/" className="text-ink-muted underline hover:text-ink">
                 {t("legal.backToApp")}
               </Link>
             </li>
             <li>
               <Link
                 href="/legal/datenschutz"
-                className="text-slate-600 underline hover:text-slate-900"
+                className="text-ink-muted underline hover:text-ink"
               >
                 {t("footer.privacy")}
               </Link>
@@ -59,7 +59,7 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
             <li>
               <Link
                 href="/legal/impressum"
-                className="text-slate-600 underline hover:text-slate-900"
+                className="text-ink-muted underline hover:text-ink"
               >
                 {t("footer.imprint")}
               </Link>
@@ -70,7 +70,7 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
 
         <main className="legal-prose">{children}</main>
 
-        <footer className="mt-12 border-t border-slate-200 pt-4 text-sm text-slate-500">
+        <footer className="mt-12 border-t border-line pt-4 text-sm text-ink-muted">
           <p>{t("legal.disclaimer")}</p>
         </footer>
       </div>

@@ -87,6 +87,12 @@ GET /api/v1/data/metrics/ingest-policy
 PUT /api/v1/data/metrics/ingest-policy/{metric_type}
 ```
 
+In the dashboard this lives in the Explorer's **Overview** view: every metric row has a
+**Storage** column showing the resolution currently stored for that metric and whether it is
+the registry default or a value set for this workspace. Changing it selects a new value and
+requires a separate **Apply**, because the setting decides what future imports keep rather
+than what the current view shows. It is deliberately one metric at a time.
+
 The request body is:
 
 ```json

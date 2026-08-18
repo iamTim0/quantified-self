@@ -102,6 +102,30 @@ interval session is a flat line. See
 [Data resolution and rollups](data-resolution.md#the-second-tier) for why that costs
 almost nothing.
 
+### Two ways a pulse figure was wrong
+
+Both were fixed together, because both produce a number that looks measured.
+
+**An average weighted by nothing.** A stored `workout_heart_rate` point is a bucket
+mean, and `bucket_samples` records how many readings it averages — a second can hold
+one reading or sixty. `core.rollups` has always weighted by it; every read path took
+a bare `avg()`. So one stray sample at 60 bpm counted for as much as a full minute at
+160, the detail page and `metric_rollups` reported different averages for one
+dataset, and the drawn line could sit outside the min/max band under it. The read
+paths now use `daily_story.weighted_average()`, which weights by `bucket_samples` and
+by nothing else — `sample_count` is rule 19 provenance that importers also set on
+figures which are not means (WHOOP's zone shares carry the number of zone fields),
+and weighting by that produces an average nobody can account for.
+
+**A neighbour's pulse.** The window is the join, and for ambient readings it has to
+be — weather and another device's continuous metrics carry no session id and never
+will. But `workout_heart_rate` *does* carry one. With a 15-minute pad at each end,
+two sessions half an hour apart overlap, and the second one's pulse was drawn as the
+first one's. `_not_another_sessions_stream` drops a **stream** row that states an id
+other than this session's, and only that: a stream row carrying no id keeps the
+window as its only evidence, which is all a pre-`session_id` row has ever had, and
+ambient series are untouched.
+
 ## Reading it through the API
 
 ### The list
@@ -120,6 +144,26 @@ GET /api/v1/data/workouts?start_date=2026-07-17&end_date=2026-08-16&offset_minut
 `offset_minutes` bounds the range through the same `day_window` the daily story
 uses. A reader whose day starts at a different moment on two pages of one product
 is being told two different things about one dataset.
+
+`all` means every *session* — that is, `workout_*` and `strength_*` — and nothing
+else. It is not "every entry that happened at a time".
+
+!!! warning "A meal and a meeting are not workouts"
+    This list once shared one "event metric" set with the day timeline, which also
+    holds `nutrition_item_energy`, `nutrition_meal_energy` and
+    `calendar_meeting_duration`. `category=all` applied no narrowing on top of it, so
+    every logged food item and every calendar entry was grouped into a session and
+    returned here — titled, because `sessions.TITLE_FIELDS` reads `food_name` and
+    `summary` to name a card. A list of workouts that contains a banana and a
+    stand-up cannot answer anything about training.
+
+    The two definitions are now separate predicates in `core.daily_story`:
+    `session_metric_predicate()` for this list, `timeline_metric_predicate()` for the
+    timeline, `logged_metric_predicate()` for the day's log, and
+    `entry_metric_predicate()` — the union — for what a lane total must exclude.
+    A workout's *surroundings* excludes the union too: `nutrition_item_energy` is a
+    `SUM`, so a session straddling lunch would otherwise report the meal's calories
+    as a figure measured during it.
 
 Each session carries `session_key` (the opaque handle for the detail), `identity`,
 `start`, `end`, `title`, `category`, `measures`, `units`, `point_count`,

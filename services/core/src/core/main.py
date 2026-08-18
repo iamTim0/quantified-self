@@ -50,7 +50,7 @@ from shared_schemas.metrics import (
     describe,
     metrics_for_source,
 )
-from sqlalchemy import and_, delete, distinct, exists, func, or_, select, text
+from sqlalchemy import and_, case, delete, distinct, exists, func, or_, select, text
 from sqlalchemy import update as sa_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -66,7 +66,7 @@ from core.connectors import (
     is_scheduled,
     supports_file_import,
 )
-from core.daily_story import build_day_story
+from core.daily_story import build_day_story, day_window
 from core.db.models import (
     ApiKey,
     DataPoint,
@@ -101,6 +101,11 @@ from core.events.consumer import (
     ingestion_retention_warning,
     run_consumer_forever,
 )
+from core.field_backfill import (
+    PendingBackfill,
+    run_field_backfill_scheduler,
+)
+from core.field_backfill import window_reason as backfill_window_reason
 from core.grpc.server import serve_grpc
 from core.ingest_planning import (
     BucketCount,
@@ -110,6 +115,7 @@ from core.ingest_planning import (
     compute_sync_window,
     plan_import,
 )
+from core.jobs import MAX_JOBS, list_jobs
 from core.metric_mapping import (
     MappingAction,
     ValidatedMapping,
@@ -210,9 +216,11 @@ from core.tracing import (
     setup_tracing_logger,
 )
 from core.workouts import (
+    DEFAULT_DAY_TRACK_POINTS,
     DEFAULT_PAD_SECONDS,
     DEFAULT_ROUTE_POINTS,
     DEFAULT_STREAM_POINTS,
+    MAX_DAY_TRACK_POINTS,
     MAX_LIST_DAYS,
     MAX_LIST_SESSIONS,
     MAX_PAD_SECONDS,
@@ -221,6 +229,7 @@ from core.workouts import (
     SessionNotFound,
     build_workout_detail,
     build_workout_list,
+    track_for_window,
 )
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -256,7 +265,7 @@ def _quarantine_capacity_warning(
 # SECURITY H3: Constrain source_type to known connectors
 ValidSourceType = Literal[
     "oura", "whoop", "apple_health", "fitbit", "garmin", "strava", "yazio",
-    "dawarich", "streak", "home_assistant", "weather", "calendar",
+    "dawarich", "streak", "home_assistant", "weather", "calendar", "github",
 ]
 ValidStatus = Literal["active", "inactive"]
 
@@ -389,12 +398,19 @@ async def lifespan(app: FastAPI):
 
     scheduler_task = None
     report_task = None
+    backfill_task = None
     if settings.SCHEDULER_ENABLED and role in {"all", "scheduler"}:
         scheduler_task = asyncio.create_task(run_scheduler(_enqueue_scheduled_sync))
         # Same role as the sync scheduler and for the same reason: it is the one
         # process that acts across tenants on a timer. Separate task, because a
         # report that fails must not delay the next import.
         report_task = asyncio.create_task(run_report_scheduler())
+        # And a third, on a much slower tick: recovering the history of a field that
+        # has only just become supported is not urgent, and it must not sit in front
+        # of the scheduled imports on the same timer.
+        backfill_task = asyncio.create_task(
+            run_field_backfill_scheduler(_enqueue_field_backfill)
+        )
 
     # The NATS subscription is established in the background, never awaited here.
     #
@@ -463,6 +479,10 @@ async def lifespan(app: FastAPI):
             report_task.cancel()
             with suppress(asyncio.CancelledError):
                 await report_task
+        if backfill_task is not None:
+            backfill_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await backfill_task
         if grpc_server is not None:
             await grpc_server.stop(grace=2.0)
 
@@ -532,6 +552,48 @@ async def _enqueue_scheduled_sync(connector: DueConnector) -> None:
                 mode="smart",
                 trigger="scheduled",
             )
+    finally:
+        _current_tenant_id.reset(token)
+
+
+async def _enqueue_field_backfill(pending: PendingBackfill) -> bool:
+    """Re-import the span a connector's newly supported fields arrived unstored in.
+
+    `mode="force"`, because the whole point is to fetch a period the coverage
+    planner considers complete — it is complete, for every metric except the ones
+    that were not being stored yet, and coverage cannot tell the difference.
+
+    Returns whether the run was actually queued. A connector with an import in
+    flight comes back `skipped`, and reporting that honestly is what leaves the
+    fields pending for the next sweep instead of marking history recovered that
+    nothing fetched.
+    """
+    reason = backfill_window_reason(pending)
+    token = _current_tenant_id.set(pending.tenant_id)
+    try:
+        async with async_session_maker() as session:
+            source = (
+                await session.execute(
+                    select(DataSource).where(
+                        DataSource.id == pending.source_id,
+                        DataSource.tenant_id == pending.tenant_id,
+                        DataSource.deleted_at.is_(None),
+                    )
+                )
+            ).scalars().first()
+            if source is None:
+                return False
+            result = await plan_and_enqueue_sync(
+                session,
+                pending.tenant_id,
+                source,
+                start=pending.window_start,
+                end=pending.window_end,
+                mode="force",
+                trigger="field_backfill",
+                window_reason=reason,
+            )
+            return result.get("status") == "sync_queued"
     finally:
         _current_tenant_id.reset(token)
 
@@ -3070,6 +3132,113 @@ async def get_day_story(
     )
 
 
+@app.get("/api/v1/data/day/track")
+async def get_day_track(
+    day: date | None = Query(None, description="Calendar day in the reader's zone; default today"),
+    offset_minutes: int = Query(
+        0,
+        ge=-16 * 60,
+        le=16 * 60,
+        description="Reader's UTC offset in minutes; the day is bounded in it",
+    ),
+    days: int = Query(
+        1,
+        ge=1,
+        le=31,
+        description="How many calendar days back from `day` the track covers, inclusive",
+    ),
+    track_points: int = Query(
+        DEFAULT_DAY_TRACK_POINTS,
+        ge=1,
+        le=MAX_DAY_TRACK_POINTS,
+        description="Most points to return; the span is decimated evenly to fit",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """A whole day's movement (or several days'), decimated in the database.
+
+    The overview map used to ask `/api/v1/data/metrics` for `location_point` with
+    `limit=1000`. That endpoint sorts ascending and reports no truncation, so a day
+    with more fixes than the limit returned the *earliest* thousand and the map drew
+    a track that stopped mid-morning — while labelling the count as the day's own.
+    A partial track is indistinguishable from a short day, which is the failure mode
+    this endpoint exists to remove.
+
+    Every fix is considered and the stride is computed from the true total, so what
+    comes back is the shape of the whole day rather than the beginning of it.
+    `fix_count` is always the real number and `truncated` says whether the returned
+    samples are a subset, so the reader is never told a decimated track is complete.
+    """
+    tenant_id = get_current_tenant_id()
+    reader_today = (datetime.now(timezone.utc) + timedelta(minutes=offset_minutes)).date()
+    target = day or reader_today
+    if target > reader_today:
+        raise HTTPException(status_code=400, detail="That day has not happened yet")
+    if (reader_today - target).days > 366:
+        raise HTTPException(status_code=400, detail="Only the last 367 days can be told")
+
+    first = target - timedelta(days=days - 1)
+    start = day_window(first, offset_minutes).start
+    end = day_window(target, offset_minutes).end
+    envelope = {
+        "day": target.isoformat(),
+        "start_day": first.isoformat(),
+        "days": days,
+        "offset_minutes": offset_minutes,
+    }
+
+    track = await track_for_window(
+        session, tenant_id, start, end, route_points=track_points
+    )
+    if track is None:
+        # An explicit empty track, not a 404: "no movement recorded" is an answer
+        # about the day, and a client that had to read it from a status code would
+        # have to tell it apart from a day that failed to load.
+        return {
+            **envelope,
+            "source": "none",
+            "measured_distance_m": None,
+            "fix_count": 0,
+            "samples": [],
+            "sample_count": 0,
+            "truncated": False,
+        }
+    return {**envelope, **track}
+
+
+# ─── Jobs ───────────────────────────────────────────────────
+
+
+@app.get("/api/v1/data/jobs")
+async def list_background_jobs(
+    limit: int = Query(50, ge=1, le=MAX_JOBS),
+    since: datetime | None = Query(
+        None,
+        description="When the reader last looked; anything finished after it is unseen",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Every import and report run this workspace has going on, newest first.
+
+    One list, because the platform's work already lives in two tables and a reader
+    could previously only see either by knowing which page to open. A nightly
+    analysis that failed at 03:00 was visible nowhere until somebody opened the
+    analysis tab and read a sentence about a run timeout.
+
+    A read model over `sync_runs` and `report_runs` — no new table and no second
+    lifecycle. A notification that can disagree with the thing it notifies about is
+    worse than no notification, because the reader then has two sources and no way
+    to tell which is lying.
+
+    `since` is the moment the reader last opened the panel; it is a parameter rather
+    than stored state because "have I seen this" belongs to one person's browser,
+    not to the workspace — stored, two people sharing a workspace would clear each
+    other's notifications.
+    """
+    tenant_id = get_current_tenant_id()
+    return await list_jobs(session, tenant_id, limit=limit, since=since)
+
+
 # ─── Workouts ───────────────────────────────────────────────
 
 
@@ -4712,6 +4881,7 @@ async def plan_and_enqueue_sync(
     end: datetime | None = None,
     mode: Literal["smart", "force"] = "smart",
     trigger: str = "manual",
+    window_reason: str | None = None,
 ) -> dict[str, Any]:
     """Plan a sync window, record the run, and publish the task.
 
@@ -4805,7 +4975,11 @@ async def plan_and_enqueue_sync(
 
         if start and end:
             window = _validated_window(start, end)
-            window_reason = "Period chosen by the user."
+            # A caller that derived the period itself says why. Without this every
+            # explicit window claimed to be "chosen by the user", including the ones
+            # no user chose — and the import history is where somebody looks to find
+            # out why a connector re-fetched three months.
+            window_reason = window_reason or "Period chosen by the user."
         else:
             window, window_reason = compute_sync_window(
                 now=now,
@@ -5769,7 +5943,31 @@ async def record_field_report_internal(
             "value_kind": statement.excluded.value_kind,
             # A path that has *become* mapped must stop being reported as a gap —
             # that transition is precisely the evidence a fix worked.
-            "metric_type": statement.excluded.metric_type,
+            #
+            # `coalesce`, not a bare overwrite. One import can legitimately see a path
+            # in a payload shape where it maps to nothing — a provider that omits the
+            # field it usually nests under, an entry of a kind the transformer has no
+            # rule for — and a bare overwrite let that single run flip an established
+            # mapping back to NULL. The field would then reappear in "not yet
+            # supported" while being stored perfectly well, which is the one thing
+            # that page must never say.
+            "metric_type": func.coalesce(
+                statement.excluded.metric_type, IngestFieldReport.metric_type
+            ),
+            # The moment support arrived, recorded once and never revised. It is what
+            # separates "became supported" from "was always supported", and therefore
+            # the only thing that can tell a user their missing field now works — and
+            # that its history is worth re-importing.
+            "supported_since": case(
+                (
+                    and_(
+                        IngestFieldReport.metric_type.is_(None),
+                        statement.excluded.metric_type.is_not(None),
+                    ),
+                    statement.excluded.last_seen_at,
+                ),
+                else_=IngestFieldReport.supported_since,
+            ),
             "occurrences": IngestFieldReport.occurrences + statement.excluded.occurrences,
             "last_seen_at": statement.excluded.last_seen_at,
             "last_sync_run_id": statement.excluded.last_sync_run_id,
@@ -5817,6 +6015,89 @@ async def list_unsupported_fields(
         for row, display_name in res.all()
     ]
     return {"tenant_id": tenant_id, "fields": fields}
+
+
+#: How long a field stays on the "newly supported" list after it becomes supported.
+#:
+#: It is a notice, not a permanent record. A field supported six months ago is simply
+#: a supported field, and leaving it here forever would turn a list meant to prompt
+#: an action into a changelog nobody reads.
+NEWLY_SUPPORTED_WINDOW = timedelta(days=90)
+
+
+@app.get("/api/v1/data/quality/newly-supported-fields")
+async def list_newly_supported_fields(
+    within_days: int = Query(
+        NEWLY_SUPPORTED_WINDOW.days,
+        ge=1,
+        le=365,
+        description="How far back a support transition still counts as recent",
+    ),
+    session: AsyncSession = Depends(get_session),
+):
+    """Fields that used to arrive unstored and are now being stored.
+
+    The other half of `unsupported-fields`, and the half that answers the question
+    a user actually comes back with: *the thing I reported as missing — does it work
+    now?* Before this, a field that became supported simply vanished from the
+    unsupported list, which is indistinguishable from a field that stopped arriving.
+
+    **Re-checking is a property of importing, not of a sweep.** Whether a provider
+    field maps to a metric is decided by that provider's transformer, which lives in
+    the importer; Core holds no such table and could not evaluate it. So the check
+    happens on every scheduled import, for free, and this endpoint reports the
+    transitions it produced.
+
+    `history_recoverable` is what makes it actionable: a field supported today has a
+    history that was never stored, and a force import over that period is what
+    recovers it. A connector that is fed by a device or an archive cannot do that —
+    its history is in the device or the archive — and saying so is better than
+    offering a button that silently does nothing. `is_scheduled` rather than a
+    push-type test, because a file-import connector cannot be re-fetched either and
+    was previously told it could.
+
+    `history_backfilled_at` is the follow-up: for a recoverable field the sweep in
+    `core.field_backfill` queues that force import by itself, and this says whether
+    it has happened yet. A recoverable field with no timestamp is waiting for the
+    next sweep, not stuck.
+    """
+    tenant_id = get_current_tenant_id()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=within_days)
+    res = await session.execute(
+        select(IngestFieldReport, DataSource.display_name, DataSource.config)
+        .join(DataSource, DataSource.id == IngestFieldReport.source_id)
+        .where(
+            IngestFieldReport.tenant_id == tenant_id,
+            IngestFieldReport.supported_since.is_not(None),
+            IngestFieldReport.supported_since >= cutoff,
+        )
+        .order_by(IngestFieldReport.supported_since.desc(), IngestFieldReport.field_path)
+        .limit(500)
+    )
+
+    fields = [
+        {
+            "source_id": row.source_id,
+            "source_type": row.source_type,
+            "connector_name": display_name,
+            "field_path": row.field_path,
+            "metric_type": row.metric_type,
+            "value_kind": row.value_kind,
+            "occurrences": row.occurrences,
+            "first_seen_at": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "supported_since": row.supported_since.isoformat(),
+            # The span whose data was never stored for this field: from the first
+            # time it was seen to the moment it started being kept.
+            "unstored_from": row.first_seen_at.isoformat() if row.first_seen_at else None,
+            "unstored_until": row.supported_since.isoformat(),
+            "history_recoverable": is_scheduled(row.source_type, config),
+            "history_backfilled_at": (
+                row.history_backfilled_at.isoformat() if row.history_backfilled_at else None
+            ),
+        }
+        for row, display_name, config in res.all()
+    ]
+    return {"tenant_id": tenant_id, "fields": fields, "within_days": within_days}
 
 
 class MetricMappingRequest(BaseModel):

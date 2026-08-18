@@ -154,6 +154,7 @@ def test_production_routes_public_traffic_through_cloudflare_and_traefik():
         "home-assistant-importer",
         "weather-importer",
         "calendar-importer",
+        "github-importer",
     ],
 )
 def test_production_nats_clients_have_a_coolify_safe_default(service):
@@ -216,10 +217,11 @@ def test_versioned_health_aggregation_uses_private_compose_targets():
         "HOME_ASSISTANT_IMPORTER_URL=http://home-assistant-importer:8011",
         "WEATHER_IMPORTER_URL=http://weather-importer:8012",
         "CALENDAR_IMPORTER_URL=http://calendar-importer:8013",
+        "GITHUB_IMPORTER_URL=http://github-importer:8014",
     ):
         assert target in text
 
-    for port in (8008, 8009, 8011, 8012, 8013):
+    for port in (8008, 8009, 8011, 8012, 8013, 8014):
         assert f"127.0.0.1:{port}/health" in text
 
 

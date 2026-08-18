@@ -226,14 +226,123 @@ The page polls every 2.5 seconds **only while a run is in flight**. With nothing
 makes exactly one request when it opens and then goes quiet, because nothing it shows can
 change until a run finishes.
 
+## Analysing a longer period
+
+The analysis tab offers 30, 90, 180 and 365 days. Picking one queues a run for that
+window immediately — the request is `POST /api/v1/data/reports/insights/refresh` with
+`{"days": 365}` — and the bell shows it running
+([Background activity](background-jobs.md)).
+
+**It only has to be asked for once.** A scheduled re-run carries the previous run's
+params forward, so once a workspace is on 365 days it stays there: every later
+recomputation is over the same window, triggered by new data rather than by anybody
+clicking. The window is part of the report's identity, not a filter over it.
+
+That is also why the scheduler must not substitute its own default. It did once, and
+two things broke at the same time: the selector snapped back to 90 days under the
+reader, and `offset_minutes` went with it, so a scheduled run silently reverted to
+UTC day boundaries. `test_a_scheduled_rerun_keeps_the_window_the_reader_asked_for`
+pins both.
+
+### A long window recomputes overnight
+
+A 365-day bundle reads a workspace's whole history to redraw a page that is already
+on screen and already right — the result differs from the one being displayed by one
+day in three hundred and sixty-five. Starting that the moment an import lands spends
+the most expensive computation the platform has at the time it is most in the way.
+
+So a **scheduled** recompute over a window longer than the 90-day default waits for
+the reader's quiet hours (01:00–05:00) before it starts. There is no separate nightly
+job: the existing five-minute tick simply declines to pick the report up until the
+hour is right, which means no new lock, no new schedule and nothing to get out of
+step with the sweep that already exists.
+
+The wait is measured on the **reader's** clock, not the server's, because "the middle
+of the night" is a fact about the reader. Every refresh now carries
+`offset_minutes`, and a scheduled re-run inherits it along with the rest of the
+params.
+
+Four things stop this turning into "the report is never fresh":
+
+| Never deferred | Why |
+| --- | --- |
+| A window of 90 days or less | Everything a reader gets without choosing is unaffected. |
+| The first result for a kind | An empty page is waiting for an answer, not for a tidier schedule. |
+| A report already 36 hours old | A night that does not arrive delays a report; it must not cancel one. |
+| A run the reader asked for | Pressing recompute is a statement that you want it now. |
+
+A run stored before the dashboard sent an offset is not deferred either. Guessing
+would be worse than abstaining: at UTC+12, treating UTC as local puts "the middle of
+the night" in the middle of the afternoon.
+
+The reader is told, rather than left to wonder. A deferred report shows **Updates
+overnight** in place of the amber *New data since* badge, because "outdated" reads as
+"forgotten" and invites exactly the refresh the deferral was moving out of the way.
+The flag is `deferred` on the report envelope.
+
 ## Failure, timeouts and what a reader sees
 
 - A run that raises is stored as a **failed** run with a stable `message_code`. Failed runs
   are never served, so the reader keeps seeing the last good answer, correctly labelled
   with the time it was computed, instead of an empty page.
-- A run still `queued` or `running` after **30 minutes** is assumed dead — the replica
-  computing it crashed, or the Analysis worker never answered — and is failed with
-  `report_timeout`. Without that, one lost run would block its kind forever.
+- A run still in flight past its allowance is assumed dead and failed, so one lost run
+  cannot block its kind forever. The allowance is **30 minutes for a 90-day window and
+  scales with `params.days`**, capped at two hours: a 365-day bundle reads four times
+  the history, and a flat limit gave the run most likely to need the time the same
+  budget as the smallest one. A 90-day run keeps exactly what it had, and a kind that
+  states no window — the gap, conflict and day reports, all computed inside Core in
+  seconds — is unaffected.
+
+    The in-flight guard behind the refresh button uses the **same** allowance. If it
+    called a run stale at thirty minutes while the sweep still allowed two hours, a
+    click in minute thirty-one would queue a second run beside the first — the "row of
+    impatient clicks becomes a row of identical scans" that guard exists to prevent,
+    reappearing for exactly the long windows that take longest.
+
+- **Which** failure it was is said explicitly, because the two have nothing in common
+  but their timing:
+
+  | Status when it expired | Code | What actually happened |
+  | --- | --- | --- |
+  | `queued` | `report_never_claimed` | Nothing ever picked it up. The Analysis Service is stopped, unreachable over gRPC, or has `REPORT_WORKER_ENABLED` off. Waiting longer would not have helped. |
+  | `running` | `report_timeout` | It *was* claimed and did not finish. Either the window is genuinely too large, or the worker died mid-computation. |
+
+    Both used to be `report_timeout`. `insights` is the only kind Core does not compute
+    itself, so it is the only kind that can be queued and abandoned — which is why that one
+    message was the one everybody saw, and why telling a reader their report "did not
+    complete before the run timeout" sent them looking for a slow query that was not there.
+
+    Both codes now have entries in both catalogues. Before, neither did: the dashboard fell
+    through to the server's own English sentence and printed it verbatim to a German
+    reader, which is the client half of rule 17 failing quietly.
+
+!!! danger "The first real `report_timeout` was not a timeout at all"
+    Found in a deployment's logs, not by reading the code. Every `insights` run was
+    failing in Core's gRPC handler:
+
+    ```
+    File "core/grpc/server.py", line 590, in QueryMetricSeries
+        *raw_filters,
+    UnboundLocalError: cannot access local variable 'raw_filters'
+    ```
+
+    `raw_filters` was built inside `if not covered:`, while the `LAST`-metric
+    refinement below read it unconditionally. A **day** series over a workspace proven
+    to hold no point outside its day rollups therefore crashed — and that combination
+    is the *normal* one for an established workspace.
+
+    Nothing about the failure was visible where anybody would look. The call returned
+    `INTERNAL`; the Analysis worker read that as "Core unavailable" and re-raised, by
+    design, so the run was left in flight for Core's own sweep; thirty minutes later
+    the sweep failed it as `report_timeout`. The reader was told their analysis was too
+    slow. It had never run at all — and every retry took the same path, so the report
+    could never succeed.
+
+    Two lessons are worth keeping. A handler that reports one failure as another is
+    worse than one that crashes loudly, and `report_never_claimed` above exists for the
+    same reason. And a `LAST` metric on a fully rolled-up workspace is a case worth a
+    test of its own, which
+    `test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash` now is.
 - A late result arriving after Core has timed the run out is **refused**
   (`RUN_ALREADY_FINISHED`), because the timeout may already have queued a replacement and a
   stale result must not overwrite a newer one.

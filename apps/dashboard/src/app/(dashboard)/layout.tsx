@@ -6,10 +6,10 @@ import Sidebar, { TabType } from "../components/Sidebar";
 import { TAB_PATHS } from "../components/navigation";
 import MobileTabBar from "../components/MobileTabBar";
 import TopHeader from "../components/TopHeader";
-import ConnectorModal from "../components/ConnectorModal";
 import { ConnectorItem } from "../components/ConnectorsPage";
 import AuthScreen, { UserAuthData } from "../components/AuthScreen";
 import LegalFooter from "../components/LegalFooter";
+import QuarantineAlerts from "../components/QuarantineAlerts";
 import SystemWarnings from "../components/SystemWarnings";
 import UploadBanner from "../components/UploadBanner";
 import { UploadProvider } from "../lib/uploads/provider";
@@ -109,10 +109,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [tenantName, setTenantName] = useState("");
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  const [selectedModalConnector, setSelectedModalConnector] = useState<ConnectorItem | undefined>(
-    undefined,
-  );
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   const triggerRefresh = useCallback(() => setRefreshTrigger((prev) => prev + 1), []);
@@ -221,31 +217,32 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     }
   }, [API_BASE, resetToSignedOut, router]);
 
+  /**
+   * Connector setup is a route now, not a dialog this layout carries.
+   *
+   * The modal lived here for one reason: the header's "+" had to work from any
+   * tab, and a layout is the only thing mounted across all of them. A navigation
+   * does that with no shared state at all — and fixes three things the modal
+   * could not. The browser's back button closes it (on Android, hardware-back
+   * used to close the *page underneath* the open dialog), the URL can be linked
+   * from the documentation, and an interrupted setup can be returned to.
+   *
+   * The signature is unchanged, so the three callers did not have to care which
+   * of the two it is.
+   */
   const handleOpenConfigureModal = useCallback(
     (connector?: ConnectorItem, sourceType?: string) => {
-      if (connector) {
-        setSelectedModalConnector(connector);
-      } else if (sourceType) {
-        // A blank stand-in that only carries the chosen type. `id: ""` is what makes
-        // `isEditing` false downstream, so this opens as "create a new instance"
-        // rather than as an edit of something that does not exist yet.
-        setSelectedModalConnector({
-          id: "",
-          tenant_id: tenantId,
-          source_type: sourceType,
-          display_name: "",
-          status: "active",
-          masked_token: "••••••••",
-          poll_interval_hours: 6,
-          lookback_days: 7,
-          lookback_hours: 168,
-        });
-      } else {
-        setSelectedModalConnector(undefined);
+      if (connector?.id) {
+        router.push(`/connectors/${encodeURIComponent(connector.id)}/edit`);
+        return;
       }
-      setIsModalOpen(true);
+      // A chosen provider goes straight to its form; no choice yet means the
+      // gallery. `?type=` rather than a path segment because the value is a
+      // provider id from the catalogue, not a resource of ours.
+      const type = sourceType ?? connector?.source_type;
+      router.push(type ? `/connectors/new?type=${encodeURIComponent(type)}` : "/connectors/new");
     },
-    [tenantId],
+    [router],
   );
 
   const applyProfileUpdate = useCallback((name: string, email: string, workspaceName: string) => {
@@ -305,17 +302,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // must not see even the outline of a workspace.
   if (!mounted) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
-        <div
-          className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row"
-          // A frame, not a claim about content. Nothing here is real yet, so
-          // nothing here should be announced.
-          aria-hidden="true"
-        >
-          <div className="hidden w-64 shrink-0 border-r border-slate-200/80 bg-white md:block" />
-          <div className="flex-1 p-4 sm:px-6 sm:pt-6 md:p-6 lg:p-8">
-            <div className="h-10 w-56 rounded-xl bg-slate-200/70" />
-          </div>
+      <div
+        className="min-h-dvh md:grid md:grid-cols-[16rem_1fr]"
+        // A frame, not a claim about content. Nothing here is real yet, so
+        // nothing here should be announced.
+        aria-hidden="true"
+      >
+        <div className="hidden border-r border-line bg-surface md:block" />
+        <div className="p-4 sm:px-6 sm:pt-6 md:p-6 lg:p-8">
+          <div className="h-10 w-56 rounded-xl bg-surface-muted" />
         </div>
       </div>
     );
@@ -341,85 +336,98 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         */}
         <a
           href="#main-content"
-          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-slate-900 focus:shadow-lg focus:outline-2 focus:outline-[#0d5c3a]"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-ink focus:shadow-lg focus:outline-2 focus:outline-brand"
         >
           {t("nav.skipToContent")}
         </a>
-        <div className="flex min-h-screen items-center justify-center bg-slate-200/60 p-0 sm:p-4 lg:p-6">
-          {/* Main Outer App Window Shell */}
-          <div className="flex w-full max-w-[1600px] flex-col overflow-hidden border-slate-200/80 bg-[#f8fafc] shadow-2xl sm:min-h-[900px] sm:rounded-3xl sm:border md:flex-row">
-            {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
-                column of icons sits outside the thumb's reach — `MobileTabBar`
-                takes over below `md`. */}
-            <div className="hidden md:flex">
-              <Sidebar
-                activeTab={activeTab}
-                onTabChange={handleTabChange}
-                onLogout={handleLogout}
-              />
-            </div>
+        {/*
+          The shell, without the window.
 
-            {/* Main Content Area. The bottom padding on small screens is the tab
-                bar's height plus the home-indicator inset: without it the last
-                element of every page is unreachable behind the bar. */}
+          What stood here was a centred `max-w-[1600px]` card with a shadow,
+          floating on a grey mat. It failed on its own terms: `Sidebar` demanded
+          `min-h-screen` *inside* a card that sat in `lg:p-6`, so the card was
+          always taller than the viewport and every desktop carried a strip of
+          dead scroll; `sm:min-h-[900px]` scrolled the entire frame — sidebar
+          included — off a 768px laptop; and on a large monitor it spent hundreds
+          of pixels a side on decoration while capping the width of the charts
+          that are the point of the product.
+
+          It also made the scroll topology ambiguous. `<main>` declared
+          `overflow-y-auto` while the card had no bounded height, so *something*
+          scrolled but not reliably the document — which is why iOS Safari never
+          collapsed its address bar here, costing ~60px of height permanently on
+          the device with the least of it, and why there was nowhere to put a
+          single `scroll-padding` rule.
+
+          Now: the document scrolls, the sidebar is sticky, the header is sticky,
+          and the reading measure is set on the *content* rather than on the
+          chrome, so a page that needs full bleed can opt out per page.
+        */}
+        <div className="min-h-dvh md:grid md:grid-cols-[16rem_1fr]">
+          {/* Sidebar Navigation with URL Sync. Hidden on phones, where a
+              column of icons sits outside the thumb's reach — `MobileTabBar`
+              takes over below `md`. */}
+          <div className="hidden md:block">
+            <Sidebar
+              activeTab={activeTab}
+              onTabChange={handleTabChange}
+              onLogout={handleLogout}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <TopHeader
+              apiBase={API_BASE}
+              userName={userName}
+              userEmail={userEmail}
+              activeTab={activeTab}
+              onOpenConfigureModal={() => handleOpenConfigureModal()}
+              onNavigateToProfile={() => handleTabChange("profile")}
+              onRefresh={triggerRefresh}
+            />
+
+            {/* Main Content Area.
+                The bottom padding on small screens is the tab bar's height plus
+                the home-indicator inset: without it the last element of every page
+                is unreachable behind the bar.
+
+                Side insets matter for the same reason. The shell is full-bleed
+                below `sm`, so in landscape the content would otherwise run into the
+                rounded corners and the camera housing. `max(…)` rather than
+                `calc(… + …)`: on a phone with no cutout the inset is zero and the
+                padding must not collapse, but on one with a 44px inset the 1rem
+                must not be *added* to it. The top inset now belongs to the sticky
+                header instead, which is what sits against the status bar. */}
             <main
               id="main-content"
               tabIndex={-1}
-              className="min-w-0 flex-1 overflow-y-auto p-4 pb-[calc(6rem+env(safe-area-inset-bottom))] sm:px-6 sm:pt-6 md:p-6 md:pb-6 lg:p-8"
+              className="mx-auto w-full max-w-[1400px] p-4 pb-[calc(var(--tabbar-h)+env(safe-area-inset-bottom)+2.5rem)] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 sm:pt-6 md:p-6 md:pb-8 lg:p-8"
             >
-              <TopHeader
-                userName={userName}
-                userEmail={userEmail}
-                onOpenConfigureModal={() => handleOpenConfigureModal()}
-                onNavigateToProfile={() => handleTabChange("profile")}
-                onRefresh={triggerRefresh}
-              />
-
               {/* Configuration and credential problems, on every tab. Previously
                 these lived only in a startup log and docs/operations.md. */}
               <SystemWarnings apiBase={API_BASE} userRole={userRole} />
 
-              {children}
+              {/* A connector that has stopped accepting values is losing data
+                  right now. That notice used to live on `/quality`, which on a
+                  phone is behind "More" — so the one message in the product that
+                  means "this is being thrown away" was the hardest to reach. */}
+              <QuarantineAlerts apiBase={API_BASE} />
 
-              <ConnectorModal
-                isOpen={isModalOpen}
-                onClose={() => {
-                  setIsModalOpen(false);
-                  setSelectedModalConnector(undefined);
-                }}
-                initialSourceType={selectedModalConnector?.source_type}
-                // Which instance is being edited. Without it the modal would create a
-                // new connector every time, instead of updating the one clicked.
-                initialSourceId={selectedModalConnector?.id}
-                initialDisplayName={selectedModalConnector?.display_name}
-                initialPollInterval={selectedModalConnector?.poll_interval_hours || 6}
-                initialLookbackDays={selectedModalConnector?.lookback_days || 7}
-                initialLookbackHours={
-                  selectedModalConnector?.lookback_hours ||
-                  (selectedModalConnector?.lookback_days
-                    ? selectedModalConnector.lookback_days * 24
-                    : 168)
-                }
-                // Which kind of connector this is, so editing one fed by uploads does
-                // not silently turn it back into a polled one.
-                initialImportMode={selectedModalConnector?.import_mode}
-                isEditing={Boolean(selectedModalConnector?.id)}
-                tenantId={tenantId}
-                onSaved={triggerRefresh}
-              />
+              {children}
 
               <LegalFooter />
             </main>
           </div>
-
-          <UploadBanner />
-
-          <MobileTabBar
-            activeTab={activeTab}
-            onTabChange={handleTabChange}
-            onLogout={handleLogout}
-          />
         </div>
+
+        <UploadBanner />
+
+        <MobileTabBar
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+          onLogout={handleLogout}
+          onRefresh={triggerRefresh}
+        />
       </ShellProvider>
     </UploadProvider>
   );

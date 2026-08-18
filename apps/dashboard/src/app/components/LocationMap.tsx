@@ -80,7 +80,17 @@ const DEFAULT_PROVIDER: TileProvider =
     ? (process.env.NEXT_PUBLIC_MAP_TILE_PROVIDER as TileProvider)
     : "osm";
 
-const MAX_RENDERED_POINTS = 400;
+/**
+ * Points drawn into the polyline.
+ *
+ * Raised from 400 once the fetch stopped clipping the day: 400 was chosen against
+ * a track that was already capped at 1,000 fixes, where it cost little. Against a
+ * whole day it is the step that throws the shape away — and `simplifyTrack` keeps
+ * corners over straight stretches, so the extra points buy detail in exactly the
+ * places a route is recognisable by. A few thousand vertices in one Leaflet
+ * polyline is well inside what it draws smoothly.
+ */
+const MAX_RENDERED_POINTS = 2000;
 
 /**
  * Reduce a track to at most `limit` points, keeping the ones that carry the shape.
@@ -127,6 +137,13 @@ export default function LocationMap({
   const [mapContainer, setMapContainer] = useState<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletMap | null>(null);
   const [fetchedPoints, setFetchedPoints] = useState<GpsPoint[]>([]);
+  /**
+   * How many fixes the span actually holds, as opposed to how many are drawn.
+   *
+   * `null` while nothing has been fetched, and for a caller-supplied track, where
+   * the points are all there is and the two numbers are the same.
+   */
+  const [fixCount, setFixCount] = useState<number | null>(null);
   const [dateFilter, setDateFilter] = useState<"today" | "7d" | "30d">("today");
   // A caller-supplied track is ready on the first render, so there is nothing to
   // wait for and the spinner would be a frame of noise.
@@ -143,54 +160,54 @@ export default function LocationMap({
     setLoading(true);
     try {
       const now = new Date();
-      let start: Date;
-      let end: Date;
-      if (day) {
-        // The report's day is a calendar day in the reader's zone. Convert both
-        // local-midnight boundaries to UTC using the same offset that produced
-        // the report; this avoids the old browser-local "today" approximation.
-        const dayStartUtc = Date.parse(`${day}T00:00:00.000Z`);
-        const offset = offsetMinutes ?? -now.getTimezoneOffset();
-        start = new Date(dayStartUtc - offset * 60_000);
-        // The metrics endpoint accepts inclusive boundaries. Stop one millisecond
-        // before the following midnight so its first sample cannot leak into this day.
-        end = new Date(dayStartUtc + 86_400_000 - offset * 60_000 - 1);
-      } else {
-        end = now;
-        start = new Date(now);
-        if (dateFilter === "today") start.setHours(0, 0, 0, 0);
-        else start.setDate(start.getDate() - (dateFilter === "7d" ? 7 : 30));
-      }
+      const offset = offsetMinutes ?? -now.getTimezoneOffset();
+      // The day the span ends on, and how many days back it reaches. The server
+      // owns both boundaries through the same `day_window` the day report uses, so
+      // the map and the story cannot disagree about where a day starts.
+      const lastDay = day ?? new Date(now.getTime() + offset * 60_000).toISOString().slice(0, 10);
+      const spanDays = day ? 1 : dateFilter === "today" ? 1 : dateFilter === "7d" ? 7 : 30;
 
       const query = new URLSearchParams({
-        metric_type: "location_point",
-        start_time: start.toISOString(),
-        end_time: end.toISOString(),
-        limit: "1000",
+        day: lastDay,
+        days: String(spanDays),
+        offset_minutes: String(offset),
       });
-      const res = await apiFetch(`${apiBase}/api/v1/data/metrics?${query}`, {
+      // The whole span, decimated in the database to fit. Not `/metrics` with
+      // `limit=1000`: that endpoint sorts ascending and reports no truncation, so a
+      // day with more fixes than the limit returned the *earliest* thousand — a
+      // track that stopped mid-morning, with the count of what was returned shown
+      // as if it were the day's own. A partial track looks exactly like a short day.
+      const res = await apiFetch(`${apiBase}/api/v1/data/day/track?${query}`, {
         cache: "no-store",
       });
       if (!res.ok) return;
 
       const data = await res.json();
-      const parsed: GpsPoint[] = (data.data_points || [])
-        .map((dp: { metadata?: Record<string, unknown>; value?: number; timestamp?: string }) => {
-          const meta = dp.metadata || {};
-          const lat = (meta.latitude as number) ?? dp.value;
-          const lon = meta.longitude as number;
-          if (lat == null || lon == null || isNaN(Number(lat)) || isNaN(Number(lon))) return null;
+      const parsed: GpsPoint[] = (data.samples || [])
+        .map((sample: { lat?: number; lon?: number; t?: string; speed?: number; altitude?: number }) => {
+          if (
+            sample.lat == null ||
+            sample.lon == null ||
+            isNaN(Number(sample.lat)) ||
+            isNaN(Number(sample.lon))
+          ) {
+            return null;
+          }
           return {
-            latitude: Number(lat),
-            longitude: Number(lon),
-            timestamp: dp.timestamp,
-            speed: meta.speed as number | undefined,
-            altitude: meta.altitude as number | undefined,
+            latitude: Number(sample.lat),
+            longitude: Number(sample.lon),
+            timestamp: sample.t,
+            speed: sample.speed ?? undefined,
+            altitude: sample.altitude ?? undefined,
           };
         })
         .filter(Boolean) as GpsPoint[];
 
       setFetchedPoints(parsed);
+      // The real number of fixes behind the drawn line, which is not the number of
+      // points drawn. Reporting the latter as the former is how a decimated track
+      // passes for a complete one.
+      setFixCount(typeof data.fix_count === "number" ? data.fix_count : parsed.length);
     } catch (err) {
       console.error("Error fetching GPS points:", err);
     } finally {
@@ -332,38 +349,44 @@ export default function LocationMap({
 
   if (loading) {
     return (
-      <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-slate-200/80 bg-white p-6 text-xs text-slate-400">
+      <div className="glass-card flex h-[420px] items-center justify-center rounded-3xl border border-line bg-surface p-6 text-xs text-ink-muted">
         {t("map.loading")}
       </div>
     );
   }
 
-  const simplified = filteredPoints.length > renderPoints.length;
+  // The count the reader is shown is the count of fixes the span holds, which is
+  // the server's when it fetched one. Both decimations — the server's, to bound the
+  // response, and `simplifyTrack`'s, to bound what Leaflet draws — are reductions of
+  // that same number, so "simplified to" is measured against it and not against
+  // whatever survived the first step.
+  const totalPoints = fixCount ?? filteredPoints.length;
+  const simplified = totalPoints > renderPoints.length;
 
   return (
-    <div className="glass-card space-y-4 rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
-      <div className="flex flex-col items-start justify-between gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-center">
+    <div className="glass-card space-y-4 rounded-3xl border border-line bg-surface p-6 shadow-sm">
+      <div className="flex flex-col items-start justify-between gap-3 border-b border-line pb-4 sm:flex-row sm:items-center">
         {showHeader && (
           <div>
-            <h3 className="flex items-center gap-2 text-base font-extrabold text-slate-900">
-              <MapPin className="h-5 w-5 text-[#0d5c3a]" />
+            <h3 className="flex items-center gap-2 text-base font-extrabold text-ink">
+              <MapPin className="h-5 w-5 text-brand" />
               <span>{t("map.headline")}</span>
             </h3>
-            <p className="mt-0.5 text-xs text-slate-500">{t("map.privacyLead")}</p>
+            <p className="mt-0.5 text-xs text-ink-muted">{t("map.privacyLead")}</p>
           </div>
         )}
 
         <div className="flex flex-wrap items-center gap-2">
           {!controlled && !day && (
-            <div className="flex rounded-xl border border-emerald-200/80 bg-emerald-50 p-1 text-xs">
+            <div className="flex rounded-xl border border-ok-line bg-ok-soft p-1 text-xs">
               {(["today", "7d", "30d"] as const).map((f) => (
                 <button
                   key={f}
                   onClick={() => setDateFilter(f)}
                   className={`flex items-center gap-1 rounded-lg px-3 py-1 font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
                     dateFilter === f
-                      ? "bg-[#0d5c3a] text-white shadow-sm"
-                      : "text-emerald-800 hover:text-emerald-950"
+                      ? "bg-brand text-brand-ink shadow-sm"
+                      : "text-ok-ink hover:text-ok-ink"
                   }`}
                 >
                   {f === "today" && <Calendar className="h-3 w-3" />}
@@ -382,8 +405,8 @@ export default function LocationMap({
             }}
             className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-colors ${
               showTiles
-                ? "border-[#0d5c3a] bg-[#0d5c3a] text-white"
-                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                ? "border-brand bg-brand text-brand-ink"
+                : "border-line bg-surface text-ink-secondary hover:bg-page"
             }`}
             title={showTiles ? t("map.hideTilesTitle") : t("map.showTilesTitle")}
           >
@@ -395,7 +418,7 @@ export default function LocationMap({
             <select
               value={tileProvider}
               onChange={(e) => setTileProvider(e.target.value as TileProvider)}
-              className="rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus-ring"
+              className="rounded-xl border border-line bg-surface px-2.5 py-1.5 text-xs outline-none focus-ring"
             >
               {Object.entries(TILE_PROVIDERS).map(([id, p]) => (
                 <option key={id} value={id}>
@@ -408,14 +431,14 @@ export default function LocationMap({
       </div>
 
       {!showTiles && (
-        <p className="flex items-start gap-1.5 rounded-2xl bg-slate-50 px-3 py-2 text-[11px] leading-relaxed text-slate-500">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#0d5c3a]" />
+        <p className="flex items-start gap-1.5 rounded-2xl bg-page px-3 py-2 text-meta leading-relaxed text-ink-muted">
+          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand" />
           <span>{t("map.privacyDetail")}</span>
         </p>
       )}
 
       {tileError && (
-        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900">
+        <p className="rounded-2xl border border-warn-line bg-warn-soft px-3 py-2 text-meta text-warn-ink">
           {tileError}
         </p>
       )}
@@ -423,10 +446,10 @@ export default function LocationMap({
       {showTiles ? (
         <div
           ref={setMapContainer}
-          className="h-[380px] w-full overflow-hidden rounded-2xl border border-slate-200"
+          className="h-[380px] w-full overflow-hidden rounded-2xl border border-line"
         />
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+        <div className="overflow-hidden rounded-2xl border border-line bg-page">
           {svg ? (
             <svg
               viewBox="0 0 800 400"
@@ -436,14 +459,24 @@ export default function LocationMap({
             >
               <defs>
                 <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
-                  <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#e2e8f0" strokeWidth="1" />
+                  <path d="M 40 0 L 0 0 0 40" fill="none" className="stroke-line" strokeWidth="1" />
                 </pattern>
               </defs>
               <rect width="800" height="400" fill="url(#grid)" />
+              {/*
+                Classes rather than `stroke=` / `fill=` attributes: a presentation
+                attribute does not resolve `var()`, so the literals these replace
+                stayed the light theme's colours. This panel is the tile-less
+                fallback and sits on our own surface, not on map tiles — in dark
+                the route was drawn at 2.3:1, making the one thing the view exists
+                to show the hardest thing on it to see. The Leaflet track above
+                keeps its literal on purpose: it is drawn over third-party tiles,
+                which are light in either theme.
+              */}
               <path
                 d={svg.path}
                 fill="none"
-                stroke="#0d5c3a"
+                className="stroke-brand"
                 strokeWidth="3"
                 strokeLinejoin="round"
               />
@@ -453,7 +486,7 @@ export default function LocationMap({
                   cx={p.x}
                   cy={p.y}
                   r={i === svg.projected.length - 1 ? 6 : 3}
-                  fill={i === svg.projected.length - 1 ? "#0d5c3a" : "#10b981"}
+                  className={i === svg.projected.length - 1 ? "fill-brand" : "fill-[#10b981]"}
                   stroke="#ffffff"
                   strokeWidth="1.5"
                 >
@@ -465,19 +498,19 @@ export default function LocationMap({
               ))}
             </svg>
           ) : (
-            <div className="flex h-[380px] items-center justify-center text-xs text-slate-400">
+            <div className="flex h-[380px] items-center justify-center text-xs text-ink-muted">
               {t("map.empty")}
             </div>
           )}
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-meta text-ink-muted">
         <span className="flex items-center gap-1.5">
-          <Navigation className="h-3.5 w-3.5 text-[#0d5c3a]" />
-          {t("map.pointCount", { count: formatNumber(filteredPoints.length) })}
+          <Navigation className="h-3.5 w-3.5 text-brand" />
+          {t("map.pointCount", { count: formatNumber(totalPoints) })}
           {simplified && (
-            <span className="flex items-center gap-1 text-slate-400">
+            <span className="flex items-center gap-1 text-ink-muted">
               <Layers className="h-3 w-3" />
               {t("map.simplifiedTo", { count: formatNumber(renderPoints.length) })}
             </span>

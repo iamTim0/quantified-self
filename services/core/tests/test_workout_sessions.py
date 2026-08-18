@@ -724,3 +724,257 @@ async def test_two_connectors_reporting_one_metric_pick_a_winner():
         assert len(resting["other_sources"]) == 1
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_meal_and_a_meeting_are_not_workouts():
+    """The list's subject is training, and only training.
+
+    `nutrition_item_energy` and `calendar_meeting_duration` used to share one
+    "event metric" set with the workout prefixes, and `category="all"` — the
+    default the dashboard sends — applied no narrowing on top of it. So every
+    logged food item and every calendar entry was grouped into a session and
+    returned here, named from `food_name` and `summary` because
+    `sessions.TITLE_FIELDS` reads both to title a card. A list of workouts that
+    contains a banana and a stand-up cannot answer anything about training.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        apple = await _source(tenant_id, "apple_health")
+        yazio = await _source(tenant_id, "yazio")
+        calendar = await _source(tenant_id, "calendar")
+        await _a_workout(tenant_id, apple)
+        await _points(
+            [
+                {"tenant_id": tenant_id, "source_id": yazio,
+                 "metric_type": "nutrition_item_energy", "timestamp": START,
+                 "value": 105.0,
+                 "metadata": {"food_name": "Banana", "meal_category": "snack"}},
+                {"tenant_id": tenant_id, "source_id": calendar,
+                 "metric_type": "calendar_meeting_duration", "timestamp": START,
+                 "value": 30.0, "metadata": {"summary": "Daily stand-up"}},
+            ]
+        )
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        titles = [s["title"] for s in listing["sessions"]]
+        assert titles == ["Morning Run"], titles
+        assert {s["category"] for s in listing["sessions"]} == {"workout"}
+        # Not merely absent from the default view — absent from every view of it.
+        for category in ("all", "workout", "strength"):
+            page = await _list(tenant_id, offset_minutes=0, category=category)
+            for entry in page["sessions"]:
+                assert "nutrition" not in entry["measures"]
+                assert "calendar_meeting_duration" not in entry["measures"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_meal_in_the_window_is_not_a_workouts_surroundings():
+    """A workout that straddles lunch did not measure the lunch.
+
+    `_context` excludes every entry metric, not only the session's own. With the
+    session predicate narrowed, excluding just that would have let the other entry
+    metrics in — and `nutrition_item_energy` is a `SUM`, so the meal's calories
+    would be reported as a figure measured during the session.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        apple = await _source(tenant_id, "apple_health")
+        yazio = await _source(tenant_id, "yazio")
+        await _a_workout(tenant_id, apple)
+        await _points(
+            [
+                {"tenant_id": tenant_id, "source_id": yazio,
+                 "metric_type": "nutrition_item_energy",
+                 "timestamp": START + timedelta(minutes=10), "value": 640.0,
+                 "metadata": {"food_name": "Pasta", "meal_category": "lunch"}},
+            ]
+        )
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        key = listing["sessions"][0]["session_key"]
+        status, detail = await _detail(tenant_id, key)
+        assert status == 200, detail
+        surrounding = {entry["metric_type"] for entry in detail.get("surroundings", [])}
+        assert "nutrition_item_energy" not in surrounding
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_days_track_covers_the_whole_day_not_its_first_points():
+    """The overview map's defect, stated as a test.
+
+    It asked `/metrics` for `location_point` with `limit=1000` against an endpoint
+    that sorts ascending and reports no truncation, so a day with more fixes than
+    that drew *the morning* and labelled the count as the day's own. A track that
+    stops at 11:00 is indistinguishable from a day that ended at 11:00.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "dawarich")
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        midnight = datetime.combine(yesterday, datetime.min.time(), tzinfo=timezone.utc)
+
+        # A fix a minute for twelve hours: more than the old thousand-point limit.
+        rows = []
+        for index in range(720):
+            at = midnight + timedelta(minutes=index)
+            rows.append({
+                "tenant_id": tenant_id, "source_id": source_id,
+                "metric_type": "location_point", "timestamp": at, "value": 1.0,
+                "metadata": {"latitude": 52.5 + index * 0.0001,
+                             "longitude": 13.4 + index * 0.0001},
+            })
+        await _points(rows)
+
+        async with await _client() as client:
+            response = await client.get(
+                f"/api/v1/data/day/track?day={yesterday.isoformat()}"
+                "&offset_minutes=0&track_points=100",
+                headers=auth_headers(tenant_id),
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+
+        # Every fix is counted, however few are returned.
+        assert body["fix_count"] == 720
+        assert body["truncated"] is True
+        assert 0 < body["sample_count"] <= 100
+        # And the samples span the whole day rather than its beginning: the last one
+        # is in the final hour, which is exactly what the old limit lost.
+        assert body["samples"][0]["t"] < body["samples"][-1]["t"]
+        last = datetime.fromisoformat(body["samples"][-1]["t"])
+        assert last >= midnight + timedelta(hours=11)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_day_without_movement_is_an_empty_track_not_an_error():
+    tenant_id = await create_test_tenant()
+    try:
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).date()
+        async with await _client() as client:
+            response = await client.get(
+                f"/api/v1/data/day/track?day={yesterday.isoformat()}&offset_minutes=0",
+                headers=auth_headers(tenant_id),
+            )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert body["fix_count"] == 0
+        assert body["samples"] == []
+        assert body["truncated"] is False
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_sparse_bucket_does_not_weigh_as_much_as_a_dense_one():
+    """An average heart rate must not depend on which page asks for it.
+
+    `workout_heart_rate` is stored as bucket means carrying `bucket_samples`, and
+    `core.rollups` has always weighted by it. Every read path took a bare `avg()`,
+    so one stray sample at 60 counted for as much as a full minute at 160 — the
+    detail page and `metric_rollups` reported two different averages for one
+    dataset, and the drawn line sat outside the min/max band beneath it.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        meta = _session_meta(session_end=(START + timedelta(minutes=45)).isoformat())
+        rows = [
+            {"tenant_id": tenant_id, "source_id": source_id,
+             "metric_type": "workout_duration", "timestamp": START, "value": 45.0,
+             "metadata": meta},
+        ]
+        # Sixty readings averaging 160, then a single reading of 60. The weighted
+        # mean is ~158; the unweighted mean of the two buckets is 110.
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=1),
+            "value": 160.0,
+            "metadata": {**_session_meta(), "bucket_samples": 60,
+                         "bucket_min": 150.0, "bucket_max": 170.0},
+        })
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=2),
+            "value": 60.0,
+            "metadata": {**_session_meta(), "bucket_samples": 1},
+        })
+        rows.append({
+            "tenant_id": tenant_id, "source_id": source_id,
+            "metric_type": "workout_heart_rate", "timestamp": START + timedelta(seconds=3),
+            "value": 160.0,
+            "metadata": {**_session_meta(), "bucket_samples": 60},
+        })
+        await _points(rows)
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        key = listing["sessions"][0]["session_key"]
+        status, detail = await _detail(tenant_id, key, stream_points=1)
+        assert status == 200, detail
+
+        stream = next(s for s in detail["streams"] if s["metric_type"] == "workout_heart_rate")
+        # One bucket holding all three readings, weighted: (160*60 + 60 + 160*60)/121.
+        drawn = stream["points"][0]["avg"]
+        assert drawn == pytest.approx((160 * 60 + 60 + 160 * 60) / 121, abs=0.5)
+        # Emphatically not the unweighted mean of the three stored values.
+        assert drawn != pytest.approx((160 + 60 + 160) / 3, abs=0.5)
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_neighbouring_sessions_pulse_is_not_this_sessions():
+    """The window is the join — except for a series that states whose it is.
+
+    Two sessions minutes apart, each padded, overlap. `workout_heart_rate` carries a
+    `session_id`, so attributing the neighbour's pulse to this workout is a real
+    measurement of the wrong workout: nothing on the page could betray it.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _source(tenant_id, "apple_health")
+        mine = "apple_health:aaaa1111"
+        theirs = "apple_health:bbbb2222"
+        end = START + timedelta(minutes=20)
+
+        rows = [
+            {"tenant_id": tenant_id, "source_id": source_id,
+             "metric_type": "workout_duration", "timestamp": START, "value": 20.0,
+             "metadata": _session_meta(mine, session_end=end.isoformat())},
+        ]
+        # My pulse, inside my span.
+        for index in range(5):
+            rows.append({
+                "tenant_id": tenant_id, "source_id": source_id,
+                "metric_type": "workout_heart_rate",
+                "timestamp": START + timedelta(minutes=index), "value": 150.0,
+                "metadata": {"session_id": mine},
+            })
+        # The next session's pulse, one minute after mine ends — inside the pad.
+        for index in range(5):
+            rows.append({
+                "tenant_id": tenant_id, "source_id": source_id,
+                "metric_type": "workout_heart_rate",
+                "timestamp": end + timedelta(seconds=30 + index), "value": 90.0,
+                "metadata": {"session_id": theirs},
+            })
+        await _points(rows)
+
+        listing = await _list(tenant_id, offset_minutes=0)
+        key = next(s["session_key"] for s in listing["sessions"] if s["session_id"] == mine)
+        status, detail = await _detail(tenant_id, key, pad_seconds=900)
+        assert status == 200, detail
+
+        stream = next(s for s in detail["streams"] if s["metric_type"] == "workout_heart_rate")
+        values = [point["avg"] for point in stream["points"]]
+        assert values, "my own series must still be drawn"
+        # 90 belongs to the next workout and must appear nowhere in mine.
+        assert all(value == pytest.approx(150.0, abs=0.01) for value in values), values
+    finally:
+        await cleanup_test_tenant(tenant_id)

@@ -224,3 +224,122 @@ async def test_two_sightings_of_one_path_are_merged_not_rejected():
         assert entry["occurrences"] == 7
     finally:
         await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_field_that_becomes_supported_says_when_it_did():
+    """Vanishing from the unsupported list is not the same as being answered.
+
+    Before this, a field that became supported simply disappeared -- which is
+    indistinguishable from a field that stopped arriving. The user's actual question
+    is "the thing I reported as missing, does it work now?", and only a recorded
+    transition can answer it.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            source_id = await _connector(ac, tenant_id)
+            url = f"/api/v1/internal/data/sources/{source_id}/field-report"
+
+            await ac.post(
+                url,
+                json={"unmapped": [
+                    {"path": "workouts.totalSleep", "kind": "number", "occurrences": 4}
+                ]},
+                headers=service_headers(tenant_id),
+            )
+            await ac.post(
+                url,
+                json={"mapped": [
+                    {"path": "workouts.totalSleep", "kind": "number",
+                     "occurrences": 4, "metric_type": "sleep_duration"}
+                ]},
+                headers=service_headers(tenant_id),
+            )
+
+            listed = await ac.get(
+                "/api/v1/data/quality/newly-supported-fields", headers=auth_headers(tenant_id)
+            )
+
+        assert listed.status_code == 200, listed.text
+        fields = {f["field_path"]: f for f in listed.json()["fields"]}
+        entry = fields["workouts.totalSleep"]
+        assert entry["metric_type"] == "sleep_duration"
+        assert entry["supported_since"]
+        # Apple Health is a push connector: its history lives only on the device, so
+        # offering a backfill button here would be a button that does nothing.
+        assert entry["history_recoverable"] is False
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_field_that_was_always_supported_is_not_reported_as_new():
+    """The list is a notice about a change, not a catalogue of what works."""
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            source_id = await _connector(ac, tenant_id)
+            await ac.post(
+                f"/api/v1/internal/data/sources/{source_id}/field-report",
+                json={"mapped": [
+                    {"path": "metrics.step_count", "kind": "number",
+                     "occurrences": 3, "metric_type": "steps"}
+                ]},
+                headers=service_headers(tenant_id),
+            )
+            listed = await ac.get(
+                "/api/v1/data/quality/newly-supported-fields", headers=auth_headers(tenant_id)
+            )
+
+        assert [f["field_path"] for f in listed.json()["fields"]] == []
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_one_odd_payload_cannot_unsupport_an_established_field():
+    """The latent regression the upsert used to carry.
+
+    `metric_type` was overwritten unconditionally, so a single import that saw the
+    path in a shape its transformer had no rule for flipped an established mapping
+    back to NULL -- and the field reappeared under "not yet supported" while being
+    stored perfectly well. That is the one thing that page must never say.
+    """
+    transport = ASGITransport(app=app)
+    tenant_id = await create_test_tenant()
+
+    try:
+        async with AsyncClient(transport=transport, base_url="http://testserver") as ac:
+            source_id = await _connector(ac, tenant_id)
+            url = f"/api/v1/internal/data/sources/{source_id}/field-report"
+
+            await ac.post(
+                url,
+                json={"mapped": [
+                    {"path": "metrics.heart_rate.Avg", "kind": "number",
+                     "occurrences": 5, "metric_type": "heart_rate"}
+                ]},
+                headers=service_headers(tenant_id),
+            )
+            # A later run sees the same path and maps nothing from it.
+            await ac.post(
+                url,
+                json={"unmapped": [
+                    {"path": "metrics.heart_rate.Avg", "kind": "number", "occurrences": 1}
+                ]},
+                headers=service_headers(tenant_id),
+            )
+
+            unsupported = await ac.get(
+                "/api/v1/data/quality/unsupported-fields", headers=auth_headers(tenant_id)
+            )
+
+        paths = {f["field_path"] for f in unsupported.json()["fields"]}
+        assert "metrics.heart_rate.Avg" not in paths
+    finally:
+        await cleanup_test_tenant(tenant_id)

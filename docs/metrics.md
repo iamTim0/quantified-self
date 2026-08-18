@@ -96,6 +96,15 @@ Generated from the registry; changes made here are overwritten by the next `task
 Each metric carries a label in both interface languages. The table below shows the English one; the
 dashboard picks whichever matches the reader's language.
 
+The `unit` column is the dimension the value is **stored** in, which is not always the same as what a
+reader sees. `count` is the registry's name for a bare number, and it belongs there — a value with no
+declared unit is how a unit bug starts. Printed beside the figure it says nothing the label had not
+already said, so the dashboard suppresses it: the day's step tile reads `16,400`, not `16,400 count`.
+That suppression lives in `describeMetric()`, which is the dashboard's display helper;
+`METRIC_CATALOG[key].unit` still reports `count`, and so does this table, because reference material
+should state the dimension. `index` is deliberately kept — a bare index is a number a reader cannot
+place.
+
 <!-- BEGIN GENERATED METRIC TABLE -->
 
 ### Activity
@@ -282,12 +291,29 @@ dashboard picks whichever matches the reader's language.
 | `calendar_busy_duration` | Busy time | `min` | `sum` | calendar | `calendar_busy_minutes` |
 | `calendar_meeting_duration` | Meeting duration | `min` | `sum` | calendar | `calendar_meeting_duration_minutes` |
 
+### developer
+
+| `metric_type` | Meaning | Unit | Aggregation | Sources | Former names |
+| --- | --- | --- | --- | --- | --- |
+| `code_commits` | Commits | `count` | `sum` | github | — |
+| `code_lines_added` | Lines added | `count` | `sum` | github | — |
+| `code_lines_removed` | Lines removed | `count` | `sum` | github | — |
+| `code_repositories_touched` | Repositories touched | `count` | `max` | github | — |
+| `code_pull_requests_opened` | Pull requests opened | `count` | `sum` | github | — |
+| `code_pull_requests_merged` | Pull requests merged | `count` | `sum` | github | — |
+| `code_reviews_submitted` | Reviews submitted | `count` | `sum` | github | — |
+| `code_issues_opened` | Issues opened | `count` | `sum` | github | — |
+| `code_contribution_streak` | Current streak | `count` | `last` | github | — |
+| `code_followers` | Followers | `count` | `last` | github | — |
+| `code_stars_received` | Stars received | `count` | `last` | github | — |
+
 ### Dynamic namespaces
 
 | Prefix | Meaning | Sources |
 | --- | --- | --- |
 | `home_assistant_` | Home Assistant | home_assistant |
 | `apple_health_` | Apple Health (uncatalogued) | apple_health |
+| `github_` | GitHub (per repository) | github |
 | `custom_` | Custom metric | manual import |
 
 <!-- END GENERATED METRIC TABLE -->

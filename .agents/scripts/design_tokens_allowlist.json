@@ -1,0 +1,23 @@
+{
+  "apps/dashboard/src/app/components/AnalysisTab.tsx": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/components/ExplorerTab.tsx": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/components/LocationMap.tsx": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/components/StreamChart.tsx": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/layout.tsx": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/lib/theme/chart.ts": [
+    "hex-literal"
+  ],
+  "apps/dashboard/src/app/manifest.ts": [
+    "hex-literal"
+  ]
+}
