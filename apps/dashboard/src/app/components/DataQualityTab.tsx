@@ -1,7 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, BookOpen, CalendarX2, Lightbulb, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  CalendarX2,
+  Lightbulb,
+  RefreshCw,
+  type LucideIcon,
+} from "lucide-react";
 import ImportDialog from "./ImportDialog";
 import ReportStatus from "./ReportStatus";
 import { plural, useI18n, type Translate } from "../lib/i18n/provider";
@@ -112,6 +119,27 @@ function toRanges(dates: string[]): { start: string; end: string; days: number }
   return ranges.sort((a, b) => b.days - a.days);
 }
 
+/**
+ * What a card's advice line actually is, which decides how it is painted.
+ *
+ * The pill was `bg-ok-soft text-ok-ink` unconditionally, so all three meanings wore
+ * the success colour: "the data looks complete", "fill these gaps" and "not computed
+ * yet" were the same reassuring green. Two of those are not reassurance — one asks for
+ * work and the other is the absence of an answer, and a reader scanning for colour
+ * reads all three as "fine".
+ *
+ * `neutral` exists as its own tone rather than borrowing `warn`, because "we have not
+ * looked" is not a finding. Amber would claim something is wrong; grey claims nothing,
+ * which is the truth.
+ */
+type Tone = "ok" | "warn" | "neutral";
+
+const TONE: Record<Tone, { icon: string; pill: string }> = {
+  ok: { icon: "text-ok-ink", pill: "bg-ok-soft text-ok-ink" },
+  warn: { icon: "text-warn-ink", pill: "bg-warn-soft text-warn-ink" },
+  neutral: { icon: "text-ink-muted", pill: "bg-surface-muted text-ink-secondary" },
+};
+
 const gapRecommendation = (t: Translate, missingDays: number): string => {
   if (missingDays === 0) return t("quality.recommendationComplete");
   if (missingDays <= 3) return t("quality.recommendationMinor");
@@ -182,13 +210,22 @@ export default function DataQualityTab({ apiBase }: Props) {
   usePolling(() => void load(), null);
 
   const missingTotal = gaps.reduce((sum, gap) => sum + gap.missing_dates.length, 0);
-  const cards = [
+  const gapsReady = gapReport.status === "ready";
+  const conflictsReady = conflictReport.status === "ready";
+  const cards: { title: string; value: number | string; icon: LucideIcon; detail: string; help: string; tone: Tone }[] = [
     {
       title: t("quality.gapsTitle"),
-      value: missingTotal,
+      // "—", not 0, before the scan has run — the same rule the conflicts card
+      // below states, which this card did not follow. `missingTotal` is a
+      // `reduce` over an empty list until a run finishes, so a fresh workspace
+      // read **"0 · The data looks complete."** in green, directly underneath a
+      // header saying "Not computed yet". The page contradicted itself, and the
+      // half a reader believes is the big green number.
+      value: gapsReady ? missingTotal : "—",
       icon: CalendarX2,
       detail: t("quality.gapsDetail", { metrics: gaps.length, days: windowDays }),
-      help: gapRecommendation(t, missingTotal),
+      help: gapsReady ? gapRecommendation(t, missingTotal) : t("report.neverComputed"),
+      tone: !gapsReady ? "neutral" : missingTotal === 0 ? "ok" : "warn",
     },
     {
       title: t("quality.conflictsTitle"),
@@ -196,15 +233,15 @@ export default function DataQualityTab({ apiBase }: Props) {
       // "checked, nothing found" when the truth was "never checked", and
       // nothing else on the card distinguished the two. A wrong number is worse
       // than a missing one, because nothing marks it as wrong.
-      value: conflictReport.status === "ready" ? conflicts : "—",
+      value: conflictsReady ? conflicts : "—",
       icon: AlertTriangle,
       detail: t("quality.conflictsDetail"),
-      help:
-        conflictReport.status !== "ready"
-          ? t("report.neverComputed")
-          : conflicts === 0
-            ? t("quality.conflictsNone")
-            : t("quality.conflictsHelp"),
+      help: !conflictsReady
+        ? t("report.neverComputed")
+        : conflicts === 0
+          ? t("quality.conflictsNone")
+          : t("quality.conflictsHelp"),
+      tone: !conflictsReady ? "neutral" : conflicts === 0 ? "ok" : "warn",
     },
   ];
 
@@ -260,16 +297,16 @@ export default function DataQualityTab({ apiBase }: Props) {
       />
 
       <div className="grid gap-4 md:grid-cols-2">
-        {cards.map(({ title, value, icon: Icon, detail, help }) => (
+        {cards.map(({ title, value, icon: Icon, detail, help, tone }) => (
           <article
             key={title}
             className="rounded-3xl border border-line bg-surface p-5 shadow-sm"
           >
-            <Icon className="mb-5 h-6 w-6 text-ok-ink" />
+            <Icon className={`mb-5 h-6 w-6 ${TONE[tone].icon}`} />
             <p className="text-sm font-semibold text-ink-muted">{title}</p>
             <p className="text-4xl font-black text-ink">{value}</p>
             <p className="mt-2 text-xs text-ink-muted">{detail}</p>
-            <p className="mt-3 rounded-2xl bg-ok-soft p-3 text-xs font-semibold text-ok-ink">
+            <p className={`mt-3 rounded-2xl p-3 text-xs font-semibold ${TONE[tone].pill}`}>
               {help}
             </p>
           </article>
@@ -333,7 +370,14 @@ export default function DataQualityTab({ apiBase }: Props) {
           <h2 className="mb-1 font-bold text-ink">{t("quality.largestGaps")}</h2>
           <p className="mb-4 text-xs text-ink-muted">{t("quality.largestGapsHint")}</p>
 
-          {gaps.length === 0 ? (
+          {/* The third place the same distinction was missing. An empty `gaps` list
+              means "no gaps" only once a scan has produced it; before that it means
+              nobody has looked, and claiming a clean window is a finding this panel
+              does not have. The conflicts panel opposite already said "Not computed
+              yet" here, which is what made the asymmetry visible in a screenshot. */}
+          {!gapsReady ? (
+            <p className="text-sm text-ink-muted">{t("report.neverComputed")}</p>
+          ) : gaps.length === 0 ? (
             <p className="text-sm text-ink-muted">{t("quality.noGaps", { days: windowDays })}</p>
           ) : (
             gaps.slice(0, 6).map((gap) => {
