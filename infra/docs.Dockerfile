@@ -33,36 +33,53 @@ ARG SOURCE_COMMIT=unknown
 RUN printf '{"status":"ok","service":"qs-docs","version":"%s","commit":"%s"}\n' \
       "$SOURCE_VERSION" "$SOURCE_COMMIT" > /usr/share/nginx/html/health.json
 
-# The site is served under /docs, and Traefik hands the prefix through unstripped,
-# because MkDocs' directory URLs make nginx a source of redirects: `try_files
-# $uri $uri/` answers a request for a directory without a trailing slash with a
-# 301 to the slashed form, and that redirect is built from what nginx itself
-# knows. With the prefix stripped and the default `absolute_redirect on`, a click
-# on /docs/metrics produced `Location: http://<host>:8003/metrics/` — the wrong
-# port, the wrong scheme behind TLS, and no /docs at all. Nothing downstream can
-# repair that: Traefik's StripPrefix does not rewrite Location headers back.
+# The site is served under /docs, Traefik hands the prefix through unstripped, and
+# **nothing here redirects**. Both properties are load-bearing and were learned
+# the same way -- from a documentation site that had become unreachable.
 #
-# The redirect itself is not the bug and must stay. Serving /docs/metrics
-# directly instead would resolve every relative link on the page one level too
-# high, because MkDocs writes them against the slashed URL.
+# The prefix stays because a proxy cannot put a stripped prefix back into a
+# Location header: with /docs removed, nginx composed its redirects from the only
+# things it knew, and a click produced `http://<host>:8003/metrics/` -- the wrong
+# port, plain http behind TLS, no prefix. `absolute_redirect off` keeps whatever
+# does redirect to a bare path resolved against the origin in the address bar.
 #
-# So: the prefix exists here too (`absolute_redirect off` then makes the Location
-# a bare path, `/docs/metrics/`, which the browser resolves against the origin it
-# is already on), and the development stack, where `mkdocs serve` serves under
-# /docs/ for the same reason, now routes identically.
+# The redirects themselves are gone because MkDocs now publishes file URLs
+# (`use_directory_urls: false`), so there is no directory to add a slash to. That
+# removed the last dependency on a trailing slash surviving the trip -- and it did
+# not survive: a rule at the CDN edge rewrote `/docs/metrics/` to `/docs/metrics`
+# before the request arrived, nginx answered the 301 to the slashed form that
+# directory URLs require, the edge stripped it again, and the browser gave up with
+# ERR_TOO_MANY_REDIRECTS. Nothing in this stack could see it; the origin log was
+# the only place the missing slash was visible.
+#
+# So a page resolves from three spellings and redirects for none of them:
+# `/docs/metrics.html` is the file, `/docs/metrics` finds it through `$uri.html`,
+# and the legacy directory form `/docs/metrics/` is the one case that still
+# answers 301 -- to the *unslashed* URL, which no slash-stripping proxy can bounce
+# back. `/healthz` stays at the root for the HEALTHCHECK and the gateway probe.
+#
+# A missing page answers 404 and *renders* the styled page, via `error_page`
+# rather than as the last entry of `try_files`. Naming the file there serves it
+# with status 200, which is not a detail: probing this deployment, `/docs/healthz`
+# and `/docs/docs/` both answered 200 with the 404 page, and that read as proof
+# that a prefix was being stripped when nothing of the sort was happening.
 RUN printf '%s\n' \
   'server {' \
   '  listen 8003;' \
   '  root /usr/share/nginx/html;' \
   '  index index.html;' \
   '  absolute_redirect off;' \
-  '  location = / { return 301 /docs/; }' \
-  '  location / { try_files $uri $uri/ $uri.html /docs/404.html; }' \
+  '  location = / { return 301 /docs; }' \
+  '  location = /docs { try_files /docs/index.html =404; }' \
+  '  location = /docs/ { try_files /docs/index.html =404; }' \
   '  location = /healthz {' \
   '    default_type application/json;' \
   '    add_header Cache-Control "no-store";' \
   '    try_files /health.json =404;' \
   '  }' \
+  '  location ~ ^(/docs/.+)/$ { return 301 $1; }' \
+  '  error_page 404 /docs/404.html;' \
+  '  location / { try_files $uri $uri.html $uri/index.html =404; }' \
   '}' > /etc/nginx/conf.d/default.conf
 
 EXPOSE 8003

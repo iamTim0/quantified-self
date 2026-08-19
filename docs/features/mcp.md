@@ -59,8 +59,8 @@ the unit recorded in point metadata when all returned points agree on one unit.
 
 | Tool | Purpose | Important bounds |
 | --- | --- | --- |
-| `list_metrics` | Metrics observed for the authenticated tenant, with registry definitions and observed range | 365-day maximum window, 200 results |
-| `query_metric_series` | Chart-ready raw, hourly, daily, or weekly values for one canonical metric | 2,000 output points |
+| `list_metrics` | Metrics observed for the authenticated tenant, with registry definitions and observed range | 365-day maximum window, 200 results; counted by Core, never read |
+| `query_metric_series` | Chart-ready raw, hourly, daily, or weekly values for one canonical metric, optionally filtered by value and ranked | 2,000 output points |
 | `analyze_metrics` | Deterministic summaries, trends, and correlations | 10 metrics, 365 days |
 | `get_data_quality` | Coverage, expected-day gaps, plausible-range outliers, source distribution, and analysis sufficiency | 20 metrics, 365 days |
 
@@ -78,6 +78,77 @@ before longer periods are aggregated, preventing overlapping imports from counti
 day twice. Namespaced dynamic metrics have runtime-defined units and aggregation, so
 they support raw queries and quality counts but not aggregated series or statistical
 analysis until Core exposes their tenant-specific definition.
+
+`list_metrics` asks Core for a grouped summary — one row per metric with its point
+count and first and last timestamp — rather than reading the points and counting them
+here. That is a correctness property, not only a performance one: the previous version
+transferred every point in the window to learn the names, and a tenant recording
+location traces exceeded the client's 100,000-point transfer bound within the default
+90 days. A bounded read that comes back truncated is treated as a failed read, so the
+catalogue stopped answering at all — and since it is the first call a model makes, the
+chat lost access to every metric at once.
+
+### Filtering and ranking by value
+
+`query_metric_series` accepts `min_value` and `max_value` — inclusive bounds applied
+in Core's query rather than after the transfer, so a narrow band costs a narrow read —
+and `order`, which turns the series into a ranking:
+
+| `order` | Meaning |
+| --- | --- |
+| `time` (default) | Chronological. A chart. |
+| `value_desc` | Largest first. |
+| `value_asc` | Smallest first. |
+
+With `bucket="raw"`, a ranking is answered by Core: it orders the whole window and
+returns only the rows asked for, so "my three longest workouts" costs three rows rather
+than the window they were found in. With any other bucket the ranking is applied *after*
+aggregation, because the values being ranked do not exist until they have been
+aggregated — `bucket="day", order="value_desc"` ranks daily totals, which is a different
+question from ranking single points and usually the more interesting one.
+
+`activity_type` keeps only the points recorded during one kind of activity, using a
+canonical key — `running`, `cycling`, `strength_training` — rather than the provider's
+own wording. That distinction is the whole point: the wording is display prose in the
+user's language and differs per provider and per import path, so one workspace held
+`Radfahren`, `Outdoor Radfahren` and `Innenräume Radfahren` for a single activity and
+two spellings for running. A filter on prose would have matched none of it reliably.
+Importers resolve the type on the way in and keep the original wording as
+`activity_label`; [`python -m core.activity_backfill`](../operations.md#resolving-stored-workouts-into-activity-types)
+does the same for points stored before that existed. An unknown key is refused with
+`UNKNOWN_ACTIVITY_TYPE` and the list of known ones, because an empty series and a
+misspelled filter are indistinguishable to a caller and mean opposite things.
+
+Together these answer the question this all started from — "what was my longest run" is
+`workout_distance`, `activity_type="running"`, `order="value_desc"`, and the largest
+overall workout being a bike ride no longer gets in the way.
+
+Two consequences worth stating outright:
+
+- **A ranking is cut, never sampled.** A long chronological series is sampled down to
+  `max_points` while keeping its shape; doing that to a ranking would discard precisely
+  the entries that were asked for.
+- **Points with no value are excluded** whenever a bound is set or the order is by value.
+  A null is not comparable, and reading it as zero would rank a point that was never
+  measured against ones that were.
+
+A value-ordered query answers exactly one page and offers no cursor: the pagination
+cursor is a `(timestamp, id)` keyset, and a value has neither the uniqueness nor the
+monotonicity a cursor needs. `order` is echoed in the result so a reader can tell a
+ranking from a time series — read one as the other and you invent a trend nobody
+measured.
+
+A stored metric name the registry cannot describe is reported in
+`undescribed_metric_types` instead of being dropped or taking the catalogue down with
+it, so a caller can say what it was unable to read about.
+
+A refused tool call returns this server's own machine-readable `code` —
+`UNKNOWN_METRIC_TYPE`, `CANONICAL_METRIC_REQUIRED`, `TIME_RANGE_TOO_LARGE`,
+`SOURCE_RESULT_TOO_LARGE`, `AMBIGUOUS_METRIC_SOURCE`, `CORE_UNAVAILABLE` — because those
+codes exist for a caller to act on: shorten the window, use the canonical name, pick a
+source. An *unexpected* failure is reported as `INTERNAL_TOOL_ERROR` with no detail,
+since its text is an implementation detail; the full reason is written to the service log
+under the request's `[req_id=…]`.
 
 Analysis results describe associations rather than causes. They provide general
 information and are not medical diagnoses or treatment recommendations.

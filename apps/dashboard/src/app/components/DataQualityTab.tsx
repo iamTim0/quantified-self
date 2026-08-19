@@ -320,7 +320,7 @@ export default function DataQualityTab({ apiBase }: Props) {
             <h2 className="font-bold text-ink">{t("quality.explainTitle")}</h2>
             <p className="mt-1 text-sm text-ink-muted">{t("quality.explainBody")}</p>
             <a
-              href="/docs/features/data-quality/"
+              href="/docs/features/data-quality.html"
               target="_blank"
               rel="noreferrer"
               className="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-warn-ink underline"

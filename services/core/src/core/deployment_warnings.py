@@ -97,7 +97,7 @@ def account_warnings(*, password_hash: str | None) -> list[Warning_]:
                 "as they like."
             ),
             action="Change the password now — and anywhere else it is used.",
-            docs="/docs/features/authentication/#how-password_published-knows-what-is-public",
+            docs="/docs/features/authentication.html#how-password_published-knows-what-is-public",
         )
     ]
 
@@ -135,7 +135,7 @@ def deployment_warnings(
                     "token for any account and any workspace."
                 ),
                 action=f"Set a value of your own: {_GENERATE}",
-                docs="/docs/operations/#required-configuration",
+                docs="/docs/operations.html#required-configuration",
             )
         )
 
@@ -155,7 +155,7 @@ def deployment_warnings(
                     "Changing it without that step makes every stored token "
                     "permanently unreadable."
                 ),
-                docs="/docs/operations/#rotating-encryption_key",
+                docs="/docs/operations.html#rotating-encryption_key",
             )
         )
 
@@ -172,7 +172,7 @@ def deployment_warnings(
                     "service and fetch decrypted connector credentials."
                 ),
                 action=f"Set a value of your own: {_GENERATE}",
-                docs="/docs/operations/#required-configuration",
+                docs="/docs/operations.html#required-configuration",
             )
         )
 
@@ -190,7 +190,7 @@ def deployment_warnings(
                     "Set ALLOW_REGISTRATION=false. The first account is "
                     "created with python -m core.create_owner."
                 ),
-                docs="/docs/operations/#creating-the-first-account",
+                docs="/docs/operations.html#creating-the-first-account",
             )
         )
 
@@ -209,7 +209,7 @@ def deployment_warnings(
                     "browsers treat localhost and 127.0.0.1 as trustworthy "
                     "and accept Secure cookies there."
                 ),
-                docs="/docs/features/authentication/#sessions-lifetimes-and-renewal",
+                docs="/docs/features/authentication.html#sessions-lifetimes-and-renewal",
             )
         )
 
@@ -227,7 +227,7 @@ def deployment_warnings(
                     "refuse to start while any value is a published default."
                 ),
                 action="Set ENVIRONMENT=production for a real deployment.",
-                docs="/docs/operations/#required-configuration",
+                docs="/docs/operations.html#required-configuration",
                 params={"environment": environment},
             )
         )

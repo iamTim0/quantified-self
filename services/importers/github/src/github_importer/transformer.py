@@ -196,11 +196,29 @@ def transform_window(
         (METRIC_LINES_REMOVED, deletions, line_counts_complete),
     ]
 
+    line_metrics = (METRIC_LINES_ADDED, METRIC_LINES_REMOVED)
     for metric_type, series, emit_zeros in daily_series:
         for day in days:
             value = series.get(day)
             if value is None:
                 if not emit_zeros:
+                    continue
+                if metric_type in line_metrics and window.commits_by_day.get(day, 0):
+                    # A day with commits and no lines is this importer contradicting
+                    # itself: the commits are counted from `contributionsCollection`,
+                    # the lines from walking the repository's branches, and if the
+                    # first found work the second cannot honestly report none of it.
+                    # It happened for a year -- the scan read only the default branch
+                    # while the counts saw every branch, so a day of feature work
+                    # reported commits and zero lines. Leaving the day out makes that
+                    # a visible gap; writing 0 made it look like a day of no changes,
+                    # and rule 19 is explicit that the wrong number is the worse of
+                    # the two because nothing distinguishes it from a right one.
+                    if report is not None:
+                        report.unmapped(
+                            f"repository.commit.{'additions' if metric_type == METRIC_LINES_ADDED else 'deletions'}",
+                            None,
+                        )
                     continue
                 value = 0
             metadata: dict[str, Any] = {

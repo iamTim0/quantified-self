@@ -28,6 +28,7 @@ from shared_schemas import (
     idempotency_key,
     provenance,
 )
+from shared_schemas.activities import activity_metadata
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -1081,6 +1082,11 @@ def transform_health_auto_export_json(
         workout_metadata = {
             "source_type": "apple_health",
             "workout_name": workout_name,
+            # Health Auto Export sends the display name in the phone's language, so
+            # this is the one place the canonical type has to be recovered from
+            # prose. `Outdoor Ausführen` is Apple's German for "Outdoor Run"; the
+            # alias table knows it, and the wording it came from is kept beside it.
+            **activity_metadata(workout_name),
             # Metadata, not part of the key -- absent rather than invented when the
             # provider does not send an end.
             "end_time": workout_end,
@@ -1338,6 +1344,7 @@ def route_points(
             "latitude": latitude,
             "longitude": longitude,
             "workout_name": workout_name,
+            **activity_metadata(workout_name),
             # A fix's `value` is a marker; what it actually measured is the pair of
             # coordinates above. The provenance pair still travels, so that every point
             # in the platform can answer the same question the same way (rule 19).

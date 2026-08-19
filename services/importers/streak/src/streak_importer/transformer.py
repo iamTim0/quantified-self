@@ -176,6 +176,14 @@ def transform_streak_export_json(
             label=workout_title,
             derived_from=("createdAt", "title"),
         )
+        # Streak's title is whatever the user typed -- "Push day", "Leg day" -- so it
+        # is a label and never an activity type. The type comes from the connector
+        # instead: this app records sets, reps and weight, and a session of those is
+        # resistance training whatever it was called. The title still travels, as the
+        # label it is.
+        activity = {"activity_type": "strength_training"}
+        if workout_title:
+            activity["activity_label"] = str(workout_title)
 
         total_workout_volume = 0.0
         total_workout_sets = 0
@@ -214,6 +222,7 @@ def transform_streak_export_json(
                 "set_number": set_num,
                 "notes": set_item.get("notes") or workout.get("notes"),
                 "deload": bool(workout.get("deload", False)),
+                **activity,
                 **session,
             }
             idempotency_source_id = f"{source_id}_{set_id}"
@@ -331,6 +340,7 @@ def transform_streak_export_json(
                 "notes": workout.get("notes"),
                 # The same block the sets carry, so the summary and the sets it
                 # summarises are one session rather than two.
+                **activity,
                 **session,
             }
             dp_w_vol = {

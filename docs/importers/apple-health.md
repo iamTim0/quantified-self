@@ -308,3 +308,13 @@ are not the primary query format.
 
 The full definition of every metric — its unit, its aggregation and the former names that still
 point at it — is in [Metrics](../metrics.md).
+
+## Activity type
+
+Every workout point carries `activity_type` — a canonical key such as `running`, `cycling` or
+`strength_training` — beside `activity_label`, which is Apple Health's own wording, kept unchanged.
+
+The type exists because the wording cannot be compared. The archive states Apple's own identifier (`HKWorkoutActivityTypeRunning`) and the type is resolved from it. Health Auto Export sends the phone's display name instead, which is localized and carries a place qualifier: `Outdoor Ausführen` — Apple's German for "Outdoor Run" — and `Innenräume Radfahren` and `Outdoor Radfahren` for one activity. A query filters on the canonical
+key; see [Activity type](../importer-standard.md#activity-type) for the contract, and
+[`python -m core.activity_backfill`](../operations.md#resolving-stored-workouts-into-activity-types)
+for points stored before it existed.

@@ -8,6 +8,7 @@ continues through Core's tenant-filtered gRPC API.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import uuid
 from collections import defaultdict
@@ -32,6 +33,7 @@ from mcp.types import (
     ToolsCapability,
 )
 from pydantic import BaseModel, ConfigDict, Field
+from shared_schemas.activities import ACTIVITY_TYPES
 from shared_schemas.metrics import (
     Aggregation,
     Cadence,
@@ -45,8 +47,16 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from analysis.auth import McpPrincipal, mcp_principal_resolver
 from analysis.config import settings
-from analysis.core_client import CoreClient, CoreUnavailable, MetricPoint, PointBatch
+from analysis.core_client import (
+    CoreClient,
+    CoreUnavailable,
+    MetricPoint,
+    MetricSummary,
+    PointBatch,
+)
 from analysis.insights import correlation_pairs, series_quality, trend_for_metric
+
+logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2026-07-28"
 MCP_PATH = "/mcp"
@@ -91,6 +101,10 @@ class MetricCatalogItem(StrictModel):
 
 class ListMetricsResult(StrictModel):
     metrics: list[MetricCatalogItem]
+    #: Names present in the tenant that the metric registry cannot describe. Empty
+    #: in a healthy deployment; listed rather than dropped so a model can say what
+    #: it could not read about, instead of quietly answering as if it had.
+    undescribed_metric_types: list[str] = []
     provenance: Provenance
 
 
@@ -104,6 +118,10 @@ class MetricSeriesResult(StrictModel):
     unit: str
     aggregation: str
     bucket: Literal["raw", "hour", "day", "week"]
+    #: Echoed so a reader can tell a chart from a ranking. Under a value order the
+    #: entries are the largest or smallest, not consecutive ones, and reading them
+    #: as a time series would invent a trend that was never measured.
+    order: Literal["time", "value_desc", "value_asc"] = "time"
     points: list[SeriesPoint]
     provenance: Provenance
 
@@ -151,6 +169,36 @@ mcp_server = MCPServer(
 )
 
 
+def _error_code(result: Any) -> tuple[str, str]:
+    """Recover this server's own error code and message from a tool failure.
+
+    Every refusal raised in this module carries a `code` in the MCPError data --
+    `UNKNOWN_METRIC_TYPE`, `TIME_RANGE_TOO_LARGE`, `SOURCE_RESULT_TOO_LARGE`. They
+    are written for a caller to act on, so they are worth recovering; anything
+    else is an unexpected failure and stays anonymous on the wire.
+    """
+    contents = getattr(result, "content", None)
+    if contents is None and isinstance(result, dict):
+        contents = result.get("content")
+    for item in contents or ():
+        text = getattr(item, "text", None)
+        if text is None and isinstance(item, dict):
+            text = item.get("text")
+        if not isinstance(text, str):
+            continue
+        try:
+            payload = json.loads(text)
+        except ValueError:
+            return "INTERNAL_TOOL_ERROR", text
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            message = payload.get("message") or payload.get("error") or text
+            if isinstance(code, str) and code:
+                return code, str(message)
+        return "INTERNAL_TOOL_ERROR", text
+    return "INTERNAL_TOOL_ERROR", ""
+
+
 async def _limit_advertised_capabilities(
     ctx: ServerRequestContext, call_next: Any
 ) -> HandlerResult:
@@ -164,15 +212,28 @@ async def _limit_advertised_capabilities(
         request_id = "unknown"
         if ctx.request is not None:
             request_id = ctx.request.headers.get("x-request-id") or request_id
+        code, detail = _error_code(result)
+        # An unexpected failure stays anonymous to the model: its text is an
+        # implementation detail and has no business in model-visible output. It is
+        # still logged in full, because the operator is exactly who should see it.
+        message = detail if code != "INTERNAL_TOOL_ERROR" else ""
+        # Both halves of this were missing and each one hid the other. The reason
+        # never reached the operator, because nothing logged it; and it never
+        # reached the caller, because every failure was replaced by one opaque
+        # code. A model that is told only "internal error" cannot narrow its
+        # window or correct a metric name, so it stops asking -- which is what a
+        # broken catalogue looked like from the outside for as long as it lasted.
+        logger.warning(
+            "[req_id=%s] MCP tool call failed: code=%s %s",
+            request_id,
+            code,
+            detail,
+        )
+        payload = {"code": code, "request_id": request_id}
+        if message:
+            payload["message"] = message
         return CallToolResult(
-            content=[
-                TextContent(
-                    type="text",
-                    text=json.dumps(
-                        {"code": "INTERNAL_TOOL_ERROR", "request_id": request_id}
-                    ),
-                )
-            ],
+            content=[TextContent(type="text", text=json.dumps(payload))],
             is_error=True,
         )
     if ctx.method == "server/discover" and isinstance(result, DiscoverResult):
@@ -295,6 +356,10 @@ async def _points(
     metric_type: str | None,
     max_points: int,
     source_id: str | None = None,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    activity_type: str | None = None,
+    order: str = "time",
 ) -> PointBatch:
     try:
         point_kwargs: dict[str, Any] = {
@@ -303,6 +368,10 @@ async def _points(
             "request_id": request_id,
             "metric_type": metric_type,
             "max_points": max_points,
+            "min_value": min_value,
+            "max_value": max_value,
+            "activity_type": activity_type,
+            "order": order,
         }
         if source_id is not None:
             point_kwargs["source_id"] = source_id
@@ -316,12 +385,19 @@ async def _points(
             "Analysis data is temporarily unavailable",
             {"code": "CORE_UNAVAILABLE"},
         ) from exc
-    if batch.truncated:
+    if batch.truncated and order == "time":
+        # A window that did not fit is a partial series presented as a whole one,
+        # and that is worth refusing. A *ranking* that did not fit is not the same
+        # thing: Core ordered the entire window and returned its extremes, so the
+        # rows in hand are exactly the ones asked for and nothing is missing from
+        # the answer.
         raise MCPError(
             -32003,
             "The source result is too large; request a shorter time range",
             {"code": "SOURCE_RESULT_TOO_LARGE", "max_source_points": max_points},
         )
+    if batch.truncated:
+        return PointBatch(points=batch.points, truncated=False)
     return batch
 
 
@@ -360,6 +436,18 @@ def _result_unit(points: list[MetricPoint], definition: Any) -> str:
     return units.pop() if len(units) == 1 else definition.unit.value
 
 
+def _summary_unit(summary: MetricSummary, definition: Any) -> str:
+    """The unit for a catalogue entry, without reading a single point.
+
+    Same rule as `_result_unit`: a registry metric's unit is the registry's, and a
+    dynamic metric's comes from what was observed. Core reports that only when the
+    stored points agree on one, so disagreement falls back exactly as before.
+    """
+    if not definition.is_dynamic:
+        return definition.unit.value
+    return summary.unit or definition.unit.value
+
+
 def _bucket_start(timestamp: datetime, bucket: str) -> datetime:
     stamp = timestamp.astimezone(UTC)
     if bucket == "hour":
@@ -396,6 +484,7 @@ def _series_points(
     bucket: Literal["raw", "hour", "day", "week"],
     definition: Any,
     max_points: int,
+    order: str = "time",
 ) -> tuple[list[SeriesPoint], bool]:
     ordered = sorted(points, key=lambda point: point.timestamp)
     if bucket == "raw":
@@ -444,6 +533,15 @@ def _series_points(
                 )
                 for timestamp, values in sorted(weekly.items())
             ]
+
+    if order != "time":
+        # A ranking is cut, never sampled. Sampling exists to keep the *shape* of a
+        # long series while dropping points from the middle -- applied to a ranking
+        # it would throw away precisely the entries that were asked for. Buckets are
+        # ranked after aggregation, so "the five days with the most steps" ranks
+        # daily sums rather than the individual points inside them.
+        result.sort(key=lambda entry: entry.value, reverse=order == "value_desc")
+        return result[:max_points], False
 
     if len(result) <= max_points:
         return result, False
@@ -505,56 +603,77 @@ async def list_metrics(
     search: Annotated[str | None, Field(max_length=128)] = None,
     limit: Annotated[int, Field(ge=1, le=200)] = 100,
 ) -> ListMetricsResult:
-    """List only metrics observed inside the caller's tenant."""
+    """List only metrics observed inside the caller's tenant.
+
+    Counted by Core, not read here. This used to fetch every point of every
+    metric in the window and group them in memory, which made a question about
+    *names* cost whatever the tenant had *recorded*: three location metrics at
+    roughly 26k points per 90 days each pushed the window past the 100k transfer
+    bound, `_points` treats a truncated read as fatal, and every catalogue call
+    failed. Since the catalogue is the first tool a model calls, that took the
+    whole chat down for anyone with enough data, and did it silently.
+    """
     principal, request_id = _request_context(ctx)
     begin, finish = _window(start, end)
-    batch = await _points(
-        principal,
-        request_id,
-        start=begin,
-        end=finish,
-        metric_type=None,
-        max_points=MAX_QUERY_SOURCE_POINTS,
-    )
-    by_metric: dict[str, list[MetricPoint]] = defaultdict(list)
-    for point in batch.points:
-        by_metric[point.metric_type].append(point)
+    try:
+        summaries = await core_client.fetch_metric_summaries(
+            principal.tenant_id,
+            request_id=request_id,
+            start=begin,
+            end=finish,
+        )
+    except CoreUnavailable as exc:
+        raise MCPError(
+            -32000,
+            "Analysis data is temporarily unavailable",
+            {"code": "CORE_UNAVAILABLE"},
+        ) from exc
 
     needle = (search or "").strip().lower()
     selected = [
-        name for name in sorted(by_metric) if not needle or needle in name.lower()
+        summary
+        for summary in summaries
+        if not needle or needle in summary.metric_type.lower()
     ][:limit]
 
     metrics: list[MetricCatalogItem] = []
-    for metric_type in selected:
-        definition = _metric_definition(metric_type)
-        observed = sorted(by_metric[metric_type], key=lambda point: point.timestamp)
+    undescribed: list[str] = []
+    for summary in selected:
+        try:
+            definition = _metric_definition(summary.metric_type)
+        except MCPError:
+            # A stored name the registry does not know cannot be described, but it
+            # must not take the catalogue down with it -- and it is not something
+            # to drop in silence either (rule 19). Name it and carry on.
+            undescribed.append(summary.metric_type)
+            continue
         metrics.append(
             MetricCatalogItem(
-                metric_type=metric_type,
-                unit=_result_unit(observed, definition),
+                metric_type=summary.metric_type,
+                unit=_summary_unit(summary, definition),
                 aggregation=(
                     "runtime" if definition.is_dynamic else definition.aggregation.value
                 ),
                 category=definition.category.value,
                 cadence=definition.cadence.value,
                 label=definition.label_en,
-                observed_count=len(observed),
-                first_observed_at=observed[0].timestamp if observed else None,
-                last_observed_at=observed[-1].timestamp if observed else None,
+                observed_count=summary.point_count,
+                first_observed_at=summary.first_observed_at,
+                last_observed_at=summary.last_observed_at,
             )
         )
 
     sources = await _sources(principal.tenant_id, request_id)
     return ListMetricsResult(
         metrics=metrics,
+        undescribed_metric_types=undescribed,
         provenance=_provenance(
             request_id=request_id,
             start=begin,
             end=finish,
             sources=sources,
-            point_count=len(batch.points),
-            truncated=batch.truncated,
+            point_count=sum(summary.point_count for summary in summaries),
+            truncated=False,
         ),
     )
 
@@ -573,8 +692,34 @@ async def query_metric_series(
     bucket: Literal["raw", "hour", "day", "week"] = "day",
     max_points: Annotated[int, Field(ge=2, le=2000)] = 500,
     source_id: str | None = None,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    activity_type: str | None = None,
+    order: Literal["time", "value_desc", "value_asc"] = "time",
 ) -> MetricSeriesResult:
-    """Query one bounded metric series with registry-correct aggregation."""
+    """Query one bounded metric series with registry-correct aggregation.
+
+    `min_value` and `max_value` are inclusive bounds on the value, applied in
+    Core's query rather than after the transfer, so a narrow band costs a narrow
+    read. Points that carry no value are excluded whenever a bound is set: a null
+    is not comparable, and reading it as zero would place it inside a range it was
+    never measured to be in.
+
+    `activity_type` keeps only the points recorded during one kind of activity —
+    `running`, `cycling`, `strength_training`. It is a canonical key rather than the
+    provider's own wording, because the wording is display prose in the user's
+    language and differs per provider and per import path: one workspace held
+    `Radfahren`, `Outdoor Radfahren` and `Innenräume Radfahren` for a single
+    activity. A point that records no activity does not match, which is the honest
+    answer for a row where nobody said what it was.
+
+    `order` turns the series into a ranking. `value_desc` with `bucket="raw"` and a
+    small `max_points` is the shape of "what were my largest N" — Core orders the
+    whole window and returns only those rows, so the answer costs what it returns
+    rather than what it searched. With a bucket, the ranking applies *after*
+    aggregation: `bucket="day", order="value_desc"` ranks daily totals, which is a
+    different and usually more interesting question than ranking single points.
+    """
     principal, request_id = _request_context(ctx)
     begin, finish = _window(start, end)
     definition = _metric_definition(metric_type)
@@ -584,6 +729,31 @@ async def query_metric_series(
             "Dynamic metrics can be queried only as raw points",
             {"code": "DYNAMIC_METRIC_REQUIRES_RAW", "metric_type": metric_type},
         )
+    if activity_type is not None and activity_type not in ACTIVITY_TYPES:
+        raise MCPError(
+            -32602,
+            "Unknown activity type",
+            {
+                "code": "UNKNOWN_ACTIVITY_TYPE",
+                "activity_type": activity_type,
+                "known_activity_types": sorted(ACTIVITY_TYPES),
+            },
+        )
+    if min_value is not None and max_value is not None and min_value > max_value:
+        raise MCPError(
+            -32602,
+            "min_value must not exceed max_value",
+            {
+                "code": "INVALID_VALUE_RANGE",
+                "min_value": min_value,
+                "max_value": max_value,
+            },
+        )
+
+    # Only a raw ranking can be answered by Core alone. A bucketed one has to see
+    # every point in the window first, because the values being ranked do not exist
+    # until they have been aggregated.
+    ranked_at_source = order != "time" and bucket == "raw"
     batch = await _points(
         principal,
         request_id,
@@ -591,7 +761,11 @@ async def query_metric_series(
         end=finish,
         metric_type=metric_type,
         source_id=source_id,
-        max_points=MAX_QUERY_SOURCE_POINTS,
+        max_points=max_points if ranked_at_source else MAX_QUERY_SOURCE_POINTS,
+        min_value=min_value,
+        max_value=max_value,
+        activity_type=activity_type,
+        order=order if ranked_at_source else "time",
     )
     source_ids = _require_single_source(
         batch, metric_type=metric_type, source_id=source_id
@@ -601,6 +775,7 @@ async def query_metric_series(
         bucket=bucket,
         definition=definition,
         max_points=max_points,
+        order=order,
     )
     sources = await _sources(principal.tenant_id, request_id, source_ids)
     return MetricSeriesResult(
@@ -610,6 +785,7 @@ async def query_metric_series(
         if definition.is_dynamic
         else definition.aggregation.value,
         bucket=bucket,
+        order=order,
         points=series,
         provenance=_provenance(
             request_id=request_id,

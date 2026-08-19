@@ -213,22 +213,49 @@ waiting for events, and picks up changes reliably over the same mount.
 
 ### `/docs` runs into a redirect loop
 
-Fixed; the reasoning is here. `mkdocs serve` reads `site_url` from `mkdocs.yml`, which ends in `/docs/`,
-and serves the site under exactly that prefix — visible in its own log as
+The site no longer publishes directory URLs, so the shape below cannot recur — but it happened twice
+from two different directions, and both are worth recognising.
+
+In the development stack it was the prefix. `mkdocs serve` reads `site_url` from `mkdocs.yml`, which
+ends in `/docs/`, and serves the site under exactly that prefix — visible in its own log as
 `Serving on http://0.0.0.0:8003/docs/`. Traefik stripped the prefix on top of that, MkDocs received
-`GET /` and answered `302 → /docs/`, which was stripped again.
+`GET /` and answered `302 → /docs/`, which was stripped again. There is therefore no `stripprefix`
+middleware in either stack.
 
-So there is no `stripprefix` middleware in the development stack — and, since the fix below, none in
-production either.
+In production it was the trailing slash, and it came from outside the deployment entirely. A rule at
+the CDN edge rewrote `/docs/metrics/` to `/docs/metrics` before the request arrived. nginx answered
+the redirect that directory URLs require — `301 → /docs/metrics/` — the edge removed the slash again,
+and the browser gave up with `ERR_TOO_MANY_REDIRECTS`. Nothing inside the stack was misconfigured, and
+nothing inside it could see the problem: the request reached the origin looking perfectly ordinary.
 
-When measuring this, `curl` **without** `-L` is worth it: with redirects followed it reports the 200 of
-the sign-in page you end up on, and the loop looks like a success.
+**The origin's own access log is where a rewrite like this becomes visible.** Ask for a URL whose
+spelling you know, and read back what actually arrived:
+
+```bash
+curl -sS -o /dev/null "https://<host>/docs/?probe=1"
+docker compose -f docker-compose.prod.yml logs --since 1m docs | tail -3
+# "GET /docs?probe=1 HTTP/1.1" 301   <- the slash never made it
+```
+
+The site is now built with `use_directory_urls: false`, so every page is a file — `/docs/metrics.html`
+— and no page depends on a trailing slash surviving the trip. `/docs/metrics` resolves to the same
+file without any redirect, and the legacy directory form `/docs/metrics/` answers a single 301 to the
+unslashed URL, which a slash-stripping proxy cannot bounce back.
+
+When measuring any of this, `curl` **without** `-L` is worth it: with redirects followed it reports the
+200 of the page you end up on, and a loop looks like a success.
+
+Beware one more false signal met while diagnosing exactly this. If a server is configured to serve its
+404 page as the last entry of `try_files`, every unknown path answers **200** with the 404 body — so
+probes like `/docs/healthz` and `/docs/docs/` return 200 and look like proof that a prefix is being
+stripped when nothing of the sort is happening. The image uses `error_page` instead, and a missing page
+answers 404.
 
 ### A link inside `/docs` jumps to `<host>:8003` and does not load
 
-Fixed; the reasoning is here, because the shape of it recurs. MkDocs writes **directory URLs**:
-`docs/metrics.md` is published as `/docs/metrics/`, and a request for `/docs/metrics` without the
-trailing slash is answered with a redirect to the slashed form. That redirect is composed by the static
+Fixed; the reasoning is here, because the shape of it recurs. MkDocs used to write **directory URLs**:
+`docs/metrics.md` was published as `/docs/metrics/`, and a request for `/docs/metrics` without the
+trailing slash was answered with a redirect to the slashed form. That redirect is composed by the static
 file server, which knows two things: the port it listens on (8003) and the path it was handed. Traefik
 stripped `/docs` before handing it over, so what came back was
 
@@ -241,21 +268,11 @@ followed it and reached nothing. Only the slashed links worked, which is why the
 fine: every failure needed a link, a bookmark or a typed address without the final slash.
 
 Nothing downstream could repair it. Traefik's `StripPrefix` rewrites the request, not the `Location`
-header of the response, so the prefix it removed is gone by the time the redirect is written. Serving
-the page at the unslashed URL instead is not a fix either: every relative link on it would then resolve
-one level too high, because MkDocs wrote them against the slashed URL.
+header of the response, so the prefix it removed is gone by the time the redirect is written.
 
-So the prefix is no longer taken away. The image serves the site under `/docs` itself and sets
-`absolute_redirect off`, which makes the redirect a bare path — `Location: /docs/metrics/` — that the
-browser resolves against the origin it is already on. Scheme, host and port come from the address bar,
-where they are correct by definition, and development and production now route identically.
-
-To check it on a deployment, ask for the unslashed path and read the header rather than the page:
-
-```bash
-curl -sI https://<host>/docs/metrics | grep -i location
-# Location: /docs/metrics/
-```
+So the prefix is no longer taken away, the image sets `absolute_redirect off` — any redirect it does
+write is a bare path the browser resolves against the origin it is already on — and, since the site
+publishes files rather than directories, there is almost nothing left to redirect.
 
 ### A diagram in `/docs` renders as an empty block
 

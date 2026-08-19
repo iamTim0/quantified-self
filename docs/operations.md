@@ -424,6 +424,32 @@ If the workspace can simply be re-imported, prefer that — see
 [Rebuilding a workspace from scratch](#rebuilding-a-workspace-from-scratch). Everything then
 arrives tagged from the start and this command has nothing to do.
 
+### Resolving stored workouts into activity types
+
+Same situation, same reason, a different field. A workout used to carry only the provider's own
+word for what it was, under a key each importer chose for itself: WHOOP wrote `activity_name`,
+Apple Health `workout_name`. What was in there is display prose in the user's language, and it is
+not consistent even within one provider — one workspace held `Radfahren`, `Outdoor Radfahren` and
+`Innenräume Radfahren` for a single activity, and running arrived as `Laufen` from one connector
+and `Outdoor Ausführen` (Apple's own translation of "Outdoor Run") from the other.
+
+Nothing could filter on that, so "which of these were runs" had no answer. Importers now resolve
+every workout to a canonical `activity_type` and keep the provider's wording beside it as
+`activity_label`; stored points get the same treatment from this command:
+
+```bash
+python -m core.activity_backfill --tenant-id <tenant-id> --dry-run
+python -m core.activity_backfill --tenant-id <tenant-id>
+```
+
+It reads the wording already on the row and resolves it with the same helper the importers use, so
+the history and the new imports cannot disagree. Nothing is guessed: a point carrying no wording at
+all is left untouched and counted separately, because "no alias matched" and "nobody recorded what
+this was" are different facts and only the first is a gap in the alias table. A label that matches
+no alias resolves to `other` and is printed with its point count — that list is the worklist for
+`shared_schemas.activities`, and adding an entry there plus re-running is all a missing sport
+needs. Re-running is otherwise a no-op: a row that already has a type is never rewritten.
+
 ## Backup
 
 PostgreSQL is the only thing that has to be backed up — every other service is stateless.

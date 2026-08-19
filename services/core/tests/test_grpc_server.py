@@ -53,8 +53,14 @@ def _auth() -> list[tuple[str, str]]:
     return [("authorization", f"Bearer {create_service_token()}")]
 
 
-async def _seed(tenant_id: str, *, metric: str, count: int) -> str:
-    """Create a data source and `count` points. Returns the source id."""
+async def _seed(
+    tenant_id: str, *, metric: str, count: int, display_name: str = "Oura"
+) -> str:
+    """Create a data source and `count` points. Returns the source id.
+
+    `display_name` is a parameter because a tenant may not hold two sources of one
+    type under one name; seeding a second metric for the same tenant needs its own.
+    """
     source_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     async with async_session_maker() as session:
@@ -63,7 +69,7 @@ async def _seed(tenant_id: str, *, metric: str, count: int) -> str:
                 id=source_id,
                 tenant_id=tenant_id,
                 source_type="oura",
-                display_name="Oura",
+                display_name=display_name,
             )
         )
         await session.flush()
@@ -1029,4 +1035,296 @@ async def test_a_last_metric_on_a_fully_rolled_up_workspace_does_not_crash(grpc_
         assert any(bucket.value == 81.0 for bucket in weights)
     finally:
         forget_day_rollup_coverage(tenant_id)
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_metric_catalogue_is_summarized_without_reading_the_points(grpc_channel):
+    """Counting happens here, so a catalogue costs one row per metric.
+
+    The Analysis Service used to build its MCP catalogue by fetching every point
+    in a window and grouping them itself, which made a question about *names* cost
+    whatever the tenant had recorded. Past the client's transfer bound the read
+    came back truncated, the tool treated that as fatal, and the first call any
+    model makes started failing outright.
+
+    Maps to Fizzbee Invariant: TenantIsolation
+    """
+    tenant_id = await create_test_tenant()
+    other_tenant = await create_test_tenant()
+    try:
+        await _seed(tenant_id, metric="steps", count=5)
+        await _seed(tenant_id, metric="heart_rate", count=3, display_name="Oura 2")
+        await _seed(other_tenant, metric="sleep_duration", count=4)
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        response = await stub.ListMetricTypes(
+            pb.ListMetricTypesRequest(tenant_id=tenant_id), metadata=_auth()
+        )
+
+        summaries = {row.metric_type: row for row in response.summaries}
+        assert set(summaries) == {"steps", "heart_rate"}, (
+            "another tenant's metric must never appear in this catalogue"
+        )
+        assert summaries["steps"].point_count == 5
+        assert summaries["heart_rate"].point_count == 3
+        # `_seed` walks backwards a day at a time, so the oldest point is the last.
+        first = summaries["steps"].first_observed_at.ToDatetime()
+        last = summaries["steps"].last_observed_at.ToDatetime()
+        assert (last - first) == timedelta(days=4)
+        # The plain name list stays populated for callers that only want names.
+        assert sorted(response.metric_types) == ["heart_rate", "steps"]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+        await cleanup_test_tenant(other_tenant)
+
+
+@pytest.mark.asyncio
+async def test_metric_catalogue_counts_only_inside_the_requested_window(grpc_channel):
+    """A window scopes the counts, and an absent window means all of time."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed(tenant_id, metric="steps", count=10)
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        # An hour of slack at each end: the points were stamped relative to a `now`
+        # taken a moment earlier, so a window built from an exact multiple of days
+        # would cut the oldest one by milliseconds and test the clock, not the query.
+        start = Timestamp()
+        start.FromDatetime(
+            datetime.now(timezone.utc) - timedelta(days=3, hours=1)
+        )
+        end = Timestamp()
+        end.FromDatetime(datetime.now(timezone.utc) + timedelta(hours=1))
+
+        windowed = await stub.ListMetricTypes(
+            pb.ListMetricTypesRequest(tenant_id=tenant_id, start=start, end=end),
+            metadata=_auth(),
+        )
+        everything = await stub.ListMetricTypes(
+            pb.ListMetricTypesRequest(tenant_id=tenant_id), metadata=_auth()
+        )
+
+        assert windowed.summaries[0].point_count == 4, "days 0 to 3 inclusive"
+        assert everything.summaries[0].point_count == 10
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_value_bounds_and_ranking_happen_in_the_query(grpc_channel):
+    """The extremes of a window come back without transferring the window.
+
+    A caller asking "the largest three" should pay for three rows, not for every
+    row it had to look at to find them. Ordering in the caller instead is the
+    mistake that made the metric catalogue unusable, in a different disguise.
+
+    Maps to Fizzbee Invariant: TenantIsolation
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        # `_seed` writes value=index for index in range(count).
+        await _seed(tenant_id, metric="steps", count=10)
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+
+        ranked = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="steps",
+                order=pb.DATA_POINT_ORDER_VALUE_DESC,
+                pagination=common_pb.PaginationRequest(page_size=3),
+            ),
+            metadata=_auth(),
+        )
+        assert [point.value for point in ranked.data_points] == [9.0, 8.0, 7.0]
+        assert not ranked.pagination.next_page_token, (
+            "a value order has no cursor; offering one would promise a second page "
+            "that cannot be resumed"
+        )
+
+        bounded = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="steps",
+                min_value=4.0,
+                max_value=6.0,
+                order=pb.DATA_POINT_ORDER_VALUE_ASC,
+                pagination=common_pb.PaginationRequest(page_size=50),
+            ),
+            metadata=_auth(),
+        )
+        assert [point.value for point in bounded.data_points] == [4.0, 5.0, 6.0]
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_valueless_point_is_never_ranked_or_bounded(grpc_channel):
+    """A null value is excluded rather than read as zero.
+
+    Treating it as zero would rank a point that was never measured against ones
+    that were, and place it inside a range nobody observed it in.
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed(tenant_id, metric="steps", count=3)
+        async with async_session_maker() as session:
+            session.add(
+                DataPoint(
+                    id=str(uuid.uuid4()),
+                    tenant_id=tenant_id,
+                    source_id=source_id,
+                    metric_type="steps",
+                    timestamp=datetime.now(timezone.utc) - timedelta(days=9),
+                    value=None,
+                    idempotency_key=f"grpc-test-{uuid.uuid4().hex}",
+                    metadata_={"seeded_by": "test_grpc_server"},
+                )
+            )
+            await session.commit()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        chronological = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(tenant_id=tenant_id, metric_type="steps"),
+            metadata=_auth(),
+        )
+        ranked = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="steps",
+                order=pb.DATA_POINT_ORDER_VALUE_ASC,
+            ),
+            metadata=_auth(),
+        )
+
+        assert len(chronological.data_points) == 4, "the plain window keeps it"
+        assert len(ranked.data_points) == 3, "the ranking leaves it out"
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_ranked_query_refuses_a_page_cursor(grpc_channel):
+    """A cursor is a (timestamp, id) keyset and cannot resume a value order."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed(tenant_id, metric="steps", count=3)
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+
+        with pytest.raises(grpc.aio.AioRpcError) as failure:
+            await stub.QueryDataPoints(
+                pb.QueryDataPointsRequest(
+                    tenant_id=tenant_id,
+                    metric_type="steps",
+                    order=pb.DATA_POINT_ORDER_VALUE_DESC,
+                    pagination=common_pb.PaginationRequest(
+                        page_size=1, page_token="anything"
+                    ),
+                ),
+                metadata=_auth(),
+            )
+
+        assert failure.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_points_can_be_filtered_by_canonical_activity(grpc_channel):
+    """"Only the runs" has to be answerable without matching translated prose.
+
+    The provider wording differs per provider and per import path — one workspace
+    held `Radfahren`, `Outdoor Radfahren` and `Innenräume Radfahren` for a single
+    activity — so the filter is on the canonical key the importers resolve.
+
+    Maps to Fizzbee Invariant: TenantIsolation
+    """
+    tenant_id = await create_test_tenant()
+    try:
+        source_id = await _seed(tenant_id, metric="workout_distance", count=0)
+        now = datetime.now(timezone.utc)
+        # Invented figures. The shape is what matters: the longest workout overall
+        # is a ride, so a ranking that ignores the activity answers the wrong
+        # question — which is the bug this filter exists to fix.
+        plan = [
+            ("running", "Outdoor Ausführen", 9.0),
+            ("cycling", "Innenräume Radfahren", 24.0),
+            ("cycling", "Outdoor Radfahren", 5.0),
+            (None, None, 3.0),
+        ]
+        async with async_session_maker() as session:
+            for index, (activity, label, value) in enumerate(plan):
+                metadata = {"seeded_by": "test_grpc_server"}
+                if activity is not None:
+                    metadata |= {"activity_type": activity, "activity_label": label}
+                session.add(
+                    DataPoint(
+                        id=str(uuid.uuid4()),
+                        tenant_id=tenant_id,
+                        source_id=source_id,
+                        metric_type="workout_distance",
+                        timestamp=now - timedelta(days=index),
+                        value=value,
+                        idempotency_key=f"grpc-test-{uuid.uuid4().hex}",
+                        metadata_=metadata,
+                    )
+                )
+            await session.commit()
+
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+        runs = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="workout_distance",
+                activity_type="running",
+            ),
+            metadata=_auth(),
+        )
+        rides = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="workout_distance",
+                activity_type="cycling",
+                order=pb.DATA_POINT_ORDER_VALUE_DESC,
+            ),
+            metadata=_auth(),
+        )
+
+        assert [point.value for point in runs.data_points] == [9.0]
+        assert [point.value for point in rides.data_points] == [24.0, 5.0], (
+            "one activity must not split across the three spellings it arrived in"
+        )
+        # The longest workout overall is a ride; the longest *run* is the shorter
+        # one. Ranking without the filter is exactly what got this wrong before.
+        assert runs.data_points[0].value < rides.data_points[0].value
+    finally:
+        await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_a_point_with_no_activity_matches_no_activity_filter(grpc_channel):
+    """A row nobody said anything about is not quietly counted as one that matched."""
+    tenant_id = await create_test_tenant()
+    try:
+        await _seed(tenant_id, metric="workout_distance", count=3)
+        stub = pb_grpc.CoreDataServiceStub(grpc_channel)
+
+        unfiltered = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id, metric_type="workout_distance"
+            ),
+            metadata=_auth(),
+        )
+        filtered = await stub.QueryDataPoints(
+            pb.QueryDataPointsRequest(
+                tenant_id=tenant_id,
+                metric_type="workout_distance",
+                activity_type="other",
+            ),
+            metadata=_auth(),
+        )
+
+        assert len(unfiltered.data_points) == 3
+        assert len(filtered.data_points) == 0
+    finally:
         await cleanup_test_tenant(tenant_id)

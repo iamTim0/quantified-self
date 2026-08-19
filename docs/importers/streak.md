@@ -81,3 +81,13 @@ rep count were numeric; and a rep total was accumulated and never used.
 
 The full definition of every metric — its unit, its aggregation and the former names that
 still point at it — is in [Metrics](../metrics.md).
+
+## Activity type
+
+Every workout point carries `activity_type` — a canonical key such as `running`, `cycling` or
+`strength_training` — beside `activity_label`, which is Streak's own wording, kept unchanged.
+
+The type exists because the wording cannot be compared. Streak's workout title is whatever the user typed — "Push day" — so it is a label and never a type. The type comes from the connector instead: an app that records sets, reps and weight logs resistance training, so every Streak session is `strength_training`. A query filters on the canonical
+key; see [Activity type](../importer-standard.md#activity-type) for the contract, and
+[`python -m core.activity_backfill`](../operations.md#resolving-stored-workouts-into-activity-types)
+for points stored before it existed.

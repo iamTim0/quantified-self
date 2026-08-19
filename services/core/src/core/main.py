@@ -4429,7 +4429,7 @@ async def get_import_plan(
     payload["source_id"] = source.id
     payload["source_type"] = source.source_type
     payload["metric_type"] = canonical_metric
-    payload["docs_url"] = "/docs/features/smart-import/"
+    payload["docs_url"] = "/docs/features/smart-import.html"
     return payload
 
 

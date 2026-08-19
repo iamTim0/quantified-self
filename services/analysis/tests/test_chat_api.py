@@ -268,3 +268,32 @@ async def test_chat_discovers_real_sessionless_mcp_tools(monkeypatch) -> None:
         properties = tool["inputSchema"].get("properties", {})
         assert "tenant_id" not in properties
         assert "user_id" not in properties
+
+
+@pytest.mark.asyncio
+async def test_a_refused_tool_call_reaches_the_model_as_its_own_code(
+    monkeypatch,
+) -> None:
+    """The model must be told what to fix, not that something went wrong.
+
+    A refusal travels as HTTP 400 *with* a JSON-RPC error body, and this bridge
+    checked the status before reading that body — so every reason was replaced by
+    `MCP_TOOL_FAILED` on the way to the model and logged nowhere at all. A model
+    given only that cannot shorten a window or correct a metric name, so it stops
+    asking; from the outside the chat simply says it cannot reach the data, and
+    the service logs show a turn that looks completely healthy.
+    """
+    monkeypatch.setattr(mcp_module, "core_client", FakeCoreClient())
+    bridge = chat_module.StatelessMcpBridge()
+
+    async with mcp_module.mcp_asgi_app.lifespan():
+        result = await bridge.execute(
+            "list_metrics",
+            {"start": "2020-01-01T00:00:00Z", "end": "2026-08-01T00:00:00Z"},
+            ToolContext(authorization=f"Bearer {_token()}", request_id="req_refused"),
+        )
+
+    assert result["success"] is False
+    payload = json.loads(result["contentItems"][0]["text"])
+    assert payload["code"] == "TIME_RANGE_TOO_LARGE"
+    assert payload["message"]

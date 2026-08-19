@@ -1720,7 +1720,7 @@ async def ingestion_retention_warning(client: Any) -> Warning_ | None:
             "An owner can reset it after confirming that the queue is empty."
         ),
         action="An owner can reset the ingestion stream from the dashboard after confirming the queue is empty.",
-        docs="/docs/operations/#rebuilding-a-workspace-from-scratch",
+        docs="/docs/operations.html#rebuilding-a-workspace-from-scratch",
         params={
             "actual_retention": str(actual),
             "expected_retention": str(expected),
