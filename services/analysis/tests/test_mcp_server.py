@@ -9,7 +9,7 @@ import analysis.mcp_server as mcp_module
 import jwt
 import pytest
 from analysis.config import settings
-from analysis.core_client import MetricPoint, PointBatch
+from analysis.core_client import MetricPoint, MetricSummary, PointBatch
 from analysis.main import app
 from fastapi.testclient import TestClient
 from shared_schemas.metrics import describe
@@ -24,10 +24,39 @@ class FakeCoreClient:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.point_reads = 0
+        self.summary_calls = 0
+        self.last_query: dict[str, Any] = {}
 
     async def fetch_metric_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         self.calls.append((tenant_id, request_id))
         return ["sleep_score", "steps"]
+
+    async def fetch_metric_summaries(
+        self,
+        tenant_id: str,
+        *,
+        request_id: str,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[MetricSummary]:
+        del start, end
+        self.calls.append((tenant_id, request_id))
+        self.summary_calls += 1
+        return [
+            MetricSummary(
+                metric_type="sleep_duration",
+                point_count=30,
+                first_observed_at=datetime(2026, 7, 1, tzinfo=UTC),
+                last_observed_at=datetime(2026, 8, 1, tzinfo=UTC),
+            ),
+            MetricSummary(
+                metric_type="steps",
+                point_count=12_000,
+                first_observed_at=datetime(2026, 7, 1, tzinfo=UTC),
+                last_observed_at=datetime(2026, 8, 1, tzinfo=UTC),
+            ),
+        ]
 
     async def fetch_source_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         self.calls.append((tenant_id, request_id))
@@ -55,9 +84,21 @@ class FakeCoreClient:
         request_id: str,
         metric_type: str | None,
         max_points: int | None,
+        min_value: float | None = None,
+        max_value: float | None = None,
+        activity_type: str | None = None,
+        order: str = "time",
     ) -> PointBatch:
-        del start, end, max_points
+        del start, end
         self.calls.append((tenant_id, request_id))
+        self.point_reads += 1
+        self.last_query = {
+            "max_points": max_points,
+            "min_value": min_value,
+            "max_value": max_value,
+            "activity_type": activity_type,
+            "order": order,
+        }
         value = 100.0 if tenant_id == TENANT_A else 200.0
         name = metric_type or "steps"
         return PointBatch(
@@ -453,3 +494,251 @@ def test_data_quality_reports_gaps_outliers_and_source_distribution(
     assert quality["missing_expected_days"] == 1
     assert quality["plausible_outlier_count"] == 0
     assert quality["source_point_counts"] == {"manual": 1}
+
+
+def _call_list_metrics(
+    client: TestClient, arguments: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    response = client.post(
+        "/mcp",
+        headers=_headers("tools/call", name="list_metrics", request_id="req_catalog"),
+        json=_request(
+            "tools/call",
+            9,
+            {"name": "list_metrics", "arguments": arguments or {}},
+        ),
+    )
+    return response.json()
+
+
+def test_the_catalogue_is_counted_by_core_not_read_here(monkeypatch) -> None:
+    """A question about names must not cost what the tenant has recorded.
+
+    This tool used to fetch every point of every metric in its window purely to
+    group them by name. Three location metrics at ~26k points per 90 days pushed
+    that past the 100k transfer bound, `_points` treats a truncated read as fatal,
+    and the first tool any model calls began failing for good.
+    """
+    fake = FakeCoreClient()
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        result = _call_list_metrics(client)["result"]
+
+    catalogue = result["structuredContent"]
+    assert [item["metric_type"] for item in catalogue["metrics"]] == [
+        "sleep_duration",
+        "steps",
+    ]
+    assert [item["observed_count"] for item in catalogue["metrics"]] == [30, 12_000]
+    assert catalogue["provenance"]["point_count"] == 12_030
+    assert catalogue["provenance"]["truncated"] is False
+    assert fake.summary_calls == 1
+    assert fake.point_reads == 0, "the catalogue must not transfer data points"
+
+
+def test_an_undescribable_metric_does_not_take_the_catalogue_down(monkeypatch) -> None:
+    """One stored name the registry cannot describe must not blank the catalogue.
+
+    It is named in the result rather than dropped (rule 19): a model that is told
+    what it could not read about can say so, where one that is told nothing
+    answers as though the metric were absent.
+    """
+    fake = FakeCoreClient()
+
+    async def _with_a_stranger(tenant_id, *, request_id, start=None, end=None):
+        del start, end
+        fake.calls.append((tenant_id, request_id))
+        return [
+            MetricSummary(metric_type="steps", point_count=3),
+            MetricSummary(metric_type="not_a_registered_metric", point_count=7),
+        ]
+
+    fake.fetch_metric_summaries = _with_a_stranger
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        catalogue = _call_list_metrics(client)["result"]["structuredContent"]
+
+    assert [item["metric_type"] for item in catalogue["metrics"]] == ["steps"]
+    assert catalogue["undescribed_metric_types"] == ["not_a_registered_metric"]
+
+
+def test_a_refused_tool_call_says_why(monkeypatch) -> None:
+    """The caller gets this server's own code, not one opaque failure for all.
+
+    Every refusal here is written for a caller to act on — shorten the window, fix
+    the metric name. Collapsing them into `INTERNAL_TOOL_ERROR` left a model with
+    nothing to correct, so it stopped asking; and since nothing logged the reason
+    either, the failure was invisible from both ends at once.
+    """
+    monkeypatch.setattr(mcp_module, "core_client", FakeCoreClient())
+
+    with TestClient(app, base_url="http://localhost") as client:
+        result = _call_list_metrics(
+            client,
+            {"start": "2020-01-01T00:00:00Z", "end": "2026-08-01T00:00:00Z"},
+        )
+
+    assert result["error"]["data"]["code"] == "TIME_RANGE_TOO_LARGE"
+
+
+def _ranking_points() -> list[MetricPoint]:
+    """Two days of workouts, so a ranking of points differs from one of days."""
+    return [
+        MetricPoint("workout_distance", datetime(2026, 8, 1, 9, tzinfo=UTC), 5.0),
+        MetricPoint("workout_distance", datetime(2026, 8, 1, 17, tzinfo=UTC), 6.0),
+        MetricPoint("workout_distance", datetime(2026, 8, 2, 9, tzinfo=UTC), 8.0),
+    ]
+
+
+def _call_series_tool(client: TestClient, arguments: dict[str, Any]) -> dict[str, Any]:
+    response = client.post(
+        "/mcp",
+        headers=_headers("tools/call", name="query_metric_series", request_id="req_rank"),
+        json=_request(
+            "tools/call",
+            11,
+            {"name": "query_metric_series", "arguments": arguments},
+        ),
+    )
+    return response.json()
+
+
+def test_a_raw_ranking_is_ordered_and_bounded_by_core(monkeypatch) -> None:
+    """"My largest three" must cost three rows, not the window they were found in."""
+    fake = FakeCoreClient()
+
+    async def _ranked(tenant_id, *, order="time", max_points=None, **kwargs):
+        del kwargs
+        fake.last_query = {"order": order, "max_points": max_points}
+        points = sorted(_ranking_points(), key=lambda point: point.value, reverse=True)
+        return PointBatch(points=points[: max_points or len(points)], truncated=False)
+
+    fake.fetch_points_bounded = _ranked
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        result = _call_series_tool(
+            client,
+            {
+                "metric_type": "workout_distance",
+                "bucket": "raw",
+                "order": "value_desc",
+                "max_points": 2,
+            },
+        )["result"]["structuredContent"]
+
+    assert fake.last_query == {"order": "value_desc", "max_points": 2}, (
+        "the order and the bound belong in Core's query, not in a local sort"
+    )
+    assert [point["value"] for point in result["points"]] == [8.0, 6.0]
+    assert result["order"] == "value_desc"
+
+
+def test_a_bucketed_ranking_ranks_the_aggregate_not_the_points(monkeypatch) -> None:
+    """Ranking daily totals is a different question from ranking single points.
+
+    The largest single workout is on the second day; the largest *day* is the first,
+    because two rides sum past it. Aggregation has to happen before the ranking, so
+    this one cannot be pushed into the query the way a raw ranking can.
+    """
+    fake = FakeCoreClient()
+
+    async def _window(tenant_id, *, order="time", max_points=None, **kwargs):
+        del kwargs
+        fake.last_query = {"order": order, "max_points": max_points}
+        return PointBatch(points=_ranking_points(), truncated=False)
+
+    fake.fetch_points_bounded = _window
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        result = _call_series_tool(
+            client,
+            {
+                "metric_type": "workout_distance",
+                "bucket": "day",
+                "order": "value_desc",
+                "max_points": 2,
+            },
+        )["result"]["structuredContent"]
+
+    assert fake.last_query["order"] == "time", (
+        "a bucketed ranking needs the whole window; the values it ranks do not "
+        "exist until they are aggregated"
+    )
+    assert [point["value"] for point in result["points"]] == [11.0, 8.0]
+    assert result["points"][0]["timestamp"].startswith("2026-08-01")
+
+
+def test_an_inverted_value_range_is_refused(monkeypatch) -> None:
+    """A range that cannot match anything is a caller error, not an empty result."""
+    monkeypatch.setattr(mcp_module, "core_client", FakeCoreClient())
+
+    with TestClient(app, base_url="http://localhost") as client:
+        body = _call_series_tool(
+            client,
+            {
+                "metric_type": "steps",
+                "min_value": 100,
+                "max_value": 10,
+            },
+        )
+
+    assert body["error"]["data"]["code"] == "INVALID_VALUE_RANGE"
+
+
+def test_a_value_bound_reaches_the_query(monkeypatch) -> None:
+    """The filter is applied where the rows are, so a narrow band is a narrow read."""
+    fake = FakeCoreClient()
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        _call_series_tool(
+            client,
+            {"metric_type": "steps", "min_value": 50.0, "max_value": 150.0},
+        )
+
+    assert fake.last_query["min_value"] == 50.0
+    assert fake.last_query["max_value"] == 150.0
+
+
+def test_an_activity_filter_reaches_the_query(monkeypatch) -> None:
+    """"The runs" is a canonical key on the query, not prose matched here."""
+    fake = FakeCoreClient()
+    monkeypatch.setattr(mcp_module, "core_client", fake)
+
+    with TestClient(app, base_url="http://localhost") as client:
+        _call_series_tool(
+            client,
+            {
+                "metric_type": "workout_distance",
+                "bucket": "raw",
+                "order": "value_desc",
+                "activity_type": "running",
+                "max_points": 3,
+            },
+        )
+
+    assert fake.last_query["activity_type"] == "running"
+    assert fake.last_query["order"] == "value_desc"
+
+
+def test_an_unknown_activity_type_is_refused_with_the_known_ones(monkeypatch) -> None:
+    """A typo must not silently answer "no such workouts".
+
+    An empty series and an unrecognised filter look identical to a caller, and the
+    difference matters: one means "you did not do that", the other "I did not
+    understand you". The known keys travel with the refusal so the next attempt can
+    be right.
+    """
+    monkeypatch.setattr(mcp_module, "core_client", FakeCoreClient())
+
+    with TestClient(app, base_url="http://localhost") as client:
+        body = _call_series_tool(
+            client, {"metric_type": "workout_distance", "activity_type": "jogging"}
+        )
+
+    assert body["error"]["data"]["code"] == "UNKNOWN_ACTIVITY_TYPE"
+    assert "running" in body["error"]["data"]["known_activity_types"]

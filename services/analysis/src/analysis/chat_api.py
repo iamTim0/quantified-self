@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
@@ -25,12 +26,27 @@ from analysis.config import settings
 from analysis.core_client import CoreClient, CoreUnavailable
 from analysis.mcp_server import MCP_PATH, PROTOCOL_VERSION, mcp_asgi_app
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/chat", tags=["chat"])
 core_client = CoreClient()
 
 THREAD_ISSUER = "qs-analysis"
 THREAD_AUDIENCE = "qs-chat"
 THREAD_TOKEN_TYPE = "chat_thread"
+
+
+class McpCallFailed(CodexProtocolError):
+    """An MCP request this service made on the model's behalf was refused.
+
+    Carries the server's machine-readable `code` rather than only its prose, so
+    the failure can be logged as one thing and handed to the model as another.
+    """
+
+    def __init__(self, message: str, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code or "MCP_TOOL_FAILED"
+        self.message = message
 
 
 class StrictModel(BaseModel):
@@ -140,15 +156,42 @@ class StatelessMcpBridge:
             failed = bool(result.get("isError", result.get("is_error", False)))
             payload = result.get("structuredContent", result.get("content", result))
             text = json.dumps(payload, separators=(",", ":"), default=str)
+            if failed:
+                logger.warning(
+                    "[req_id=%s] MCP tool %s returned an error result: %s",
+                    context.request_id,
+                    tool,
+                    text,
+                )
             return {
                 "success": not failed,
                 "contentItems": [{"type": "inputText", "text": text}],
             }
-        except (CodexProtocolError, httpx.HTTPError):
+        except (CodexProtocolError, httpx.HTTPError) as exc:
+            # Tell the model what was wrong with its call, and tell the operator
+            # that it happened. Returning a bare `MCP_TOOL_FAILED` and logging
+            # nothing meant a model could not correct a metric name or shorten a
+            # window, and an operator reading the logs saw a turn that looked
+            # entirely healthy.
+            code = getattr(exc, "code", "MCP_TOOL_FAILED")
+            message = getattr(exc, "message", str(exc))
+            logger.warning(
+                "[req_id=%s] MCP tool %s failed: code=%s %s",
+                context.request_id,
+                tool,
+                code,
+                message,
+            )
             return {
                 "success": False,
                 "contentItems": [
-                    {"type": "inputText", "text": '{"code":"MCP_TOOL_FAILED"}'}
+                    {
+                        "type": "inputText",
+                        "text": json.dumps(
+                            {"code": code, "message": message},
+                            separators=(",", ":"),
+                        ),
+                    }
                 ],
             }
 
@@ -199,11 +242,20 @@ class StatelessMcpBridge:
             body = response.json()
         except ValueError as exc:
             raise CodexProtocolError("MCP returned an invalid response") from exc
+        # The error body first, and only then the status. A refused tool call is
+        # answered with HTTP 400 *and* a JSON-RPC error carrying the reason, so
+        # checking the status first threw the reason away every time -- which is
+        # the path every real refusal took.
+        error = body.get("error") if isinstance(body, dict) else None
+        if isinstance(error, dict):
+            data = error.get("data")
+            code = data.get("code") if isinstance(data, dict) else None
+            raise McpCallFailed(
+                str(error.get("message") or "MCP request failed"),
+                code if isinstance(code, str) else None,
+            )
         if response.status_code != 200 or not isinstance(body, dict):
             raise CodexProtocolError("MCP request was rejected")
-        error = body.get("error")
-        if isinstance(error, dict):
-            raise CodexProtocolError(str(error.get("message") or "MCP request failed"))
         result = body.get("result")
         if not isinstance(result, dict):
             raise CodexProtocolError("MCP returned no result")

@@ -41,6 +41,13 @@ ISSUER = "qs-core"
 AUDIENCE_INTERNAL = "qs-internal"
 TOKEN_TYPE_SERVICE = "service"
 
+#: Wire values for the orders a caller may name. Chronological is the absent one:
+#: it is the protocol default and the only order that has a cursor.
+_VALUE_ORDERS = {
+    "value_desc": pb.DATA_POINT_ORDER_VALUE_DESC,
+    "value_asc": pb.DATA_POINT_ORDER_VALUE_ASC,
+}
+
 PAGE_SIZE = 1000
 # A window is bounded by the API (14-365 days), so this only ever trips on a bug
 # in paging -- a token that fails to advance would otherwise loop forever.
@@ -193,6 +200,22 @@ class PointBatch:
     truncated: bool
 
 
+@dataclass(frozen=True)
+class MetricSummary:
+    """What one metric looks like in a tenant, counted rather than transferred.
+
+    `unit` is set only where Core saw a single unit across the metric's points.
+    For a registry metric the unit is a property of the registry and this stays
+    `None`; for a dynamic metric it is the only place the unit can come from.
+    """
+
+    metric_type: str
+    point_count: int = 0
+    first_observed_at: datetime | None = None
+    last_observed_at: datetime | None = None
+    unit: str | None = None
+
+
 def _service_token() -> str:
     """Mint a short-lived internal credential for this call."""
     now = datetime.now(timezone.utc)
@@ -224,6 +247,13 @@ def _timestamp(value: datetime) -> Timestamp:
     stamp = Timestamp()
     stamp.FromDatetime(value.astimezone(timezone.utc))
     return stamp
+
+
+def _datetime(stamp: Timestamp | None) -> datetime | None:
+    """An unset protobuf timestamp is the epoch; read it as "no value"."""
+    if stamp is None or (stamp.seconds == 0 and stamp.nanos == 0):
+        return None
+    return stamp.ToDatetime().replace(tzinfo=timezone.utc)
 
 
 class CoreClient:
@@ -265,8 +295,24 @@ class CoreClient:
         metric_type: str | None = None,
         source_id: str | None = None,
         max_points: int | None,
+        min_value: float | None = None,
+        max_value: float | None = None,
+        activity_type: str | None = None,
+        order: str = "time",
     ) -> PointBatch:
-        """Read a bounded window without silently presenting a partial result as complete."""
+        """Read a bounded window without silently presenting a partial result as complete.
+
+        `order` selects between the chronological window this was written for and a
+        ranking: `value_desc` / `value_asc` ask Core to order the *whole* window and
+        return one bounded page of it. Ranking here rather than in the caller is the
+        difference between transferring the extremes and transferring everything to
+        find them — the same distinction that made the metric catalogue unusable.
+
+        A ranked read therefore never pages, and `truncated` on its result means
+        only "more points matched", not "this answer is partial": the rows are the
+        true extremes of the window either way.
+        """
+        ranked = order in _VALUE_ORDERS
         points: list[MetricPoint] = []
         token = ""
 
@@ -275,18 +321,32 @@ class CoreClient:
                 stub = pb_grpc.CoreDataServiceStub(channel)
 
                 for _ in range(MAX_PAGES):
+                    # A ranked read asks for exactly what it will return, so the
+                    # extremes come back in one round trip instead of a window.
+                    page_size = (
+                        max_points
+                        if ranked and max_points is not None
+                        else PAGE_SIZE
+                    )
                     query = pb.QueryDataPointsRequest(
                         tenant_id=tenant_id,
                         start_time=_timestamp(start),
                         end_time=_timestamp(end),
                         pagination=common_pb.PaginationRequest(
-                            page_size=PAGE_SIZE, page_token=token
+                            page_size=page_size, page_token=token
                         ),
+                        order=_VALUE_ORDERS.get(order, pb.DATA_POINT_ORDER_UNSPECIFIED),
                     )
                     if metric_type is not None:
                         query.metric_type = metric_type
                     if source_id is not None:
                         query.source_id = source_id
+                    if min_value is not None:
+                        query.min_value = min_value
+                    if max_value is not None:
+                        query.max_value = max_value
+                    if activity_type is not None:
+                        query.activity_type = activity_type
                     response = await stub.QueryDataPoints(
                         query,
                         metadata=_metadata(request_id),
@@ -306,7 +366,7 @@ class CoreClient:
                     if max_points is not None and len(points) > max_points:
                         return PointBatch(points=points[:max_points], truncated=True)
                     token = response.pagination.next_page_token
-                    if not token:
+                    if not token or ranked:
                         break
                 else:
                     # Reporting a truncated window as if it were complete is worse
@@ -444,17 +504,65 @@ class CoreClient:
 
     async def fetch_metric_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         """Canonical or registered dynamic metric names stored for one tenant."""
+        summaries = await self.fetch_metric_summaries(tenant_id, request_id=request_id)
+        return sorted({summary.metric_type for summary in summaries})
+
+    async def fetch_metric_summaries(
+        self,
+        tenant_id: str,
+        *,
+        request_id: str,
+        start: datetime | None = None,
+        end: datetime | None = None,
+    ) -> list[MetricSummary]:
+        """Describe each metric a tenant holds without transferring its values.
+
+        A catalogue is a question about *names*, and answering it by reading
+        points made it a question about volume instead: the MCP `list_metrics`
+        tool pulled every point in its window to count them, and stopped working
+        for any tenant whose 90 days exceeded the transfer bound. Core groups in
+        SQL and returns one row per metric, so the cost no longer scales with how
+        much the tenant has recorded.
+
+        Omitting the window asks about all of time, which is the right default for
+        "what exists at all".
+        """
+        request = pb.ListMetricTypesRequest(tenant_id=tenant_id)
+        if start is not None:
+            request.start.CopyFrom(_timestamp(start))
+        if end is not None:
+            request.end.CopyFrom(_timestamp(end))
         try:
             async with grpc.aio.insecure_channel(self._target) as channel:
                 stub = pb_grpc.CoreDataServiceStub(channel)
                 response = await stub.ListMetricTypes(
-                    pb.ListMetricTypesRequest(tenant_id=tenant_id),
-                    metadata=_metadata(request_id),
+                    request, metadata=_metadata(request_id)
                 )
         except grpc.aio.AioRpcError as exc:
             raise _rpc_failure(exc, "metric listing") from exc
 
-        return sorted(set(response.metric_types))
+        summaries = [
+            MetricSummary(
+                metric_type=summary.metric_type,
+                point_count=int(summary.point_count),
+                first_observed_at=_datetime(summary.first_observed_at),
+                last_observed_at=_datetime(summary.last_observed_at),
+                unit=summary.unit or None,
+            )
+            for summary in response.summaries
+            if summary.metric_type
+        ]
+        if summaries:
+            return sorted(summaries, key=lambda summary: summary.metric_type)
+
+        # A Core that predates the summaries still answers the name list. Falling
+        # back keeps a rolling deployment working in the order the images happen
+        # to arrive, rather than only in one of the two.
+        return [
+            MetricSummary(metric_type=name)
+            for name in sorted(set(response.metric_types))
+            if name
+        ]
 
     async def fetch_source_types(self, tenant_id: str, *, request_id: str) -> list[str]:
         """Connector types configured for the tenant, for the provenance block."""

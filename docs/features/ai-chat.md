@@ -114,6 +114,26 @@ tenant-scoped Gateway/Core APIs; chat introduces no alternate store or hidden da
   imported points retain provider value and unit provenance.
 - Do not use a model response as diagnosis or treatment advice.
 
+## When a tool call is refused
+
+The four tools enforce bounds — a maximum window, canonical metric names, one connector
+instance per aggregate — and a call that breaks one is refused with a machine-readable
+`code`. That code now reaches the model, so it can shorten the window or correct a name
+and ask again, and it is written to the Analysis log under the turn's `[req_id=…]`.
+
+Both halves of that were missing and each one hid the other. Every refusal was replaced
+by a single opaque failure before it reached the model, and nothing logged the reason —
+so a model that could not read the metric catalogue simply reported that it could not
+access the data, while the service logs showed a turn that looked entirely healthy. If
+the chat says it cannot retrieve data, the Analysis log now names the reason:
+
+```bash
+docker compose -f docker-compose.prod.yml logs --since 15m analysis | grep "MCP tool"
+```
+
+An unexpected internal failure remains anonymous to the model on purpose: it is reported
+as `INTERNAL_TOOL_ERROR` and its text goes to the log only.
+
 ## Known limitations
 
 - ChatGPT plan limits and model availability still apply. A subscription is not an

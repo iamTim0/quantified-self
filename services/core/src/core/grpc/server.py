@@ -366,6 +366,35 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             if (end := _from_timestamp(request.end_time)) is not None:
                 stmt = stmt.where(DataPoint.timestamp <= end)
 
+            if request.HasField("activity_type"):
+                # The canonical key, never the provider's wording. `metadata_` is
+                # the JSON column; a point without the key simply does not match,
+                # which is the right answer for "show me the runs" on a row where
+                # nobody recorded what it was.
+                stmt = stmt.where(
+                    DataPoint.metadata_["activity_type"].as_string()
+                    == request.activity_type
+                )
+
+            ranked = request.order != pb.DATA_POINT_ORDER_UNSPECIFIED
+            bounded_by_value = request.HasField("min_value") or request.HasField(
+                "max_value"
+            )
+            if request.HasField("min_value"):
+                stmt = stmt.where(DataPoint.value >= request.min_value)
+            if request.HasField("max_value"):
+                stmt = stmt.where(DataPoint.value <= request.max_value)
+            if ranked or bounded_by_value:
+                # A null value is not comparable. Excluding it is the only honest
+                # answer: reading it as zero would place it in a range it was never
+                # measured to be in, and rank it against points that were.
+                stmt = stmt.where(DataPoint.value.is_not(None))
+
+            if ranked and request.pagination.page_token:
+                raise ValueError(
+                    "A value-ordered query answers one page; it has no cursor"
+                )
+
             if cursor is not None:
                 cursor_timestamp, cursor_id = cursor
                 stmt = stmt.where(
@@ -379,8 +408,17 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
                 )
 
             # Ordered so paging is stable; id breaks ties between points sharing
-            # a timestamp, which is common for a daily summary metric.
-            stmt = stmt.order_by(DataPoint.timestamp, DataPoint.id)
+            # a timestamp, which is common for a daily summary metric. Under a
+            # value order the same tie-break keeps one page deterministic, and the
+            # rows returned are the extremes of the *whole* window rather than of
+            # whatever a page happened to contain -- which is the entire point of
+            # ordering here instead of in the caller.
+            if request.order == pb.DATA_POINT_ORDER_VALUE_DESC:
+                stmt = stmt.order_by(DataPoint.value.desc(), DataPoint.id)
+            elif request.order == pb.DATA_POINT_ORDER_VALUE_ASC:
+                stmt = stmt.order_by(DataPoint.value.asc(), DataPoint.id)
+            else:
+                stmt = stmt.order_by(DataPoint.timestamp, DataPoint.id)
             # One extra row tells us whether another page exists without a
             # second COUNT query over the whole window.
             if legacy_offset is not None:
@@ -410,7 +448,7 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
             response = pb.QueryDataPointsResponse(
                 data_points=[_to_proto(row) for row in page]
             )
-            if has_more:
+            if has_more and not ranked:
                 last = page[-1]
                 response.pagination.next_page_token = _encode_page_token(
                     last.timestamp, str(last.id)
@@ -838,16 +876,73 @@ class CoreDataServicer(pb_grpc.CoreDataServiceServicer):
     async def ListMetricTypes(
         self, request: pb.ListMetricTypesRequest, context: grpc.aio.ServicerContext
     ) -> pb.ListMetricTypesResponse:
+        """Name every metric a tenant holds, and summarize it without reading it.
+
+        The summaries are the reason this handler groups rather than selecting
+        distinct names: a catalogue caller wants the count and the first and last
+        timestamp per metric, and the only way to get them before was to transfer
+        every point and count client-side. That is what broke the MCP
+        `list_metrics` tool on a tenant with location tracking -- roughly 80k
+        points per 90 days from three location metrics alone, against a 100k
+        transfer bound. One GROUP BY answers it in a single round trip and
+        transfers one row per metric.
+
+        `unit` is deliberately left empty unless the observed points agree on one:
+        for a registry metric the unit is already known from the registry, and for
+        a dynamic metric two different units mean there is no single unit to state.
+
+        Maps to Fizzbee Invariant: TenantIsolation
+        """
         async with _guard(context):
             tenant_id = _require_tenant(request.tenant_id)
+            start = _from_timestamp(request.start)
+            end = _from_timestamp(request.end)
+
+            # `metadata_` is the JSON column; `units` is what the importer stored
+            # as the provider's own unit (rule 19).
+            observed_unit = DataPoint.metadata_["units"].as_string()
+            conditions = [DataPoint.tenant_id == tenant_id]
+            if start is not None:
+                conditions.append(DataPoint.timestamp >= start)
+            if end is not None:
+                conditions.append(DataPoint.timestamp <= end)
+
             async with async_session_maker() as session:
                 rows = await session.execute(
-                    select(distinct(DataPoint.metric_type)).where(
-                        DataPoint.tenant_id == tenant_id
+                    select(
+                        DataPoint.metric_type,
+                        func.count().label("point_count"),
+                        func.min(DataPoint.timestamp).label("first_observed_at"),
+                        func.max(DataPoint.timestamp).label("last_observed_at"),
+                        func.count(distinct(observed_unit)).label("unit_count"),
+                        func.min(observed_unit).label("unit_sample"),
                     )
+                    .where(and_(*conditions))
+                    .group_by(DataPoint.metric_type)
+                    .order_by(DataPoint.metric_type)
                 )
+                grouped = rows.all()
+
+            summaries: list[pb.MetricTypeSummary] = []
+            for row in grouped:
+                if not row.metric_type:
+                    continue
+                summary = pb.MetricTypeSummary(
+                    metric_type=row.metric_type,
+                    point_count=int(row.point_count or 0),
+                    unit=row.unit_sample if row.unit_count == 1 and row.unit_sample else "",
+                )
+                first = _to_timestamp(row.first_observed_at)
+                if first is not None:
+                    summary.first_observed_at.CopyFrom(first)
+                last = _to_timestamp(row.last_observed_at)
+                if last is not None:
+                    summary.last_observed_at.CopyFrom(last)
+                summaries.append(summary)
+
             return pb.ListMetricTypesResponse(
-                metric_types=sorted(m for m in rows.scalars() if m)
+                metric_types=[summary.metric_type for summary in summaries],
+                summaries=summaries,
             )
 
     async def ListDataSources(

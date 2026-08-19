@@ -6,6 +6,18 @@ import "quantified_self/v1/common.proto";
 import "quantified_self/v1/data_point.proto";
 import "google/protobuf/timestamp.proto";
 
+// How a page of points is ordered.
+//
+// Chronological is the default and the only order that pages: the cursor is a
+// (timestamp, id) keyset, and a value has neither the uniqueness nor the
+// monotonicity a cursor needs. A value order therefore answers exactly one
+// bounded page -- which is all a "largest N" question ever wanted.
+enum DataPointOrder {
+  DATA_POINT_ORDER_UNSPECIFIED = 0;
+  DATA_POINT_ORDER_VALUE_DESC = 1;
+  DATA_POINT_ORDER_VALUE_ASC = 2;
+}
+
 message QueryDataPointsRequest {
   string tenant_id = 1;
   optional string metric_type = 2;
@@ -13,6 +25,17 @@ message QueryDataPointsRequest {
   google.protobuf.Timestamp start_time = 4;
   google.protobuf.Timestamp end_time = 5;
   PaginationRequest pagination = 6;
+  // Inclusive bounds on the stored value. Points with no value are excluded
+  // whenever either bound is set or the order is by value: a null cannot be
+  // compared, and silently treating it as zero would rank it.
+  optional double min_value = 7;
+  optional double max_value = 8;
+  DataPointOrder order = 9;
+  // Canonical activity key from shared_schemas.activities -- `running`, `cycling`.
+  // Filtering on the provider's own wording instead would mean matching translated
+  // prose: one workspace held `Radfahren`, `Outdoor Radfahren` and `Innenräume
+  // Radfahren` for one activity, and `Laufen` and `Outdoor Ausführen` for another.
+  optional string activity_type = 10;
 }
 
 message QueryDataPointsResponse {
@@ -86,12 +109,38 @@ message GetDataPointRequest {
   string data_point_id = 2;
 }
 
+// The window is optional: unset means all time, which is what a caller asking
+// "which metrics does this tenant have at all" wants. A caller that needs the
+// catalogue *for a window* sets both, and gets counts scoped to it.
 message ListMetricTypesRequest {
   string tenant_id = 1;
+  google.protobuf.Timestamp start = 2;
+  google.protobuf.Timestamp end = 3;
+}
+
+// What a catalogue caller needs about one metric without reading a single value.
+//
+// This exists because deriving it from data points meant transferring them: the
+// MCP `list_metrics` tool pulled every point of every metric in a 90-day window
+// purely to learn the names, hit the 100k bound on a tenant with location
+// tracking, and failed the caller's tool call outright. The numbers below are
+// what it actually used, and Postgres can group them in one query.
+//
+// `unit` is filled only where the unit is not already knowable from the metric
+// registry -- a dynamic metric (`home_assistant_`, `apple_health_`, `custom_`)
+// carries its unit in each point's metadata. It stays empty when the observed
+// points disagree, because a single unit is then not a fact about the metric.
+message MetricTypeSummary {
+  string metric_type = 1;
+  int64 point_count = 2;
+  google.protobuf.Timestamp first_observed_at = 3;
+  google.protobuf.Timestamp last_observed_at = 4;
+  string unit = 5;
 }
 
 message ListMetricTypesResponse {
   repeated string metric_types = 1;
+  repeated MetricTypeSummary summaries = 2;
 }
 
 // Which connectors a tenant has configured. The Analysis Service needs this for
