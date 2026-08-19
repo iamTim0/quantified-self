@@ -16,7 +16,7 @@
 # service's declared path dependencies.
 #
 # Build:  docker build -f services/core/Dockerfile .
-FROM python:3.12-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
