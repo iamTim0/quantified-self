@@ -3,6 +3,21 @@ site_description: Importer, data quality, and analysis documentation for the Qua
 site_url: https://example.com/docs/
 docs_dir: docs
 site_dir: site
+# Every page is a file, not a directory: `metrics.md` publishes as
+# `/docs/metrics.html` rather than `/docs/metrics/`.
+#
+# MkDocs' default -- directory URLs -- makes the site depend on a trailing slash
+# it cannot defend. A directory URL only resolves its relative links correctly
+# when the address bar ends in `/`, so the server has to redirect
+# `/docs/metrics` to `/docs/metrics/` to repair one that arrives without it. Any
+# proxy in front that normalises the slash away then bounces that redirect
+# straight back, and the page is unreachable behind an infinite loop -- which is
+# exactly what a rule at this deployment's CDN edge did to the published site.
+#
+# File URLs have nothing to strip. Relative links resolve from the containing
+# directory either way, so the page renders identically whether it is reached as
+# `/docs/metrics.html` or `/docs/metrics`, and no redirect has to exist at all.
+use_directory_urls: false
 repo_url: https://github.com/iamTim0/quantified-self
 theme:
   name: material

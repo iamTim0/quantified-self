@@ -420,10 +420,13 @@ services:
       # which it answered with `302 -> /docs/`, which Traefik stripped again: a
       # redirect loop, and /docs was simply unreachable in the dev stack.
       #
-      # Production is now identical: it did strip, and the static site behind it
-      # redirects on its own for every directory URL without a trailing slash, so
-      # the stripped prefix came back missing -- along with the wrong port and
-      # scheme -- in the Location header. See infra/docs.Dockerfile.
+      # Production routes identically, and since `use_directory_urls: false` the
+      # site publishes files rather than directories -- `/docs/metrics.html` -- so
+      # no page depends on a trailing slash surviving a proxy any more. That is
+      # what took the published site down: an edge rule removed the slash, and the
+      # redirect directory URLs need to repair it was removed again on the way
+      # back. Link to pages with their `.html` name; the dev server serves exactly
+      # the built files. See infra/docs.Dockerfile.
       - "traefik.http.routers.docs.rule=PathPrefix(`/docs`)"
       - "traefik.http.routers.docs.entrypoints=web"
       - "traefik.http.routers.docs.priority=20"

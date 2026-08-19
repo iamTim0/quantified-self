@@ -730,7 +730,7 @@ export default function ConnectorModal({
               </h2>
               {selectedProvider && step === "configure_provider" && (
                 <a
-                  href={`/docs/importers/${selectedProvider.id === "apple_health" ? "apple-health" : selectedProvider.id === "home_assistant" ? "home-assistant" : selectedProvider.id}/`}
+                  href={`/docs/importers/${selectedProvider.id === "apple_health" ? "apple-health" : selectedProvider.id === "home_assistant" ? "home-assistant" : selectedProvider.id}.html`}
                   target="_blank"
                   rel="noreferrer"
                   className="ml-2 inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-ok-soft border border-ok-line text-xs font-bold text-ok-ink hover:bg-ok-soft transition-colors"
@@ -1061,7 +1061,7 @@ export default function ConnectorModal({
                   <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                     {t("modal.icsHint")}{" "}
                     <a
-                      href="/docs/importers/calendar/"
+                      href="/docs/importers/calendar.html"
                       className="text-brand underline"
                       target="_blank"
                       rel="noreferrer"
@@ -1222,7 +1222,7 @@ export default function ConnectorModal({
                       <p className="mt-1.5 text-meta leading-relaxed text-ink-muted">
                         {t("modal.weatherBaseUrlHint")}{" "}
                         <a
-                          href="/docs/importers/weather/"
+                          href="/docs/importers/weather.html"
                           className="text-brand underline"
                           target="_blank"
                           rel="noreferrer"

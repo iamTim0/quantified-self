@@ -205,7 +205,7 @@ export default function ApiKeyManager({
           <p className="text-meta text-ink-muted">{t("apikeys.headerHint")}</p>
         </div>
         <a
-          href="/docs/features/api-keys/"
+          href="/docs/features/api-keys.html"
           target="_blank"
           rel="noreferrer"
           className="inline-flex items-center gap-1.5 text-meta font-semibold text-brand underline"

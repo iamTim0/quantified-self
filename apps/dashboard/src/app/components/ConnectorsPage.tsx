@@ -94,7 +94,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.yazio",
     icon: Flame,
     available: true,
-    docsPath: "/docs/importers/yazio/",
+    docsPath: "/docs/importers/yazio.html",
   },
   {
     id: "dawarich",
@@ -102,7 +102,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.dawarich",
     icon: MapPin,
     available: true,
-    docsPath: "/docs/importers/dawarich/",
+    docsPath: "/docs/importers/dawarich.html",
   },
   {
     id: "whoop",
@@ -110,7 +110,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.whoop",
     icon: Activity,
     available: true,
-    docsPath: "/docs/importers/whoop/",
+    docsPath: "/docs/importers/whoop.html",
   },
   {
     id: "apple_health",
@@ -118,7 +118,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.apple_health",
     icon: Smartphone,
     available: true,
-    docsPath: "/docs/importers/apple-health/",
+    docsPath: "/docs/importers/apple-health.html",
   },
   {
     id: "streak",
@@ -126,7 +126,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.streak",
     icon: Dumbbell,
     available: true,
-    docsPath: "/docs/importers/streak/",
+    docsPath: "/docs/importers/streak.html",
   },
   {
     id: "home_assistant",
@@ -134,7 +134,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.home_assistant",
     icon: HousePlug,
     available: true,
-    docsPath: "/docs/importers/home-assistant/",
+    docsPath: "/docs/importers/home-assistant.html",
   },
   {
     id: "weather",
@@ -142,7 +142,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.weather",
     icon: CloudSun,
     available: true,
-    docsPath: "/docs/importers/weather/",
+    docsPath: "/docs/importers/weather.html",
   },
   {
     id: "calendar",
@@ -150,7 +150,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.calendar",
     icon: CalendarDays,
     available: true,
-    docsPath: "/docs/importers/calendar/",
+    docsPath: "/docs/importers/calendar.html",
   },
   {
     id: "github",
@@ -158,7 +158,7 @@ const CONNECTOR_CATALOG: CatalogConnector[] = [
     descriptionKey: "connectors.desc.github",
     icon: GitBranch,
     available: true,
-    docsPath: "/docs/importers/github/",
+    docsPath: "/docs/importers/github.html",
   },
 ];
 

@@ -427,7 +427,7 @@ async def build_insights_bundle(
         "routines": routines,
         "period_comparisons": comparisons,
         "strength": strength,
-        "docs_url": "/docs/features/correlations/",
+        "docs_url": "/docs/features/correlations.html",
     }
 
 
