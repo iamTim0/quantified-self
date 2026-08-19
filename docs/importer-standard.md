@@ -154,6 +154,49 @@ workout source needs the transformer call and one row in that test, and no chang
 
 See [Workout detail](features/workout-detail.md) for what the session block buys the reader.
 
+### Activity type
+
+**A session-emitting importer MUST also say what kind of activity it was, canonically.** This is
+the same failure as the session id, one field along, and it was found the same way — by asking a
+question the data could not answer.
+
+Every importer wrote the provider's own word for the activity under a key it had chosen for
+itself: WHOOP `activity_name`, Apple Health `workout_name`. A reader had to know both. What was in
+there was display prose in the user's own language, and not even consistent within one provider —
+a single workspace held `Radfahren`, `Outdoor Radfahren` and `Innenräume Radfahren` for one
+activity, while running arrived as `Laufen` from one connector and `Outdoor Ausführen` from the
+other, Apple's own translation of "Outdoor Run". Rule 17 says a field a client compares against is
+an identifier, not prose; there was no such field, so "which of these were runs" had no answer.
+
+```python
+from shared_schemas.activities import activity_metadata
+
+metadata = {
+    **activity_metadata(workout.get("activityName")),  # HK identifiers work too
+    **session,
+}
+```
+
+- **`activity_type` is a canonical key** from `shared_schemas.activities` — `running`, `cycling`,
+  `strength_training`. It is what queries filter on, including `query_metric_series`.
+- **`activity_label` is the provider's own wording**, kept unchanged. Rule 19: the value that
+  arrived stays readable beside what was made of it, and it is the only way to audit a mapping
+  after the fact — `padel` from `Paddeltennis` is otherwise an unverifiable claim.
+- **Prefer the provider's machine-readable identifier** where one exists. The Apple Health archive
+  states `HKWorkoutActivityTypeRunning` and resolves from that; only the webhook path has to work
+  from a translated display name.
+- **An unrecognised activity is `other`, never an error.** A gap in the alias table must not cost a
+  workout that is otherwise perfectly well described, and the label beside it says exactly what
+  went unmapped. Adding the alias later costs one line plus
+  [`python -m core.activity_backfill`](operations.md#resolving-stored-workouts-into-activity-types).
+- **Where the type is a property of the connector, set it directly.** Streak records sets, reps and
+  weight, so its sessions are `strength_training` whatever the user titled them; the title travels
+  as the label it is.
+
+`packages/shared-schemas/tests/test_importer_sessions.py` enforces this the same way it enforces
+the session block: an importer whose contract claims a `workout_*` or `strength_*` metric and never
+writes an `activity_type` fails the test.
+
 ## Contract-first importer definition
 
 Every importer has a machine-readable `importer.contract.json` in its service root.

@@ -119,3 +119,30 @@ def test_a_workout_importer_does_not_hand_roll_the_digest(importer):
                         f"{path.relative_to(REPO_ROOT).as_posix()} hashes directly. "
                         "Use shared_schemas.idempotency_key() or session_metadata()."
                     )
+
+
+#: The one way to attach a canonical activity to a workout. Streak is allowed to set
+#: the key directly: its type is a property of the connector — an app that records
+#: sets, reps and weight — rather than something to resolve from a provider's word.
+ACTIVITY_HELPERS = ("activity_metadata", '"activity_type"')
+
+
+@pytest.mark.parametrize("importer", SESSION_IMPORTERS)
+def test_a_workout_importer_names_the_activity_canonically(importer):
+    """A workout must say *what kind* it was in a way a query can compare.
+
+    The same failure as the session id, one field along. Every importer wrote the
+    provider's own word for the activity under a key it chose for itself — WHOOP
+    `activity_name`, Apple Health `workout_name` — and what was in there was display
+    prose in the user's language: `Radfahren`, `Outdoor Radfahren` and `Innenräume
+    Radfahren` for one activity, `Laufen` and `Outdoor Ausführen` for another. Rule
+    17 is explicit that a field a client compares against is an identifier, and
+    there was none, so "which of these were runs" could not be asked of the data.
+    """
+    source = _sources(importer)
+    assert any(helper in source for helper in ACTIVITY_HELPERS), (
+        f"{importer} emits session-shaped metrics but never writes an "
+        "`activity_type`. Resolve the provider's wording with "
+        "shared_schemas.activities.activity_metadata(), which keeps that wording "
+        "beside the canonical key as `activity_label`."
+    )

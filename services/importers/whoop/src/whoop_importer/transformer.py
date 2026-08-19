@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Any, NamedTuple
 
 from shared_schemas import FieldReportCollector, idempotency_key, provenance
+from shared_schemas.activities import activity_metadata
 from shared_schemas.metrics import (
     METRIC_CATALOG,
     MetricUnit,
@@ -359,6 +360,7 @@ def transform_whoop_records(
         # giving either a `session_id` would put them on the workout list, which
         # is not what a reader means by "my workouts".
         if kind == "workout":
+            activity = str(record_metadata.get("activity_name") or "Workout")
             metadata.update(
                 session_metadata(
                     source_type="whoop",
@@ -366,10 +368,15 @@ def transform_whoop_records(
                     provider_session_id=whoop_id or None,
                     start=ts,
                     end=record.get("end") or record_metadata.get("workout_end_time"),
-                    label=str(record_metadata.get("activity_name") or "Workout"),
+                    label=activity,
                     derived_from=("start", "sport_name"),
                 )
             )
+            # `activity_name` is WHOOP's word for it and Apple's key is a different
+            # one entirely, so neither is something a query can filter on. The
+            # canonical type is (rule 17); the provider's own wording stays beside
+            # it as `activity_label`.
+            metadata.update(activity_metadata(activity))
 
         consumed: set[str] = {"score_state", "start", "created_at", "id", "cycle_id"}
         consumed.update(metadata_fields)

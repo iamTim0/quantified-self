@@ -220,3 +220,13 @@ a workout page comes from Apple Health.
 
 The full definition of every metric — its unit, its aggregation and the former names that
 still point at it — is in [Metrics](../metrics.md).
+
+## Activity type
+
+Every workout point carries `activity_type` — a canonical key such as `running`, `cycling` or
+`strength_training` — beside `activity_label`, which is WHOOP's own wording, kept unchanged.
+
+The type exists because the wording cannot be compared. WHOOP sends the sport name in the account's own language — `Laufen`, `Radfahren` — and Apple Health sends different words for the same activities under a different key. A query filters on the canonical
+key; see [Activity type](../importer-standard.md#activity-type) for the contract, and
+[`python -m core.activity_backfill`](../operations.md#resolving-stored-workouts-into-activity-types)
+for points stored before it existed.

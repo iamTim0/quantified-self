@@ -412,3 +412,17 @@ def test_an_archive_workout_declares_its_session_derived():
 
     assert metadata["session_origin"] == "derived"
     assert metadata["session_derived_from"] == ["startDate", "workoutActivityType"]
+
+
+def test_an_archive_workout_uses_apples_own_identifier_for_its_type():
+    """The archive states `HKWorkoutActivityTypeRunning`, so nothing is inferred here.
+
+    This is the only path with a machine-readable type in hand — the webhook sees a
+    translated display name — and it is resolved from that identifier rather than
+    from the snake-cased name derived beside it.
+    """
+    points, _ = _points()
+    metadata = next(p["metadata"] for p in points if p["metadata"].get("session_id"))
+
+    assert metadata["activity_type"] == "running"
+    assert metadata["activity_label"] == "HKWorkoutActivityTypeRunning"

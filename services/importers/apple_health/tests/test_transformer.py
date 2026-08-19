@@ -1028,3 +1028,35 @@ def test_a_distance_in_kilometres_is_still_a_distance():
     # And one declared in kilometres passes through unchanged rather than becoming a
     # speed, which is the case the guard actually exists for.
     assert normalise_value(5.0, "km", "workout_distance") == pytest.approx(5.0)
+
+
+def test_a_pushed_workout_resolves_its_localized_name_to_a_canonical_type():
+    """Health Auto Export sends the display name in the phone's language.
+
+    This is the one path where the type has to be recovered from prose: the archive
+    states `HKWorkoutActivityTypeRunning`, the webhook states whatever the phone
+    calls it. `Outdoor Ausführen` is Apple's own German for "Outdoor Run" — the
+    software sense of the word — and the place qualifier must not split one
+    activity into three (rule 17).
+    """
+    tenant_id = "00000000-0000-0000-0000-000000000001"
+    payload = {
+        "data": {
+            "workouts": [
+                {
+                    "name": "Outdoor Ausführen",
+                    "start": "2026-08-16 08:00:00 +0000",
+                    "end": "2026-08-16 09:00:00 +0000",
+                    "totalDistance": {"qty": 9.0, "units": "km"},
+                }
+            ]
+        }
+    }
+
+    points = transform_health_auto_export_json(payload, tenant_id, "apple_health_src")
+    metadata = points[0]["metadata"]
+
+    assert metadata["activity_type"] == "running"
+    assert metadata["activity_label"] == "Outdoor Ausführen"
+    # The provider's own key is untouched; nothing that arrived is replaced.
+    assert metadata["workout_name"] == "Outdoor Ausführen"

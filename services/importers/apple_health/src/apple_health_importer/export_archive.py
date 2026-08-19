@@ -32,6 +32,7 @@ from typing import IO, Any
 
 from defusedxml.ElementTree import iterparse
 from shared_schemas import FieldReportCollector, aggregate_stream
+from shared_schemas.activities import activity_metadata
 from shared_schemas.metrics import METRIC_CATALOG, MetricUnit
 from shared_schemas.sessions import session_metadata
 
@@ -519,6 +520,11 @@ def _workout_points(
         "source_type": "apple_health",
         "workout_name": activity,
         "workout_id": workout_id,
+        # Resolved from Apple's own identifier rather than from the snake-cased
+        # name above: `HKWorkoutActivityTypeTraditionalStrengthTraining` is the
+        # machine-readable thing the export actually states, and this is the one
+        # path that has it. The webhook only ever sees a translated display name.
+        **activity_metadata(elem.attrib.get("workoutActivityType") or activity),
         **session,
     }
     if elem.attrib.get("sourceName"):

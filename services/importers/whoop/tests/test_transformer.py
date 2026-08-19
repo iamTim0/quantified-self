@@ -170,3 +170,29 @@ def test_a_derived_figure_never_overwrites_a_stated_one():
     points = _workout_points()
     durations = [p for p in points if p["metric_type"] == "workout_duration"]
     assert len(durations) == 1, "one duration, whichever path produced it"
+
+
+def test_a_workout_carries_a_canonical_activity_type():
+    """WHOOP's own wording is a label; the type is what a query can filter on.
+
+    `activity_name` is WHOOP's key and Apple Health uses another, and both hold
+    display prose in the user's language — `Laufen` here, `Outdoor Ausführen`
+    there, for the same activity. Rule 17: a field a client compares against is an
+    identifier, so the canonical key travels beside the wording rather than
+    instead of it.
+    """
+    points = _workout_points(sport_name="Laufen")
+    metadata = points[0]["metadata"]
+
+    assert metadata["activity_type"] == "running"
+    assert metadata["activity_label"] == "Laufen"
+    # The provider's own key stays readable; nothing it sent is replaced (rule 19).
+    assert metadata["activity_name"] == "Laufen"
+
+
+def test_an_unmapped_sport_still_imports_and_keeps_its_wording():
+    """A gap in the alias table must not cost a workout that is otherwise complete."""
+    metadata = _workout_points(sport_name="Kitesurfen")[0]["metadata"]
+
+    assert metadata["activity_type"] == "other"
+    assert metadata["activity_label"] == "Kitesurfen"
