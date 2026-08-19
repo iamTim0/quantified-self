@@ -44,6 +44,18 @@ MAX_COMMITS_PER_REPOSITORY = 500
 #: One page of the commit history.
 COMMIT_PAGE_SIZE = 100
 
+#: Branches per repository whose commits are read for line counts.
+#:
+#: Reading only the default branch is what this replaced, and it undercounted
+#: silently: a day's commits are counted from `contributionsCollection`, which sees
+#: work on any branch, while the lines came from `defaultBranchRef` alone. Anything
+#: developed on a feature branch therefore appeared as commits with no lines at all
+#: -- in one workspace, a day with 20 commits and 9,187 changed lines on `dev`
+#: reported 0 lines, indistinguishable from a day of no work.
+#:
+#: Busiest first, so the cap keeps the branches that were actually worked on.
+MAX_BRANCHES_PER_REPOSITORY = 25
+
 #: Longest span `contributionsCollection` will accept in one query.
 #:
 #: GitHub answers anything wider with `The total time spanned by 'from' and 'to'
@@ -129,17 +141,35 @@ query($from: DateTime!, $to: DateTime!) {
 }
 """
 
-_COMMIT_HISTORY_QUERY = """
-query($owner: String!, $name: String!, $author: ID!, $since: GitTimestamp!,
-      $until: GitTimestamp!, $pageSize: Int!, $cursor: String) {
+#: Branch names, busiest first. Read separately from their histories so a
+#: repository with many branches costs one small query before any large one.
+_BRANCH_QUERY = """
+query($owner: String!, $name: String!, $pageSize: Int!) {
   repository(owner: $owner, name: $name) {
-    defaultBranchRef {
+    defaultBranchRef { name }
+    refs(refPrefix: "refs/heads/", first: $pageSize,
+         orderBy: {field: TAG_COMMIT_DATE, direction: DESC}) {
+      nodes { name }
+    }
+  }
+}
+"""
+
+#: One branch's commits by this author. `oid` is in the selection because the same
+#: commit is reachable from every branch that contains it, and the caller
+#: deduplicates on it -- see `_fill_commit_stats`.
+_COMMIT_HISTORY_QUERY = """
+query($owner: String!, $name: String!, $ref: String!, $author: ID!,
+      $since: GitTimestamp!, $until: GitTimestamp!, $pageSize: Int!,
+      $cursor: String) {
+  repository(owner: $owner, name: $name) {
+    ref(qualifiedName: $ref) {
       target {
         ... on Commit {
           history(author: {id: $author}, since: $since, until: $until,
                   first: $pageSize, after: $cursor) {
             pageInfo { hasNextPage endCursor }
-            nodes { committedDate additions deletions }
+            nodes { oid committedDate additions deletions }
           }
         }
       }
@@ -283,6 +313,34 @@ class GitHubClient:
                 )
         return window
 
+    async def _branches(
+        self,
+        client: httpx.AsyncClient,
+        owner: str,
+        name: str,
+        request_id: str,
+    ) -> list[str]:
+        """Branch names to read, default branch first, then the most recent.
+
+        The default branch is put first explicitly rather than trusted to sort
+        there: `TAG_COMMIT_DATE` orders by the branch tip, and a stale `main` with
+        active feature branches would otherwise be the one dropped by the cap.
+        """
+        data = await self._graphql(
+            client,
+            _BRANCH_QUERY,
+            {"owner": owner, "name": name, "pageSize": MAX_BRANCHES_PER_REPOSITORY},
+            request_id,
+        )
+        repository = data.get("repository") or {}
+        default = ((repository.get("defaultBranchRef") or {}).get("name")) or ""
+        names: list[str] = [default] if default else []
+        for node in ((repository.get("refs") or {}).get("nodes")) or []:
+            branch = (node or {}).get("name")
+            if isinstance(branch, str) and branch and branch not in names:
+                names.append(branch)
+        return names[:MAX_BRANCHES_PER_REPOSITORY]
+
     async def _fill_commit_stats(
         self,
         client: httpx.AsyncClient,
@@ -292,49 +350,68 @@ class GitHubClient:
         end: datetime,
         request_id: str,
     ) -> None:
+        """Sum this author's additions and deletions across the repository's branches.
+
+        **Deduplicated on `oid`, and that is the whole difficulty.** A commit is
+        reachable from every branch that contains it, so summing branch by branch
+        counts merged work once per branch that still points at it. Measured on one
+        repository: `main` and five open Dependabot branches each reported the same
+        ~25,500 additions for a day, because each branch contained the same commits.
+        Summing them would have reported about 150,000 lines for a day that changed
+        25,000 -- a number wrong by six times, and nothing downstream could tell.
+        """
         owner, _, name = repository.name_with_owner.partition("/")
         if not owner or not name:
             return
 
-        cursor: str | None = None
-        seen = 0
-        while seen < MAX_COMMITS_PER_REPOSITORY:
-            data = await self._graphql(
-                client,
-                _COMMIT_HISTORY_QUERY,
-                {
-                    "owner": owner,
-                    "name": name,
-                    "author": author_id,
-                    "since": start.isoformat(),
-                    "until": end.isoformat(),
-                    "pageSize": COMMIT_PAGE_SIZE,
-                    "cursor": cursor,
-                },
-                request_id,
-            )
-            branch = ((data.get("repository") or {}).get("defaultBranchRef")) or {}
-            history = ((branch.get("target") or {}).get("history")) or {}
-            for node in history.get("nodes") or []:
-                committed = node.get("committedDate")
-                if not isinstance(committed, str):
-                    continue
-                day = _day(committed)
-                repository.additions_by_day[day] = repository.additions_by_day.get(
-                    day, 0
-                ) + int(node.get("additions") or 0)
-                repository.deletions_by_day[day] = repository.deletions_by_day.get(
-                    day, 0
-                ) + int(node.get("deletions") or 0)
-                seen += 1
+        branches = await self._branches(client, owner, name, request_id)
+        seen_commits: set[str] = set()
 
-            page = history.get("pageInfo") or {}
-            if not page.get("hasNextPage"):
-                return
-            cursor = page.get("endCursor")
-            if not cursor:
-                return
-        repository.commits_truncated = True
+        for branch in branches:
+            cursor: str | None = None
+            while True:
+                if len(seen_commits) >= MAX_COMMITS_PER_REPOSITORY:
+                    repository.commits_truncated = True
+                    return
+                data = await self._graphql(
+                    client,
+                    _COMMIT_HISTORY_QUERY,
+                    {
+                        "owner": owner,
+                        "name": name,
+                        "ref": branch,
+                        "author": author_id,
+                        "since": start.isoformat(),
+                        "until": end.isoformat(),
+                        "pageSize": COMMIT_PAGE_SIZE,
+                        "cursor": cursor,
+                    },
+                    request_id,
+                )
+                ref = ((data.get("repository") or {}).get("ref")) or {}
+                history = ((ref.get("target") or {}).get("history")) or {}
+                for node in history.get("nodes") or []:
+                    committed = node.get("committedDate")
+                    oid = node.get("oid")
+                    if not isinstance(committed, str) or not isinstance(oid, str):
+                        continue
+                    if oid in seen_commits:
+                        continue
+                    seen_commits.add(oid)
+                    day = _day(committed)
+                    repository.additions_by_day[day] = repository.additions_by_day.get(
+                        day, 0
+                    ) + int(node.get("additions") or 0)
+                    repository.deletions_by_day[day] = repository.deletions_by_day.get(
+                        day, 0
+                    ) + int(node.get("deletions") or 0)
+
+                page = history.get("pageInfo") or {}
+                if not page.get("hasNextPage"):
+                    break
+                cursor = page.get("endCursor")
+                if not cursor:
+                    break
 
 
 def _bucket(nodes: Any, key: str = "occurredAt") -> dict[str, int]:

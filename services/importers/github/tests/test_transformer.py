@@ -309,3 +309,57 @@ def test_every_catalogued_metric_this_importer_emits_declares_github_as_a_source
         if definition is None:
             continue  # namespaced, and therefore not catalogued by construction
         assert "github" in definition.sources, point["metric_type"]
+
+
+def test_no_zero_lines_on_a_day_that_had_commits() -> None:
+    """A day with commits and no lines is the importer contradicting itself.
+
+    The commits are counted from `contributionsCollection`, the lines from walking
+    the repository's branches. If the first found work, the second cannot honestly
+    report none of it -- so the day is left out and named in the field report,
+    where it reads as a gap rather than as a quiet day. Rule 19: the wrong number
+    is the worse of the two, because nothing distinguishes it from a right one.
+    """
+    window = ContributionWindow(
+        login="octocat",
+        commits_by_day={"2026-08-11": 20},
+        repositories=[RepositoryActivity(name_with_owner="octocat/repo")],
+    )
+
+    points = transform_window(
+        window,
+        TENANT,
+        SOURCE,
+        start=datetime(2026, 8, 11, tzinfo=timezone.utc),
+        end=datetime(2026, 8, 11, 23, 59, tzinfo=timezone.utc),
+    )
+
+    by_metric = {p["metric_type"] for p in points}
+    assert "code_commits" in by_metric
+    assert "code_lines_added" not in by_metric
+    assert "code_lines_removed" not in by_metric
+
+
+def test_a_genuinely_quiet_day_still_reports_zero_lines() -> None:
+    """No commits and no lines is a real statement, not a gap.
+
+    The guard above must not swallow it: a day of no work is exactly what a `0`
+    is for, and suppressing it would leave the series unable to say that nothing
+    happened.
+    """
+    window = ContributionWindow(
+        login="octocat",
+        commits_by_day={},
+        repositories=[RepositoryActivity(name_with_owner="octocat/repo")],
+    )
+
+    points = transform_window(
+        window,
+        TENANT,
+        SOURCE,
+        start=datetime(2026, 8, 11, tzinfo=timezone.utc),
+        end=datetime(2026, 8, 11, 23, 59, tzinfo=timezone.utc),
+    )
+
+    lines = [p for p in points if p["metric_type"] == "code_lines_added"]
+    assert [p["value"] for p in lines] == [0.0]

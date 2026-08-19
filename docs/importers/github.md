@@ -54,7 +54,7 @@ offset the platform accepts.
 | Metric | Aggregation | Source |
 | --- | --- | --- |
 | `code_commits` | sum | The contribution calendar, per repository |
-| `code_lines_added` / `code_lines_removed` | sum | Commit history on each repository's default branch, filtered to your own commits |
+| `code_lines_added` / `code_lines_removed` | sum | Commit history across each repository's branches, deduplicated by commit, filtered to your own commits |
 | `code_repositories_touched` | **max** | Distinct repositories with a commit that day |
 | `code_pull_requests_opened` | sum | `pullRequestContributions` |
 | `code_pull_requests_merged` | sum | The same, counted on `mergedAt` |
@@ -139,13 +139,39 @@ calls against an hourly budget of 5,000 points.
 | Bound | Value | What happens at it |
 | --- | --- | --- |
 | Repositories read for line counts | 40, busiest first | Beyond it, line counts are **omitted** rather than reported as zero |
-| Commits read per repository | 500 | The point is marked `partial` with `partial_reason: commit_scan_truncated` |
+| Branches read per repository | 25, default branch first then most recent | Beyond it, the point is marked `partial` |
+| Commits read per repository | 500 unique | The point is marked `partial` with `partial_reason: commit_scan_truncated` |
 | Streak length | The import window | `bounded_by_window: true` in the metadata |
 | Span of one contribution query | 365 days | A longer window is split and the pieces merged |
 
 The first is the one that matters. A repository past the cap still contributes commits — the
 calendar counted them — but no lines, and reporting `0` lines for a day that had thousands
 is a wrong number where an absent one would have been a visible gap (rule 19).
+
+### Lines are counted across branches, and each commit once
+
+Commit *counts* come from `contributionsCollection`, which sees work on every branch.
+Line counts come from reading commit histories, and they used to read only each
+repository's **default branch** — so anything developed on a feature branch arrived as
+commits with no lines at all. In one workspace a day with 20 commits and 9,187 changed
+lines on a `dev` branch reported `0` lines, which is indistinguishable from a day of no
+work.
+
+The obvious repair is the wrong one. A commit is reachable from *every* branch that
+contains it, so summing branch by branch counts merged work once per branch still
+pointing at it. Measured on that same repository: twelve branches, five of them
+Dependabot branches carrying the same commits, summed to 710,908 additions for a week
+that actually changed 133,295 lines — wrong by more than five times, with nothing
+downstream able to notice. The scan therefore deduplicates on the commit `oid`.
+
+The default branch is read first rather than trusted to sort first: branches come back
+newest-first, so a quiet `main` beside active feature branches would be the one dropped
+by the cap.
+
+**A day with commits never reports zero lines.** If the commit count found work and the
+line scan found none of it, the importer is contradicting itself, and the day is left
+out and named in the field report instead — a visible gap rather than a false quiet day.
+A day with no commits still reports `0`, because that is a real statement about the day.
 
 ## Metric names carry no forge
 
