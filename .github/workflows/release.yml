@@ -82,7 +82,7 @@ jobs:
       image_count: ${{ steps.matrix.outputs.count }}
       default_branch: ${{ steps.registry.outputs.default_branch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Validate the version
         id: version
@@ -248,19 +248,19 @@ jobs:
         # directory -- see the manifest for why.
         include: ${{ fromJSON(needs.guard.outputs.matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up QEMU
         # Only when a foreign architecture is actually requested. Installing it
         # unconditionally slows down every amd64-only run for nothing.
         if: contains(inputs.platforms, 'arm64')
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@v4
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
         if: needs.guard.outputs.push == 'true'
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -306,7 +306,7 @@ jobs:
 
       - name: Build and push
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -340,7 +340,7 @@ jobs:
         # floating tags and no release: exactly the state the promote/release split
         # exists to prevent, reached through the cheapest possible error.
         continue-on-error: true
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ needs.guard.outputs.registry }}/${{ matrix.image }}
           subject-digest: ${{ steps.build.outputs.digest }}
@@ -361,7 +361,7 @@ jobs:
 
       - name: Upload the digest
         if: needs.guard.outputs.push == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image }}
           path: digests/
@@ -382,7 +382,7 @@ jobs:
       # No setup-buildx-action: `imagetools` talks to the registry directly and
       # the runner's docker CLI already ships the buildx plugin. Setting up a
       # builder container here would be a container per run for nothing.
-      - uses: docker/login-action@v3
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -462,10 +462,10 @@ jobs:
       # workflow to find out that an implementation detail changed.
       actions: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Collect the digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: digest-*
           merge-multiple: true
