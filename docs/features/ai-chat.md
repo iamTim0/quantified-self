@@ -134,6 +134,33 @@ docker compose -f docker-compose.prod.yml logs --since 15m analysis | grep "MCP 
 An unexpected internal failure remains anonymous to the model on purpose: it is reported
 as `INTERNAL_TOOL_ERROR` and its text goes to the log only.
 
+## When the chat reports that Codex is unavailable
+
+The status endpoint answers `CODEX_UNAVAILABLE` for two different situations, and the
+dashboard cannot tell them apart: chat is disabled or the executable is not on the
+Analysis `PATH`, **and** the executable is present but the app server never completes its
+`initialize` handshake. The second one is the confusing case, because `codex` resolves
+fine and nothing appears in the Analysis log — the app server's stderr is sent to
+`DEVNULL` on purpose, since its diagnostics can carry local detail.
+
+Check the two conditions separately inside the running container:
+
+```bash
+# Is the executable resolvable at all?
+docker compose -f docker-compose.prod.yml exec analysis python -c \
+  "import shutil; print(shutil.which('codex'))"
+
+# Does it actually run? A shared-library failure surfaces only here.
+docker compose -f docker-compose.prod.yml exec analysis codex --version
+```
+
+A resolvable `codex` that fails the second command means the image is missing one of
+Node's shared libraries. That was a real defect: the runtime stage is `python:3.14-slim`
+while Node is copied from the `node` image, and only the latter ships `libatomic1`, so
+`node` died in the dynamic loader before running a line. The image now installs
+`libatomic1` and asserts `codex --version` at build time, so this fails the build rather
+than shipping a chat that is dead on arrival.
+
 ## Known limitations
 
 - ChatGPT plan limits and model availability still apply. A subscription is not an
