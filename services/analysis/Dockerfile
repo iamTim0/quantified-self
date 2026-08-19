@@ -10,12 +10,23 @@ RUN npm install --global @openai/codex@0.146.1
 
 FROM python:3.14-slim AS builder
 
+# node(1) links against libatomic, which the node image ships and python:3.14-slim
+# does not. Without it the interpreter dies in the loader before running a line, so
+# `codex app-server` writes no handshake, the initialize request times out, and the
+# chat answers CODEX_UNAVAILABLE -- indistinguishable from a CLI that was never
+# installed, because `codex` itself does resolve on PATH.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libatomic1 \
+    && apt-get clean
+
 # The official package selects the native binary for the image architecture.
 # Copying Node plus the installed package keeps npm and its cache out of the
 # runtime image while making `codex app-server` available.
 COPY --from=codex /usr/local/bin/node /usr/local/bin/node
 COPY --from=codex /usr/local/lib/node_modules/@openai /usr/local/lib/node_modules/@openai
 RUN ln -s ../lib/node_modules/@openai/codex/bin/codex.js /usr/local/bin/codex
+# Fail the build instead of publishing an image whose chat is dead on arrival.
+RUN codex --version
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
