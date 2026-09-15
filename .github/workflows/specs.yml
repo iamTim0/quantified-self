@@ -61,7 +61,7 @@ jobs:
     env:
       FIZZBEE_VERSION: v0.5.2
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Seconds, no download. Fails early on a structural mistake rather than
       # after fetching 340 MB and exploring a state space.
@@ -70,7 +70,7 @@ jobs:
 
       - name: Cache Fizzbee
         id: cache-fizzbee
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /opt/fizzbee
           key: fizzbee-${{ env.FIZZBEE_VERSION }}-linux_x86
@@ -93,7 +93,7 @@ jobs:
       # which spec failed, not the sequence of actions that broke the invariant.
       - name: Upload counterexamples
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fizzbee-counterexamples
           path: specs/out/
