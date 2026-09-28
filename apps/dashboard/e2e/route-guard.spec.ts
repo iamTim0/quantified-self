@@ -76,13 +76,10 @@ test.describe("route guard", () => {
     await signUp(request, account);
     await signIn(page, account);
 
-    await page.getByRole("button", { name: "Workouts" }).first().click();
+    await page.getByRole("link", { name: "Workouts" }).first().click();
     await expect(page).toHaveURL(/\/workouts$/);
-    // `level: 2` — the tab's own heading. The shell header now carries an `h1`
-    // with the same text, so matching on the name alone finds two; and the `h1`
-    // is derived from the route, so asserting on it would prove only that the
-    // URL changed, which the line above already does. The `h2` is the page.
-    await expect(page.getByRole("heading", { name: "Workouts", level: 2 })).toBeVisible();
+    // The page owns its heading; the persistent shell provides orientation text.
+    await expect(page.getByRole("heading", { name: "Workouts", level: 1 })).toBeVisible();
   });
 
   test("the selected theme survives a reload", async ({ page, request }) => {
