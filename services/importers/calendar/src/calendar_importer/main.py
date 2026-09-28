@@ -12,6 +12,12 @@ from typing import Any
 import httpx
 import nats
 from shared_schemas import HealthServer, health_payload
+from shared_schemas.core_status import CoreStatusUnavailable, post_status_with_retry
+from shared_schemas.task_lease import (
+    finish_task_delivery,
+    should_ack_task,
+    start_task_heartbeat,
+)
 
 from calendar_importer.client import (
     CalendarAuthError,
@@ -97,14 +103,12 @@ async def report_sync_result_to_core(
         payload["points_received"] = points_received
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.post(
+        await post_status_with_retry(
+            lambda: client.post(
                 url, headers=internal_headers(task.request_id, task.tenant_id), json=payload
-            )
-        except (httpx.HTTPError, ValueError, TypeError) as exc:
-            logger.warning(
-                "Could not report sync result to Core (%s)", type(exc).__name__
-            )
+            ),
+            task.request_id,
+        )
 
 
 async def sync_calendar(task: SyncTask, connection: Any) -> int:
@@ -168,6 +172,8 @@ async def sync_calendar(task: SyncTask, connection: Any) -> int:
 
 async def process(message: Any, connection: Any) -> None:
     task = None
+    heartbeat = None
+    deferred = False
     try:
         task = parse_sync_task(json.loads(message.data))
         if task is None:
@@ -179,10 +185,16 @@ async def process(message: Any, connection: Any) -> None:
         # discarded as a "duplicate" whenever the first was still running.
         lock_key = f"{task.tenant_id}:{task.source_id or task.source_type}"
         if lock_key in active_syncs:
-            logger.info("Calendar sync already running for this connector; skipping duplicate.")
+            logger.info(
+                "[req_id=%s] Calendar sync already running; deferring redelivery.",
+                task.request_id,
+            )
+            deferred = True
+            await message.nak(delay=30)
             return
 
         active_syncs.add(lock_key)
+        heartbeat = start_task_heartbeat(message, task.request_id)
         try:
             published = await sync_calendar(task, connection)
             await report_sync_result_to_core(
@@ -200,14 +212,16 @@ async def process(message: Any, connection: Any) -> None:
     except (CalendarFetchError, IcsParseError) as e:
         logger.error("[req_id=%s] Calendar sync failed: %s", task.request_id, e)
         await report_sync_result_to_core(task, status="error", message=str(e)[:500])
+    except CoreStatusUnavailable:
+        deferred = True
     except Exception as exc:  # noqa: BLE001 - task failures must be acknowledged
         logger.error("Error processing calendar task (%s)", type(exc).__name__)
-        if task is not None:
+        if task is not None and not deferred:
             await report_sync_result_to_core(
                 task, status="error", message=f"Unexpected error: {type(exc).__name__}"
             )
     finally:
-        await message.ack()
+        await finish_task_delivery(message, heartbeat, acknowledge=should_ack_task(deferred=deferred))
 
 
 async def main() -> None:

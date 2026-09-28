@@ -7,6 +7,12 @@ from typing import Any
 import httpx
 import nats
 from shared_schemas import HealthServer, health_payload
+from shared_schemas.core_status import CoreStatusUnavailable, post_status_with_retry
+from shared_schemas.task_lease import (
+    finish_task_delivery,
+    should_ack_task,
+    start_task_heartbeat,
+)
 
 from home_assistant_importer.client import HomeAssistantApiError, ProviderClient
 from home_assistant_importer.config import settings
@@ -70,21 +76,24 @@ async def report_sync_result_to_core(
     if points_received is not None:
         payload["points_received"] = points_received
     async with httpx.AsyncClient(timeout=10) as client:
-        try:
-            await client.post(
+        await post_status_with_retry(
+            lambda: client.post(
                 url, headers=internal_headers(task.request_id, task.tenant_id), json=payload
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning(f"Could not report sync result to Core: {exc}")
+            ),
+            task.request_id,
+        )
 
 
 async def process(message: Any, connection: Any) -> None:
     task = None
+    heartbeat = None
+    status_deferred = False
     try:
         task = parse_sync_task(json.loads(message.data))
         if task is None:
             logger.warning("Missing tenant_id in home_assistant task payload; dropping.")
             return
+        heartbeat = start_task_heartbeat(message, task.request_id)
 
         secret = await credentials(task.tenant_id, task.request_id, task.source_id)
         if not secret or secret.get("status") != "active" or not secret.get("access_token"):
@@ -146,6 +155,8 @@ async def process(message: Any, connection: Any) -> None:
         )
         if task:
             await report_sync_result_to_core(task, status="error", message=str(exc)[:500])
+    except CoreStatusUnavailable:
+        status_deferred = True
     except Exception as exc:  # noqa: BLE001
         logger.error(f"Error processing home_assistant task: {exc}")
         if task:
@@ -153,7 +164,7 @@ async def process(message: Any, connection: Any) -> None:
                 task, status="error", message=f"Unexpected error: {type(exc).__name__}"
             )
     finally:
-        await message.ack()
+        await finish_task_delivery(message, heartbeat, acknowledge=should_ack_task(deferred=status_deferred))
 
 
 async def main() -> None:
