@@ -1,0 +1,111 @@
+# A pull importer owns a JetStream task until it finishes or its process stops.
+# Progress acknowledgements renew the delivery lease without completing the task.
+# A terminal acknowledgement is sent only after processing has ended.
+
+MAX_DELIVERIES = 2
+
+
+action Init:
+    task_status = "queued"
+    worker_status = "idle"
+    lease_ticks = 0
+    deliveries = 0
+    terminal_ack = False
+    busy_status = "queued"
+    busy_ticks = 0
+    busy_deliveries = 0
+    busy_acked = False
+
+
+atomic action Deliver:
+    require task_status == "queued"
+    require deliveries < MAX_DELIVERIES
+    task_status = "working"
+    worker_status = "alive"
+    lease_ticks = 0
+    deliveries = deliveries + 1
+
+
+atomic action Tick:
+    require task_status == "working"
+    require lease_ticks < 2
+    lease_ticks = lease_ticks + 1
+
+
+atomic action ProgressAck:
+    require task_status == "working"
+    require worker_status == "alive"
+    lease_ticks = 0
+
+
+atomic action WorkerStops:
+    require task_status == "working"
+    worker_status = "dead"
+
+
+atomic action Redeliver:
+    require task_status == "working"
+    require lease_ticks == 2
+    task_status = "queued"
+    worker_status = "idle"
+
+
+atomic action Complete:
+    require task_status == "working"
+    require worker_status == "alive"
+    task_status = "done"
+    terminal_ack = True
+
+
+atomic action DeliverBusyTask:
+    require busy_status == "queued"
+    require busy_deliveries < MAX_DELIVERIES
+    busy_status = "delivered"
+    busy_ticks = 0
+    busy_deliveries = busy_deliveries + 1
+
+
+atomic action DeferBusyTask:
+    require busy_status == "delivered"
+    require task_status == "working"
+    busy_status = "deferred"
+    busy_ticks = 0
+
+
+atomic action BusyDelayTick:
+    require busy_status == "deferred"
+    require busy_ticks < 2
+    busy_ticks = busy_ticks + 1
+
+
+atomic action RedeliverBusyTask:
+    require busy_status == "deferred"
+    require busy_ticks == 2
+    busy_status = "queued"
+
+
+atomic action ProcessBusyTask:
+    require busy_status == "delivered"
+    require task_status == "done"
+    busy_status = "done"
+    busy_acked = True
+
+
+always assertion TaskAckAfterCompletion:
+    return not terminal_ack or task_status == "done"
+
+
+always assertion ProgressDoesNotCompleteTask:
+    return task_status != "working" or not terminal_ack
+
+
+always assertion RedeliveryRequiresExpiredLease:
+    return task_status != "queued" or deliveries == 0 or lease_ticks == 2
+
+
+always assertion BusyTaskRetainedUntilProcessed:
+    return not busy_acked or busy_status == "done"
+
+
+always assertion BusyRedeliveryWaitsForDelay:
+    return busy_status != "queued" or busy_deliveries == 0 or busy_ticks == 2

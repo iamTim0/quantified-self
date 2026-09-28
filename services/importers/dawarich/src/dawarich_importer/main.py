@@ -13,6 +13,12 @@ from typing import Any
 import httpx
 import nats
 from shared_schemas import HealthServer, health_payload
+from shared_schemas.core_status import post_status_with_retry
+from shared_schemas.task_lease import (
+    finish_task_delivery,
+    should_ack_task,
+    start_task_heartbeat,
+)
 
 from dawarich_importer.client import (
     DawarichApiError,
@@ -103,10 +109,9 @@ async def report_sync_result_to_core(
         payload["points_received"] = points_received
 
     async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
-            await client.post(url, headers=headers, json=payload)
-        except Exception as e:  # noqa: BLE001
-            logger.warning(f"Could not report sync result to Core: {e}")
+        await post_status_with_retry(
+            lambda: client.post(url, headers=headers, json=payload), task.request_id
+        )
 
 
 async def get_connector_credentials_from_core(
@@ -219,11 +224,15 @@ async def process_task_message(msg, nc: nats.NATS):
         # "duplicate" whenever the first was still running.
         lock_key = f"{tenant_id}:{task.source_id or task.source_type}"
         if lock_key in active_syncs:
-            logger.info("Sync already in progress for tenant, skipping duplicate task")
-            await msg.ack()
+            logger.info(
+                "[req_id=%s] Sync already in progress; deferring redelivery",
+                task.request_id,
+            )
+            await msg.nak(delay=30)
             return
 
         active_syncs.add(lock_key)
+        heartbeat = start_task_heartbeat(msg, task.request_id)
         try:
             api_key, source_id, config = await get_connector_credentials_from_core(
                 tenant_id, req_id=task.request_id, source_ref=task.source_id
@@ -238,7 +247,7 @@ async def process_task_message(msg, nc: nats.NATS):
             await fetch_and_publish(nc, task, source_id, api_key, config or {})
         finally:
             active_syncs.discard(lock_key)
-            await msg.ack()
+            await finish_task_delivery(msg, heartbeat, acknowledge=should_ack_task())
     except Exception as e:  # noqa: BLE001
         logger.error(f"Error processing task message: {e}")
 

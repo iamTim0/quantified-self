@@ -48,6 +48,24 @@ the provider or the phone sends it. Neither kind keeps a timer: Core's scheduler
 an active connector is due and publishes a task the importer executes — see
 [Architecture](../architecture.md#scheduled-imports).
 
+### Long-running pull tasks
+
+Active importers renew their JetStream task lease every ten seconds while fetching and
+publishing. A task is acknowledged after processing, so a worker stopped during an
+import leaves the task available for broker redelivery. If a duplicate delivery reaches
+an importer already working on that connector, it is delayed instead of acknowledged.
+The importer also retries a failed Core status callback up to three times for
+transport errors, rate limits, and server errors; a permanent client rejection is
+reported immediately in logs with the request ID.
+If those transient retries all fail, the task remains unacknowledged for redelivery
+so Core can receive the result when it is available again. Replayed imports retain
+their original run ID and deterministic data-point keys.
+Core's deterministic idempotency keys keep repeated event publications from creating
+duplicate measurements. The dashboard's connector history remains the place to check
+whether Core has loaded the published points; broker lease renewal alone does not
+declare an import successful. A sustained broker outage can still interrupt a run,
+which Core eventually marks as stale and retries on a later scheduler tick.
+
 In the dashboard's **Connectors** area, configured importers and their live status are shown in
 the **Current importers** tab. Provider selection for a new importer is kept in the adjacent
 **Add importer** tab, so adding another instance does not mix with the current status list.
