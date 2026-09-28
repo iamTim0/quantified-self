@@ -190,9 +190,9 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
     return (
       <div className="space-y-4">
         {back}
-        <p className="rounded-3xl border border-line bg-surface p-6 text-sm text-ink-muted">
+        <h1 className="rounded-3xl border border-line bg-surface p-6 text-xl font-semibold text-ink">
           {t("workouts.notFound")}
-        </p>
+        </h1>
       </div>
     );
   }
@@ -213,9 +213,9 @@ export default function WorkoutDetail({ apiBase, sessionKey, onBack, onUnauthori
       {back}
 
       <header className="space-y-1">
-        <h2 className="text-xl font-extrabold text-ink">
+        <h1 className="text-xl font-extrabold text-ink">
           {body.title || t(categoryLabel(body.category))}
-        </h2>
+        </h1>
         <p className="text-sm text-ink-muted">
           {formatDateTime(body.window.start)} – {formatDateTime(body.window.end)}
         </p>

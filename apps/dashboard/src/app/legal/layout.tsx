@@ -37,6 +37,12 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-dvh bg-surface pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] pt-[env(safe-area-inset-top)] text-ink">
+      <a
+        href="#legal-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-100 focus:rounded-xl focus:bg-surface focus:px-4 focus:py-2 focus:text-sm focus:font-bold focus:text-ink focus:shadow-lg focus:outline-2 focus:outline-brand"
+      >
+        {t("nav.skipToContent")}
+      </a>
       <div className="mx-auto max-w-3xl px-5 py-10 sm:px-8 sm:py-16">
         <nav
           aria-label={t("legal.nav")}
@@ -68,7 +74,9 @@ export default function LegalLayout({ children }: { children: ReactNode }) {
           <LanguageSwitcher />
         </nav>
 
-        <main className="legal-prose">{children}</main>
+        <main id="legal-content" className="legal-prose" tabIndex={-1}>
+          {children}
+        </main>
       </div>
     </div>
   );

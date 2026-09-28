@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,7 +12,6 @@ import {
   Settings,
   XCircle,
 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { apiFetch } from "../lib/api";
 import { usePolling } from "../lib/polling";
 import { useI18n } from "../lib/i18n/provider";
@@ -49,7 +49,6 @@ export default function ImporterDetailPage({
   userRole,
   onOpenConfigureModal,
 }: ImporterDetailPageProps) {
-  const router = useRouter();
   const { t, formatDateTime, formatNumber } = useI18n();
   const [runs, setRuns] = useState<SyncRun[]>([]);
   const [typicalSeconds, setTypicalSeconds] = useState<number | null>(null);
@@ -121,14 +120,13 @@ export default function ImporterDetailPage({
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex items-start gap-3">
-          <button
-            type="button"
-            onClick={() => router.push("/connectors")}
+          <Link
+            href="/connectors"
             aria-label={t("importerDetail.back")}
-            className="mt-1 rounded-xl border border-line bg-surface p-2 text-ink-muted shadow-sm hover:bg-page"
+            className="focus-ring mt-1 flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-line bg-surface text-ink-muted shadow-sm hover:bg-page"
           >
             <ArrowLeft className="h-4 w-4" />
-          </button>
+          </Link>
           <div>
             <p className="text-meta font-bold uppercase tracking-wider text-ink-muted">
               {t("importerDetail.eyebrow")}

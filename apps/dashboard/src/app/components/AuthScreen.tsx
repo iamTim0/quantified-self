@@ -167,26 +167,22 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
     lowered.includes("already registered") || lowered.includes("already exists");
 
   return (
-    <div className="relative flex min-h-dvh flex-col items-center justify-center overflow-hidden bg-surface-muted p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
-      {/* Background Orbs */}
-      <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand/10 rounded-full blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-brand/10 rounded-full blur-[120px] pointer-events-none" />
-
-      <div className="z-10 w-full max-w-md">
+    <div className="flex min-h-dvh flex-col items-center justify-center bg-page p-4 pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] pt-[max(1rem,env(safe-area-inset-top))]">
+      <div className="w-full max-w-md">
         <div className="mb-4 flex justify-end">
           <LanguageSwitcher />
         </div>
 
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center p-3.5 rounded-3xl bg-brand text-brand-ink mb-4 shadow-xl shadow-brand/20">
+        <div className="mb-8 text-center">
+          <div className="mb-4 inline-flex items-center justify-center rounded-2xl bg-brand p-3.5 text-brand-ink">
             <Activity className="w-8 h-8" />
           </div>
-          <h1 className="text-3xl font-extrabold text-ink tracking-tight">Quantified Self</h1>
-          <p className="text-ink-muted text-xs mt-1.5 font-medium">{t("auth.tagline")}</p>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">Quantified Self</h1>
+          <p className="mt-2 text-body text-ink-secondary">{t("auth.tagline")}</p>
         </div>
 
-        <div className="glass-card bg-surface border border-line rounded-3xl p-8 shadow-xl">
-          <h2 className="text-xl font-extrabold text-ink mb-6">
+        <div className="rounded-3xl border border-line bg-surface p-6 sm:p-8">
+          <h2 className="mb-6 text-xl font-semibold text-ink">
             {isLogin ? t("auth.welcomeBack") : t("auth.createAccount")}
           </h2>
 
@@ -219,7 +215,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
               <div>
                 <label
                   htmlFor="auth-name"
-                  className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
+                  className="mb-1.5 block text-body font-medium text-ink-secondary"
                 >
                   {t("auth.name")}
                 </label>
@@ -233,8 +229,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
-                    placeholder="Jane Doe"
+                    className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-4 text-body text-ink outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
                   />
                 </div>
               </div>
@@ -243,7 +238,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <div>
               <label
                 htmlFor="auth-email"
-                className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
+                className="mb-1.5 block text-body font-medium text-ink-secondary"
               >
                 {t("auth.email")}
               </label>
@@ -259,8 +254,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
-                  placeholder="you@example.com"
+                  className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-4 text-body text-ink outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
                 />
               </div>
             </div>
@@ -268,7 +262,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <div>
               <label
                 htmlFor="auth-password"
-                className="block text-xs font-bold uppercase tracking-wider text-ink-muted mb-1.5"
+                className="mb-1.5 block text-body font-medium text-ink-secondary"
               >
                 {t("auth.password")}
               </label>
@@ -284,8 +278,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="w-full bg-surface border border-line rounded-2xl py-2.5 pl-10 pr-4 text-ink text-sm focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20 outline-none transition-colors"
-                  placeholder="••••••••"
+                  className="w-full rounded-xl border border-line bg-surface py-2.5 pl-10 pr-4 text-body text-ink outline-none transition-colors focus-visible:border-brand focus-visible:ring-2 focus-visible:ring-brand/20"
                 />
               </div>
             </div>
@@ -293,7 +286,7 @@ export default function AuthScreen({ apiBase, onLogin }: AuthScreenProps) {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-brand hover:bg-brand-hover text-brand-ink font-bold rounded-2xl py-3 px-4 mt-2 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] flex items-center justify-center gap-2 group disabled:opacity-50 shadow-md shadow-brand/20"
+              className="group mt-2 flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 font-semibold text-brand-ink transition-colors hover:bg-brand-hover disabled:opacity-50"
             >
               {loading ? t("common.pleaseWait") : isLogin ? t("auth.signIn") : t("auth.signUp")}
               {!loading && (
