@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 import { LogOut, Activity, ArrowUpRight, BookOpen } from "lucide-react";
 
 import { useT } from "../lib/i18n/provider";
@@ -11,17 +12,16 @@ import { useIsStandalone } from "../lib/pwa";
 // blocks below are derived from it too — this file used to filter `profile` out
 // by hand and re-add it further down, which is how the registry came to describe
 // the phone exhaustively and the desktop only approximately.
-import { NAV, SIDEBAR_GENERAL, SIDEBAR_MENU, type TabType } from "./navigation";
+import { NAV, SIDEBAR_GENERAL, SIDEBAR_MENU, TAB_PATHS, type TabType } from "./navigation";
 
 export type { TabType };
 
 interface SidebarProps {
   activeTab: TabType;
-  onTabChange: (tab: TabType) => void;
   onLogout: () => void;
 }
 
-export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarProps) {
+export default function Sidebar({ activeTab, onLogout }: SidebarProps) {
   const t = useT();
   const isStandalone = useIsStandalone();
   const menuItems = SIDEBAR_MENU.map((id) => {
@@ -36,11 +36,11 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
     // desktop carried a permanent strip of dead scroll, and the sidebar scrolled
     // away with it. Now it stays put and scrolls only if its own content exceeds
     // the viewport.
-    <aside className="sticky top-0 flex h-dvh w-64 shrink-0 flex-col justify-between overflow-y-auto border-r border-line bg-surface p-6">
+    <aside className="sticky top-0 flex h-dvh w-64 shrink-0 flex-col justify-between overflow-y-auto border-r border-line bg-surface px-4 py-6">
       <div>
         {/* Logo Header */}
-        <div className="flex items-center gap-3 mb-10 pl-2">
-          <div className="w-10 h-10 rounded-2xl bg-brand flex items-center justify-center text-brand-ink shadow-md shadow-brand/20">
+        <div className="mb-10 flex items-center gap-3 px-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand text-brand-ink">
             <Activity className="w-5 h-5" />
           </div>
           <div>
@@ -58,26 +58,26 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
           <span className="text-meta font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
             {t("sidebar.menu")}
           </span>
-          <nav className="space-y-1">
+          <nav aria-label={t("sidebar.menu")} className="space-y-1">
             {menuItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
-                <button
+                <Link
                   key={item.id}
-                  onClick={() => onTabChange(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
+                  href={TAB_PATHS[item.id]}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex min-h-11 w-full items-center justify-between rounded-xl border-l-[3px] px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-brand text-brand-ink shadow-lg shadow-brand/20"
-                      : "text-ink-muted hover:text-ink hover:bg-surface-muted"
+                      ? "border-brand bg-ok-soft font-semibold text-ok-ink"
+                      : "border-transparent text-ink-secondary hover:bg-surface-muted hover:text-ink"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-ink-muted"}`} />
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                     <span>{item.label}</span>
                   </div>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-brand-soft" />}
-                </button>
+                </Link>
               );
             })}
           </nav>
@@ -88,7 +88,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
           <span className="text-meta font-bold text-ink-muted uppercase tracking-widest px-3 mb-3 block">
             {t("sidebar.general")}
           </span>
-          <nav className="space-y-1">
+          <nav aria-label={t("sidebar.general")} className="space-y-1">
             {/* Relative on purpose: Traefik serves the docs container under /docs
                 on this same host, so an absolute URL only ever named one
                 particular deployment -- and put its owner's domain in the source. */}
@@ -101,7 +101,7 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
               href="/docs/"
               target={isStandalone ? undefined : "_blank"}
               rel={isStandalone ? undefined : "noreferrer"}
-              className="w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold text-ink-muted hover:text-ink hover:bg-surface-muted transition-colors"
+              className="flex min-h-11 w-full items-center justify-between rounded-xl border-l-[3px] border-transparent px-3 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink"
               title={t("sidebar.docsTitle")}
             >
               <div className="flex items-center gap-3">
@@ -116,27 +116,27 @@ export default function Sidebar({ activeTab, onTabChange, onLogout }: SidebarPro
               const Icon = entry.icon;
               const isActive = activeTab === id;
               return (
-                <button
+                <Link
                   key={id}
-                  onClick={() => onTabChange(id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-sm font-semibold [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] ${
+                  href={TAB_PATHS[id]}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex min-h-11 w-full items-center justify-between rounded-xl border-l-[3px] px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive
-                      ? "bg-brand text-brand-ink shadow-lg shadow-brand/20"
-                      : "text-ink-muted hover:text-ink hover:bg-surface-muted"
+                      ? "border-brand bg-ok-soft font-semibold text-ok-ink"
+                      : "border-transparent text-ink-secondary hover:bg-surface-muted hover:text-ink"
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? "text-white" : "text-ink-muted"}`} />
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
                     <span>{t(entry.labelKey)}</span>
                   </div>
-                  {isActive && <span className="w-1.5 h-1.5 rounded-full bg-brand-soft" />}
-                </button>
+                </Link>
               );
             })}
 
             <button
               onClick={onLogout}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl text-sm font-semibold text-danger-ink-on-soft hover:bg-danger-soft hover:text-danger-ink-on-soft transition-colors"
+              className="flex min-h-11 w-full items-center gap-3 rounded-xl border-l-[3px] border-transparent px-3 py-2.5 text-sm font-medium text-danger-ink-on-soft transition-colors hover:bg-danger-soft"
             >
               <LogOut className="w-4 h-4 text-danger-ink-on-soft" />
               <span>{t("sidebar.logout")}</span>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -11,6 +12,7 @@ import jwt
 from fastapi import HTTPException, Request
 
 from analysis.config import settings
+from analysis.core_client import CoreClient, CoreUnavailable
 
 ISSUER = "qs-core"
 AUDIENCE_USER = "qs-api"
@@ -124,6 +126,23 @@ def resolve_principal(request: Request) -> McpPrincipal:
     return principal
 
 
-def resolve_tenant(request: Request) -> str:
-    """Compatibility dependency returning only the verified tenant identifier."""
-    return resolve_principal(request).tenant_id
+async def require_live_tenant(request: Request) -> str:
+    """Reject a signed token whose session Core has since revoked."""
+    principal = resolve_principal(request)
+    request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
+    request.state.request_id = request_id
+    try:
+        valid, code = await CoreClient().validate_user_session(
+            principal.tenant_id,
+            user_id=principal.user_id,
+            jti=principal.jti,
+            issued_at=principal.issued_at,
+            request_id=request_id,
+        )
+    except CoreUnavailable as exc:
+        raise HTTPException(
+            status_code=503, detail="Session validation is temporarily unavailable"
+        ) from exc
+    if not valid:
+        raise HTTPException(status_code=401, detail=code)
+    return principal.tenant_id

@@ -184,22 +184,24 @@ export default function MobileTabBar({
               // `min-w-0` is what makes `truncate` real — without it the span's
               // cross size is fit-content, so the ellipsis can never fire and a
               // longer label silently widens the bar instead.
-              className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium ${
+              className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium transition-colors ${
                 isActive ? "font-bold text-ok-ink" : "text-ink-muted"
               }`}
             >
               {/* Not colour alone (WCAG 1.4.1). The active tab differed from the
                   others only in hue — same icon, same size, same weight — which
                   is no difference at all to a reader with a red-green deficiency.
-                  `aria-current` above was already correct; this is the same fact
-                  made visible. The sidebar has carried a dot for this all along. */}
+                  `aria-current` above was already correct; the rule, selected
+                  icon surface, and heavier label make the state visible. */}
               {isActive && (
                 <span
                   aria-hidden="true"
                   className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-brand"
                 />
               )}
-              <Icon className="h-5 w-5" aria-hidden="true" />
+              <span className={`flex h-7 min-w-10 items-center justify-center rounded-full ${isActive ? "bg-ok-soft" : ""}`}>
+                <Icon className="h-5 w-5" aria-hidden="true" />
+              </span>
               <span className="max-w-full truncate">{t(entry.labelKey)}</span>
             </button>
           );
@@ -209,7 +211,7 @@ export default function MobileTabBar({
           onClick={() => setSheetOpen((open) => !open)}
           aria-expanded={sheetOpen}
           aria-label={t("nav.more")}
-          className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium ${
+          className={`relative flex min-h-14 min-w-0 flex-1 touch-manipulation flex-col items-center justify-center gap-0.5 px-1 py-2 text-nav font-medium transition-colors ${
             inSheet || sheetOpen ? "font-bold text-ok-ink" : "text-ink-muted"
           }`}
         >
@@ -219,7 +221,9 @@ export default function MobileTabBar({
               className="absolute inset-x-3 top-0 h-0.5 rounded-full bg-brand"
             />
           )}
-          <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+          <span className={`flex h-7 min-w-10 items-center justify-center rounded-full ${inSheet || sheetOpen ? "bg-ok-soft" : ""}`}>
+            <MoreHorizontal className="h-5 w-5" aria-hidden="true" />
+          </span>
           <span className="max-w-full truncate">{t("nav.more")}</span>
         </button>
       </nav>

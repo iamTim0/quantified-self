@@ -28,7 +28,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from shared_schemas import health_payload
 
-from analysis.auth import resolve_tenant
+from analysis.auth import require_live_tenant
 from analysis.chat_api import codex
 from analysis.chat_api import router as chat_router
 from analysis.config import settings
@@ -129,7 +129,9 @@ core_client = CoreClient()
 
 
 def _request_id(request: Request) -> str:
-    return request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex[:12]}"
+    return request.headers.get("X-Request-ID") or getattr(
+        request.state, "request_id", None
+    ) or f"req_{uuid.uuid4().hex[:12]}"
 
 
 def build_daily_series(
@@ -169,7 +171,7 @@ async def get_insights(
         None,
         description="Restrict analysis to one connector instance",
     ),
-    tenant_id: str = Depends(resolve_tenant),
+    tenant_id: str = Depends(require_live_tenant),
 ) -> dict[str, Any]:
     """Full analysis bundle for one caller's parameters, computed now.
 

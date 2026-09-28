@@ -23,14 +23,16 @@ from pathlib import Path
 import jwt
 import pytest
 from analysis import main as analysis_main
+from analysis.auth import require_live_tenant, resolve_principal
 from analysis.config import settings
 from analysis.core_client import (
     CoreClient,
+    CoreUnavailable,
     MetricSeriesBucket,
     MetricSeriesIssue,
     MetricSeriesResponse,
 )
-from analysis.main import app, build_daily_series, get_insights, resolve_tenant
+from analysis.main import app, build_daily_series, get_insights
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from starlette.requests import Request
@@ -125,14 +127,14 @@ def _request(headers: dict[str, str]) -> Request:
 
 def test_tenant_comes_from_the_token():
     """Verifies Fizzbee Invariant: TenantIdAlwaysPresent"""
-    tenant = resolve_tenant(_request({"Authorization": f"Bearer {_token()}"}))
+    tenant = resolve_principal(_request({"Authorization": f"Bearer {_token()}"})).tenant_id
     assert tenant == "22222222-2222-2222-2222-222222222222"
 
 
 def test_missing_credential_is_401():
     """Verifies Fizzbee Invariant: UnauthenticatedRequestsBlocked"""
     with pytest.raises(HTTPException) as excinfo:
-        resolve_tenant(_request({}))
+        resolve_principal(_request({}))
     assert excinfo.value.status_code == 401
 
 
@@ -146,14 +148,14 @@ def test_a_header_may_agree_with_the_token_but_never_override_it():
         "X-Tenant-ID": "99999999-9999-9999-9999-999999999999",
     }
     with pytest.raises(HTTPException) as excinfo:
-        resolve_tenant(_request(headers))
+        resolve_principal(_request(headers))
     assert excinfo.value.status_code == 403
 
     agreeing = {
         "Authorization": f"Bearer {_token()}",
         "X-Tenant-ID": "22222222-2222-2222-2222-222222222222",
     }
-    assert resolve_tenant(_request(agreeing)) == "22222222-2222-2222-2222-222222222222"
+    assert resolve_principal(_request(agreeing)).tenant_id == "22222222-2222-2222-2222-222222222222"
 
 
 def test_a_service_token_cannot_stand_in_for_a_user_session():
@@ -170,15 +172,69 @@ def test_a_service_token_cannot_stand_in_for_a_user_session():
         algorithm="HS256",
     )
     with pytest.raises(HTTPException) as excinfo:
-        resolve_tenant(_request({"Authorization": f"Bearer {service}"}))
+        resolve_principal(_request({"Authorization": f"Bearer {service}"}))
     assert excinfo.value.status_code == 401
 
 
 def test_expired_token_is_rejected():
     expired = _token(exp=datetime.now(timezone.utc) - timedelta(minutes=1))
     with pytest.raises(HTTPException) as excinfo:
-        resolve_tenant(_request({"Authorization": f"Bearer {expired}"}))
+        resolve_principal(_request({"Authorization": f"Bearer {expired}"}))
     assert excinfo.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_insights_accepts_a_live_session(monkeypatch):
+    """Verifies Fizzbee Invariant: TenantIdAlwaysPresent."""
+    from analysis import auth
+
+    class LiveClient:
+        async def validate_user_session(self, tenant_id, **kwargs):
+            assert kwargs["request_id"] == "review-request"
+            return True, "VALID"
+
+    monkeypatch.setattr(auth, "CoreClient", LiveClient)
+    request = _request(
+        {"Authorization": f"Bearer {_token()}", "X-Request-ID": "review-request"}
+    )
+    assert await require_live_tenant(request) == "22222222-2222-2222-2222-222222222222"
+
+
+@pytest.mark.asyncio
+async def test_insights_rejects_a_revoked_session(monkeypatch):
+    """Verifies Fizzbee Invariant: RevokedTokenNeverAccepted."""
+    from analysis import auth
+
+    class RevokedClient:
+        async def validate_user_session(self, tenant_id, **kwargs):
+            assert tenant_id == "22222222-2222-2222-2222-222222222222"
+            assert kwargs["request_id"] == "review-request"
+            return False, "TOKEN_REVOKED"
+
+    monkeypatch.setattr(auth, "CoreClient", RevokedClient)
+    request = _request(
+        {"Authorization": f"Bearer {_token()}", "X-Request-ID": "review-request"}
+    )
+    with pytest.raises(HTTPException) as excinfo:
+        await require_live_tenant(request)
+    assert excinfo.value.status_code == 401
+    assert excinfo.value.detail == "TOKEN_REVOKED"
+
+
+@pytest.mark.asyncio
+async def test_insights_session_check_fails_closed(monkeypatch):
+    """Verifies Fizzbee Invariant: RevokedTokenNeverAccepted."""
+    from analysis import auth
+
+    class UnavailableClient:
+        async def validate_user_session(self, tenant_id, **kwargs):
+            raise CoreUnavailable("Core is unavailable")
+
+    monkeypatch.setattr(auth, "CoreClient", UnavailableClient)
+    request = _request({"Authorization": f"Bearer {_token()}"})
+    with pytest.raises(HTTPException) as excinfo:
+        await require_live_tenant(request)
+    assert excinfo.value.status_code == 503
 
 
 def test_build_daily_series_preserves_server_aggregates_and_gaps():

@@ -370,7 +370,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="hidden md:block">
             <Sidebar
               activeTab={activeTab}
-              onTabChange={handleTabChange}
               onLogout={handleLogout}
             />
           </div>

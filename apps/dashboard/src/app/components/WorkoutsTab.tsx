@@ -250,10 +250,10 @@ export default function WorkoutsTab({ apiBase, onOpen, onUnauthorized }: Props) 
   return (
     <div className="space-y-6">
       <header className="space-y-1">
-        <h2 className="flex items-center gap-2 text-xl font-extrabold text-ink">
+        <h1 className="flex items-center gap-2 text-xl font-extrabold text-ink">
           <Dumbbell className="h-5 w-5 text-brand" />
           {t("workouts.title")}
-        </h2>
+        </h1>
         <p className="text-sm text-ink-muted">{t("workouts.subtitle")}</p>
       </header>
 

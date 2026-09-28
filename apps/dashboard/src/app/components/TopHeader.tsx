@@ -70,11 +70,10 @@ export default function TopHeader({
     // against the status bar and the notch, so it is what has to clear them.
     <header className="sticky top-0 z-30 border-b border-line bg-surface/90 pt-[env(safe-area-inset-top)] backdrop-blur">
       <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center gap-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 lg:px-8">
-        {/* The orientation this header never had. `h1` because it names the
-            page; the pages themselves carry `h2` downwards. */}
-        <h1 className="min-w-0 flex-1 truncate text-title font-bold text-ink">
+        {/* Page content owns the heading outline; this is persistent orientation. */}
+        <p className="min-w-0 flex-1 truncate text-body font-semibold text-ink-secondary">
           {t(NAV[activeTab].labelKey)}
-        </h1>
+        </p>
 
         {/* Only in an installed app, where the browser's reload button is gone.
             In a tab this would be a permanent control for something the browser
@@ -84,7 +83,7 @@ export default function TopHeader({
           onClick={onRefresh}
           aria-label={t("header.refresh")}
           title={t("header.refreshTitle")}
-          className="hidden min-h-11 min-w-11 items-center justify-center rounded-2xl border border-line bg-surface text-ink-muted shadow-sm hover:bg-page hover:text-ink standalone:flex"
+          className="hidden min-h-11 min-w-11 items-center justify-center rounded-xl text-ink-secondary transition-colors hover:bg-surface-muted hover:text-ink standalone:flex"
         >
           <RefreshCw className="h-4 w-4" />
         </button>
@@ -94,7 +93,7 @@ export default function TopHeader({
         <button
           onClick={onOpenConfigureModal}
           aria-label={t("header.addConnector")}
-          className="hidden h-11 items-center gap-2 rounded-2xl bg-brand px-4 text-meta font-bold text-brand-ink shadow-md shadow-brand/20 [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:bg-brand-hover md:flex"
+          className="hidden h-11 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-brand-ink transition-colors hover:bg-brand-hover md:flex"
         >
           <Plus className="h-3.5 w-3.5" />
           <span>{t("header.addConnector")}</span>
@@ -103,9 +102,9 @@ export default function TopHeader({
         <button
           onClick={onNavigateToProfile}
           aria-label={t("sidebar.settings")}
-          className="group flex h-11 min-w-11 items-center gap-3 rounded-2xl border border-line bg-surface px-2 shadow-sm [transition-property:color,background-color,border-color,text-decoration-color,fill,stroke,box-shadow] hover:border-line"
+          className="group flex h-11 min-w-11 items-center gap-2 rounded-xl px-1.5 transition-colors hover:bg-surface-muted"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-meta font-bold text-brand-ink shadow-inner">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ok-soft text-meta font-semibold text-ok-ink">
             {getInitials(userName)}
           </span>
           <span className="hidden max-w-40 truncate pr-1 text-meta font-bold text-ink group-hover:text-brand lg:block">

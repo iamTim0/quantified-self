@@ -653,13 +653,13 @@ export default function DailyStory({
 
   return (
     <div className="space-y-8">
-      <header className="space-y-3">
+      <header className="space-y-5 border-b border-line pb-6">
         <div>
-          <p className="text-xs font-bold uppercase tracking-widest text-ok-ink">
+          <p className="text-meta font-semibold text-ok-ink">
             {t("day.eyebrow")}
           </p>
-          <h1 className="text-3xl font-extrabold text-ink">{t("day.title")}</h1>
-          <p className="mt-2 text-sm text-ink-muted">{t("day.subtitle")}</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight text-ink sm:text-4xl">{t("day.title")}</h1>
+          <p className="mt-2 max-w-prose text-body text-ink-secondary">{t("day.subtitle")}</p>
         </div>
         <ReportStatus
           computedAt={report.computed_at}

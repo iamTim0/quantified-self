@@ -97,7 +97,7 @@ export default function Disclosure({
         the first half of a double-tap zoom. `list-none` plus `marker:hidden`
         covers both the WebKit and the Blink spellings of the default triangle.
       */}
-      <summary className="cursor-pointer list-none touch-manipulation px-4 py-2.5 marker:hidden">
+      <summary className="cursor-pointer list-none touch-manipulation rounded-2xl px-4 py-2.5 transition-colors marker:hidden hover:bg-surface-muted group-open:rounded-b-none">
         <div className="flex min-h-11 items-center gap-3">
           <ChevronDown
             className="h-4 w-4 shrink-0 text-ink-faint transition-transform group-open:rotate-180"

@@ -1084,16 +1084,20 @@ async def logout(
     must not reveal whether the presented credential was real.
     """
     auth_header = request.headers.get("Authorization") or ""
+    bearer_access = auth_header[7:].strip() if auth_header.startswith("Bearer ") else ""
+    cookie_access = request.cookies.get(ACCESS_COOKIE)
+    cookie_refresh = request.cookies.get(REFRESH_COOKIE)
+    if (cookie_access or cookie_refresh) and not csrf_token_matches(
+        request.cookies.get(CSRF_COOKIE), request.headers.get(CSRF_HEADER)
+    ):
+        raise HTTPException(status_code=403, detail="Missing or invalid CSRF token")
+
     now = datetime.now(timezone.utc)
 
     tenant_id: str | None = None
     user_id: str | None = None
 
-    presented_access = (
-        auth_header[7:].strip()
-        if auth_header.startswith("Bearer ")
-        else request.cookies.get(ACCESS_COOKIE)
-    )
+    presented_access = bearer_access or cookie_access
 
     if presented_access:
         try:
@@ -1121,7 +1125,7 @@ async def logout(
 
     # The cookie is the browser's refresh token; the body field is the
     # non-browser path. Revoke whichever was presented.
-    presented_refresh = request.cookies.get(REFRESH_COOKIE) or body.refresh_token
+    presented_refresh = cookie_refresh or body.refresh_token
 
     if presented_refresh:
         await session.execute(

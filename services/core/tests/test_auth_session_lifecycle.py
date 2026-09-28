@@ -27,7 +27,7 @@ import uuid
 import pytest
 from core.db.models import RefreshToken, User
 from core.db.session import async_session_maker
-from core.main import app
+from core.main import app, logout
 from core.security.cookies import (
     ACCESS_COOKIE,
     CSRF_COOKIE,
@@ -35,8 +35,10 @@ from core.security.cookies import (
     REFRESH_COOKIE,
 )
 from core.security.tokens import hash_token
+from fastapi import HTTPException
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
+from starlette.requests import Request
 
 from tests.db_helpers import cleanup_test_tenant
 
@@ -168,6 +170,51 @@ async def test_logout_revokes_the_session_and_clears_the_cookies():
     finally:
         if tenant_id:
             await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+async def test_cookie_logout_requires_csrf_proof():
+    """Verifies Fizzbee Invariant: StateChangingRequestRequiresCsrfProof."""
+    email = f"logout-csrf-{uuid.uuid4().hex[:8]}@example.test"
+    tenant_id = None
+    try:
+        async with _client() as ac:
+            tenant_id = (await _signup(ac, email))["tenant_id"]
+
+            refused = await ac.post("/api/v1/auth/logout", json={})
+            assert refused.status_code == 403
+            empty_bearer = await ac.post(
+                "/api/v1/auth/logout", headers={"Authorization": "Bearer "}, json={}
+            )
+            assert empty_bearer.status_code == 403
+            assert (await ac.get("/api/v1/data/metrics/types")).status_code == 200
+
+            accepted = await ac.post("/api/v1/auth/logout", headers=_csrf(ac), json={})
+            assert accepted.status_code == 204
+    finally:
+        if tenant_id:
+            await cleanup_test_tenant(tenant_id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("authorization", [None, "Bearer "])
+async def test_logout_rejects_cookie_without_csrf_before_database(authorization):
+    """Verifies Fizzbee Invariant: StateChangingRequestRequiresCsrfProof."""
+    headers = [(b"cookie", b"qs_access=access; qs_refresh=refresh")]
+    if authorization is not None:
+        headers.append((b"authorization", authorization.encode()))
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/v1/auth/logout",
+            "headers": headers,
+        }
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await logout(request, req=None, session=None)
+    assert excinfo.value.status_code == 403
 
 
 @pytest.mark.asyncio

@@ -193,6 +193,24 @@ phone's own chrome no longer paints a near-white strip above a dark shell.
 
 ## The shell
 
+The persistent shell uses a quiet surface and reserves the saturated brand colour
+for its main action. Desktop navigation uses native links with a subtle selected
+surface, a leading rule, and `aria-current="page"`; the active destination remains
+recognizable without relying on colour alone. The phone tab bar keeps its top
+indicator and adds a selected icon background. Both stay usable with the existing
+touch target and safe area rules.
+
+Shared `glass-card` surfaces use borders rather than elevation shadows in both
+themes. This keeps dense data screens calm while preserving the stronger visual
+weight of an explicit primary action or highlighted result.
+
+The header gives location context without duplicating the page's `h1`. The daily
+story owns that heading and separates its introduction from the report with a
+divider. Sign-in follows the same hierarchy: labelled fields, a single prominent
+submit action, and a plain card on the neutral page. These are presentation
+changes; session handling, routes, metric meaning and tenant-scoped API access
+follow the existing contracts.
+
 The dashboard is an edge-to-edge grid: a sticky sidebar above `md`, a sticky header,
 and **the document itself as the scroll container**. The reading measure is set on
 the content (`max-w-[1400px]` on `<main>`), not on the chrome, so a page that needs

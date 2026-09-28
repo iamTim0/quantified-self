@@ -721,13 +721,13 @@ export default function ConnectorModal({
             )}
             <div className="flex items-center gap-2 text-ink">
               <Plug className="w-5 h-5 text-brand" />
-              <h2 className="text-lg font-bold">
+              <h1 className="text-lg font-bold">
                 {step === "select_provider"
                   ? t("modal.pickSource")
                   : isEditing
                     ? t("modal.editProvider", { provider: selectedProvider?.name ?? "" })
                     : t("modal.connectProvider", { provider: selectedProvider?.name ?? "" })}
-              </h2>
+              </h1>
               {selectedProvider && step === "configure_provider" && (
                 <a
                   href={`/docs/importers/${selectedProvider.id === "apple_health" ? "apple-health" : selectedProvider.id === "home_assistant" ? "home-assistant" : selectedProvider.id}.html`}

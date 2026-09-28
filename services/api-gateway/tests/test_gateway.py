@@ -309,6 +309,25 @@ async def test_dev_token_endpoint_no_longer_exists():
 
 
 @pytest.mark.asyncio
+async def test_upstream_connection_details_do_not_reach_clients():
+    """Verifies Fizzbee Invariant: NoPrivateServicePublicExposure."""
+    from gateway.main import app
+
+    async def upstream(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("private upstream address", request=request)
+
+    with _upstreams(upstream):
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://testserver"
+        ) as ac:
+            response = await ac.get("/api/v1/auth/oidc/providers")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Core Data Service unavailable"
+    assert "private upstream address" not in response.text
+
+
+@pytest.mark.asyncio
 async def test_jwt_validation_invalid_token():
     from gateway.main import app
     transport = ASGITransport(app=app)
