@@ -362,10 +362,10 @@ async def proxy_auth_service(
                 content=await request.body(),
             )
             return _relay_response(response)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Core Data Service unavailable: {e!s}",
+                detail="Core Data Service unavailable",
             )
 
 
@@ -395,10 +395,10 @@ async def proxy_legal_document(slug: str, request: Request):
         try:
             response = await client.get(target_url, headers=forwarded_headers)
             return _relay_response(response)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Core Data Service unavailable: {e!s}",
+                detail="Core Data Service unavailable",
             )
 
 
@@ -457,10 +457,10 @@ async def proxy_apple_health_ingest(request: Request):
                 status_code=499,
                 content={"detail": {"code": "ingest_client_disconnected"}},
             )
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Apple Health Importer Service unavailable: {e!s}",
+                detail="Apple Health Importer Service unavailable",
             )
 
 
@@ -493,10 +493,10 @@ async def proxy_streak_ingest(request: Request):
                 status_code=response.status_code,
                 headers=safe_response_headers,
             )
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Streak Importer Service unavailable: {e!s}",
+                detail="Streak Importer Service unavailable",
             )
 
 
@@ -613,10 +613,10 @@ async def proxy_import_upload(source: str, request: Request, action: str | None 
                 content=request.stream(),
             )
             return _relay_response(response)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"{source} importer unavailable: {e!s}",
+                detail=f"{source} importer unavailable",
             )
 
 
@@ -671,10 +671,10 @@ async def proxy_analysis_service(path: str, request: Request):
                 params=request.query_params,
             )
             return _relay_response(response)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Analysis Service unavailable: {e!s}",
+                detail="Analysis Service unavailable",
             )
 
 
@@ -748,7 +748,7 @@ async def proxy_chat_service(path: str, request: Request):
                 )
             except httpx.RequestError as exc:
                 raise HTTPException(
-                    status_code=503, detail=f"Analysis Service unavailable: {exc!s}"
+                    status_code=503, detail="Analysis Service unavailable"
                 ) from exc
             return _relay_response(upstream)
 
@@ -765,7 +765,7 @@ async def proxy_chat_service(path: str, request: Request):
     except httpx.RequestError as exc:
         await client.aclose()
         raise HTTPException(
-            status_code=503, detail=f"Analysis Service unavailable: {exc!s}"
+            status_code=503, detail="Analysis Service unavailable"
         ) from exc
 
     response_headers = {
@@ -867,7 +867,7 @@ async def proxy_ingestion_reset(request: Request):
         except httpx.RequestError as exc:
             raise HTTPException(
                 status_code=503,
-                detail=f"Core ingest service unavailable: {exc!s}",
+                detail="Core ingest service unavailable",
             ) from exc
     return _relay_response(upstream)
 
@@ -928,10 +928,10 @@ async def proxy_core_service(
                 content=await request.body(),
             )
             return _relay_response(response)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             raise HTTPException(
                 status_code=503,
-                detail=f"Core Data Service unavailable: {e!s}",
+                detail="Core Data Service unavailable",
             )
 
 
@@ -1049,8 +1049,6 @@ async def proxy_dashboard_ui(path: str, request: Request):
     # response body is still being read from it while Starlette sends it on.
     # Closing it here would truncate every response to whatever had arrived.
     client = httpx.AsyncClient(timeout=_UI_TIMEOUT)
-    last_error: Exception | None = None
-
     for base in _ui_candidates():
         target_url = f"{base.rstrip('/')}{subpath}"
         upstream_request = client.build_request(
@@ -1062,10 +1060,9 @@ async def proxy_dashboard_ui(path: str, request: Request):
         )
         try:
             upstream = await client.send(upstream_request, stream=True)
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             # Nothing has been sent to the browser yet, so trying the next
             # candidate host is still safe. Once bytes are flowing it would not be.
-            last_error = e
             continue
 
         _remember_ui_base(base)
@@ -1088,7 +1085,7 @@ async def proxy_dashboard_ui(path: str, request: Request):
     await client.aclose()
     raise HTTPException(
         status_code=503,
-        detail=f"Dashboard UI unavailable: {last_error!s}",
+        detail="Dashboard UI unavailable",
     )
 
 
