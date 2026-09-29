@@ -7,7 +7,7 @@
 #
 # Build:  docker build -f infra/fizzbee.Dockerfile -t qs-fizzbee .
 # Run:    docker run --rm -v "$PWD:/work" qs-fizzbee specs/tenant_isolation.fizz
-FROM ubuntu:25.10
+FROM ubuntu:26.04
 
 # python3 is required by the Bazel-generated launcher that fronts the parser
 # binary, even though the archive bundles its own interpreter for the parser
