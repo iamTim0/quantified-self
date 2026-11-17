@@ -6,7 +6,7 @@
 # instead: only docs/ and mkdocs.yml enter the build, and only the rendered HTML is
 # shipped.
 
-FROM python:3.14-slim AS build
+FROM python:3.15-slim AS build
 
 WORKDIR /build
 
